@@ -41,6 +41,12 @@ services:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: shop
     ports: ["33061:3306"]
+    volumes:
+      - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      interval: 3s
+      retries: 40
 
   target-mariadb:
     profiles: [targets]
@@ -49,6 +55,13 @@ services:
       MARIADB_ROOT_PASSWORD: root
       MARIADB_DATABASE: shop
     ports: ["33062:3306"]
+    volumes:
+      # même dialecte que MySQL pour ce jeu de données : scripts partagés
+      - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 40
 
   target-postgres:
     profiles: [targets]
@@ -57,6 +70,13 @@ services:
       POSTGRES_PASSWORD: root
       POSTGRES_DB: shop
     ports: ["54321:5432"]
+    volumes:
+      - ./docker/targets/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # -h 127.0.0.1 : le serveur d'initialisation n'écoute pas en TCP, donc "healthy" = init terminée
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d shop"]
+      interval: 3s
+      retries: 40
 
 volumes:
   composer-cache:
