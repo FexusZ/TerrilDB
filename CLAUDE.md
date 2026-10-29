@@ -63,8 +63,20 @@ $R vendor/bin/phpunit                                     # tests
 $R vendor/bin/phpstan analyse --no-progress               # analyse statique (niveau max)
 $R vendor/bin/php-cs-fixer fix                            # style
 $R composer require <paquet>
+docker compose --profile targets up -d --wait             # attend les healthchecks (init SQL terminée)
+$R vendor/bin/phpunit --group integration                 # tests d'intégration (exclus de la suite par défaut)
+docker compose --profile targets down -v                  # arrêt + remise à zéro (rejoue l'init SQL)
 docker compose up php                                     # serveur sur :8000 (GET /api/health)
 ```
+
+## Bases cibles de test
+
+Scripts d'init déterministes (SQL pur, sans aléatoire) dans `docker/targets/` : `mysql/` (partagé par
+MySQL 8.4 et MariaDB 11.8, même dialecte) et `postgres/`. Schéma `shop` : `categories` (auto-FK),
+`customers`, `products`, `orders`, `order_items` (11 420 lignes), index simples/composites/uniques et
+vues `v_order_totals`, `v_product_sales`. Les tests d'intégration lisent `TARGET_MYSQL_URL`,
+`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL` (définies dans `compose.yaml`, service `php`) et sont
+sautés si la base est injoignable. Un changement de script impose `down -v` pour être rejoué.
 
 ## Conventions PHP
 

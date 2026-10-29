@@ -7,6 +7,7 @@ namespace App\Tests\Integration;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\ConnectionException;
+use Doctrine\DBAL\Schema\Name\UnqualifiedName;
 use Doctrine\DBAL\Tools\DsnParser;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -18,7 +19,7 @@ use PHPUnit\Framework\TestCase;
 #[Group('integration')]
 final class TargetDatasetTest extends TestCase
 {
-    private const TABLES = ['categories', 'customers', 'orders', 'order_items', 'products'];
+    private const TABLES = ['categories', 'customers', 'order_items', 'orders', 'products'];
     private const VIEWS = ['v_order_totals', 'v_product_sales'];
     private const MIN_TOTAL_ROWS = 10_000;
 
@@ -58,12 +59,12 @@ final class TargetDatasetTest extends TestCase
         $actual = [];
         foreach (self::TABLES as $table) {
             foreach ($manager->introspectTable($table)->getForeignKeys() as $foreignKey) {
-                $actual[] = sprintf(
+                $actual[] = \sprintf(
                     '%s(%s)->%s(%s)',
                     $table,
-                    implode(',', $foreignKey->getReferencingColumnNames()->toStrings()),
+                    self::names($foreignKey->getReferencingColumnNames()),
                     $foreignKey->getReferencedTableName()->getUnqualifiedName()->getValue(),
-                    implode(',', $foreignKey->getReferencedColumnNames()->toStrings()),
+                    self::names($foreignKey->getReferencedColumnNames()),
                 );
             }
         }
@@ -91,7 +92,7 @@ final class TargetDatasetTest extends TestCase
                 static fn ($index): bool => $index->spansColumns($columns) && (!$unique || $index->isUnique()),
             );
 
-            self::assertNotEmpty($found, sprintf(
+            self::assertNotEmpty($found, \sprintf(
                 '%s: index %s(%s)%s manquant',
                 $envVar,
                 $table,
@@ -119,8 +120,8 @@ final class TargetDatasetTest extends TestCase
         $connection = $this->connect($envVar);
         $total = 0;
         foreach (self::TABLES as $table) {
-            $rows = (int) $connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $table));
-            self::assertGreaterThan(0, $rows, sprintf('La table %s est vide', $table));
+            $rows = $this->countRows($connection, $table);
+            self::assertGreaterThan(0, $rows, \sprintf('La table %s est vide', $table));
             $total += $rows;
         }
 
@@ -133,24 +134,43 @@ final class TargetDatasetTest extends TestCase
         $connection = $this->connect($envVar);
 
         foreach (self::VIEWS as $view) {
-            self::assertGreaterThan(0, (int) $connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $view)));
+            self::assertGreaterThan(0, $this->countRows($connection, $view));
         }
+    }
+
+    /**
+     * @param list<UnqualifiedName> $names
+     */
+    private static function names(array $names): string
+    {
+        return implode(',', array_map(static fn (UnqualifiedName $name): string => $name->getIdentifier()->getValue(), $names));
+    }
+
+    private function countRows(Connection $connection, string $relation): int
+    {
+        $count = $connection->fetchOne(\sprintf('SELECT COUNT(*) FROM %s', $relation));
+        self::assertIsNumeric($count);
+
+        return (int) $count;
     }
 
     private function currentSchema(Connection $connection): string
     {
-        return (string) $connection->fetchOne(
+        $schema = $connection->fetchOne(
             $connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform
                 ? 'SELECT current_schema()'
                 : 'SELECT DATABASE()',
         );
+        self::assertIsString($schema);
+
+        return $schema;
     }
 
     private function connect(string $envVar): Connection
     {
         $url = getenv($envVar);
         if (false === $url || '' === $url) {
-            self::markTestSkipped(sprintf('%s n\'est pas défini.', $envVar));
+            self::markTestSkipped(\sprintf('%s n\'est pas défini.', $envVar));
         }
 
         $params = (new DsnParser(['pdo-mysql' => 'pdo_mysql', 'pdo-pgsql' => 'pdo_pgsql']))->parse($url);
@@ -159,7 +179,7 @@ final class TargetDatasetTest extends TestCase
         try {
             $connection->executeQuery('SELECT 1');
         } catch (ConnectionException $e) {
-            self::markTestSkipped(sprintf('Base injoignable (%s) : %s', $envVar, $e->getMessage()));
+            self::markTestSkipped(\sprintf('Base injoignable (%s) : %s', $envVar, $e->getMessage()));
         }
 
         return $connection;
