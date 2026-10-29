@@ -23,6 +23,11 @@
         </testsuite>
     </testsuites>
 
+    <groups>
+        <exclude>
+            <group>integration</group>
+        </exclude>
+    </groups>
     <source ignoreSuppressionOfDeprecations="true"
             ignoreIndirectDeprecations="true"
             restrictNotices="true"
@@ -33,6 +38,8 @@
         </include>
 
         <deprecationTrigger>
+            <method>Doctrine\Deprecations\Deprecation::trigger</method>
+            <method>Doctrine\Deprecations\Deprecation::delegateTriggerToBackend</method>
             <function>trigger_deprecation</function>
         </deprecationTrigger>
     </source>
