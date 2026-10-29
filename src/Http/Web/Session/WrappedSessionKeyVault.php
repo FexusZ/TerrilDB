@@ -43,7 +43,7 @@ final class WrappedSessionKeyVault implements SessionKeyVault, ResetInterface
     public function put(string $sessionId, DerivedKey $key): void
     {
         $session = $this->requestStack->getSession();
-        $request = $this->requestStack->getCurrentRequest() ?? throw new \LogicException('No current request.');
+        $request = $this->requestStack->getMainRequest() ?? throw new \LogicException('No current request.');
 
         $previous = $this->keys[$sessionId] ?? null;
         if (null !== $previous && $previous !== $key) {
@@ -87,13 +87,14 @@ final class WrappedSessionKeyVault implements SessionKeyVault, ResetInterface
         }
 
         $request = $this->requestStack->getCurrentRequest();
+        $main = $this->requestStack->getMainRequest();
         $session = $this->readableSession($request);
-        if (null === $request || null === $session) {
+        if (null === $main || null === $session) {
             return;
         }
 
         $session->remove(self::STORAGE_KEY);
-        $request->attributes->set(self::COOKIE_ATTRIBUTE, $this->cookie($request, null));
+        $main->attributes->set(self::COOKIE_ATTRIBUTE, $this->cookie($main, null));
     }
 
     /**
