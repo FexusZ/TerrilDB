@@ -1,0 +1,59 @@
+services:
+  php:
+    build: docker/php
+    working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - .:/app
+      - composer-cache:/tmp/composer
+    environment:
+      COMPOSER_HOME: /tmp/composer
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: php -S 0.0.0.0:8000 -t public
+
+  # Base interne de TerrilDB (utilisateurs, connexions chiffrées, historique, audit)
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: terrildb
+      POSTGRES_USER: terrildb
+      POSTGRES_PASSWORD: terrildb
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U terrildb"]
+      interval: 3s
+      retries: 20
+
+  # Bases cibles de test (profil "targets") : jeu de données ajouté dans un lot dédié
+  target-mysql:
+    profiles: [targets]
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: shop
+    ports: ["33061:3306"]
+
+  target-mariadb:
+    profiles: [targets]
+    image: mariadb:11.8
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: shop
+    ports: ["33062:3306"]
+
+  target-postgres:
+    profiles: [targets]
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: shop
+    ports: ["54321:5432"]
+
+volumes:
+  composer-cache:
+  db-data:
