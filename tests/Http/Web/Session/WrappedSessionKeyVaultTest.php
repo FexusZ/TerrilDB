@@ -110,6 +110,21 @@ final class WrappedSessionKeyVaultTest extends TestCase
         self::assertFalse($cookie->isSecure());
     }
 
+    public function testCookieIsQueuedOnTheMainRequestEvenFromASubRequest(): void
+    {
+        $session = $this->session();
+        $main = $this->request($session);
+        $sub = $this->request($session);
+        $stack = new RequestStack();
+        $stack->push($main);
+        $stack->push($sub);
+
+        (new WrappedSessionKeyVault($stack, new SessionKeyWrapper()))->put('session-1', $this->key());
+
+        self::assertInstanceOf(Cookie::class, $main->attributes->get(WrappedSessionKeyVault::COOKIE_ATTRIBUTE));
+        self::assertFalse($sub->attributes->has(WrappedSessionKeyVault::COOKIE_ATTRIBUTE));
+    }
+
     public function testUnlockCookieIsSecureOverHttps(): void
     {
         $request = $this->request($this->session(), secure: true);
