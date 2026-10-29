@@ -53,6 +53,16 @@ MVP (brief) d'abord, puis par lots : multi-utilisateur + invitations → optimis
 d'exécution + règles d'index ; sans PMM/Vitess) → audit d'optimisation → ER diagram → Redis → ClickHouse.
 Hors lots : grille éditable, diff de schémas, import CSV, assistant IA intégré.
 
+## Crypto (src/Crypto)
+
+Zero-knowledge, sans dépendance web/Doctrine. Flux : mot de passe → `KeyDerivation` (Argon2id, paramètres
+`KdfParameters` versionnés et stockés par utilisateur) → `DerivedKey` (en mémoire seulement, effaçable,
+non sérialisable) → `SecretCipher` (XChaCha20-Poly1305, format `v1:`…, l'identifiant de la ligne sert de
+contexte authentifié). `SessionKeyVault` garde la clé le temps de la session (implémentation en mémoire
+pour l'instant ; le stockage réel est à trancher). `SecretRotator` rechiffre tout-ou-rien au changement de
+mot de passe. Toutes les erreurs héritent de `CryptoException`. Le hash d'authentification du mot de passe
+est distinct (sel propre) et vit dans `Security/`, pas ici.
+
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash
