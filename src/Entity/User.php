@@ -6,6 +6,7 @@ namespace App\Entity;
 
 use App\Crypto\KdfParameters;
 use App\Entity\Exception\InvalidUserException;
+use App\Repository\UserRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -18,7 +19,7 @@ use Symfony\Component\Uid\Uuid;
  * Aucun secret en clair : le mot de passe n'existe que sous forme de hash d'authentification, et le secret
  * TOTP que chiffré par la clé dérivée du mot de passe (il suit donc la rotation au changement de mot de passe).
  */
-#[ORM\Entity]
+#[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: 'app_user')]
 final class User
 {
