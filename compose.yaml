@@ -8,6 +8,10 @@ services:
       - composer-cache:/tmp/composer
     environment:
       COMPOSER_HOME: /tmp/composer
+      # Bases cibles de test (tests d'intégration, groupe "integration")
+      TARGET_MYSQL_URL: pdo-mysql://root:root@target-mysql:3306/shop
+      TARGET_MARIADB_URL: pdo-mysql://root:root@target-mariadb:3306/shop
+      TARGET_POSTGRES_URL: pdo-pgsql://postgres:root@target-postgres:5432/shop
     depends_on:
       db:
         condition: service_healthy
