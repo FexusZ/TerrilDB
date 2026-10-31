@@ -77,7 +77,14 @@ docker compose --profile targets up -d --wait             # attend les healthche
 $R vendor/bin/phpunit --group integration                 # tests d'intégration (exclus de la suite par défaut)
 docker compose --profile targets down -v                  # arrêt + remise à zéro (rejoue l'init SQL)
 docker compose up php                                     # serveur sur :8000 (GET /api/health)
+$R php bin/console doctrine:migrations:migrate            # migrations de la base interne
+$R php bin/console doctrine:database:create --env=test --if-not-exists   # base terrildb_test (une fois)
+$R php bin/console doctrine:migrations:migrate --env=test # schéma de test (tests --group integration)
+$R php bin/console doctrine:migrations:diff               # nouvelle migration après un changement d'entité
 ```
+
+L'URL de la base interne (`DATABASE_URL`) vient de `compose.yaml`, jamais de `.env`. Les tests d'intégration de
+persistance (`tests/Integration/Persistence`) tournent dans une transaction annulée à chaque test.
 
 ## Bases cibles de test
 
