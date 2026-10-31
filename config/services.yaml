@@ -21,3 +21,10 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+when@test:
+    services:
+        # Aucun service n'injecte encore le coffre : sans cela le conteneur compilé retire l'alias.
+        App\Crypto\SessionKeyVault:
+            alias: App\Http\Web\Session\WrappedSessionKeyVault
+            public: true
