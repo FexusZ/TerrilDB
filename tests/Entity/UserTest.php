@@ -234,6 +234,26 @@ final class UserTest extends TestCase
         $this->user()->changePassword(self::HASH, $this->kdf(), 'v1:stray');
     }
 
+    public function testRehashingReplacesOnlyTheHash(): void
+    {
+        $user = $this->userWithTotp();
+        $kdf = $user->getKdfParameters()->toString();
+        $newHash = '$argon2id$v=19$m=32768,t=4,p=1$b3RoZXJzYWx0$b3RoZXJoYXNob3RoZXJoYXNo';
+
+        $user->rehashPassword($newHash);
+
+        self::assertSame($newHash, $user->getPasswordHash());
+        self::assertSame($kdf, $user->getKdfParameters()->toString());
+        self::assertSame('v1:encrypted-secret', $user->getTotpSecret());
+    }
+
+    public function testRehashingRejectsANonArgon2idHash(): void
+    {
+        $this->expectException(InvalidUserException::class);
+
+        $this->user()->rehashPassword('md5-of-something');
+    }
+
     public function testChangingThePasswordRejectsANonArgon2idHash(): void
     {
         $this->expectException(InvalidUserException::class);
