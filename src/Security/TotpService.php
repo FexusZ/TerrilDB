@@ -22,6 +22,9 @@ final readonly class TotpService
     // Une période de tolérance de chaque côté pour la dérive d'horloge.
     private const DRIFT_STEPS = 1;
 
+    /**
+     * @return non-empty-string
+     */
     public function generateSecret(): string
     {
         return TOTP::generate(secretSize: self::SECRET_BYTES)->getSecret();
