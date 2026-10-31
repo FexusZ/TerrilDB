@@ -35,6 +35,7 @@ src/
   Core/        cœur métier sans dépendance web : Query, Schema, Export, Guard, Optimizer
   Driver/      un driver + un introspecteur par moteur (MySQL/MariaDB, PostgreSQL, ClickHouse, Redis…)
   Entity/ Repository/   base interne
+  Connection/  gestion des connexions de l'utilisateur (paramètres chiffrés avec sa clé)
   Crypto/      libsodium, dérivation de clé depuis le mot de passe
   Security/    mot de passe Argon2id, TOTP, invitations, rôles
   Http/Web/ Http/Api/ Http/Mcp/   adaptateurs fins autour du cœur
@@ -62,6 +63,15 @@ contexte authentifié). `SessionKeyVault` garde la clé le temps de la session (
 pour l'instant ; le stockage réel est à trancher). `SecretRotator` rechiffre tout-ou-rien au changement de
 mot de passe. Toutes les erreurs héritent de `CryptoException`. Le hash d'authentification du mot de passe
 est distinct (sel propre) et vit dans `Security/`, pas ici.
+
+## Connexions (src/Connection, src/Core/Connection)
+
+Une `DatabaseConnection` garde en clair son nom et son moteur (`Engine`) ; hôte, port, base, identifiant et mot
+de passe forment un `ConnectionParameters` (JSON versionné) chiffré d'un bloc avec la clé de l'utilisateur,
+contexte authentifié `connection:<uuid>`. L'entité refuse tout ce qui n'a pas la forme d'un chiffré. Les lectures
+sont toujours cloisonnées par propriétaire (`findOwned`), une connexion d'autrui est indiscernable d'une
+connexion inexistante. `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
+illisible bloque le changement.
 
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 

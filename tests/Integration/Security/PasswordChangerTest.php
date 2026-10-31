@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Security;
 
+use App\Connection\ConnectionManager;
+use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\Engine;
+use App\Crypto\DerivedKey;
+use App\Crypto\Exception\DecryptionFailedException;
 use App\Crypto\KeyDerivation;
 use App\Crypto\SecretCipher;
 use App\Crypto\SecretRotator;
 use App\Entity\User;
+use App\Repository\DatabaseConnectionRepository;
 use App\Repository\UserRepository;
 use App\Security\AuthPasswordHasher;
 use App\Security\Exception\InvalidCredentialsException;
@@ -35,6 +41,8 @@ final class PasswordChangerTest extends DatabaseTestCase
     private AuthPasswordHasher $hasher;
     private KeyDerivation $derivation;
     private MockClock $clock;
+    private DatabaseConnectionRepository $connections;
+    private ConnectionManager $manager;
     private PasswordChanger $changer;
     private LoginService $login;
     private User $user;
@@ -46,6 +54,9 @@ final class PasswordChangerTest extends DatabaseTestCase
         $repository = self::getContainer()->get(UserRepository::class);
         self::assertInstanceOf(UserRepository::class, $repository);
         $this->repository = $repository;
+        $connections = self::getContainer()->get(DatabaseConnectionRepository::class);
+        self::assertInstanceOf(DatabaseConnectionRepository::class, $connections);
+        $this->connections = $connections;
 
         $this->hasher = new AuthPasswordHasher(opsLimit: 3, memLimit: 16384);
         $this->derivation = new KeyDerivation(opsLimit: 1, memLimit: 8192);
@@ -55,7 +66,9 @@ final class PasswordChangerTest extends DatabaseTestCase
             $this->hasher,
             new SecretRotator($this->derivation, new SecretCipher()),
             $this->repository,
+            $this->connections,
         );
+        $this->manager = new ConnectionManager(new SecretCipher(), $this->connections, $this->clock);
         $this->login = new LoginService(
             $this->hasher,
             $this->derivation,
@@ -189,5 +202,120 @@ final class PasswordChangerTest extends DatabaseTestCase
         $result = $this->login->authenticate('alice', self::NEW, $this->codeFor($secret));
 
         self::assertSame('alice', $result->user->getUsername());
+    }
+
+    private function oldKey(): DerivedKey
+    {
+        return $this->derivation->derive(self::OLD, $this->user->getKdfParameters());
+    }
+
+    private function parameters(string $password): ConnectionParameters
+    {
+        return new ConnectionParameters('db.internal', 5432, 'shop', 'reader', $password);
+    }
+
+    public function testConnectionsFollowTheNewKey(): void
+    {
+        $production = $this->manager->create($this->user, $this->oldKey(), 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+        $staging = $this->manager->create($this->user, $this->oldKey(), 'Staging', Engine::MySql, $this->parameters('second-secret'));
+
+        $newKey = $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+        $user = $this->repository->findByLogin('alice');
+        self::assertNotNull($user);
+
+        self::assertSame('first-secret', $this->manager->reveal($user, $newKey, $production->getId())->password());
+        self::assertSame('second-secret', $this->manager->reveal($user, $newKey, $staging->getId())->password());
+    }
+
+    public function testTheOldKeyNoLongerOpensTheConnections(): void
+    {
+        $oldKey = $this->oldKey();
+        $connection = $this->manager->create($this->user, $oldKey, 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+
+        $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+        $user = $this->repository->findByLogin('alice');
+        self::assertNotNull($user);
+
+        $this->expectException(DecryptionFailedException::class);
+        $this->manager->reveal($user, $oldKey, $connection->getId());
+    }
+
+    public function testRotatingDoesNotCountAsEditingAConnection(): void
+    {
+        $connection = $this->manager->create($this->user, $this->oldKey(), 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+        $this->clock->sleep(3600);
+
+        $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+
+        $found = $this->connections->findOwned($this->user, $connection->getId());
+        self::assertNotNull($found);
+        self::assertEquals($connection->getCreatedAt(), $found->getUpdatedAt());
+    }
+
+    public function testAConnectionThatCannotBeDecryptedBlocksTheWholeChange(): void
+    {
+        $good = $this->manager->create($this->user, $this->oldKey(), 'Good', Engine::PostgreSql, $this->parameters('first-secret'));
+        $broken = $this->manager->create($this->user, $this->oldKey(), 'Broken', Engine::PostgreSql, $this->parameters('second-secret'));
+        $broken->rotateEncryptedParameters($good->getEncryptedParameters()); // chiffré lié à une autre connexion
+        $this->connections->save($broken);
+        $hash = $this->user->getPasswordHash();
+        $blob = $good->getEncryptedParameters();
+
+        try {
+            $this->changer->change($this->user, self::OLD, self::NEW);
+            self::fail('Expected the rotation to be refused.');
+        } catch (DecryptionFailedException) {
+            $this->entityManager->clear();
+            $user = $this->repository->findByLogin('alice');
+            self::assertNotNull($user);
+            self::assertSame($hash, $user->getPasswordHash());
+            self::assertSame($blob, $this->connections->findOwned($user, $good->getId())?->getEncryptedParameters());
+            self::assertSame('first-secret', $this->manager->reveal($user, $this->derivation->derive(self::OLD, $user->getKdfParameters()), $good->getId())->password());
+        }
+    }
+
+    public function testAWrongCurrentPasswordLeavesTheConnectionsUntouched(): void
+    {
+        $connection = $this->manager->create($this->user, $this->oldKey(), 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+        $blob = $connection->getEncryptedParameters();
+
+        try {
+            $this->changer->change($this->user, 'not the password!!', self::NEW);
+            self::fail('Expected a refusal.');
+        } catch (InvalidCredentialsException) {
+            $this->entityManager->clear();
+            self::assertSame($blob, $this->connections->findOwned($this->user, $connection->getId())?->getEncryptedParameters());
+        }
+    }
+
+    public function testOtherUsersConnectionsAreNotTouched(): void
+    {
+        $bob = (new UserRegistrar(new PasswordPolicy(), $this->hasher, $this->derivation, $this->repository, $this->clock))
+            ->register('bob@example.test', 'bob', 'bob has a long password');
+        $bobKey = $this->derivation->derive('bob has a long password', $bob->getKdfParameters());
+        $theirs = $this->manager->create($bob, $bobKey, 'Theirs', Engine::PostgreSql, $this->parameters('bob-secret'));
+        $blob = $theirs->getEncryptedParameters();
+
+        $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+
+        self::assertSame($blob, $this->connections->findOwned($bob, $theirs->getId())?->getEncryptedParameters());
+    }
+
+    public function testTotpAndConnectionsAreRotatedTogether(): void
+    {
+        [$secret] = $this->enableTotp();
+        $connection = $this->manager->create($this->user, $this->oldKey(), 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+
+        $newKey = $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+        $user = $this->repository->findByLogin('alice');
+        self::assertNotNull($user);
+
+        self::assertSame('first-secret', $this->manager->reveal($user, $newKey, $connection->getId())->password());
+        self::assertSame('alice', $this->login->authenticate('alice', self::NEW, $this->codeFor($secret))->user->getUsername());
     }
 }
