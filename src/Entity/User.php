@@ -124,6 +124,15 @@ final class User
         }
     }
 
+    /**
+     * Remise à niveau du hash d'authentification quand le coût configuré a été relevé : seul le hash change,
+     * la clé de chiffrement (donc les paramètres KDF et les secrets) reste identique.
+     */
+    public function rehashPassword(string $passwordHash): void
+    {
+        $this->passwordHash = self::assertPasswordHash($passwordHash);
+    }
+
     public function isTotpEnabled(): bool
     {
         return null !== $this->totpSecret;
