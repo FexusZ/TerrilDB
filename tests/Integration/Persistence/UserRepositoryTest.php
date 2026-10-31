@@ -9,6 +9,7 @@ use App\Entity\User;
 use App\Repository\UserRepository;
 use App\Security\AuthPasswordHasher;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\OptimisticLockException;
 use PHPUnit\Framework\Attributes\Group;
 
 #[Group('integration')]
@@ -116,6 +117,23 @@ final class UserRepositoryTest extends DatabaseTestCase
         $this->entityManager->clear();
 
         self::assertSame('v1:new-secret', $this->repository->findByLogin('alice')?->getTotpSecret());
+    }
+
+    public function testAWriteMadeByAnotherProcessSinceTheReadIsDetected(): void
+    {
+        $this->saveAndForget($this->user());
+        $user = $this->repository->findByLogin('alice');
+        self::assertNotNull($user);
+
+        // Un autre processus enregistre sa modification après notre lecture (ex. même code TOTP présenté deux fois).
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE app_user SET totp_last_step = 99, version = version + 1 WHERE username = ?',
+            ['alice'],
+        );
+
+        $user->enableTotp('v1:too-late', []);
+        $this->expectException(OptimisticLockException::class);
+        $this->repository->save($user);
     }
 
     public function testCountsUsers(): void
