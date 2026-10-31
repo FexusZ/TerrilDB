@@ -35,6 +35,7 @@ final class User
     #[ORM\Column(length: self::EMAIL_MAX_LENGTH, unique: true)]
     private string $email;
 
+    /** @var non-empty-string */
     #[ORM\Column(length: 32, unique: true)]
     private string $username;
 
@@ -83,6 +84,9 @@ final class User
         return $this->email;
     }
 
+    /**
+     * @return non-empty-string
+     */
     public function getUsername(): string
     {
         return $this->username;
@@ -220,6 +224,9 @@ final class User
         return $email;
     }
 
+    /**
+     * @return non-empty-string
+     */
     private static function normalizeUsername(string $username): string
     {
         $username = strtolower($username);
@@ -227,6 +234,7 @@ final class User
             throw new InvalidUserException('The username must be 3 to 32 characters: lowercase letters, digits, dot, dash or underscore, starting with a letter or digit.');
         }
 
+        /* @var non-empty-string $username le motif exige au moins 3 caractères */
         return $username;
     }
 
