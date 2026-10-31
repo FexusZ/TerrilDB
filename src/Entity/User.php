@@ -58,6 +58,12 @@ final class User
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    // Verrou optimiste : deux écritures concurrentes sur le même compte ne s'écrasent pas en silence
+    // (notamment pour qu'un code TOTP présenté deux fois en même temps ne passe qu'une fois).
+    #[ORM\Version]
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 1])]
+    private int $version = 1;
+
     public function __construct(
         string $email,
         string $username,
