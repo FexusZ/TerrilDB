@@ -52,6 +52,20 @@ final class UserTest extends TestCase
         self::assertEquals(new \DateTimeImmutable('2026-10-29T12:00:00Z'), $first->getCreatedAt());
     }
 
+    public function testCreationDateIsKeptInUtcWhateverTheTimezoneItWasGivenIn(): void
+    {
+        $user = new User(
+            'alice@example.test',
+            'alice',
+            self::HASH,
+            $this->kdf(),
+            new \DateTimeImmutable('2026-10-29T14:00:00+02:00'),
+        );
+
+        self::assertSame('UTC', $user->getCreatedAt()->getTimezone()->getName());
+        self::assertSame('2026-10-29T12:00:00+00:00', $user->getCreatedAt()->format(\DATE_ATOM));
+    }
+
     /**
      * @return iterable<string, array{string}>
      */

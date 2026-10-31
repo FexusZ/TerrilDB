@@ -69,7 +69,8 @@ final class User
         $this->username = self::normalizeUsername($username);
         $this->passwordHash = self::assertPasswordHash($passwordHash);
         $this->kdfParameters = $kdfParameters->toString();
-        $this->createdAt = $createdAt;
+        // Colonne sans fuseau : toujours en UTC, quel que soit le fuseau du serveur.
+        $this->createdAt = $createdAt->setTimezone(new \DateTimeZone('UTC'));
     }
 
     public function getId(): Uuid
