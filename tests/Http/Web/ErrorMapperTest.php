@@ -30,6 +30,7 @@ use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\PasswordPolicyException;
 use App\Security\Exception\SecondFactorRequiredException;
 use App\Security\Exception\TotpAlreadyEnabledException;
+use App\Security\Exception\TotpNotEnabledException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -46,6 +47,7 @@ final class ErrorMapperTest extends TestCase
         yield 'weak password' => [new PasswordPolicyException('too short'), 422, 'weak_password'];
         yield 'account exists' => [AccountAlreadyExistsException::create(), 409, 'account_exists'];
         yield 'totp already enabled' => [TotpAlreadyEnabledException::create(), 409, 'totp_already_enabled'];
+        yield 'totp not enabled' => [TotpNotEnabledException::create(), 409, 'totp_not_enabled'];
         yield 'invalid user' => [new InvalidUserException('x'), 422, 'invalid_input'];
         yield 'invalid connection' => [new InvalidDatabaseConnectionException('x'), 422, 'invalid_input'];
         yield 'invalid parameters' => [new InvalidConnectionParametersException('x'), 422, 'invalid_input'];

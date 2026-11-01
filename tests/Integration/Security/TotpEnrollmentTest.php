@@ -13,6 +13,7 @@ use App\Security\AuthPasswordHasher;
 use App\Security\Exception\InvalidCredentialsException;
 use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\TotpAlreadyEnabledException;
+use App\Security\Exception\TotpNotEnabledException;
 use App\Security\PasswordPolicy;
 use App\Security\RecoveryCodeService;
 use App\Security\TotpEnrollment;
@@ -209,5 +210,44 @@ final class TotpEnrollmentTest extends DatabaseTestCase
 
         self::assertNotSame(TotpSecretContext::forUser($this->user), TotpSecretContext::forUser($other));
         self::assertSame(TotpSecretContext::forUser($this->user), TotpSecretContext::forUser($this->user));
+    }
+
+    private function enable(): void
+    {
+        $pending = $this->enrollment->begin($this->user);
+        $this->enrollment->confirm($this->user, $this->key, $pending->secret, $this->codeFor($pending->secret));
+    }
+
+    public function testRecoveryCodesCanBeRegenerated(): void
+    {
+        $this->enable();
+        $oldHashes = $this->user->getRecoveryCodeHashes();
+
+        $codes = $this->enrollment->regenerateRecoveryCodes($this->user, self::PASSWORD);
+
+        self::assertCount(10, $codes->codes);
+        self::assertNotSame($oldHashes, $this->user->getRecoveryCodeHashes());
+        self::assertSame($codes->hashes, $this->reload()->getRecoveryCodeHashes());
+        self::assertSame([], array_intersect($oldHashes, $codes->hashes));
+    }
+
+    public function testRegeneratingNeedsThePassword(): void
+    {
+        $this->enable();
+        $hashes = $this->user->getRecoveryCodeHashes();
+
+        try {
+            $this->enrollment->regenerateRecoveryCodes($this->user, 'not the password!!');
+            self::fail('Expected a refusal.');
+        } catch (InvalidCredentialsException) {
+            self::assertSame($hashes, $this->reload()->getRecoveryCodeHashes());
+        }
+    }
+
+    public function testRegeneratingNeedsASecondFactor(): void
+    {
+        $this->expectException(TotpNotEnabledException::class);
+
+        $this->enrollment->regenerateRecoveryCodes($this->user, self::PASSWORD);
     }
 }

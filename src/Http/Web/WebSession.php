@@ -7,6 +7,8 @@ namespace App\Http\Web;
 use App\Crypto\DerivedKey;
 use App\Crypto\SessionKeyVault;
 use App\Entity\User;
+use App\Http\Web\Security\ProgrammaticAuthenticator;
+use App\Http\Web\Security\SecurityUser;
 use App\Repository\UserRepository;
 use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -41,8 +43,27 @@ final readonly class WebSession
         return $this->vault->get($this->sessionId()) ?? throw new LockedException();
     }
 
+    /**
+     * Ouvre la session du compte et confie la clé de chiffrement au coffre.
+     *
+     * La session est démarrée AVANT de lire son identifiant (non démarrée, elle n'en a pas encore : la clé
+     * serait enveloppée avec un identifiant vide et ne pourrait plus être rouverte), puis son identifiant est
+     * renouvelé : une session ouverte avant la connexion ne devient jamais celle de l'utilisateur.
+     */
+    public function open(User $user, DerivedKey $key): void
+    {
+        $session = $this->requests->getSession();
+        $session->start();
+        $this->security->login(SecurityUser::fromUser($user), ProgrammaticAuthenticator::class, 'main');
+        $session->migrate(true);
+        $this->vault->put($session->getId(), $key);
+    }
+
     public function sessionId(): string
     {
-        return $this->requests->getSession()->getId();
+        $session = $this->requests->getSession();
+        $session->start();
+
+        return $session->getId();
     }
 }

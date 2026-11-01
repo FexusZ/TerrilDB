@@ -11,6 +11,7 @@ use App\Repository\UserRepository;
 use App\Security\Exception\InvalidCredentialsException;
 use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\TotpAlreadyEnabledException;
+use App\Security\Exception\TotpNotEnabledException;
 use Psr\Clock\ClockInterface;
 
 /**
@@ -70,6 +71,26 @@ final readonly class TotpEnrollment
 
         $user->disableTotp();
         $this->users->save($user);
+    }
+
+    /**
+     * De nouveaux codes de récupération, les anciens cessant de fonctionner. Le mot de passe est requis : une
+     * session volée ne suffit pas à s'octroyer des codes valables hors de cette session.
+     */
+    public function regenerateRecoveryCodes(User $user, #[\SensitiveParameter] string $password): NewRecoveryCodes
+    {
+        if (!$user->isTotpEnabled()) {
+            throw TotpNotEnabledException::create();
+        }
+        if (!$this->hasher->verify($user->getPasswordHash(), $password)) {
+            throw InvalidCredentialsException::create();
+        }
+
+        $recoveryCodes = $this->recoveryCodes->generate();
+        $user->replaceRecoveryCodeHashes($recoveryCodes->hashes);
+        $this->users->save($user);
+
+        return $recoveryCodes;
     }
 
     private function assertNotEnabled(User $user): void
