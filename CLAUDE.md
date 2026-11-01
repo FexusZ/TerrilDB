@@ -98,6 +98,20 @@ lecture est toujours annulée ; une écriture est validée si tout réussit. Lim
 pour une écriture ; un DDL MySQL en lecture-écriture valide implicitement ; l'opérateur `?` de jsonb ne passe pas dans
 EXPLAIN/SHOW sur PostgreSQL (il passe dans les SELECT).
 
+## Couche web (src/Http/Web)
+
+API JSON de la SPA, routes `/web/*` (l'API REST à jetons sera `/api/v1/*`). Contrôleurs minces : `AccountController`
+(inscription, connexion, `/web/me`), `AccountSecurityController` (mot de passe, TOTP, codes de récupération),
+`ConnectionController`, `SchemaController`, `QueryController`. La connexion n'est pas faite par un authentificateur
+Symfony mais par `LoginService` (qui dérive la clé) ; `WebSession::open` démarre la session, renouvelle son identifiant,
+ouvre la session Symfony (`ProgrammaticAuthenticator`) et confie la clé au coffre : toujours démarrer la session AVANT de
+lire son identifiant. Une session perd sa reconnaissance quand le hash du mot de passe change (`SecurityUser::isEqualTo`).
+Protections : en-tête `X-TerrilDB-Request: 1` obligatoire sur toute requête non sûre (CSRF), plafond de tentatives
+(`LoginThrottle` : 30/15 min par adresse, 8/15 min par compte ; aussi sur les actions qui vérifient le mot de passe),
+erreurs du domaine traduites en codes stables par `ErrorMapper` (jamais le message du moteur d'une cible injoignable).
+Inscription : `APP_REGISTRATION=first_only` (défaut, seulement le premier compte) ou `open`.
+Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarré à chaque requête, écritures annulées par DAMA).
+
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash

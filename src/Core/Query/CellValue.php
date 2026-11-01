@@ -6,15 +6,20 @@ namespace App\Core\Query;
 
 /**
  * Une valeur de cellule prête à être sérialisée : les chaînes binaires (qui feraient échouer un encodage JSON)
- * deviennent de l'hexadécimal, coupé à 256 octets.
+ * deviennent de l'hexadécimal, coupé à 256 octets ; les entiers trop grands pour JavaScript deviennent des chaînes.
  */
 final class CellValue
 {
     private const BINARY_PREVIEW_BYTES = 256;
+    private const MAX_SAFE_INTEGER = 9_007_199_254_740_991;
 
     public static function normalize(mixed $value): bool|float|int|string|null
     {
-        if (null === $value || \is_bool($value) || \is_int($value) || \is_float($value)) {
+        if (\is_int($value)) {
+            // Au-delà de 2^53 - 1, un nombre JSON perd sa précision dans le navigateur.
+            return abs($value) > self::MAX_SAFE_INTEGER ? (string) $value : $value;
+        }
+        if (null === $value || \is_bool($value) || \is_float($value)) {
             return $value;
         }
         if (\is_resource($value)) {
