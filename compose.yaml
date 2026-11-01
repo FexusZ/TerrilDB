@@ -98,6 +98,18 @@ services:
       interval: 3s
       retries: 60
 
+  target-redis:
+    profiles: [targets]
+    image: redis:8-alpine
+    env_file: docker/dev/target-redis.env
+    ports: ["63791:6379"]
+    # Mot de passe lu dans l'environnement (jamais dans ce fichier) ; pas de persistance : cible jetable.
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 3s
+      retries: 20
+
 volumes:
   composer-cache:
   db-data:

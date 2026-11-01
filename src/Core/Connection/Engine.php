@@ -13,6 +13,15 @@ enum Engine: string
     case MariaDb = 'mariadb';
     case PostgreSql = 'postgresql';
     case ClickHouse = 'clickhouse';
+    case Redis = 'redis';
+
+    /**
+     * Les instructions de ce moteur sont du SQL (Redis a ses propres commandes).
+     */
+    public function speaksSql(): bool
+    {
+        return self::Redis !== $this;
+    }
 
     public function defaultPort(): int
     {
@@ -21,6 +30,7 @@ enum Engine: string
             self::PostgreSql => 5432,
             // Interface HTTP : TerrilDB ne parle pas le protocole natif.
             self::ClickHouse => 8123,
+            self::Redis => 6379,
         };
     }
 }
