@@ -94,5 +94,27 @@ export const useSessionStore = defineStore('session', () => {
     return recoveryCodes
   }
 
-  return { user, loaded, load, login, register, logout, dropUser, refresh, changePassword, beginTotp, confirmTotp, disableTotp, regenerateRecoveryCodes }
+  /** Rend la phrase : elle n'est montrée qu'une fois et n'est jamais gardée dans le magasin. */
+  async function createRecoveryPhrase(password: string): Promise<string> {
+    const { phrase } = await api<{ phrase: string }>('POST', '/web/account/recovery-phrase', { password })
+    if (user.value !== null) {
+      user.value = { ...user.value, recoveryPhrase: true }
+    }
+
+    return phrase
+  }
+
+  async function removeRecoveryPhrase(password: string): Promise<void> {
+    await api('POST', '/web/account/recovery-phrase/disable', { password })
+    if (user.value !== null) {
+      user.value = { ...user.value, recoveryPhrase: false }
+    }
+  }
+
+  /** Mot de passe oublié : ne connecte pas, l'utilisateur se connecte ensuite avec le nouveau mot de passe. */
+  async function recover(login: string, phrase: string, newPassword: string): Promise<void> {
+    await api('POST', '/web/recover', { login, phrase, newPassword })
+  }
+
+  return { user, loaded, load, login, register, logout, dropUser, refresh, changePassword, beginTotp, confirmTotp, disableTotp, regenerateRecoveryCodes, createRecoveryPhrase, removeRecoveryPhrase, recover }
 })

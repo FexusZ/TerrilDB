@@ -22,6 +22,10 @@ describe('audit labels', () => {
     expect(describeEvent(entry('connection.deleted', { name: 'Blog' }))).toBe('Connexion « Blog » supprimée')
     expect(describeEvent(entry('token.created', { name: 'Assistant' }))).toBe('Jeton « Assistant » créé')
     expect(describeEvent(entry('token.revoked'))).toBe('Jeton révoqué')
+    expect(describeEvent(entry('phrase.created'))).toBe('Phrase de récupération créée')
+    expect(describeEvent(entry('phrase.removed'))).toBe('Phrase de récupération retirée')
+    expect(describeEvent(entry('phrase.used'))).toBe('Mot de passe réinitialisé avec la phrase de récupération')
+    expect(describeEvent(entry('phrase.failed'))).toBe('Phrase de récupération refusée')
     expect(describeEvent(entry('invitation.created'))).toBe('Invitation créée')
     expect(describeEvent(entry('invitation.revoked'))).toBe('Invitation révoquée')
   })
@@ -45,6 +49,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'connection', 'token', 'invitation', 'query'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'invitation', 'query'])
   })
 })

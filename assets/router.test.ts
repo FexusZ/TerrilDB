@@ -7,7 +7,7 @@ import { useSessionStore } from './stores/session'
 
 vi.mock('./api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./api/client')>()), api: vi.fn() }))
 
-const alice: User = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
+const alice: User = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', recoveryPhrase: false, createdAt: '2026-11-01T10:00:00+00:00' }
 
 function routerFor(user: User | null) {
   setActivePinia(createPinia())
@@ -52,6 +52,14 @@ describe('router guard', () => {
     await router.push('/')
 
     expect(router.currentRoute.value.name).toBe('connections')
+  })
+
+  it('lets a visitor reach the recovery page', async () => {
+    const router = routerFor(null)
+
+    await router.push('/recover')
+
+    expect(router.currentRoute.value.name).toBe('recover')
   })
 
   it('knows the workspace routes', async () => {
