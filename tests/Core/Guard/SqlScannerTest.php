@@ -169,4 +169,27 @@ final class SqlScannerTest extends TestCase
         self::assertTrue($statement->hasSequence('FOR', 'UPDATE'));
         self::assertFalse($statement->hasSequence('OUTFILE', 'INTO'));
     }
+
+    #[DataProvider('dialects')]
+    public function testWordsRememberTheirParenthesisDepth(SqlDialect $dialect): void
+    {
+        $statement = (new SqlScanner())->scan("update t set a = (select b from u where u.id = 1) where c = ('(' || d)", $dialect)->statements[0];
+
+        self::assertTrue($statement->hasTopLevel('UPDATE'));
+        self::assertTrue($statement->hasTopLevel('WHERE'));
+        self::assertTrue($statement->has('SELECT'));
+        self::assertFalse($statement->hasTopLevel('SELECT'));
+
+        $withoutOuterWhere = (new SqlScanner())->scan('update t set a = (select b from u where u.id = 1)', $dialect)->statements[0];
+        self::assertTrue($withoutOuterWhere->has('WHERE'));
+        self::assertFalse($withoutOuterWhere->hasTopLevel('WHERE'));
+    }
+
+    #[DataProvider('dialects')]
+    public function testDepthStartsOverForEachStatement(SqlDialect $dialect): void
+    {
+        $statements = (new SqlScanner())->scan('select (1; delete from t', $dialect)->statements;
+
+        self::assertTrue($statements[1]->hasTopLevel('DELETE'));
+    }
 }
