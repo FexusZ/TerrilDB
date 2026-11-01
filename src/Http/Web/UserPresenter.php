@@ -16,6 +16,7 @@ final class UserPresenter
         return [
             'id' => $user->getId()->toRfc4122(),
             'username' => $user->getUsername(),
+            'role' => $user->getRole()->value,
             'email' => $user->getEmail(),
             'totpEnabled' => $user->isTotpEnabled(),
             'recoveryCodesLeft' => \count($user->getRecoveryCodeHashes()),
