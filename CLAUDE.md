@@ -142,6 +142,19 @@ range les tables sur une grille dans l'ordre d'un parcours en profondeur des cl�
 isolées en dernier, indépendant de l'ordre d'entrée) et trace chaque relation de la ligne de la clé étrangère à celle de
 la colonne référencée (auto-référence = boucle à droite). `DiagramPane` dessine le tout en SVG (route `diagram`).
 
+## Comptes multiples et invitations (src/Invitation, Entity/Invitation, Entity/Role)
+
+Deux rôles : `admin` (le premier compte d'une installation, et le plus ancien à la migration) et `member`. Le rôle ne
+change que la gestion des invitations ; chacun garde ses connexions, chiffrées par sa propre clé, donc invisibles aux
+autres (y compris à l'administrateur). Une invitation est un lien à usage unique `inv_<id>_<secret>` : le serveur n'en
+garde que l'empreinte, elle expire (7 jours par défaut, 30 au plus) et se révoque. Le serveur n'envoie aucun e-mail : la
+note est un simple repère, l'administrateur transmet le lien. `InvitationService::register` crée le compte (toujours
+membre) et consomme l'invitation dans une seule transaction manuelle (`wrapInTransaction` fermerait l'EntityManager à la
+première exception du domaine) ; une inscription refusée ne brûle pas l'invitation ; inconnue, utilisée, expirée ou
+révoquée rendent la même erreur `invalid_invitation`. Routes : `GET|POST /web/invitations`, `DELETE /web/invitations/{id}`
+(403 `forbidden` pour un membre), `POST /web/register` accepte `invitation` même quand l'inscription libre est fermée.
+Front : `/security/invitations` (`InvitationsView`), `/register?invitation=…`.
+
 ## Export (src/Core/Export, ExportController)
 
 `CsvExporter` (RFC 4180, CRLF, UTF-8, BOM optionnel) et `JsonExporter` (tableau d'objets, colonnes dupliquées suffixées).

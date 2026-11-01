@@ -6,7 +6,7 @@ import { useSessionStore } from './session'
 
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
-const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
 const mocked = vi.mocked(api)
 
 describe('session store', () => {
@@ -136,5 +136,16 @@ describe('session store', () => {
 
     expect(codes).toHaveLength(10)
     expect(session.user?.recoveryCodesLeft).toBe(10)
+  })
+
+  it('registers with an invitation when one is given, and without otherwise', async () => {
+    mocked.mockResolvedValue({ user: alice })
+    const session = useSessionStore()
+
+    await session.register('a@exemple.test', 'alice', 'a long enough password')
+    await session.register('m@exemple.test', 'marie', 'a long enough password', 'inv_abc')
+
+    expect(mocked).toHaveBeenNthCalledWith(1, 'POST', '/web/register', { email: 'a@exemple.test', username: 'alice', password: 'a long enough password' })
+    expect(mocked).toHaveBeenNthCalledWith(2, 'POST', '/web/register', { email: 'm@exemple.test', username: 'marie', password: 'a long enough password', invitation: 'inv_abc' })
   })
 })

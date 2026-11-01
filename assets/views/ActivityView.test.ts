@@ -17,7 +17,7 @@ const entry = (id: string, action: string, extra: Partial<AuditEntry> = {}): Aud
 async function mountView(events: AuditEntry[] = [], next: string | null = null) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
   mocked.mockResolvedValueOnce({ events, next })
   const router = createRouter({
     history: createMemoryHistory(),
