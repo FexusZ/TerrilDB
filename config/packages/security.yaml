@@ -8,9 +8,9 @@ security:
             # Ensure dev tools and static assets are always allowed
             pattern: ^/(_profiler(/|$)|(_wdt|assets|build)/)
             security: false
-        # API REST : sans session, uniquement par jeton (Authorization: Bearer).
+        # API REST et MCP : sans session, uniquement par jeton (Authorization: Bearer).
         api:
-            pattern: ^/api/v1
+            pattern: ^/(api/v1|mcp)
             stateless: true
             provider: terrildb_users
             custom_authenticators:
@@ -29,6 +29,6 @@ security:
 
     access_control:
         - { path: ^/api/health$, roles: PUBLIC_ACCESS }
-        - { path: ^/api/v1, roles: IS_AUTHENTICATED_FULLY }
+        - { path: ^/(api/v1|mcp), roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/web/(login|register)$, roles: PUBLIC_ACCESS }
         - { path: ^/web, roles: IS_AUTHENTICATED_FULLY }
