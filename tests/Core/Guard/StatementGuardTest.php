@@ -223,6 +223,13 @@ final class StatementGuardTest extends TestCase
         $this->assertRefused("copy t to program 'cat'", $engine, QueryMode::ReadWrite, GuardReason::ForbiddenConstruct);
     }
 
+    #[DataProvider('engines')]
+    public function testAbsurdlyLongTextIsRefusedBeforeBeingAnalyzed(Engine $engine): void
+    {
+        $this->assertRefused('select '.str_repeat('1,', 100_000).'1', $engine, QueryMode::ReadOnly, GuardReason::TooLong);
+        $this->assertAllowed('select '.str_repeat('1,', 1000).'1', $engine, QueryMode::ReadOnly);
+    }
+
     public function testTheVerdictCarriesNoReasonWhenAllowed(): void
     {
         $verdict = $this->check('select 1', Engine::PostgreSql, QueryMode::ReadOnly);
