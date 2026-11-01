@@ -154,6 +154,11 @@ première exception du domaine) ; une inscription refusée ne brûle pas l'invit
 révoquée rendent la même erreur `invalid_invitation`. Routes : `GET|POST /web/invitations`, `DELETE /web/invitations/{id}`
 (403 `forbidden` pour un membre), `POST /web/register` accepte `invitation` même quand l'inscription libre est fermée.
 Front : `/security/invitations` (`InvitationsView`), `/register?invitation=…`.
+Envoi par e-mail facultatif (`InvitationMailer`, `symfony/mailer`) : actif seulement si `TERRILDB_MAIL_FROM` ET `TERRILDB_PUBLIC_URL`
+sont renseignés (avec `MAILER_DSN`) ; le lien vient de l'adresse publique configurée, jamais de l'en-tête Host. `POST
+/web/invitations` accepte `email` : l'adresse est validée AVANT d'émettre (rien d'orphelin), sert à l'envoi puis n'est
+conservée nulle part (ni base, ni audit, ni journal) ; un échec de transport garde l'invitation (`emailSent: false`, le lien
+reste à transmettre à la main) ; envoi non configuré = 409 `mail_disabled`. `GET /web/invitations` dit `emailEnabled`.
 
 ## Export (src/Core/Export, ExportController)
 
