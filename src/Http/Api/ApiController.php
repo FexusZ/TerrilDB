@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Api;
 
+use App\Audit\AuditActor;
+use App\Audit\AuditedQueries;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
-use App\Core\Query\QueryService;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\JsonInput;
 use App\Http\Json\ResultPresenter;
@@ -36,7 +37,7 @@ final readonly class ApiController
         private ApiRequestAccess $request,
         private ConnectionManager $connections,
         private TargetSession $targets,
-        private QueryService $queries,
+        private AuditedQueries $queries,
     ) {
     }
 
@@ -95,7 +96,7 @@ final readonly class ApiController
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
-        $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($target, $sql, $options));
+        $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options));
 
         return new JsonResponse(ResultPresenter::present($result));
     }

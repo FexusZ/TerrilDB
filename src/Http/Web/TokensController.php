@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\ApiToken\ApiTokenService;
+use App\Audit\AuditAction;
+use App\Audit\AuditLog;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -23,6 +25,7 @@ final readonly class TokensController
     public function __construct(
         private ApiTokenService $tokens,
         private WebSession $session,
+        private AuditLog $audit,
     ) {
     }
 
@@ -44,6 +47,7 @@ final readonly class TokensController
         $lifetime = $input->optionalInt('lifetimeDays', self::DEFAULT_LIFETIME_DAYS) ?? self::DEFAULT_LIFETIME_DAYS;
 
         $issued = $this->tokens->issue($this->session->user(), $this->session->key(), $name, $connections, $lifetime);
+        $this->audit->record($this->session->auditContext(), AuditAction::TokenCreated, subject: $issued->entity->getId(), details: ['name' => $issued->entity->getName(), 'connections' => \count($connections), 'lifetimeDays' => $lifetime]);
 
         return new JsonResponse(['token' => $issued->token, 'tokenInfo' => TokenPresenter::present($issued->entity)], Response::HTTP_CREATED);
     }
@@ -51,7 +55,10 @@ final readonly class TokensController
     #[Route('/web/tokens/{id}', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['DELETE'])]
     public function revoke(string $id): Response
     {
-        $this->tokens->revoke($this->session->user(), Uuid::fromString($id));
+        $user = $this->session->user();
+        $uuid = Uuid::fromString($id);
+        $this->tokens->revoke($user, $uuid);
+        $this->audit->record($this->session->auditContext($user), AuditAction::TokenRevoked, subject: $uuid);
 
         return new Response(status: Response::HTTP_NO_CONTENT);
     }

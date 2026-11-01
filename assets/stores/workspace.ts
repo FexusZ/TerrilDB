@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { ApiError, api } from '../api/client'
 import { messageFor } from '../api/errors'
-import type { QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { HistoryEntry, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
 
 export interface QueryTab {
   id: number
@@ -22,6 +22,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const tablesError = ref<string | null>(null)
   const tabs = ref<QueryTab[]>([])
   const activeId = ref(0)
+  const history = ref<HistoryEntry[]>([])
+  const historyNext = ref<string | null>(null)
+  const historyLoaded = ref(false)
+  const historyLoading = ref(false)
+  const historyError = ref<string | null>(null)
   const described = new Map<string, TableDetail>()
   let nextId = 1
   let runCounter = 0
@@ -44,6 +49,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     activeId.value = tabs.value[0]?.id ?? 0
     described.clear()
     latestRun.clear()
+    history.value = []
+    historyNext.value = null
+    historyLoaded.value = false
+    historyError.value = null
   }
 
   async function open(id: string): Promise<void> {
@@ -146,6 +155,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         target.running = false
       }
     }
+
+    // Une fois l'historique ouvert, il suit les exécutions sans que l'utilisateur ait à le recharger.
+    if (historyLoaded.value && target.pendingConfirmation === null) {
+      void fetchHistory()
+    }
   }
 
   function confirmPending(id: number): Promise<void> {
@@ -156,6 +170,39 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const target = tab(id)
     if (target) {
       target.pendingConfirmation = null
+    }
+  }
+
+  async function fetchHistory(before?: string): Promise<void> {
+    if (connectionId.value === null) {
+      return
+    }
+    historyLoading.value = true
+    historyError.value = null
+    const params = new URLSearchParams({ limit: '50' })
+    if (before !== undefined) {
+      params.set('before', before)
+    }
+    try {
+      const page = await api<{ entries: HistoryEntry[]; next: string | null }>('GET', `/web/connections/${connectionId.value}/history?${params.toString()}`)
+      history.value = before === undefined ? page.entries : [...history.value, ...page.entries]
+      historyNext.value = page.next
+      historyLoaded.value = true
+    } catch (error) {
+      historyError.value = messageFor(error)
+    } finally {
+      historyLoading.value = false
+    }
+  }
+
+  /** Recharge l'historique des requêtes de la connexion depuis le début. */
+  function loadHistory(): Promise<void> {
+    return fetchHistory()
+  }
+
+  async function moreHistory(): Promise<void> {
+    if (historyNext.value !== null && !historyLoading.value) {
+      await fetchHistory(historyNext.value)
     }
   }
 
@@ -170,5 +217,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return table
   }
 
-  return { connectionId, tables, tablesError, tabs, activeTab, open, close, addTab, closeTab, select, setSql, setMode, run, confirmPending, cancelPending, describe }
+  const historyHasMore = computed(() => historyNext.value !== null)
+
+  return { connectionId, tables, tablesError, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, confirmPending, cancelPending, describe }
 })

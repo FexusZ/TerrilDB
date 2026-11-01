@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Web;
 
+use App\Entity\AuditEvent;
 use App\Entity\User;
+use App\Repository\AuditEventRepository;
 use App\Security\UserRegistrar;
 use Doctrine\DBAL\Exception\ConnectionException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -103,6 +105,34 @@ abstract class WebApiTestCase extends WebTestCase
         }
         $this->call('POST', '/web/login', $body);
         self::assertSame(200, $this->statusCode(), 'login failed');
+    }
+
+    /**
+     * Les événements d'audit d'un compte, du plus récent au plus ancien.
+     *
+     * @return list<AuditEvent>
+     */
+    protected function auditEvents(User $user, ?string $category = null): array
+    {
+        $events = self::getContainer()->get(AuditEventRepository::class);
+        self::assertInstanceOf(AuditEventRepository::class, $events);
+
+        return $events->findForUser($user->getId(), category: $category);
+    }
+
+    /**
+     * Commence l'activation du second facteur et rend le secret à saisir dans l'application.
+     *
+     * @return non-empty-string
+     */
+    protected function beginTotp(): string
+    {
+        $secret = $this->call('POST', '/web/account/totp/begin')['secret'] ?? null;
+        if (!\is_string($secret) || '' === $secret) {
+            self::fail('The response carries no TOTP secret.');
+        }
+
+        return $secret;
     }
 
     protected function seedAndLogin(string $name = 'alice'): User
