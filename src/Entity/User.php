@@ -58,6 +58,13 @@ final class User
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    // Copie de la clé de chiffrement enveloppée par la phrase de récupération (jamais la phrase, jamais la clé en clair).
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $recoveryKey = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $recoveryCreatedAt = null;
+
     #[ORM\Column(length: 10, enumType: Role::class, options: ['default' => 'member'])]
     private Role $role;
 
@@ -118,6 +125,37 @@ final class User
         return $this->createdAt;
     }
 
+    public function hasRecovery(): bool
+    {
+        return null !== $this->recoveryKey;
+    }
+
+    public function getRecoveryKey(): ?string
+    {
+        return $this->recoveryKey;
+    }
+
+    public function getRecoveryCreatedAt(): ?\DateTimeImmutable
+    {
+        return $this->recoveryCreatedAt;
+    }
+
+    public function enableRecovery(string $wrappedKey, \DateTimeImmutable $at): void
+    {
+        if (1 !== preg_match('/^v\d+:[A-Za-z0-9+\/_=-]+$/D', $wrappedKey)) {
+            throw new InvalidUserException('The recovery key must be stored encrypted.');
+        }
+
+        $this->recoveryKey = $wrappedKey;
+        $this->recoveryCreatedAt = $at->setTimezone(new \DateTimeZone('UTC'));
+    }
+
+    public function disableRecovery(): void
+    {
+        $this->recoveryKey = null;
+        $this->recoveryCreatedAt = null;
+    }
+
     public function getRole(): Role
     {
         return $this->role;
@@ -144,6 +182,8 @@ final class User
 
         $this->passwordHash = $passwordHash;
         $this->kdfParameters = $kdfParameters->toString();
+        // La copie de la clé enveloppée par la phrase est celle d'avant : elle n'ouvrirait plus rien.
+        $this->disableRecovery();
         if (null !== $rotatedTotpSecret) {
             $this->totpSecret = $rotatedTotpSecret;
         }
