@@ -30,11 +30,12 @@ final readonly class AuditedQueries
     }
 
     /**
-     * @param array<string, bool|int|string> $extra détails ajoutés à l'événement (par exemple la nature d'un export)
+     * @param array<string, bool|int|string> $extra       détails ajoutés à l'événement (par exemple la nature d'un export)
+     * @param string|null                    $recordedSql texte à journaliser à la place de l'instruction exécutée (le SQL de l'utilisateur, pas l'EXPLAIN construit)
      */
-    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $sql, QueryOptions $options, bool $confirmed = false, array $extra = []): QueryResult
+    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $sql, QueryOptions $options, bool $confirmed = false, array $extra = [], ?string $recordedSql = null): QueryResult
     {
-        $base = ['sql' => $sql, 'mode' => $options->mode->value, 'engine' => $target->engine->value, 'confirmed' => $confirmed] + $extra;
+        $base = ['sql' => $recordedSql ?? $sql, 'mode' => $options->mode->value, 'engine' => $target->engine->value, 'confirmed' => $confirmed] + $extra;
 
         try {
             $result = $this->queries->execute($target, $sql, $options, $confirmed);
