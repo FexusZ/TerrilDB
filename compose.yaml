@@ -85,6 +85,19 @@ services:
       interval: 3s
       retries: 40
 
+  target-clickhouse:
+    profiles: [targets]
+    image: clickhouse/clickhouse-server:latest
+    env_file: docker/dev/target-clickhouse.env
+    ports: ["18123:8123"]
+    volumes:
+      - ./docker/targets/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # --host sur l'adresse du conteneur : le serveur d'initialisation n'écoute que sur 127.0.0.1, donc "healthy" = init terminée
+      test: ["CMD-SHELL", "clickhouse-client --host $$(hostname -i) --user $$CLICKHOUSE_USER --password $$CLICKHOUSE_PASSWORD --query 'SELECT count() FROM shop.v_product_sales' | grep -q 400"]
+      interval: 3s
+      retries: 60
+
 volumes:
   composer-cache:
   db-data:

@@ -20,6 +20,7 @@ final class TargetDatabase
         'TARGET_MYSQL_URL' => Engine::MySql,
         'TARGET_MARIADB_URL' => Engine::MariaDb,
         'TARGET_POSTGRES_URL' => Engine::PostgreSql,
+        'TARGET_CLICKHOUSE_URL' => Engine::ClickHouse,
     ];
 
     /**
@@ -45,7 +46,7 @@ final class TargetDatabase
         }
 
         /** @var array<string, mixed> $parts */
-        $parts = (new DsnParser(['pdo-mysql' => 'pdo_mysql', 'pdo-pgsql' => 'pdo_pgsql']))->parse($url);
+        $parts = (new DsnParser(['pdo-mysql' => 'pdo_mysql', 'pdo-pgsql' => 'pdo_pgsql', 'clickhouse' => 'pdo_mysql']))->parse($url);
 
         return new ConnectionParameters(
             self::part($parts, 'host'),
