@@ -122,6 +122,18 @@ de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même trans
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
 
+## Optimiseur local (src/Core/Optimizer)
+
+Sans PMM ni service externe : tout part de l'introspection et de `EXPLAIN`. `SchemaAuditor` (règles pures : table sans
+clé primaire, clé étrangère sans index couvrant — colonnes en tête de l'index, ordre indifférent —, index redondant ;
+jamais un index unique) rend des `Finding` avec une suggestion SQL à relire, jamais exécutée par TerrilDB
+(`GET /web/connections/{id}/audit`, 300 tables au plus). `PlanService` ne construit l'EXPLAIN que d'une lecture simple
+(garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB (`PostgreSqlPlanParser`, `MySqlPlanParser`, fixtures
+réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
+d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
+avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
+1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
+
 ## Export (src/Core/Export, ExportController)
 
 `CsvExporter` (RFC 4180, CRLF, UTF-8, BOM optionnel) et `JsonExporter` (tableau d'objets, colonnes dupliquées suffixées).

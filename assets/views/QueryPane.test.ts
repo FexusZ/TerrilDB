@@ -245,4 +245,50 @@ describe('QueryPane', () => {
     expect(wrapper.get('button.export-csv').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
+
+  it('shows the execution plan of the statement', async () => {
+    const { wrapper } = await mountPane()
+    await wrapper.get('.stub').setValue('select * from orders')
+    mocked.mockResolvedValueOnce({
+      plan: { totalCost: 5, root: { kind: 'full_scan', label: 'Seq Scan', relation: 'orders', index: null, rows: 3800, cost: 5, condition: null, fullScan: true, children: [] } },
+      findings: [{ rule: 'full_scan', relation: 'orders', rows: 3800, condition: null }],
+    })
+
+    await wrapper.get('button.plan').trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/abc/plan', { sql: 'select * from orders' })
+    expect(wrapper.find('section.plan').exists()).toBe(true)
+    expect(wrapper.get('li.node').text()).toContain('Parcours complet')
+    expect(wrapper.find('li.finding').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('goes back to the result after a run', async () => {
+    const { wrapper } = await mountPane()
+    await wrapper.get('.stub').setValue('select 1')
+    mocked.mockResolvedValueOnce({ plan: { totalCost: null, root: { kind: 'other', label: 'Result', relation: null, index: null, rows: null, cost: null, condition: null, fullScan: false, children: [] } }, findings: [] })
+    await wrapper.get('button.plan').trigger('click')
+    await flushPromises()
+    mocked.mockResolvedValueOnce(result)
+
+    await wrapper.get('button.run').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('section.plan').exists()).toBe(false)
+    expect(wrapper.find('table').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('reports a refused plan', async () => {
+    const { wrapper } = await mountPane()
+    await wrapper.get('.stub').setValue('delete from orders')
+    mocked.mockRejectedValueOnce(new ApiError(403, 'query_refused', { reason: 'not_read_only' }))
+
+    await wrapper.get('button.plan').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('lecture seule')
+    wrapper.unmount()
+  })
 })

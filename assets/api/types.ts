@@ -144,3 +144,45 @@ export interface HistoryEntry {
   durationMs: number | null
   reason: string | null
 }
+
+export type PlanKind = 'full_scan' | 'index_full_scan' | 'index_scan' | 'join' | 'sort' | 'aggregate' | 'limit' | 'other'
+
+export interface PlanNodeInfo {
+  kind: PlanKind
+  label: string
+  relation: string | null
+  index: string | null
+  rows: number | null
+  cost: number | null
+  condition: string | null
+  fullScan: boolean
+  children: PlanNodeInfo[]
+}
+
+export interface PlanFindingInfo {
+  rule: string
+  relation: string | null
+  rows: number | null
+  condition: string | null
+}
+
+export interface PlanResult {
+  plan: { totalCost: number | null; root: PlanNodeInfo }
+  findings: PlanFindingInfo[]
+}
+
+export interface SchemaFinding {
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index'
+  severity: 'warning' | 'info'
+  table: string
+  columns: string[]
+  index: string | null
+  coveredBy: string | null
+  suggestion: string | null
+}
+
+export interface SchemaAudit {
+  tablesAudited: number
+  truncated: boolean
+  findings: SchemaFinding[]
+}

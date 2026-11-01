@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { ApiError, api, apiDownload } from '../api/client'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { HistoryEntry, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { HistoryEntry, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
 
 export interface QueryTab {
   id: number
@@ -16,6 +16,10 @@ export interface QueryTab {
   /** Motif de la confirmation demandée par le garde, en attendant la décision de l'utilisateur. */
   pendingConfirmation: string | null
   exporting: boolean
+  /** Ce que la zone de résultat montre : le résultat de l'exécution, ou le plan estimé. */
+  view: 'result' | 'plan'
+  plan: PlanResult | null
+  planning: boolean
   /** Précision à montrer après un export (fichier coupé à la limite de lignes). */
   exportNotice: string | null
 }
@@ -40,7 +44,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -112,6 +116,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (target) {
       target.sql = sql
       target.pendingConfirmation = null
+      target.plan = null
+      target.view = 'result'
     }
   }
 
@@ -138,6 +144,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     target.running = true
     target.error = null
     target.pendingConfirmation = null
+    target.view = 'result'
 
     try {
       const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: target.sql, mode: target.mode, confirmed })
@@ -163,6 +170,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     // Une fois l'historique ouvert, il suit les exécutions sans que l'utilisateur ait à le recharger.
     if (historyLoaded.value && target.pendingConfirmation === null) {
       void fetchHistory()
+    }
+  }
+
+  /** Demande le plan estimé de l'instruction de l'onglet : le moteur l'explique, il ne l'exécute pas. */
+  async function planTab(id: number): Promise<void> {
+    const target = tab(id)
+    if (!target || connectionId.value === null) {
+      return
+    }
+    if (target.sql.trim() === '') {
+      target.error = 'Saisissez une instruction.'
+      return
+    }
+
+    target.planning = true
+    target.error = null
+    try {
+      target.plan = await api<PlanResult>('POST', `/web/connections/${connectionId.value}/plan`, { sql: target.sql })
+      target.view = 'plan'
+    } catch (error) {
+      target.plan = null
+      target.error = messageFor(error)
+    } finally {
+      target.planning = false
     }
   }
 
@@ -250,5 +281,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })
