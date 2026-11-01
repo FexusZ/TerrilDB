@@ -6,7 +6,7 @@ import { useSessionStore } from './session'
 
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
-const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
+const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', recoveryPhrase: false, createdAt: '2026-11-01T10:00:00+00:00' }
 const mocked = vi.mocked(api)
 
 describe('session store', () => {
@@ -147,5 +147,32 @@ describe('session store', () => {
 
     expect(mocked).toHaveBeenNthCalledWith(1, 'POST', '/web/register', { email: 'a@exemple.test', username: 'alice', password: 'a long enough password' })
     expect(mocked).toHaveBeenNthCalledWith(2, 'POST', '/web/register', { email: 'm@exemple.test', username: 'marie', password: 'a long enough password', invitation: 'inv_abc' })
+  })
+
+  it('creates, replaces and removes the recovery phrase with the password', async () => {
+    mocked.mockResolvedValueOnce({ user: alice, recoveryCodeUsed: false })
+    const session = useSessionStore()
+    await session.login('alice', 'x')
+
+    mocked.mockResolvedValueOnce({ phrase: 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789' })
+    const phrase = await session.createRecoveryPhrase('the password')
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/account/recovery-phrase', { password: 'the password' })
+    expect(phrase).toBe('ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789')
+    expect(session.user?.recoveryPhrase).toBe(true)
+
+    mocked.mockResolvedValueOnce(undefined)
+    await session.removeRecoveryPhrase('the password')
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/account/recovery-phrase/disable', { password: 'the password' })
+    expect(session.user?.recoveryPhrase).toBe(false)
+  })
+
+  it('recovers an account without a session', async () => {
+    mocked.mockResolvedValueOnce(undefined)
+    const session = useSessionStore()
+
+    await session.recover('alice', 'abcd-efgh', 'a brand new passphrase')
+
+    expect(mocked).toHaveBeenCalledWith('POST', '/web/recover', { login: 'alice', phrase: 'abcd-efgh', newPassword: 'a brand new passphrase' })
+    expect(session.user).toBeNull()
   })
 })

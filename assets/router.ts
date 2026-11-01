@@ -15,6 +15,7 @@ export function createAppRouter(history: RouterHistory): Router {
       { path: '/', redirect: { name: 'connections' } },
       { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true } },
       { path: '/register', name: 'register', component: () => import('./views/RegisterView.vue'), meta: { public: true } },
+      { path: '/recover', name: 'recover', component: () => import('./views/RecoverView.vue'), meta: { public: true } },
       { path: '/connections', name: 'connections', component: () => import('./views/ConnectionsView.vue') },
       { path: '/connections/new', name: 'connection-new', component: () => import('./views/ConnectionFormView.vue') },
       { path: '/connections/:id/edit', name: 'connection-edit', component: () => import('./views/ConnectionFormView.vue'), props: true },

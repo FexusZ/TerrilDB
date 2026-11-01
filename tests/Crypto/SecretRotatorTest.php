@@ -142,4 +142,27 @@ final class SecretRotatorTest extends TestCase
         $this->expectException(EmptyPasswordException::class);
         $this->rotator->rotate('old password', $parameters, '', $secrets);
     }
+
+    public function testRotatingWithTheOldKeyGivesTheSameResultAsWithTheOldPassword(): void
+    {
+        [$parameters, $secrets] = $this->enroll('old password', ['a' => 'alpha', 'b' => 'beta']);
+        $oldKey = $this->derivation->derive('old password', $parameters);
+
+        $result = $this->rotator->rotateWithKey($oldKey, 'new password', $secrets);
+
+        $newKey = $this->derivation->derive('new password', $result->parameters);
+        self::assertSame('alpha', $this->cipher->decrypt($result->secrets['a'], $newKey, 'a'));
+        self::assertSame('beta', $this->cipher->decrypt($result->secrets['b'], $newKey, 'b'));
+        self::assertFalse($oldKey->isWiped(), 'the caller owns the key it passed in');
+    }
+
+    public function testRotatingWithTheWrongKeyProducesNothing(): void
+    {
+        [, $secrets] = $this->enroll('old password', ['a' => 'alpha']);
+        $wrong = $this->derivation->derive('another password', $this->derivation->newParameters());
+
+        $this->expectException(DecryptionFailedException::class);
+
+        $this->rotator->rotateWithKey($wrong, 'new password', $secrets);
+    }
 }

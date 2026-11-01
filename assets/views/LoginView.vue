@@ -80,6 +80,7 @@ function back(): void {
         <p class="once">Un code ne sert qu’une fois. S’il est refusé, attendez le suivant plutôt que de le saisir à nouveau.</p>
       </template>
 
+      <p v-if="route.query.recovered === '1' && step === 'credentials'" class="ok" role="status">Votre nouveau mot de passe est enregistré : connectez-vous avec.</p>
       <p v-if="error" class="error" role="alert">{{ error }}</p>
 
       <AppButton type="submit" variant="primary" block :busy="busy">{{ step === 'code' ? 'Vérifier' : 'Se connecter' }}</AppButton>
@@ -92,6 +93,7 @@ function back(): void {
       </div>
       <template v-else>
         <SecretNotice>Un administrateur ne peut pas réinitialiser votre mot de passe sans rendre vos connexions enregistrées illisibles.</SecretNotice>
+        <p class="alt"><RouterLink class="forgot" :to="{ name: 'recover' }">Mot de passe oublié ?</RouterLink></p>
         <p class="alt">Pas encore de compte ? <RouterLink :to="{ name: 'register' }">Créer un compte</RouterLink></p>
       </template>
     </form>
@@ -104,6 +106,7 @@ form { display: flex; flex-direction: column; gap: 20px; }
 h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
 .title p, .once { color: var(--mut); }
 .once { font-size: 13px; }
+.ok { padding: 10px 12px; border-radius: var(--radius); background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok); font-size: 13px; }
 .error { padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 .alt { text-align: center; color: var(--mut); }
 .links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 18px; border-top: 1px solid var(--line); }

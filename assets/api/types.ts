@@ -14,6 +14,7 @@ export interface User {
   username: string
   email: string
   role: 'admin' | 'member'
+  recoveryPhrase: boolean
   totpEnabled: boolean
   recoveryCodesLeft: number
   createdAt: string

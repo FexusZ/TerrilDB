@@ -15,6 +15,7 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(403, 'invalid_invitation'))).toContain('invitation')
     expect(messageFor(new ApiError(403, 'forbidden'))).toContain('administrateur')
     expect(messageFor(new ApiError(409, 'mail_disabled'))).toContain('e-mail')
+    expect(messageFor(new ApiError(403, 'invalid_recovery'))).toContain('phrase')
   })
 
   it('says how long to wait when throttled', () => {

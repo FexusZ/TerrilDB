@@ -29,6 +29,7 @@ use App\Invitation\Exception\MailDisabledException;
 use App\Invitation\Exception\NotAnAdministratorException;
 use App\Security\Exception\AccountAlreadyExistsException;
 use App\Security\Exception\InvalidCredentialsException;
+use App\Security\Exception\InvalidRecoveryException;
 use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\PasswordPolicyException;
 use App\Security\Exception\SecondFactorRequiredException;
@@ -61,6 +62,7 @@ final class ErrorMapper
             $error instanceof InvalidDatabaseConnectionException,
             $error instanceof InvalidConnectionParametersException,
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
+            $error instanceof InvalidRecoveryException => new ErrorResponse(403, 'invalid_recovery'),
             $error instanceof MailDisabledException => new ErrorResponse(409, 'mail_disabled'),
             $error instanceof AccountAlreadyExistsException => new ErrorResponse(409, 'account_exists'),
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
