@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security;
 
 use App\Crypto\KeyDerivation;
+use App\Entity\Role;
 use App\Entity\User;
 use App\Repository\UserRepository;
 use App\Security\Exception\AccountAlreadyExistsException;
@@ -16,6 +17,8 @@ use Psr\Clock\ClockInterface;
  * indépendantes du même mot de passe, chacune avec son propre sel — le hash d'authentification (stocké
  * pour vérifier la connexion) et les paramètres KDF (qui permettront de dériver la clé de chiffrement
  * sans que le serveur ne la conserve).
+ *
+ * Le premier compte d'une installation en devient l'administrateur.
  *
  * L'unicité repose sur les contraintes de la base : une vérification préalable laisserait une course
  * entre deux inscriptions simultanées.
@@ -41,6 +44,7 @@ final readonly class UserRegistrar
             $this->hasher->hash($password),
             $this->derivation->newParameters(),
             \DateTimeImmutable::createFromInterface($this->clock->now()),
+            0 === $this->users->count([]) ? Role::Admin : Role::Member,
         );
 
         try {
