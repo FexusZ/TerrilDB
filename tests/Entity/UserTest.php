@@ -272,4 +272,40 @@ final class UserTest extends TestCase
 
         $this->user()->changePassword('md5-of-something', $this->kdf(), null);
     }
+
+    public function testHasNoRecoveryPhraseUntilOneIsEnabled(): void
+    {
+        $user = $this->user();
+
+        self::assertFalse($user->hasRecovery());
+        self::assertNull($user->getRecoveryKey());
+
+        $at = new \DateTimeImmutable('2026-11-01T10:00:00+00:00');
+        $user->enableRecovery('v1:AAAAwrappedkey', $at);
+
+        self::assertTrue($user->hasRecovery());
+        self::assertSame('v1:AAAAwrappedkey', $user->getRecoveryKey());
+        self::assertEquals($at, $user->getRecoveryCreatedAt());
+
+        $user->disableRecovery();
+        self::assertFalse($user->hasRecovery());
+        self::assertNull($user->getRecoveryCreatedAt());
+    }
+
+    public function testOnlyKeepsAnEncryptedRecoveryKey(): void
+    {
+        $this->expectException(InvalidUserException::class);
+
+        $this->user()->enableRecovery('plain-key-bytes', new \DateTimeImmutable('2026-11-01T10:00:00+00:00'));
+    }
+
+    public function testChangingThePasswordDropsTheRecoveryKeyThatNoLongerFits(): void
+    {
+        $user = $this->user();
+        $user->enableRecovery('v1:AAAAwrappedkey', new \DateTimeImmutable('2026-11-01T10:00:00+00:00'));
+
+        $user->changePassword(self::HASH, $this->kdf(), null);
+
+        self::assertFalse($user->hasRecovery());
+    }
 }

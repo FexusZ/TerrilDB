@@ -7,6 +7,7 @@ namespace App\Security;
 use App\ApiToken\ApiTokenService;
 use App\Connection\ConnectionSecretContext;
 use App\Crypto\DerivedKey;
+use App\Crypto\RotationResult;
 use App\Crypto\SecretRotator;
 use App\Entity\User;
 use App\Repository\DatabaseConnectionRepository;
@@ -47,6 +48,25 @@ final readonly class PasswordChanger
         }
         $this->policy->assertAcceptable($newPassword);
 
+        return $this->apply($user, $newPassword, fn (array $secrets): RotationResult => $this->rotator->rotate($currentPassword, $user->getKdfParameters(), $newPassword, $secrets));
+    }
+
+    /**
+     * Mot de passe oublié : l'ancienne clé a été retrouvée par la phrase de récupération au lieu d'être dérivée de
+     * l'ancien mot de passe. Même rotation tout-ou-rien ; l'ancienne clé reste à l'appelant, qui l'efface.
+     */
+    public function resetWithKey(User $user, DerivedKey $oldKey, #[\SensitiveParameter] string $newPassword): DerivedKey
+    {
+        $this->policy->assertAcceptable($newPassword);
+
+        return $this->apply($user, $newPassword, fn (array $secrets): RotationResult => $this->rotator->rotateWithKey($oldKey, $newPassword, $secrets));
+    }
+
+    /**
+     * @param \Closure(array<array-key, string>): RotationResult $rotate
+     */
+    private function apply(User $user, #[\SensitiveParameter] string $newPassword, \Closure $rotate): DerivedKey
+    {
         $totpContext = TotpSecretContext::forUser($user);
         $totpSecret = $user->getTotpSecret();
         $secrets = null === $totpSecret ? [] : [$totpContext => $totpSecret];
@@ -55,7 +75,7 @@ final readonly class PasswordChanger
             $secrets[ConnectionSecretContext::forConnection($connection)] = $connection->getEncryptedParameters();
         }
 
-        $rotation = $this->rotator->rotate($currentPassword, $user->getKdfParameters(), $newPassword, $secrets);
+        $rotation = $rotate($secrets);
 
         try {
             $user->changePassword($this->hasher->hash($newPassword), $rotation->parameters, $rotation->secrets[$totpContext] ?? null);

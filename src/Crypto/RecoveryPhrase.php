@@ -24,14 +24,14 @@ final readonly class RecoveryPhrase
 
     public static function generate(): self
     {
-        $bytes = random_bytes(self::LENGTH * 5 / 8);
+        $bytes = random_bytes(intdiv(self::LENGTH * 5, 8));
         $bits = '';
         foreach (str_split($bytes) as $byte) {
             $bits .= str_pad(decbin(\ord($byte)), 8, '0', \STR_PAD_LEFT);
         }
         $text = '';
         foreach (str_split($bits, 5) as $chunk) {
-            $text .= self::ALPHABET[bindec($chunk)];
+            $text .= self::ALPHABET[(int) bindec($chunk)];
         }
         sodium_memzero($bytes);
 
