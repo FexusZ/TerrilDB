@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Web;
+namespace App\Http\Json;
 
 /**
  * Description d'une erreur à rendre au client : le code est stable, c'est lui que l'interface traduit.

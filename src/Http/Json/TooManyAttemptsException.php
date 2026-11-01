@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Web;
+namespace App\Http\Json;
 
 final class TooManyAttemptsException extends \RuntimeException
 {

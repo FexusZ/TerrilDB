@@ -6,6 +6,7 @@ namespace App\Http\Web;
 
 use App\ApiToken\ApiTokenService;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;

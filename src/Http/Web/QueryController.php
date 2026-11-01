@@ -9,6 +9,7 @@ use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryService;
+use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;

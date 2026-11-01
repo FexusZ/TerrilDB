@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Http\Web;
+namespace App\Tests\Http\Json;
 
-use App\Http\Web\BadRequestException;
-use App\Http\Web\JsonInput;
+use App\Http\Json\BadRequestException;
+use App\Http\Json\JsonInput;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 

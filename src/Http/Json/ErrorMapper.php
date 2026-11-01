@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Web;
+namespace App\Http\Json;
 
 use App\ApiToken\Exception\ApiTokenNotFoundException;
 use App\ApiToken\Exception\InvalidApiTokenException;

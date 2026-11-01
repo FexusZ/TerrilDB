@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Web;
+namespace App\Http\Json;
 
 /**
  * La session est ouverte mais sa clé de chiffrement n'est plus disponible (cookie de déverrouillage perdu,

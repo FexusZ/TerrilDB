@@ -7,6 +7,7 @@ namespace App\Http\Web;
 use App\Crypto\DerivedKey;
 use App\Crypto\SessionKeyVault;
 use App\Entity\User;
+use App\Http\Json\LockedException;
 use App\Http\Web\Security\ProgrammaticAuthenticator;
 use App\Http\Web\Security\SecurityUser;
 use App\Repository\UserRepository;
