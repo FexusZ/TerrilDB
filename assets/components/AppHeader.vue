@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { useActivityStore } from '../stores/activity'
 import { useConnectionsStore } from '../stores/connections'
 import { useSessionStore } from '../stores/session'
 import { useTokensStore } from '../stores/tokens'
@@ -14,6 +15,7 @@ const router = useRouter()
 async function logout(): Promise<void> {
   await session.logout()
   useConnectionsStore().reset()
+  useActivityStore().reset()
   useTokensStore().reset()
   useWorkspaceStore().close()
   await router.push({ name: 'login' })

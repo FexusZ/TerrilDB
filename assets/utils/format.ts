@@ -1,6 +1,12 @@
 const DATE = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
 const NUMBER = new Intl.NumberFormat('fr-FR')
 
+const DATE_TIME = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+export function formatDateTime(iso: string): string {
+  return DATE_TIME.format(new Date(iso))
+}
+
 export function formatDate(iso: string): string {
   return DATE.format(new Date(iso))
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDate, formatEstimate, formatDuration } from './format'
+import { formatDate, formatDateTime, formatDuration, formatEstimate } from './format'
 
 describe('format', () => {
   it('writes dates in French', () => {
@@ -18,5 +18,10 @@ describe('format', () => {
     expect(formatDuration(41)).toBe('41 ms')
     expect(formatDuration(1520)).toBe('1,52 s')
     expect(formatDuration(0)).toBe('0 ms')
+  })
+
+  it('writes a date with its time', () => {
+    expect(formatDateTime('2026-10-31T10:05:00+00:00')).toMatch(/2026/)
+    expect(formatDateTime('2026-10-31T10:05:00+00:00')).toMatch(/\d{2}:\d{2}/)
   })
 })

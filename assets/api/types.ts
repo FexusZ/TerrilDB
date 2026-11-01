@@ -115,3 +115,32 @@ export interface ApiTokenInput {
   connectionIds: string[]
   lifetimeDays: number
 }
+
+export type AuditOutcome = 'success' | 'refused' | 'failed'
+export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
+
+export interface AuditEntry {
+  id: string
+  occurredAt: string
+  action: string
+  category: string
+  outcome: AuditOutcome
+  actor: AuditActor
+  ip: string | null
+  subjectId: string | null
+  tokenId: string | null
+  details: Record<string, unknown>
+}
+
+/** Une exécution de requête dans l'historique d'une connexion. */
+export interface HistoryEntry {
+  id: string
+  occurredAt: string
+  actor: AuditActor
+  outcome: AuditOutcome
+  sql: string
+  mode: string | null
+  rowCount: number | null
+  durationMs: number | null
+  reason: string | null
+}
