@@ -24,10 +24,10 @@ defineProps<{ headline: string; text: string; facts?: string }>()
 .auth { display: flex; flex-wrap: wrap; min-height: 100vh; }
 .brand-panel {
   flex: 1 1 480px; min-height: 360px; padding: 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 48px;
-  background-color: #101a1d;
+  background-color: var(--auth-bg);
   background-image:
-    repeating-linear-gradient(176deg, rgba(92, 200, 190, 0.07) 0 2px, transparent 2px 38px),
-    repeating-linear-gradient(176deg, rgba(227, 168, 87, 0.1) 0 2px, transparent 2px 190px);
+    repeating-linear-gradient(176deg, var(--auth-stripe) 0 2px, transparent 2px 38px),
+    repeating-linear-gradient(176deg, var(--auth-stripe-sec) 0 2px, transparent 2px 190px);
   border-right: 1px solid var(--line);
 }
 .pitch { display: flex; flex-direction: column; gap: 20px; max-width: 460px; }

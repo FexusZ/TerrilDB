@@ -12,6 +12,7 @@ import { router } from './router'
 import { useActivityStore } from './stores/activity'
 import { useConnectionsStore } from './stores/connections'
 import { useSessionStore } from './stores/session'
+import { useThemeStore } from './stores/theme'
 import { useTokensStore } from './stores/tokens'
 import { useWorkspaceStore } from './stores/workspace'
 import './styles/tokens.css'
@@ -20,6 +21,7 @@ import './styles/base.css'
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
+useThemeStore(pinia).init()
 app.use(router)
 
 // Une réponse qui dit « session perdue ou verrouillée » ramène à l'écran de connexion, sans rien garder de la session.
