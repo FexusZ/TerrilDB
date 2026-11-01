@@ -1,0 +1,38 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 1.1832932,
+    "nested_loop": [
+      {
+        "table": {
+          "table_name": "o",
+          "access_type": "range",
+          "possible_keys": ["idx_orders_customer_date", "idx_orders_status"],
+          "key": "idx_orders_status",
+          "key_length": "82",
+          "used_key_parts": ["status"],
+          "loops": 1,
+          "rows": 750,
+          "cost": 0.507548,
+          "filtered": 100,
+          "index_condition": "o.`status` = 'shipped'"
+        }
+      },
+      {
+        "table": {
+          "table_name": "c",
+          "access_type": "eq_ref",
+          "possible_keys": ["PRIMARY"],
+          "key": "PRIMARY",
+          "key_length": "4",
+          "used_key_parts": ["id"],
+          "ref": ["shop.o.customer_id"],
+          "loops": 750,
+          "rows": 1,
+          "cost": 0.6757452,
+          "filtered": 100
+        }
+      }
+    ]
+  }
+}
