@@ -23,6 +23,7 @@ enum SqlDialect
             Engine::MySql, Engine::MariaDb => self::MySql,
             Engine::PostgreSql => self::PostgreSql,
             Engine::ClickHouse => self::ClickHouse,
+            Engine::Redis => throw new \InvalidArgumentException('Redis does not speak SQL.'),
         };
     }
 }

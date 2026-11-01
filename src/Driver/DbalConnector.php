@@ -26,7 +26,7 @@ final readonly class DbalConnector
             'driver' => match ($engine) {
                 Engine::MySql, Engine::MariaDb => 'pdo_mysql',
                 Engine::PostgreSql => 'pdo_pgsql',
-                Engine::ClickHouse => throw new \InvalidArgumentException('This engine is not reached through DBAL.'),
+                Engine::ClickHouse, Engine::Redis => throw new \InvalidArgumentException('This engine is not reached through DBAL.'),
             },
             'host' => $parameters->host,
             'port' => $parameters->port,

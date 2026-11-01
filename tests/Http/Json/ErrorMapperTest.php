@@ -12,6 +12,7 @@ use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Guard\GuardReason;
 use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
@@ -68,6 +69,7 @@ final class ErrorMapperTest extends TestCase
         yield 'unsupported engine' => [UnsupportedEngineException::for(Engine::MySql), 501, 'unsupported_engine'];
         yield 'locked' => [new LockedException(), 401, 'locked'];
         yield 'undecryptable' => [new DecryptionFailedException('x'), 401, 'locked'];
+        yield 'unsupported operation' => [UnsupportedOperationException::for(Engine::Redis, 'tables'), 501, 'unsupported_operation'];
         yield 'plan not available' => [PlanNotAvailableException::for(Engine::ClickHouse), 501, 'plan_unavailable'];
         yield 'unreadable plan' => [UnreadablePlanException::create(), 502, 'unreadable_plan'];
         yield 'query timeout' => [QueryTimeoutException::afterMilliseconds(100), 408, 'query_timeout'];

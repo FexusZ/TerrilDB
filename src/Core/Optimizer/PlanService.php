@@ -33,7 +33,7 @@ final readonly class PlanService
      */
     public function statementFor(Engine $engine, string $sql): string
     {
-        if (Engine::ClickHouse === $engine) {
+        if (!$engine->speaksSql() || Engine::ClickHouse === $engine) {
             throw PlanNotAvailableException::for($engine);
         }
 
