@@ -79,4 +79,21 @@ final class JsonInputTest extends TestCase
             self::assertStringNotContainsString('5', $e->getMessage());
         }
     }
+
+    public function testReadsAListOfStrings(): void
+    {
+        $input = $this->input('{"ids":["a","b"],"none":[],"mixed":["a",1],"scalar":"a","map":{"x":"y"}}');
+
+        self::assertSame(['a', 'b'], $input->stringList('ids'));
+        self::assertSame([], $input->stringList('none'));
+        self::assertSame([], $input->stringList('absent'));
+
+        foreach (['mixed', 'scalar', 'map'] as $field) {
+            try {
+                $input->stringList($field);
+                self::fail('Expected a refusal for '.$field);
+            } catch (BadRequestException) {
+            }
+        }
+    }
 }
