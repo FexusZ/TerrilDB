@@ -7,8 +7,11 @@ namespace App\Http\Web;
 use App\Audit\AuditAction;
 use App\Audit\AuditLog;
 use App\Http\Json\JsonInput;
+use App\Invitation\Exception\MailNotSentException;
+use App\Invitation\InvitationMailer;
 use App\Invitation\InvitationService;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -25,6 +28,8 @@ final readonly class InvitationsController
         private WebSession $session,
         private AuditLog $audit,
         private ClockInterface $clock,
+        private InvitationMailer $mailer,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -33,10 +38,13 @@ final readonly class InvitationsController
     {
         $now = \DateTimeImmutable::createFromInterface($this->clock->now());
 
-        return new JsonResponse(['invitations' => array_map(
-            static fn ($invitation): array => InvitationPresenter::present($invitation, $now),
-            $this->invitations->list($this->session->user()),
-        )]);
+        return new JsonResponse([
+            'emailEnabled' => $this->mailer->isEnabled(),
+            'invitations' => array_map(
+                static fn ($invitation): array => InvitationPresenter::present($invitation, $now),
+                $this->invitations->list($this->session->user()),
+            ),
+        ]);
     }
 
     #[Route('/web/invitations', methods: ['POST'])]
@@ -46,11 +54,29 @@ final readonly class InvitationsController
         $note = $input->optionalString('note') ?? '';
         $lifetime = $input->optionalInt('lifetimeDays', InvitationService::DEFAULT_LIFETIME_DAYS) ?? InvitationService::DEFAULT_LIFETIME_DAYS;
 
-        $issued = $this->invitations->issue($this->session->user(), $note, $lifetime);
-        $this->audit->record($this->session->auditContext(), AuditAction::InvitationCreated, subject: $issued->entity->getId(), details: ['lifetimeDays' => $lifetime]);
+        $email = trim($input->optionalString('email') ?? '');
+        // Vérifié avant d'émettre : une adresse refusée ou un envoi non configuré ne laissent pas d'invitation orpheline.
+        $recipient = '' === $email ? null : $this->mailer->recipient($email);
+
+        $user = $this->session->user();
+        $issued = $this->invitations->issue($user, $note, $lifetime);
+
+        $sent = false;
+        if (null !== $recipient) {
+            try {
+                $this->mailer->send($recipient, $issued->token, $issued->entity->getExpiresAt(), $user->getUsername());
+                $sent = true;
+            } catch (MailNotSentException $failure) {
+                // Seulement la nature de l'échec : le détail du transport peut citer l'adresse du destinataire.
+                $this->logger->error('Invitation e-mail not sent.', ['reason' => ($failure->getPrevious() ?? $failure)::class]);
+            }
+        }
+        $details = ['lifetimeDays' => $lifetime] + (null === $recipient ? [] : ['emailed' => $sent]);
+        $this->audit->record($this->session->auditContext($user), AuditAction::InvitationCreated, subject: $issued->entity->getId(), details: $details);
 
         return new JsonResponse([
             'token' => $issued->token,
+            'emailSent' => $sent,
             'invitation' => InvitationPresenter::present($issued->entity, \DateTimeImmutable::createFromInterface($this->clock->now())),
         ], Response::HTTP_CREATED);
     }

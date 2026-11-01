@@ -14,6 +14,7 @@ describe('error messages', () => {
   it('explains a refused invitation and a forbidden action', () => {
     expect(messageFor(new ApiError(403, 'invalid_invitation'))).toContain('invitation')
     expect(messageFor(new ApiError(403, 'forbidden'))).toContain('administrateur')
+    expect(messageFor(new ApiError(409, 'mail_disabled'))).toContain('e-mail')
   })
 
   it('says how long to wait when throttled', () => {
