@@ -29,6 +29,7 @@ final class SqlScannerTest extends TestCase
     {
         yield 'MySQL' => [SqlDialect::MySql];
         yield 'PostgreSQL' => [SqlDialect::PostgreSql];
+        yield 'ClickHouse' => [SqlDialect::ClickHouse];
     }
 
     #[DataProvider('dialects')]
@@ -121,6 +122,43 @@ final class SqlScannerTest extends TestCase
         self::assertSame([['SELECT', 'DELETE', 'FROM', 'T']], $this->words($sql, SqlDialect::MySql));
     }
 
+    public function testClickHouseStringsAndIdentifiersUseBackslashEscapes(): void
+    {
+        self::assertSame([['SELECT']], $this->words("select 'a\\'; drop table t; --'", SqlDialect::ClickHouse));
+        self::assertSame([['SELECT', 'FROM', 'T']], $this->words('select "a\\"; drop table x; --" from t', SqlDialect::ClickHouse));
+        self::assertSame([['SELECT', 'FROM', 'T']], $this->words('select `a\\`; drop table x; --` from t', SqlDialect::ClickHouse));
+    }
+
+    public function testClickHouseCommentsNeedNoWhitespaceAndHashStartsOne(): void
+    {
+        self::assertSame([['SELECT']], $this->words('select 1--1; drop table x', SqlDialect::ClickHouse));
+        self::assertSame([['SELECT']], $this->words("select 1 # drop table x\n", SqlDialect::ClickHouse));
+        self::assertSame([['SELECT']], $this->words("select 1 #! drop table x\n", SqlDialect::ClickHouse));
+    }
+
+    public function testClickHouseHasNoExecutableCommentsAndBlockCommentsDoNotNest(): void
+    {
+        self::assertSame([['SELECT']], $this->words('select 1 /*! ; drop table x */', SqlDialect::ClickHouse));
+        self::assertSame([['SELECT', 'DELETE', 'FROM', 'T']], $this->words('select /* a /* drop table t; */ delete from t; */', SqlDialect::ClickHouse));
+    }
+
+    public function testClickHouseHeredocsHideTheirContent(): void
+    {
+        self::assertSame([['SELECT']], $this->words('select $$a; drop table t$$', SqlDialect::ClickHouse));
+        self::assertSame([['SELECT']], $this->words('select $tag$a; $$ drop table t$tag$', SqlDialect::ClickHouse));
+    }
+
+    #[DataProvider('dialects')]
+    public function testAStatementKnowsWhichWordsAreCalledLikeFunctions(SqlDialect $dialect): void
+    {
+        $statement = (new SqlScanner())->scan("select file ('x'), url, count(*) from t where a in (1)", $dialect)->statements[0];
+
+        self::assertTrue($statement->calls('FILE'));
+        self::assertTrue($statement->calls('COUNT'));
+        self::assertFalse($statement->calls('URL'));
+        self::assertFalse($statement->calls('FROM'));
+    }
+
     /**
      * @return iterable<string, array{string, SqlDialect}>
      */
@@ -134,6 +172,10 @@ final class SqlScannerTest extends TestCase
         yield 'quoted identifier' => ['select "abc', SqlDialect::PostgreSql];
         yield 'dollar quote' => ['select $a$ abc', SqlDialect::PostgreSql];
         yield 'trailing backslash' => ["select 'abc\\", SqlDialect::MySql];
+        yield 'ClickHouse string' => ["select 'abc", SqlDialect::ClickHouse];
+        yield 'ClickHouse backtick' => ['select `abc', SqlDialect::ClickHouse];
+        yield 'ClickHouse quoted identifier' => ['select "abc', SqlDialect::ClickHouse];
+        yield 'ClickHouse heredoc' => ['select $a$ abc', SqlDialect::ClickHouse];
     }
 
     #[DataProvider('unterminated')]

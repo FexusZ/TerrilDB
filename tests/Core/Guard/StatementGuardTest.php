@@ -24,6 +24,7 @@ final class StatementGuardTest extends TestCase
         yield 'MySQL' => [Engine::MySql];
         yield 'MariaDB' => [Engine::MariaDb];
         yield 'PostgreSQL' => [Engine::PostgreSql];
+        yield 'ClickHouse' => [Engine::ClickHouse];
     }
 
     private function check(string $sql, Engine $engine, QueryMode $mode): GuardVerdict
@@ -156,6 +157,66 @@ final class StatementGuardTest extends TestCase
         }
         $this->assertRefused("select 'a\\'; drop table x; --", Engine::PostgreSql, QueryMode::ReadOnly, GuardReason::MultipleStatements);
         $this->assertRefused("select 1 where 'a\\' = 'a'; drop table x", Engine::PostgreSql, QueryMode::ReadOnly, GuardReason::MultipleStatements);
+    }
+
+    public function testClickHouseHiddenSecondStatementsAreSeenThroughItsSyntax(): void
+    {
+        // « -- » ouvre un commentaire sans espace : tout le reste est du commentaire, comme pour le moteur.
+        $this->assertAllowed('select 1--1; drop table x', Engine::ClickHouse, QueryMode::ReadOnly, StatementKind::Read);
+        $this->assertRefused("select 'a\\'; drop table x; --'; drop table y", Engine::ClickHouse, QueryMode::ReadOnly, GuardReason::MultipleStatements);
+        $this->assertRefused('select 1 # x'."\n".'; select 2', Engine::ClickHouse, QueryMode::ReadOnly, GuardReason::MultipleStatements);
+    }
+
+    public function testClickHouseTableFunctionsThatReachOutsideAreRefused(): void
+    {
+        foreach ([
+            "select * from file('/etc/passwd', 'CSV')",
+            "select * from url('http://example.test/x', 'CSV')",
+            "select * from s3('http://example.test/x')",
+            "select * from remote('other', db.t)",
+            "select * from mysql('h:3306', 'db', 't', 'u', 'p')",
+            "select * from postgresql('h:5432', 'db', 't', 'u', 'p')",
+            "select * from executable('cmd', 'CSV', 'a String')",
+            "select * from hdfs('hdfs://x/y', 'CSV')",
+            "select * from FILE ('x', 'CSV')",
+            "select * from clusterAllReplicas('c', system.one)",
+            "select * from cluster('c', system.one)",
+            "select * from sqlite('/x', 't')",
+            "select * from odbc('x', 'db', 't')",
+        ] as $sql) {
+            $this->assertRefused($sql, Engine::ClickHouse, QueryMode::ReadOnly, GuardReason::ForbiddenConstruct);
+            $this->assertRefused($sql, Engine::ClickHouse, QueryMode::ReadWrite, GuardReason::ForbiddenConstruct);
+        }
+    }
+
+    public function testClickHouseColumnsNamedLikeTableFunctionsAreFine(): void
+    {
+        $this->assertAllowed('select file, url, remote from t', Engine::ClickHouse, QueryMode::ReadOnly, StatementKind::Read);
+    }
+
+    public function testClickHouseOutputFormatIsRefusedBecauseTheRunnerFixesIt(): void
+    {
+        $this->assertRefused('select 1 format CSV', Engine::ClickHouse, QueryMode::ReadOnly, GuardReason::ForbiddenConstruct);
+        $this->assertAllowed("select format('{}', 1)", Engine::ClickHouse, QueryMode::ReadOnly, StatementKind::Read);
+        $this->assertAllowed('select "format" from t', Engine::ClickHouse, QueryMode::ReadOnly, StatementKind::Read);
+    }
+
+    public function testClickHouseExistsIsAnInspection(): void
+    {
+        $this->assertAllowed('exists table t', Engine::ClickHouse, QueryMode::ReadOnly, StatementKind::Inspect);
+    }
+
+    public function testClickHouseDetachingNeedsConfirmation(): void
+    {
+        $this->assertNeedsConfirmation('detach table t', Engine::ClickHouse, GuardReason::DestructiveStatement);
+        $this->assertNeedsConfirmation('exchange tables a and b', Engine::ClickHouse, GuardReason::DestructiveStatement);
+    }
+
+    public function testClickHouseServerControlIsRefused(): void
+    {
+        foreach (['system flush logs', 'kill query where 1', 'set max_threads = 1'] as $sql) {
+            $this->assertRefused($sql, Engine::ClickHouse, QueryMode::ReadWrite, GuardReason::UnsupportedStatement);
+        }
     }
 
     #[DataProvider('engines')]
