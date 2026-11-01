@@ -25,6 +25,8 @@ enum AuditAction: string
     case ConnectionDeleted = 'connection.deleted';
     case TokenCreated = 'token.created';
     case TokenRevoked = 'token.revoked';
+    case InvitationCreated = 'invitation.created';
+    case InvitationRevoked = 'invitation.revoked';
     case QueryExecuted = 'query.executed';
     case QueryRefused = 'query.refused';
     case QueryFailed = 'query.failed';
