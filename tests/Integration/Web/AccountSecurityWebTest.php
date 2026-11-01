@@ -24,15 +24,28 @@ final class AccountSecurityWebTest extends WebApiTestCase
     }
 
     /**
+     * @param array<string, mixed> $begin
+     *
+     * @return non-empty-string
+     */
+    private static function secretOf(array $begin): string
+    {
+        $secret = $begin['secret'] ?? null;
+        if (!\is_string($secret) || '' === $secret) {
+            self::fail('The response carries no secret.');
+        }
+
+        return $secret;
+    }
+
+    /**
      * @return array{non-empty-string, list<string>}
      */
     private function enableTotp(): array
     {
         $begin = $this->call('POST', '/web/account/totp/begin');
         self::assertSame(200, $this->statusCode());
-        $secret = $begin['secret'];
-        self::assertIsString($secret);
-        self::assertNotSame('', $secret);
+        $secret = self::secretOf($begin);
         self::assertIsString($begin['uri']);
         self::assertStringStartsWith('otpauth://totp/', $begin['uri']);
 
@@ -115,9 +128,7 @@ final class AccountSecurityWebTest extends WebApiTestCase
     public function testAWrongConfirmationCodeEnablesNothing(): void
     {
         $this->seedAndLogin();
-        $begin = $this->call('POST', '/web/account/totp/begin');
-        $secret = $begin['secret'];
-        self::assertIsString($secret);
+        $secret = self::secretOf($this->call('POST', '/web/account/totp/begin'));
 
         $body = $this->call('POST', '/web/account/totp/confirm', ['secret' => $secret, 'code' => '000000']);
         self::assertSame(401, $this->statusCode());
@@ -183,7 +194,7 @@ final class AccountSecurityWebTest extends WebApiTestCase
         self::assertSame(200, $this->statusCode());
         self::assertIsArray($fresh['recoveryCodes']);
         self::assertCount(10, $fresh['recoveryCodes']);
-        self::assertSame([], array_intersect($codes, $fresh['recoveryCodes']));
+        self::assertSame([], array_intersect($codes, array_map(static fn (mixed $code): string => \is_string($code) ? $code : '', $fresh['recoveryCodes'])));
     }
 
     public function testRegeneratingWithoutASecondFactorIsRefused(): void
@@ -199,9 +210,7 @@ final class AccountSecurityWebTest extends WebApiTestCase
     public function testASessionWithoutItsUnlockCookieIsLocked(): void
     {
         $this->seedAndLogin();
-        $begin = $this->call('POST', '/web/account/totp/begin');
-        $secret = $begin['secret'];
-        self::assertIsString($secret);
+        $secret = self::secretOf($this->call('POST', '/web/account/totp/begin'));
         $this->client->getCookieJar()->expire('TERRILDB_UNLOCK');
 
         // Chiffrer le secret TOTP demande la clé de la session, que le cookie manquant rend inaccessible.
