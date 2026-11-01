@@ -64,6 +64,23 @@ describe('ConnectionFormView', () => {
     expect(wrapper.get('#port').attributes('placeholder')).toBe('8123')
   })
 
+  it('offers Redis, which asks for a database number and an ACL user', async () => {
+    const { wrapper } = await mountForm()
+
+    await wrapper.get('input[value="redis"]').setValue(true)
+
+    expect(wrapper.get('#port').attributes('placeholder')).toBe('6379')
+    expect(wrapper.get('label[for="database"]').text()).toContain('Numéro de base')
+    expect(wrapper.get('#database').attributes('placeholder')).toBe('0')
+    expect(wrapper.get('#username').attributes('placeholder')).toBe('default')
+  })
+
+  it('keeps the usual labels for the SQL engines', async () => {
+    const { wrapper } = await mountForm()
+
+    expect(wrapper.get('label[for="database"]').text()).toContain('Base de données')
+  })
+
   it('saves a new connection and goes back to the list', async () => {
     const { wrapper, router } = await mountForm()
     await fill(wrapper, { name: 'Production', host: 'db.exemple.test', port: '5433', database: 'shop', username: 'lecteur', password: 'secret-value' })

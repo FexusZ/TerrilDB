@@ -35,6 +35,13 @@ describe('SqlEditor', () => {
     wrapper.unmount()
   })
 
+  it('accepts a Redis command line', () => {
+    const wrapper = mountEditor({ dialect: 'redis', modelValue: 'get user:1' })
+
+    expect(wrapper.get('.cm-content').text()).toContain('get user:1')
+    wrapper.unmount()
+  })
+
   it('reports what the user types', () => {
     const wrapper = mountEditor({ modelValue: '' })
 

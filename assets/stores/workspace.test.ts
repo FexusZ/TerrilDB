@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api, apiDownload } from '../api/client'
 import type { HistoryEntry, PlanResult, QueryResult, TableDetail, TableSummary } from '../api/types'
 import { saveFile } from '../utils/download'
+import { useConnectionsStore } from './connections'
 import { useWorkspaceStore } from './workspace'
 
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn(), apiDownload: vi.fn() }))
@@ -393,5 +394,97 @@ describe('workspace store', () => {
       expect(store.activeTab.plan).toBeNull()
       expect(store.activeTab.view).toBe('result')
     })
+  })
+})
+
+describe('workspace store on a key-value connection', () => {
+  const page = (names: string[], nextCursor: string | null, total = 40) => ({
+    keys: names.map((name) => ({ name, type: 'string', ttl: null })),
+    nextCursor,
+    total,
+  })
+
+  async function openedRedis() {
+    useConnectionsStore().items = [{ id: 'conn-r', name: 'Cache', engine: 'redis', createdAt: '', updatedAt: '' }]
+    mocked.mockResolvedValueOnce(page(['a', 'b'], '17'))
+    const store = useWorkspaceStore()
+    await store.open('conn-r')
+
+    return store
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mocked.mockReset()
+  })
+
+  it('lists keys instead of tables', async () => {
+    const store = await openedRedis()
+
+    expect(mocked).toHaveBeenCalledTimes(1)
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/conn-r/keys?pattern=*&count=100')
+    expect(store.isKeyValue).toBe(true)
+    expect(store.keys.map((key) => key.name)).toEqual(['a', 'b'])
+    expect(store.keysCursor).toBe('17')
+    expect(store.keysTotal).toBe(40)
+    expect(store.tables).toEqual([])
+  })
+
+  it('appends the next page with the cursor', async () => {
+    const store = await openedRedis()
+    mocked.mockResolvedValueOnce(page(['c'], null))
+
+    await store.loadMoreKeys()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-r/keys?pattern=*&count=100&cursor=17')
+    expect(store.keys.map((key) => key.name)).toEqual(['a', 'b', 'c'])
+    expect(store.keysCursor).toBeNull()
+  })
+
+  it('does nothing more when the scan is over', async () => {
+    const store = await openedRedis()
+    mocked.mockResolvedValueOnce(page(['c'], null))
+    await store.loadMoreKeys()
+    mocked.mockClear()
+
+    await store.loadMoreKeys()
+
+    expect(mocked).not.toHaveBeenCalled()
+  })
+
+  it('starts over with a new pattern', async () => {
+    const store = await openedRedis()
+    mocked.mockResolvedValueOnce(page(['user:1'], null))
+
+    await store.searchKeys('user:*')
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-r/keys?pattern=user%3A*&count=100')
+    expect(store.keys.map((key) => key.name)).toEqual(['user:1'])
+    expect(store.keysPattern).toBe('user:*')
+  })
+
+  it('reports why the keys could not be loaded', async () => {
+    useConnectionsStore().items = [{ id: 'conn-r', name: 'Cache', engine: 'redis', createdAt: '', updatedAt: '' }]
+    mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
+    const store = useWorkspaceStore()
+
+    await store.open('conn-r')
+
+    expect(store.keysError).toContain('joindre')
+    expect(store.keys).toEqual([])
+  })
+
+  it('keeps an old answer from overwriting a newer search', async () => {
+    const store = await openedRedis()
+    let finishFirst: (value: unknown) => void = () => undefined
+    mocked.mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve }))
+    const slow = store.searchKeys('slow:*')
+    mocked.mockResolvedValueOnce(page(['fast:1'], null))
+    await store.searchKeys('fast:*')
+
+    finishFirst(page(['slow:1'], null))
+    await slow
+
+    expect(store.keys.map((key) => key.name)).toEqual(['fast:1'])
   })
 })
