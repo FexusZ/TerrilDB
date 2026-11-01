@@ -20,7 +20,7 @@ final class PlanWebTest extends WebApiTestCase
      */
     public static function targets(): iterable
     {
-        yield from TargetDatabase::all();
+        yield from TargetDatabase::relational();
     }
 
     private function prepare(string $envVar): void
@@ -45,6 +45,16 @@ final class PlanWebTest extends WebApiTestCase
         }
 
         return $all;
+    }
+
+    public function testClickHouseHasNoPlanToShow(): void
+    {
+        $this->prepare('TARGET_CLICKHOUSE_URL');
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from orders']);
+
+        self::assertSame(501, $this->statusCode());
+        self::assertSame('plan_unavailable', $body['error']);
     }
 
     #[DataProvider('targets')]
