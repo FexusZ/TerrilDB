@@ -31,3 +31,7 @@
 /node_modules/
 /public/app/
 ###< front ###
+
+###> front cache ###
+node_modules/
+###< front cache ###
