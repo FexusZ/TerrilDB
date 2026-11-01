@@ -1,13 +1,15 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api } from '../api/client'
+import { ApiError, api, apiDownload } from '../api/client'
 import type { QueryResult } from '../api/types'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
+import { saveFile } from '../utils/download'
 import QueryPane from './QueryPane.vue'
 
-vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
+vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn(), apiDownload: vi.fn() }))
+vi.mock('../utils/download', () => ({ saveFile: vi.fn() }))
 
 const mocked = vi.mocked(api)
 const result: QueryResult = { columns: ['a'], rows: [[1]], rowCount: 1, truncated: false, affectedRows: null, durationMs: 4 }
@@ -193,6 +195,54 @@ describe('QueryPane', () => {
     expect(wrapper.find('section.history').exists()).toBe(false)
     expect(wrapper.find('.stub').exists()).toBe(true)
     expect(wrapper.get('button.history-toggle').attributes('aria-pressed')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('exports only once there is a result with rows', async () => {
+    const { wrapper } = await mountPane()
+    expect(wrapper.get('button.export-csv').attributes('disabled')).toBeDefined()
+
+    await wrapper.get('.stub').setValue('select 1')
+    mocked.mockResolvedValueOnce(result)
+    await wrapper.get('button.run').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('button.export-csv').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('downloads the result as CSV or JSON', async () => {
+    const { wrapper } = await mountPane()
+    await wrapper.get('.stub').setValue('select 1')
+    mocked.mockResolvedValueOnce(result)
+    await wrapper.get('button.run').trigger('click')
+    await flushPromises()
+    const blob = new Blob(['x'])
+    vi.mocked(apiDownload).mockResolvedValueOnce({ blob, filename: 'terrildb-export-1.csv', truncated: false })
+
+    await wrapper.get('button.export-csv').trigger('click')
+    await flushPromises()
+
+    expect(apiDownload).toHaveBeenLastCalledWith('/web/connections/abc/export', { sql: 'select 1', format: 'csv' })
+    expect(saveFile).toHaveBeenCalledWith(blob, 'terrildb-export-1.csv')
+
+    vi.mocked(apiDownload).mockResolvedValueOnce({ blob, filename: 'terrildb-export-1.json', truncated: true })
+    await wrapper.get('button.export-json').trigger('click')
+    await flushPromises()
+    expect(apiDownload).toHaveBeenLastCalledWith('/web/connections/abc/export', { sql: 'select 1', format: 'json' })
+    expect(wrapper.get('.export-notice').text()).toContain('limité')
+    wrapper.unmount()
+  })
+
+  it('does not offer an export after a write', async () => {
+    const { wrapper } = await mountPane()
+    await wrapper.get('button[role="switch"]').trigger('click')
+    await wrapper.get('.stub').setValue('update orders set status = 1 where id = 1')
+    mocked.mockResolvedValueOnce({ ...result, columns: [], rows: [], rowCount: 0, affectedRows: 1 })
+    await wrapper.get('button.run').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('button.export-csv').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 })

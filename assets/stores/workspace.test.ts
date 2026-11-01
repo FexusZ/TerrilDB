@@ -1,10 +1,12 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api } from '../api/client'
+import { ApiError, api, apiDownload } from '../api/client'
 import type { HistoryEntry, QueryResult, TableDetail, TableSummary } from '../api/types'
+import { saveFile } from '../utils/download'
 import { useWorkspaceStore } from './workspace'
 
-vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
+vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn(), apiDownload: vi.fn() }))
+vi.mock('../utils/download', () => ({ saveFile: vi.fn() }))
 
 const mocked = vi.mocked(api)
 const tables: TableSummary[] = [{ name: 'orders', kind: 'table', estimatedRows: 3800 }]
@@ -282,6 +284,53 @@ describe('workspace store', () => {
 
       expect(store.history).toEqual([])
       expect(store.historyLoaded).toBe(false)
+    })
+  })
+
+  describe('export', () => {
+    it('downloads the statement of the tab as a file', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select 1')
+      const blob = new Blob(['id\r\n1\r\n'])
+      vi.mocked(apiDownload).mockResolvedValueOnce({ blob, filename: 'terrildb-export-1.csv', truncated: false })
+
+      await store.exportTab(store.activeTab.id, 'csv')
+
+      expect(apiDownload).toHaveBeenCalledWith('/web/connections/conn-1/export', { sql: 'select 1', format: 'csv' })
+      expect(saveFile).toHaveBeenCalledWith(blob, 'terrildb-export-1.csv')
+      expect(store.activeTab.exportNotice).toBeNull()
+      expect(store.activeTab.exporting).toBe(false)
+    })
+
+    it('says when the file was cut at the limit', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select 1')
+      vi.mocked(apiDownload).mockResolvedValueOnce({ blob: new Blob(['x']), filename: 'f.json', truncated: true })
+
+      await store.exportTab(store.activeTab.id, 'json')
+
+      expect(store.activeTab.exportNotice).toContain('limité')
+    })
+
+    it('shows why an export failed', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'drop table t')
+      vi.mocked(apiDownload).mockRejectedValueOnce(new ApiError(403, 'query_refused', { reason: 'not_read_only' }))
+
+      await store.exportTab(store.activeTab.id, 'csv')
+
+      expect(store.activeTab.error).toContain('lecture seule')
+      expect(saveFile).not.toHaveBeenCalledWith(expect.anything(), 'f')
+    })
+
+    it('does not export an empty statement', async () => {
+      const store = await opened()
+      vi.mocked(apiDownload).mockClear()
+
+      await store.exportTab(store.activeTab.id, 'csv')
+
+      expect(apiDownload).not.toHaveBeenCalled()
+      expect(store.activeTab.error).toBe('Saisissez une instruction.')
     })
   })
 })
