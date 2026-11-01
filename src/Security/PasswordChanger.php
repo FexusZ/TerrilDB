@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security;
 
+use App\ApiToken\ApiTokenService;
 use App\Connection\ConnectionSecretContext;
 use App\Crypto\DerivedKey;
 use App\Crypto\SecretRotator;
@@ -22,6 +23,8 @@ use App\Security\Exception\InvalidCredentialsException;
  * Les connexions sont chargées par le dépôt (donc gérées par l'ORM) : le `flush` du compte les enregistre dans
  * la même transaction que le nouveau hash.
  *
+ * Les jetons d'API emportent une copie de l'ancienne clé : ils sont supprimés dans la même transaction.
+ *
  * La nouvelle clé est rendue pour que la session en cours reste déverrouillée sans redemander le mot de passe.
  * L'invalidation des autres sessions relève de l'adaptateur web.
  */
@@ -33,6 +36,7 @@ final readonly class PasswordChanger
         private SecretRotator $rotator,
         private UserRepository $users,
         private DatabaseConnectionRepository $connections,
+        private ApiTokenService $apiTokens,
     ) {
     }
 
@@ -58,6 +62,8 @@ final readonly class PasswordChanger
             foreach ($connections as $connection) {
                 $connection->rotateEncryptedParameters($rotation->secrets[ConnectionSecretContext::forConnection($connection)]);
             }
+            // Une clé enveloppée dans un jeton est celle d'avant : le jeton ne servirait plus à rien, il disparaît.
+            $this->apiTokens->revokeAll($user);
             $this->users->save($user);
         } catch (\Throwable $e) {
             $rotation->key->wipe();

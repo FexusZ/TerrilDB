@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Web\Security;
 
-use App\Http\Web\TooManyAttemptsException;
+use App\Http\Json\TooManyAttemptsException;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
 /**

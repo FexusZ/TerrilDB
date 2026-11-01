@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Web;
+namespace App\Http\Json;
 
 /**
  * Requête mal formée (JSON illisible, champ manquant ou d'un mauvais type). Le message nomme le champ,
