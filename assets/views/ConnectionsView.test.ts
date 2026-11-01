@@ -75,6 +75,16 @@ describe('ConnectionsView', () => {
     wrapper.unmount()
   })
 
+  it('filters ClickHouse connections too', async () => {
+    const { wrapper } = await mountView([...connections, make('d', 'Analytique', 'clickhouse')])
+
+    await wrapper.get('button[data-engine="clickhouse"]').trigger('click')
+
+    expect(wrapper.findAll('article').map((card) => card.text())).toEqual([expect.stringContaining('Analytique')])
+    expect(wrapper.get('article .badge').text()).toBe('Ch')
+    wrapper.unmount()
+  })
+
   it('searches by name, ignoring case and accents', async () => {
     const { wrapper } = await mountView()
 

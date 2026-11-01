@@ -264,6 +264,19 @@ describe('QueryPane', () => {
     wrapper.unmount()
   })
 
+  it('offers no execution plan for an engine that has none', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConnectionsStore().items = [{ id: 'abc', name: 'Analytique', engine: 'clickhouse', createdAt: '', updatedAt: '' }]
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await useWorkspaceStore().open('abc')
+    const wrapper = mount(QueryPane, { global: { plugins: [pinia], stubs: { SqlEditor: EditorStub } }, attachTo: document.body })
+
+    expect(wrapper.find('button.plan').exists()).toBe(false)
+    expect(wrapper.get('.stub').attributes('data-dialect')).toBe('clickhouse')
+    wrapper.unmount()
+  })
+
   it('goes back to the result after a run', async () => {
     const { wrapper } = await mountPane()
     await wrapper.get('.stub').setValue('select 1')
