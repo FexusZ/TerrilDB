@@ -13,6 +13,7 @@ use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Guard\GuardReason;
+use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
@@ -66,6 +67,7 @@ final class ErrorMapperTest extends TestCase
         yield 'unsupported engine' => [UnsupportedEngineException::for(Engine::MySql), 501, 'unsupported_engine'];
         yield 'locked' => [new LockedException(), 401, 'locked'];
         yield 'undecryptable' => [new DecryptionFailedException('x'), 401, 'locked'];
+        yield 'unreadable plan' => [UnreadablePlanException::create(), 502, 'unreadable_plan'];
         yield 'query timeout' => [QueryTimeoutException::afterMilliseconds(100), 408, 'query_timeout'];
     }
 
