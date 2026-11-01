@@ -29,7 +29,7 @@ final class RedisCommandGuardTest extends TestCase
             'scan 0 match user:* count 100', 'randomkey', 'object encoding k', 'memory usage k', 'hgetall h', 'hget h f', 'hlen h',
             'hscan h 0', 'lrange l 0 -1', 'llen l', 'lindex l 0', 'smembers s', 'scard s', 'sismember s x', 'sscan s 0',
             'zrange z 0 -1 withscores', 'zcard z', 'zscore z m', 'zscan z 0', 'xrange s - +', 'xlen s', 'xinfo stream s',
-            'xread count 2 streams s 0', 'getbit k 0', 'bitcount k', 'geopos g m', 'ping', 'echo hi', 'info', 'info memory', 'time',
+            'getbit k 0', 'bitcount k', 'geopos g m', 'ping', 'echo hi', 'info', 'info memory', 'time',
             'sort_ro l', 'command count', 'command info get',
         ] as $command) {
             yield $command => [$command];
@@ -84,7 +84,7 @@ final class RedisCommandGuardTest extends TestCase
     public static function forbidden(): iterable
     {
         foreach ([
-            'keys *', 'monitor', 'subscribe c', 'psubscribe c*', 'blpop l 0', 'brpop l 0', 'brpoplpush a b 0', 'xread block 0 streams s $',
+            'keys *', 'monitor', 'subscribe c', 'psubscribe c*', 'blpop l 0', 'brpop l 0', 'brpoplpush a b 0', 'xread block 0 streams s $', 'xread count 2 streams s 0',
             'xreadgroup group g c block 0 streams s >', 'debug sleep 1', 'eval "return 1" 0', 'evalsha abc 0', 'eval_ro "return 1" 0',
             'function list', 'script flush', 'module list', 'config get *', 'config set save ""', 'acl list', 'acl whoami', 'client list',
             'client kill id 3', 'shutdown', 'shutdown nosave', 'replicaof no one', 'slaveof no one', 'migrate h 6379 k 0 5000',
@@ -108,7 +108,7 @@ final class RedisCommandGuardTest extends TestCase
 
     public function testKeysAndBlockingReadsAreForbiddenNotJustUnknown(): void
     {
-        foreach (['keys *', 'blpop l 0', 'xread block 0 streams s $', 'config get requirepass', 'flushall'] as $command) {
+        foreach (['keys *', 'blpop l 0', 'xread block 0 streams s $', 'xread streams s 0', 'config get requirepass', 'flushall'] as $command) {
             self::assertSame(GuardReason::ForbiddenConstruct, $this->guard()->check($command, QueryMode::ReadOnly)->reason, $command);
         }
     }

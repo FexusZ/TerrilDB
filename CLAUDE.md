@@ -242,7 +242,7 @@ docker compose up -d db                                   # base interne
 docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 / ClickHouse de test
 R="docker compose run --rm --no-deps php"
 $R vendor/bin/phpunit                                     # tests
-$R vendor/bin/phpstan analyse --no-progress               # analyse statique (niveau max)
+$R vendor/bin/phpstan analyse --no-progress --memory-limit=512M   # analyse statique (niveau max)
 $R vendor/bin/php-cs-fixer fix                            # style
 $R composer require <paquet>
 docker compose --profile targets up -d --wait             # attend les healthchecks (init SQL terminée)
