@@ -166,6 +166,16 @@ final class ConnectionManagerTest extends DatabaseTestCase
         self::assertSame('Production', $intact->getName());
     }
 
+    public function testGetReturnsTheOwnedConnectionOnly(): void
+    {
+        $connection = $this->create();
+        $bob = $this->user('bob');
+
+        self::assertSame($connection, $this->manager->get($this->alice, $connection->getId()));
+        $this->expectException(ConnectionNotFoundException::class);
+        $this->manager->get($bob, $connection->getId());
+    }
+
     public function testAnUnknownConnectionIsNotFound(): void
     {
         $this->expectException(ConnectionNotFoundException::class);
