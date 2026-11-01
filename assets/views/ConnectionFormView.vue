@@ -138,7 +138,7 @@ async function test(): Promise<void> {
         <legend>Moteur</legend>
         <div class="choices">
           <label v-for="engine in engines" :key="engine" class="engine" :class="{ selected: form.engine === engine }">
-            <input v-model="form.engine" type="radio" name="engine" :value="engine" />
+            <input v-model="form.engine" type="radio" name="engine" :value="engine">
             <span>{{ ENGINE_LABELS[engine] }}</span>
           </label>
         </div>

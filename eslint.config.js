@@ -15,6 +15,12 @@ export default tseslint.config(
     rules: {
       // Libellés et textes courts en français : pas de règle de casse sur les noms de composants à un mot.
       'vue/multi-word-component-names': 'off',
+      // Mise en forme du gabarit : laissée à l'auteur, pas de formateur automatique dans ce dépôt.
+      'vue/max-attributes-per-line': 'off',
+      'vue/singleline-html-element-content-newline': 'off',
+      'vue/multiline-html-element-content-newline': 'off',
+      'vue/html-closing-bracket-newline': 'off',
+      'vue/html-indent': 'off',
     },
   },
 )
