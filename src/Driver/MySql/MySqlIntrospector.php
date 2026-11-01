@@ -1,0 +1,215 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Driver\MySql;
+
+use App\Core\Schema\ColumnDefinition;
+use App\Core\Schema\Exception\TableNotFoundException;
+use App\Core\Schema\ForeignKeyDefinition;
+use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\ReferentialAction;
+use App\Core\Schema\SchemaIntrospector;
+use App\Core\Schema\TableDefinition;
+use App\Core\Schema\TableKind;
+use App\Core\Schema\TableSummary;
+use App\Driver\RowReader;
+use Doctrine\DBAL\Connection;
+
+/**
+ * Introspection de MySQL et MariaDB par information_schema, dans la base de la connexion. Les noms de tables
+ * ne sont jamais concaténés au SQL : ils passent en paramètres liés.
+ *
+ * Les index fonctionnels (expressions) n'ont pas de nom de colonne dans information_schema : leurs parties
+ * sont ignorées, et un index qui n'a plus aucune colonne nommée n'est pas listé.
+ */
+final readonly class MySqlIntrospector implements SchemaIntrospector
+{
+    public function __construct(private Connection $connection)
+    {
+    }
+
+    public function listTables(): array
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate
+               FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE()
+              ORDER BY TABLE_NAME',
+        );
+
+        $tables = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $kind = self::kind($row->string('kind'));
+            $tables[] = new TableSummary($row->string('name'), $kind, TableKind::View === $kind ? null : $row->nullableInt('estimate'));
+        }
+        // L'ordre du moteur dépend de la collation (MariaDB ne classe pas « _ » comme MySQL) : on trie à l'octet.
+        usort($tables, static fn (TableSummary $a, TableSummary $b): int => strcmp($a->name, $b->name));
+
+        return $tables;
+    }
+
+    public function describeTable(string $name): TableDefinition
+    {
+        $header = $this->connection->fetchAssociative(
+            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate
+               FROM information_schema.TABLES
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [$name],
+        );
+        if (false === $header) {
+            throw TableNotFoundException::named($name);
+        }
+
+        $header = new RowReader($header);
+        // Le nom rendu par le moteur fait foi (sensibilité à la casse comprise).
+        $name = $header->string('name');
+        $kind = self::kind($header->string('kind'));
+
+        return new TableDefinition(
+            $name,
+            $kind,
+            $this->columns($name),
+            $this->indexes($name),
+            $this->foreignKeys($name),
+            TableKind::View === $kind ? $this->viewDefinition($name) : null,
+            TableKind::View === $kind ? null : $header->nullableInt('estimate'),
+        );
+    }
+
+    private static function kind(string $type): TableKind
+    {
+        return 'VIEW' === $type ? TableKind::View : TableKind::Table;
+    }
+
+    /**
+     * @return list<ColumnDefinition>
+     */
+    private function columns(string $table): array
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
+                    EXTRA AS extra, COLUMN_COMMENT AS comment
+               FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+              ORDER BY ORDINAL_POSITION',
+            [$table],
+        );
+
+        $columns = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $nullable = $row->bool('nullable');
+            $default = $row->nullableString('col_default');
+            $columns[] = new ColumnDefinition(
+                $row->string('name'),
+                $row->string('type'),
+                $nullable,
+                // MariaDB écrit le littéral NULL pour « pas de défaut » sur une colonne nullable.
+                $nullable && 'NULL' === $default ? null : $default,
+                str_contains($row->string('extra'), 'auto_increment'),
+                $row->nullableString('comment'),
+            );
+        }
+
+        return $columns;
+    }
+
+    /**
+     * @return list<IndexDefinition>
+     */
+    private function indexes(string $table): array
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col
+               FROM information_schema.STATISTICS
+              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+              ORDER BY INDEX_NAME, SEQ_IN_INDEX',
+            [$table],
+        );
+
+        /** @var array<string, array{unique: bool, columns: list<string>}> $grouped */
+        $grouped = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $name = $row->string('name');
+            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => []];
+            $column = $row->nullableString('col');
+            if (null !== $column) {
+                $grouped[$name]['columns'][] = $column;
+            }
+        }
+
+        $indexes = [];
+        foreach ($grouped as $name => $index) {
+            if ([] === $index['columns']) {
+                continue;
+            }
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name);
+        }
+        usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
+
+        return $indexes;
+    }
+
+    /**
+     * @return list<ForeignKeyDefinition>
+     */
+    private function foreignKeys(string $table): array
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT k.CONSTRAINT_NAME AS name, k.COLUMN_NAME AS col, k.REFERENCED_TABLE_NAME AS ref_table,
+                    k.REFERENCED_COLUMN_NAME AS ref_col, r.UPDATE_RULE AS on_update, r.DELETE_RULE AS on_delete
+               FROM information_schema.KEY_COLUMN_USAGE k
+               JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+                 ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA
+                AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+                AND r.TABLE_NAME = k.TABLE_NAME
+              WHERE k.TABLE_SCHEMA = DATABASE() AND k.TABLE_NAME = ? AND k.REFERENCED_TABLE_NAME IS NOT NULL
+              ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION',
+            [$table],
+        );
+
+        /** @var array<string, array{table: string, update: string, delete: string, columns: list<string>, referenced: list<string>}> $grouped */
+        $grouped = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $name = $row->string('name');
+            $grouped[$name] ??= [
+                'table' => $row->string('ref_table'),
+                'update' => $row->string('on_update'),
+                'delete' => $row->string('on_delete'),
+                'columns' => [],
+                'referenced' => [],
+            ];
+            $grouped[$name]['columns'][] = $row->string('col');
+            $grouped[$name]['referenced'][] = $row->string('ref_col');
+        }
+
+        $keys = [];
+        foreach ($grouped as $name => $key) {
+            $keys[] = new ForeignKeyDefinition(
+                (string) $name,
+                $key['columns'],
+                $key['table'],
+                $key['referenced'],
+                ReferentialAction::fromSql($key['update']),
+                ReferentialAction::fromSql($key['delete']),
+            );
+        }
+        usort($keys, static fn (ForeignKeyDefinition $a, ForeignKeyDefinition $b): int => strcmp($a->name, $b->name));
+
+        return $keys;
+    }
+
+    private function viewDefinition(string $view): ?string
+    {
+        $definition = $this->connection->fetchOne(
+            'SELECT VIEW_DEFINITION FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            [$view],
+        );
+
+        return \is_string($definition) && '' !== $definition ? $definition : null;
+    }
+}
