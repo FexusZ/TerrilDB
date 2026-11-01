@@ -20,6 +20,10 @@ enum AuditAction: string
     case TotpDisabled = 'totp.disabled';
     case RecoveryRegenerated = 'recovery.regenerated';
     case RecoveryUsed = 'recovery.used';
+    case PhraseCreated = 'phrase.created';
+    case PhraseRemoved = 'phrase.removed';
+    case PhraseUsed = 'phrase.used';
+    case PhraseFailed = 'phrase.failed';
     case ConnectionCreated = 'connection.created';
     case ConnectionUpdated = 'connection.updated';
     case ConnectionDeleted = 'connection.deleted';

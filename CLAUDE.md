@@ -64,6 +64,18 @@ pour l'instant ; le stockage réel est à trancher). `SecretRotator` rechiffre t
 mot de passe. Toutes les erreurs héritent de `CryptoException`. Le hash d'authentification du mot de passe
 est distinct (sel propre) et vit dans `Security/`, pas ici.
 
+### Phrase de récupération (facultative, `RecoveryPhrase`, `RecoveryPhraseService`)
+
+160 bits aléatoires en base 32 de Crockford (8 groupes de 4, lecture tolérante : casse, espaces, tirets, O/I/L). Le serveur
+ne garde que `User::recoveryKey` : la clé de chiffrement enveloppée par un secret tiré de la phrase (`SessionKeyWrapper`,
+contexte `recovery:<id>`), jamais la phrase. Elle sert à un seul geste, choisir un nouveau mot de passe sans connaître l'ancien
+(`PasswordChanger::resetWithKey` + `SecretRotator::rotateWithKey`, même rotation tout-ou-rien du TOTP et des connexions,
+jetons d'API révoqués). Elle est supprimée dès que la clé change (réinitialisation OU changement de mot de passe ordinaire,
+`User::changePassword`) : il faut alors en générer une nouvelle. Création et retrait exigent session ET mot de passe ;
+`POST /web/recover` (public, plafonné comme la connexion, réponse unique `invalid_recovery` pour phrase fausse, compte sans
+phrase ou compte inconnu) n'ouvre AUCUNE session : le second facteur reste exigé à la connexion suivante. Une phrase
+perdue = pas de récupération (comportement par défaut inchangé tant qu'on n'en a pas généré).
+
 ## Connexions (src/Connection, src/Core/Connection)
 
 Une `DatabaseConnection` garde en clair son nom et son moteur (`Engine`) ; hôte, port, base, identifiant et mot

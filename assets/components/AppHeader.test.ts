@@ -14,7 +14,7 @@ beforeEach(() => {
 function mountHeader() {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', role: 'admin', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', role: 'admin', recoveryPhrase: false, totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
   const router = createRouter({ history: createMemoryHistory(), routes: ['connections', 'security', 'login'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })) })
   useThemeStore().init()
 
