@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Http\Json\JsonInput;
 use App\Http\Web\Security\LoginThrottle;
 use App\Security\LoginService;
 use App\Security\UserRegistrar;

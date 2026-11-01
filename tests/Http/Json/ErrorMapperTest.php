@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Http\Web;
+namespace App\Tests\Http\Json;
 
 use App\ApiToken\Exception\ApiTokenNotFoundException;
 use App\ApiToken\Exception\InvalidApiTokenException;
@@ -23,10 +23,10 @@ use App\Crypto\Exception\DecryptionFailedException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
 use App\Entity\Exception\InvalidUserException;
-use App\Http\Web\BadRequestException;
-use App\Http\Web\ErrorMapper;
-use App\Http\Web\LockedException;
-use App\Http\Web\TooManyAttemptsException;
+use App\Http\Json\BadRequestException;
+use App\Http\Json\ErrorMapper;
+use App\Http\Json\LockedException;
+use App\Http\Json\TooManyAttemptsException;
 use App\Security\Exception\AccountAlreadyExistsException;
 use App\Security\Exception\InvalidCredentialsException;
 use App\Security\Exception\InvalidSecondFactorException;

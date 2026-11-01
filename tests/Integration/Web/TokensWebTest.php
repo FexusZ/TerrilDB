@@ -58,8 +58,9 @@ final class TokensWebTest extends WebApiTestCase
         $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$connection]]);
 
         $info = self::arrayOf($created['tokenInfo']);
-        $days = (new \DateTimeImmutable((string) $info['expiresAt']))->diff(new \DateTimeImmutable((string) $info['createdAt']))->days;
-        self::assertSame(30, $days);
+        self::assertIsString($info['expiresAt']);
+        self::assertIsString($info['createdAt']);
+        self::assertSame(30, (new \DateTimeImmutable($info['expiresAt']))->diff(new \DateTimeImmutable($info['createdAt']))->days);
     }
 
     public function testNothingSecretIsStoredInTheInternalDatabase(): void

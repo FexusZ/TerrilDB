@@ -7,6 +7,7 @@ namespace App\Http\Web;
 use App\Connection\ConnectionManager;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;

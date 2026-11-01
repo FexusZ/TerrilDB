@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Http\Web;
+namespace App\Http\Json;
 
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -58,7 +58,9 @@ final readonly class JsonExceptionListener
 
     private static function concerns(ExceptionEvent $event): bool
     {
-        return str_starts_with($event->getRequest()->getPathInfo(), '/web/');
+        $path = $event->getRequest()->getPathInfo();
+
+        return str_starts_with($path, '/web/') || str_starts_with($path, '/api/');
     }
 
     /**
