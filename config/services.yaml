@@ -9,6 +9,8 @@
 parameters:
     # first_only : l'inscription ne reste ouverte que tant qu'il n'existe aucun compte ; open : toujours ouverte
     env(APP_REGISTRATION): first_only
+    # Noms d'hôte acceptés par le point d'entrée MCP (protection contre le « DNS rebinding »), séparés par des virgules
+    env(TERRILDB_ALLOWED_HOSTS): 'localhost,127.0.0.1,[::1]'
 
 services:
     # default configuration for services in *this* file
