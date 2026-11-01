@@ -87,15 +87,20 @@ final class ApiTokenTest extends TestCase
         self::assertFalse($token->matches(''));
     }
 
+    private static function lastUse(ApiToken $token): ?string
+    {
+        return $token->getLastUsedAt()?->format(\DATE_ATOM);
+    }
+
     public function testTheLastUseIsRecordedAtMostOncePerMinute(): void
     {
         $token = $this->token();
 
         self::assertTrue($token->recordUse(new \DateTimeImmutable('2026-11-02T10:00:00+00:00')));
         self::assertFalse($token->recordUse(new \DateTimeImmutable('2026-11-02T10:00:30+00:00')));
-        self::assertSame('2026-11-02T10:00:00+00:00', $token->getLastUsedAt()?->format(\DATE_ATOM));
+        self::assertSame('2026-11-02T10:00:00+00:00', self::lastUse($token));
         self::assertTrue($token->recordUse(new \DateTimeImmutable('2026-11-02T10:01:00+00:00')));
-        self::assertSame('2026-11-02T10:01:00+00:00', $token->getLastUsedAt()?->format(\DATE_ATOM));
+        self::assertSame('2026-11-02T10:01:00+00:00', self::lastUse($token));
     }
 
     /**
