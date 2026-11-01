@@ -21,7 +21,11 @@ use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\CryptoException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
+use App\Entity\Exception\InvalidInvitationException;
 use App\Entity\Exception\InvalidUserException;
+use App\Invitation\Exception\InvalidInvitationTokenException;
+use App\Invitation\Exception\InvitationNotFoundException;
+use App\Invitation\Exception\NotAnAdministratorException;
 use App\Security\Exception\AccountAlreadyExistsException;
 use App\Security\Exception\InvalidCredentialsException;
 use App\Security\Exception\InvalidSecondFactorException;
@@ -48,7 +52,10 @@ final class ErrorMapper
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),
+            $error instanceof NotAnAdministratorException => new ErrorResponse(403, 'forbidden'),
+            $error instanceof InvalidInvitationTokenException => new ErrorResponse(403, 'invalid_invitation'),
             $error instanceof InvalidUserException,
+            $error instanceof InvalidInvitationException,
             $error instanceof InvalidApiTokenDefinitionException,
             $error instanceof InvalidDatabaseConnectionException,
             $error instanceof InvalidConnectionParametersException,
@@ -57,7 +64,7 @@ final class ErrorMapper
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
-            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof ApiTokenNotFoundException => new ErrorResponse(404, 'not_found'),
+            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException => new ErrorResponse(404, 'not_found'),
             $error instanceof TargetConnectionFailedException => new ErrorResponse(502, 'target_unreachable'),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
