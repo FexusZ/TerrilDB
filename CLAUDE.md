@@ -199,6 +199,7 @@ que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est char
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash
+sh docker/init-env.sh                                     # une fois : mots de passe locaux aléatoires (docker/dev/, ignoré)
 docker compose up -d db                                   # base interne
 docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 de test
 R="docker compose run --rm --no-deps php"
@@ -222,7 +223,7 @@ $R php bin/console doctrine:migrations:migrate --env=test # schéma de test (tes
 $R php bin/console doctrine:migrations:diff               # nouvelle migration après un changement d'entité
 ```
 
-L'URL de la base interne (`DATABASE_URL`) vient de `compose.yaml`, jamais de `.env`. Les tests d'intégration de
+Les mots de passe des bases locales ne sont dans aucun fichier versionné : `sh docker/init-env.sh` (une fois après le clonage) les tire au hasard dans `docker/dev/*.env` (ignoré par git, lu par `compose.yaml` via `env_file`). L'URL de la base interne (`DATABASE_URL`) vient de là, jamais de `.env`. Changer ces fichiers après un premier démarrage impose `docker compose down -v` (les volumes gardent l'ancien mot de passe). Les tests d'intégration de
 persistance (`tests/Integration/Persistence`) tournent dans une transaction annulée à chaque test.
 
 ## Bases cibles de test
@@ -231,7 +232,7 @@ Scripts d'init déterministes (SQL pur, sans aléatoire) dans `docker/targets/` 
 MySQL 8.4 et MariaDB 11.8, même dialecte) et `postgres/`. Schéma `shop` : `categories` (auto-FK),
 `customers`, `products`, `orders`, `order_items` (11 420 lignes), index simples/composites/uniques et
 vues `v_order_totals`, `v_product_sales`. Les tests d'intégration lisent `TARGET_MYSQL_URL`,
-`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL` (définies dans `compose.yaml`, service `php`) et sont
+`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
 sautés si la base est injoignable. Un changement de script impose `down -v` pour être rejoué.
 
 ## Conventions PHP
