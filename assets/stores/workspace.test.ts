@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api, apiDownload } from '../api/client'
-import type { HistoryEntry, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { HistoryEntry, PlanResult, QueryResult, TableDetail, TableSummary } from '../api/types'
 import { saveFile } from '../utils/download'
 import { useWorkspaceStore } from './workspace'
 
@@ -331,6 +331,67 @@ describe('workspace store', () => {
 
       expect(apiDownload).not.toHaveBeenCalled()
       expect(store.activeTab.error).toBe('Saisissez une instruction.')
+    })
+  })
+
+  describe('plan', () => {
+    const plan: PlanResult = { plan: { totalCost: 5, root: { kind: 'full_scan', label: 'Seq Scan', relation: 'orders', index: null, rows: 3800, cost: 5, condition: null, fullScan: true, children: [] } }, findings: [{ rule: 'full_scan', relation: 'orders', rows: 3800, condition: null }] }
+
+    it('asks for the plan of the statement of the tab', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      mocked.mockResolvedValueOnce(plan)
+
+      await store.planTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/plan', { sql: 'select * from orders' })
+      expect(store.activeTab.plan).toEqual(plan)
+      expect(store.activeTab.view).toBe('plan')
+      expect(store.activeTab.planning).toBe(false)
+    })
+
+    it('shows the result again after a run', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select 1')
+      mocked.mockResolvedValueOnce(plan)
+      await store.planTab(store.activeTab.id)
+      mocked.mockResolvedValueOnce(result)
+
+      await store.run(store.activeTab.id)
+
+      expect(store.activeTab.view).toBe('result')
+    })
+
+    it('does not ask for the plan of an empty statement', async () => {
+      const store = await opened()
+
+      await store.planTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenCalledTimes(1)
+      expect(store.activeTab.error).toBe('Saisissez une instruction.')
+    })
+
+    it('explains a refusal', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'delete from orders')
+      mocked.mockRejectedValueOnce(new ApiError(403, 'query_refused', { reason: 'not_read_only' }))
+
+      await store.planTab(store.activeTab.id)
+
+      expect(store.activeTab.error).toContain('lecture seule')
+      expect(store.activeTab.plan).toBeNull()
+    })
+
+    it('forgets the plan when the statement is edited', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      mocked.mockResolvedValueOnce(plan)
+      await store.planTab(store.activeTab.id)
+
+      store.setSql(store.activeTab.id, 'select * from orders where id = 1')
+
+      expect(store.activeTab.plan).toBeNull()
+      expect(store.activeTab.view).toBe('result')
     })
   })
 })

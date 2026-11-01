@@ -16,6 +16,7 @@ async function mountTree(props: Record<string, unknown> = {}) {
     history: createMemoryHistory(),
     routes: [
       { path: '/connections/:id', name: 'workspace', component: { template: '<p />' } },
+      { path: '/connections/:id/audit', name: 'audit', component: { template: '<p />' } },
       { path: '/connections/:id/tables/:name(.+)', name: 'table', component: { template: '<p />' } },
     ],
   })
@@ -84,5 +85,17 @@ describe('SchemaTree', () => {
     const wrapper = await mountTree()
 
     expect(wrapper.text()).toContain('estimations')
+  })
+
+  it('leads to the schema audit', async () => {
+    const wrapper = await mountTree()
+
+    expect(wrapper.get('a.audit').attributes('href')).toBe('/connections/abc/audit')
+  })
+
+  it('still leads to the audit when the database has no table', async () => {
+    const wrapper = await mountTree({ tables: [] })
+
+    expect(wrapper.find('a.audit').exists()).toBe(true)
   })
 })
