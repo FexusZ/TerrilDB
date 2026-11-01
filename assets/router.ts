@@ -24,6 +24,7 @@ export function createAppRouter(history: RouterHistory): Router {
         props: true,
         children: [
           { path: '', name: 'workspace', component: () => import('./views/QueryPane.vue') },
+          { path: 'audit', name: 'audit', component: () => import('./views/AuditPane.vue'), props: true },
           { path: 'tables/:name(.+)', name: 'table', component: () => import('./views/TablePane.vue'), props: true },
         ],
       },

@@ -4,6 +4,7 @@ import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import PlanTree from '../components/PlanTree.vue'
 import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -55,6 +56,7 @@ function toggleMode(): void {
           Exécuter
         </AppButton>
         <span class="shortcut">Ctrl + Entrée</span>
+        <AppButton class="plan" small :busy="tab.planning" @click="workspace.planTab(tab.id)">Plan d’exécution</AppButton>
       </div>
       <div class="export" role="group" aria-label="Exporter le résultat">
         <AppButton class="export-csv" small :disabled="!exportable" :busy="tab.exporting" @click="workspace.exportTab(tab.id, 'csv')">Exporter CSV</AppButton>
@@ -84,6 +86,7 @@ function toggleMode(): void {
     <div v-if="!showHistory" class="output">
       <p v-if="tab.running" class="state" role="status">Exécution…</p>
       <p v-else-if="tab.error" class="error" role="alert">{{ tab.error }}</p>
+      <PlanTree v-else-if="tab.view === 'plan' && tab.plan" :result="tab.plan" />
       <ResultTable v-else-if="tab.result" :result="tab.result" />
       <p v-else class="state">Exécutez une requête pour voir son résultat.</p>
     </div>

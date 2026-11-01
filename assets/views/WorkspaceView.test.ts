@@ -27,6 +27,7 @@ async function mountView(path = '/connections/abc') {
         props: true,
         children: [
           { path: '', name: 'workspace', component: { template: '<p class="child">éditeur</p>' } },
+          { path: 'audit', name: 'audit', component: { template: '<p class="child">audit</p>' } },
           { path: 'tables/:name(.+)', name: 'table', component: { template: '<p class="child">table</p>' } },
         ],
       },
