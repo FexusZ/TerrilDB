@@ -47,7 +47,9 @@ final readonly class RedisDriver implements Driver
             $engine,
             null,
             new RedisQueryRunner(static fn (float $readTimeout): Client => $connector->open($parameters, $readTimeout)),
-            $client->disconnect(...),
+            static function () use ($client): void {
+                $client->disconnect();
+            },
             new RedisKeyValueStore($client),
         );
     }
