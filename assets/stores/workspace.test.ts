@@ -1,7 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api } from '../api/client'
-import type { QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { HistoryEntry, QueryResult, TableDetail, TableSummary } from '../api/types'
 import { useWorkspaceStore } from './workspace'
 
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
@@ -10,6 +10,8 @@ const mocked = vi.mocked(api)
 const tables: TableSummary[] = [{ name: 'orders', kind: 'table', estimatedRows: 3800 }]
 const result: QueryResult = { columns: ['a'], rows: [[1]], rowCount: 1, truncated: false, affectedRows: null, durationMs: 4 }
 const detail: TableDetail = { name: 'orders', kind: 'table', estimatedRows: 3800, viewDefinition: null, columns: [], indexes: [], foreignKeys: [] }
+
+const entry = (id: string, sql: string): HistoryEntry => ({ id, occurredAt: '2026-11-01T10:00:00+00:00', actor: 'web', outcome: 'success', sql, mode: 'read_only', rowCount: 1, durationMs: 3, reason: null })
 
 async function opened() {
   mocked.mockResolvedValueOnce({ tables })
@@ -209,5 +211,77 @@ describe('workspace store', () => {
     await store.describe('a b/c')
 
     expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables/a%20b%2Fc')
+  })
+
+  describe('history', () => {
+    it('loads the history of the open connection', async () => {
+      const store = await opened()
+      mocked.mockResolvedValueOnce({ entries: [entry('a', 'select 1'), entry('b', 'select 2')], next: 'b' })
+
+      await store.loadHistory()
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/history?limit=50')
+      expect(store.history.map((item) => item.sql)).toEqual(['select 1', 'select 2'])
+      expect(store.historyLoaded).toBe(true)
+      expect(store.historyHasMore).toBe(true)
+    })
+
+    it('appends the next page', async () => {
+      const store = await opened()
+      mocked.mockResolvedValueOnce({ entries: [entry('a', 'select 1')], next: 'a' })
+      await store.loadHistory()
+      mocked.mockResolvedValueOnce({ entries: [entry('b', 'select 0')], next: null })
+
+      await store.moreHistory()
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/history?limit=50&before=a')
+      expect(store.history.map((item) => item.id)).toEqual(['a', 'b'])
+      expect(store.historyHasMore).toBe(false)
+    })
+
+    it('reports a failure', async () => {
+      const store = await opened()
+      mocked.mockRejectedValueOnce(new ApiError(0, 'network'))
+
+      await store.loadHistory()
+
+      expect(store.historyError).toContain('serveur')
+    })
+
+    it('stays untouched by a run until the history has been opened', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select 1')
+      mocked.mockResolvedValueOnce(result)
+
+      await store.run(store.activeTab.id)
+
+      expect(mocked).toHaveBeenCalledTimes(2)
+    })
+
+    it('refreshes after a run once it has been opened', async () => {
+      const store = await opened()
+      mocked.mockResolvedValueOnce({ entries: [], next: null })
+      await store.loadHistory()
+      store.setSql(store.activeTab.id, 'select 1')
+      mocked.mockResolvedValueOnce(result)
+      mocked.mockResolvedValueOnce({ entries: [entry('a', 'select 1')], next: null })
+
+      await store.run(store.activeTab.id)
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/history?limit=50')
+      expect(store.history.map((item) => item.sql)).toEqual(['select 1'])
+    })
+
+    it('is forgotten when another connection is opened', async () => {
+      const store = await opened()
+      mocked.mockResolvedValueOnce({ entries: [entry('a', 'select 1')], next: null })
+      await store.loadHistory()
+
+      mocked.mockResolvedValueOnce({ tables: [] })
+      await store.open('conn-2')
+
+      expect(store.history).toEqual([])
+      expect(store.historyLoaded).toBe(false)
+    })
   })
 })

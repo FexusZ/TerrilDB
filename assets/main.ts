@@ -9,6 +9,7 @@ import { createApp } from 'vue'
 import { onSessionLost } from './api/client'
 import App from './App.vue'
 import { router } from './router'
+import { useActivityStore } from './stores/activity'
 import { useConnectionsStore } from './stores/connections'
 import { useSessionStore } from './stores/session'
 import { useTokensStore } from './stores/tokens'
@@ -25,6 +26,7 @@ app.use(router)
 onSessionLost(() => {
   useSessionStore(pinia).dropUser()
   useConnectionsStore(pinia).reset()
+  useActivityStore(pinia).reset()
   useTokensStore(pinia).reset()
   useWorkspaceStore(pinia).close()
   void router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })

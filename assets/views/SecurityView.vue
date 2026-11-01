@@ -172,6 +172,14 @@ async function regenerate(): Promise<void> {
       <p class="lede">Donnez à un outil un accès en lecture seule à certaines de vos connexions, pour une durée limitée.</p>
     </section>
 
+    <section class="panel activity">
+      <div class="head">
+        <h2>Journal d’activité</h2>
+        <RouterLink class="more" :to="{ name: 'activity' }">Consulter</RouterLink>
+      </div>
+      <p class="lede">Qui s’est connecté à votre compte, ce qui a changé, et chaque requête lancée depuis l’interface, l’API ou un assistant.</p>
+    </section>
+
     <section v-if="session.user.totpEnabled" class="panel recovery">
       <div class="head">
         <h2>Codes de récupération</h2>

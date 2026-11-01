@@ -151,7 +151,7 @@ de sécurité) ; `SpaController` le sert pour toute adresse `/app/…`, `Securit
 Structure : `api/` (client `fetch` + en-tête CSRF, `ApiError` à code stable, `errors.ts` = messages français),
 `stores/` (Pinia : session, connexions, espace de travail à onglets), `components/`, `views/`, `utils/`,
 `styles/tokens.css` (jetons de design, thème sombre unique : teal = action, ambre = secret/chiffré).
-Une réponse `unauthenticated`/`locked` ramène à la connexion (`onSessionLost`). Une redirection `?redirect=` n'est suivie
+L'éditeur a un onglet « Historique » (`HistoryPanel`, alimenté par `/web/connections/{id}/history` et rafraîchi après chaque exécution une fois ouvert) ; `/security/activity` affiche le journal du compte (`utils/audit.ts` = libellés français). Une réponse `unauthenticated`/`locked` ramène à la connexion (`onSessionLost`). Une redirection `?redirect=` n'est suivie
 que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est chargé d'un tiers. Tests Vitest à côté du code
 (`*.test.ts`) ; les rejets simulés se font avec `mockRejectedValueOnce` (un `mockRejectedValue` persistant déclenche un
 « unhandled rejection »).

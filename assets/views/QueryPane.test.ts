@@ -159,4 +159,40 @@ describe('QueryPane', () => {
     expect(wrapper.findAll('[role="tab"]')).toHaveLength(1)
     wrapper.unmount()
   })
+
+  it('opens the history, loads it, and puts a picked statement back in the editor', async () => {
+    const { wrapper, store } = await mountPane()
+    mocked.mockResolvedValueOnce({
+      entries: [{ id: 'h1', occurredAt: '2026-11-01T10:00:00+00:00', actor: 'web', outcome: 'success', sql: 'select * from orders', mode: 'read_only', rowCount: 3, durationMs: 4, reason: null }],
+      next: null,
+    })
+
+    await wrapper.get('button.history-toggle').trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/abc/history?limit=50')
+    expect(wrapper.find('section.history').exists()).toBe(true)
+    expect(wrapper.find('.stub').exists()).toBe(false)
+
+    await wrapper.get('button.pick').trigger('click')
+
+    expect(store.activeTab.sql).toBe('select * from orders')
+    expect(wrapper.find('section.history').exists()).toBe(false)
+    expect((wrapper.get('.stub').element as HTMLTextAreaElement).value).toBe('select * from orders')
+    wrapper.unmount()
+  })
+
+  it('closes the history with the same button', async () => {
+    const { wrapper } = await mountPane()
+    mocked.mockResolvedValueOnce({ entries: [], next: null })
+
+    await wrapper.get('button.history-toggle').trigger('click')
+    await flushPromises()
+    await wrapper.get('button.history-toggle').trigger('click')
+
+    expect(wrapper.find('section.history').exists()).toBe(false)
+    expect(wrapper.find('.stub').exists()).toBe(true)
+    expect(wrapper.get('button.history-toggle').attributes('aria-pressed')).toBe('false')
+    wrapper.unmount()
+  })
 })
