@@ -41,6 +41,8 @@ describe('TokensView', () => {
     expect(wrapper.get('h1').text()).toContain('Jetons')
     expect(wrapper.text()).toContain('lecture seule')
     expect(wrapper.text()).toContain('mot de passe')
+    expect(wrapper.text()).toContain('/mcp')
+    expect(wrapper.text()).toContain('/api/v1')
     wrapper.unmount()
   })
 

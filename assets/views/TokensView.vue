@@ -96,6 +96,8 @@ async function revoke(): Promise<void> {
       <p>Un jeton donne à un outil (assistant, script, intégration) un accès en lecture seule aux connexions que vous choisissez. Il expire, et il est supprimé si vous changez de mot de passe.</p>
     </div>
 
+    <p class="usage">API REST : <code>/api/v1</code>. Serveur MCP pour un assistant : <code>/mcp</code>. Dans les deux cas, l’en-tête <code>Authorization: Bearer &lt;jeton&gt;</code>.</p>
+
     <p v-if="listError" class="error" role="alert">{{ listError }}</p>
 
     <section v-if="fresh" class="fresh" aria-live="polite">
@@ -185,6 +187,8 @@ select { height: 42px; padding: 0 12px; border-radius: var(--radius); border: 1p
 .token { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 0; border-top: 1px solid var(--line); }
 .token:first-child { border-top: 0; padding-top: 0; }
 .token-name { font-weight: 600; }
+.usage { color: var(--mut); font-size: 13px; }
+.usage code { font: 400 12px var(--font-mono); color: var(--fg); }
 .meta, .empty, .hint { color: var(--mut); font-size: 13px; }
 .chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; border: 1px solid var(--line); }
 .chip.bad { color: var(--bad); border-color: var(--bad-line); background: var(--bad-bg); }

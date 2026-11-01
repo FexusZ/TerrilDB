@@ -122,6 +122,15 @@ de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même trans
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
 
+## Serveur MCP (src/Http/Mcp, docs/mcp.md)
+
+SDK officiel `mcp/sdk` (0.9, expérimental : les révisions du protocole sont gérées par lui), confiné à `Http/Mcp`.
+`POST|DELETE /mcp` derrière le même pare-feu `api` que l'API REST (jeton porteur) ; `McpServerFactory` rebâtit le serveur
+à chaque requête (quatre outils déclarés explicitement, sessions du protocole sur fichiers dans le cache) ; `McpTools`
+réutilise `TargetSession`/`QueryService` en lecture seule ; `McpSessionBinding` lie une session MCP au jeton qui l'a ouverte.
+Pas de flux serveur (GET → 405). Hôtes acceptés : `TERRILDB_ALLOWED_HOSTS`. Les arguments d'outil portent le nom exact du
+paramètre PHP (camelCase : `maxRows`, `timeoutMs`).
+
 ## Front (assets/, Vue 3 + TypeScript + Vite + Pinia + CodeMirror 6)
 
 SPA servie sous `/app/` : Vite compile dans `public/app/` (ignoré par git) et l'index sort sous le nom `spa.html`

@@ -60,7 +60,7 @@ final readonly class JsonExceptionListener
     {
         $path = $event->getRequest()->getPathInfo();
 
-        return str_starts_with($path, '/web/') || str_starts_with($path, '/api/');
+        return str_starts_with($path, '/web/') || str_starts_with($path, '/api/') || '/mcp' === $path;
     }
 
     /**
