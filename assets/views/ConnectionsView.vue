@@ -19,6 +19,7 @@ const filters: { value: Engine | 'all'; label: string }[] = [
   { value: 'mysql', label: ENGINE_LABELS.mysql },
   { value: 'mariadb', label: ENGINE_LABELS.mariadb },
   { value: 'postgresql', label: ENGINE_LABELS.postgresql },
+  { value: 'clickhouse', label: ENGINE_LABELS.clickhouse },
 ]
 
 function normalize(text: string): string {
