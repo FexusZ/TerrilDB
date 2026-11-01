@@ -28,6 +28,11 @@ final class SchemaAuditor
      */
     public function audit(Engine $engine, array $tables): array
     {
+        if (Engine::ClickHouse === $engine) {
+            // Ni clé primaire, ni clé étrangère, ni unicité : les règles relationnelles ne s'appliquent pas.
+            return [];
+        }
+
         $findings = [];
         foreach ($tables as $table) {
             if (TableKind::Table !== $table->kind) {

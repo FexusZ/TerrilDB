@@ -31,6 +31,19 @@ final class TargetDatabase
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
         yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
+        yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL'];
+    }
+
+    /**
+     * Les moteurs relationnels, joints par DBAL, avec clés étrangères et plans d'exécution lisibles.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function relational(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
     }
 
     public static function engine(string $envVar): Engine
