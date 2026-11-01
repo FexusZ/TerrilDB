@@ -39,8 +39,8 @@ export const useSessionStore = defineStore('session', () => {
     return { recoveryCodeUsed: result.recoveryCodeUsed }
   }
 
-  async function register(email: string, username: string, password: string): Promise<void> {
-    await api('POST', '/web/register', { email, username, password })
+  async function register(email: string, username: string, password: string, invitation?: string): Promise<void> {
+    await api('POST', '/web/register', invitation === undefined ? { email, username, password } : { email, username, password, invitation })
   }
 
   async function logout(): Promise<void> {

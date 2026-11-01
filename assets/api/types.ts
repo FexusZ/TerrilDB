@@ -13,6 +13,7 @@ export interface User {
   id: string
   username: string
   email: string
+  role: 'admin' | 'member'
   totpEnabled: boolean
   recoveryCodesLeft: number
   createdAt: string
@@ -211,4 +212,14 @@ export interface SchemaDiagram {
   truncated: boolean
   tables: DiagramTable[]
   relations: DiagramRelation[]
+}
+
+export interface InvitationInfo {
+  id: string
+  note: string
+  status: 'pending' | 'used' | 'expired'
+  createdAt: string
+  expiresAt: string
+  usedAt: string | null
+  usedBy: string | null
 }

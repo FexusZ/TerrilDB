@@ -58,6 +58,9 @@ final class User
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
+    #[ORM\Column(length: 10, enumType: Role::class, options: ['default' => 'member'])]
+    private Role $role;
+
     // Verrou optimiste : deux écritures concurrentes sur le même compte ne s'écrasent pas en silence
     // (notamment pour qu'un code TOTP présenté deux fois en même temps ne passe qu'une fois).
     #[ORM\Version]
@@ -70,7 +73,9 @@ final class User
         string $passwordHash,
         KdfParameters $kdfParameters,
         \DateTimeImmutable $createdAt,
+        Role $role = Role::Member,
     ) {
+        $this->role = $role;
         $this->id = Uuid::v7();
         $this->email = self::normalizeEmail($email);
         $this->username = self::normalizeUsername($username);
@@ -111,6 +116,16 @@ final class User
     public function getCreatedAt(): \DateTimeImmutable
     {
         return $this->createdAt;
+    }
+
+    public function getRole(): Role
+    {
+        return $this->role;
+    }
+
+    public function isAdmin(): bool
+    {
+        return Role::Admin === $this->role;
     }
 
     /**

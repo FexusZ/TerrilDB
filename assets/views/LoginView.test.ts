@@ -8,7 +8,7 @@ import LoginView from './LoginView.vue'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+const user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
 
 async function mountView(path = '/login') {
   const pinia = createPinia()

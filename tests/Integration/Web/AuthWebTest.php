@@ -38,6 +38,7 @@ final class AuthWebTest extends WebApiTestCase
         self::assertSame(201, $this->statusCode());
         self::assertIsArray($first['user']);
         self::assertSame('alice', $first['user']['username']);
+        self::assertSame('admin', $first['user']['role']);
         self::assertArrayNotHasKey('passwordHash', $first['user']);
 
         $second = $this->call('POST', '/web/register', ['email' => 'bob@example.test', 'username' => 'bob', 'password' => self::PASSWORD]);

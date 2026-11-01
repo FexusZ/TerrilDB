@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import AuthLayout from '../components/AuthLayout.vue'
@@ -10,6 +10,8 @@ import { useSessionStore } from '../stores/session'
 
 const session = useSessionStore()
 const router = useRouter()
+const route = useRoute()
+const invitation = typeof route.query.invitation === 'string' && route.query.invitation !== '' ? route.query.invitation : undefined
 
 const email = ref('')
 const username = ref('')
@@ -26,7 +28,7 @@ async function submit(): Promise<void> {
   }
   busy.value = true
   try {
-    await session.register(email.value, username.value, password.value)
+    await session.register(email.value, username.value, password.value, invitation)
     await session.login(username.value, password.value)
     await router.push({ name: 'connections' })
   } catch (failure) {
@@ -42,7 +44,8 @@ async function submit(): Promise<void> {
     <form @submit.prevent="submit">
       <div class="title">
         <h1>Créer un compte</h1>
-        <p>Le premier compte d’une installation est le propriétaire.</p>
+        <p v-if="invitation">Vous avez reçu une invitation : choisissez vos identifiants.</p>
+        <p v-else>Le premier compte d’une installation est le propriétaire ; les suivants s’ouvrent sur invitation.</p>
       </div>
       <FormField id="email" v-model="email" label="Adresse e-mail" type="email" autocomplete="email" inputmode="email" required />
       <FormField id="username" v-model="username" label="Nom d’utilisateur" autocomplete="username" hint="3 à 32 caractères : lettres minuscules, chiffres, point, tiret ou tiret bas." required />

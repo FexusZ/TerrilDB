@@ -10,6 +10,7 @@ use App\Audit\AuditOutcome;
 use App\Http\Json\JsonInput;
 use App\Http\Json\TooManyAttemptsException;
 use App\Http\Web\Security\LoginThrottle;
+use App\Invitation\InvitationService;
 use App\Repository\UserRepository;
 use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\LoginFailedException;
@@ -27,6 +28,7 @@ final readonly class AccountController
     public function __construct(
         private RegistrationPolicy $registration,
         private UserRegistrar $registrar,
+        private InvitationService $invitations,
         private LoginService $login,
         private LoginThrottle $throttle,
         private WebSession $session,
@@ -44,12 +46,16 @@ final readonly class AccountController
         $username = $input->string('username');
         $password = $input->string('password');
 
-        if (!$this->registration->isOpen()) {
+        $invitation = $input->optionalString('invitation');
+
+        if (null !== $invitation) {
+            $user = $this->invitations->register($invitation, $email, $username, $password);
+        } elseif ($this->registration->isOpen()) {
+            $user = $this->registrar->register($email, $username, $password);
+        } else {
             return new JsonResponse(['error' => 'registration_closed'], Response::HTTP_FORBIDDEN);
         }
-
-        $user = $this->registrar->register($email, $username, $password);
-        $this->audit->record($this->session->auditContext($user), AuditAction::AccountRegistered, subject: $user->getId());
+        $this->audit->record($this->session->auditContext($user), AuditAction::AccountRegistered, subject: $user->getId(), details: ['invited' => null !== $invitation]);
 
         return new JsonResponse(['user' => UserPresenter::present($user)], Response::HTTP_CREATED);
     }

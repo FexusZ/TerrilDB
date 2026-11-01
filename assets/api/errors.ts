@@ -39,7 +39,11 @@ export function messageFor(error: unknown): string {
     case 'account_exists':
       return 'Un compte existe déjà avec cet e-mail ou ce nom d’utilisateur.'
     case 'registration_closed':
-      return 'Les inscriptions sont fermées.'
+      return 'Les inscriptions sont fermées : il faut une invitation.'
+    case 'invalid_invitation':
+      return 'Cette invitation n’est pas valable : elle a peut-être déjà servi, expiré ou été révoquée.'
+    case 'forbidden':
+      return 'Cette page est réservée aux administrateurs.'
     case 'locked':
     case 'unauthenticated':
       return 'Votre session doit être déverrouillée : reconnectez-vous.'

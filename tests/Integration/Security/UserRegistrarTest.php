@@ -6,6 +6,7 @@ namespace App\Tests\Integration\Security;
 
 use App\Crypto\KeyDerivation;
 use App\Entity\Exception\InvalidUserException;
+use App\Entity\Role;
 use App\Repository\UserRepository;
 use App\Security\AuthPasswordHasher;
 use App\Security\Exception\AccountAlreadyExistsException;
@@ -44,6 +45,15 @@ final class UserRegistrarTest extends DatabaseTestCase
             $this->repository,
             new MockClock('2026-10-29 12:00:00 UTC'),
         );
+    }
+
+    public function testTheFirstAccountAdministratesTheInstallationAndTheNextOnesAreMembers(): void
+    {
+        $first = $this->registrar->register('alice@example.test', 'alice', self::PASSWORD);
+        $second = $this->registrar->register('bob@example.test', 'bob', self::PASSWORD);
+
+        self::assertSame(Role::Admin, $first->getRole());
+        self::assertSame(Role::Member, $second->getRole());
     }
 
     public function testRegistersAPersistedUserWithItsCreationDate(): void

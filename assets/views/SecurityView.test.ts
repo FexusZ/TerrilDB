@@ -10,7 +10,7 @@ import SecurityView from './SecurityView.vue'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
 const codes = Array.from({ length: 10 }, (_, i) => `abcd-efgh-ijkl-mn0${String(i)}`)
 
 async function mountView(user: User = alice) {
@@ -19,7 +19,7 @@ async function mountView(user: User = alice) {
   useSessionStore().user = user
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'security', 'login', 'tokens', 'activity'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'security', 'login', 'tokens', 'activity', 'invitations'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/security')
   const wrapper = mount(SecurityView, { global: { plugins: [pinia, router] } })
@@ -41,6 +41,14 @@ describe('SecurityView', () => {
     const wrapper = await mountView()
 
     expect(wrapper.get('section.activity a.more').attributes('href')).toBe('/activity')
+  })
+
+  it('leads an administrator to the invitations, and nobody else', async () => {
+    const admin = await mountView()
+    const member = await mountView({ ...alice, role: 'member' })
+
+    expect(admin.get('section.invitations a.more').attributes('href')).toBe('/invitations')
+    expect(member.find('section.invitations').exists()).toBe(false)
   })
 
   it('leads to the API tokens', async () => {
