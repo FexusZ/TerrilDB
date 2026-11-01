@@ -186,3 +186,29 @@ export interface SchemaAudit {
   truncated: boolean
   findings: SchemaFinding[]
 }
+
+export interface DiagramColumn {
+  name: string
+  type: string
+  nullable: boolean
+  primary: boolean
+}
+
+export interface DiagramTable {
+  name: string
+  columns: DiagramColumn[]
+}
+
+export interface DiagramRelation {
+  name: string
+  table: string
+  columns: string[]
+  referencedTable: string
+  referencedColumns: string[]
+}
+
+export interface SchemaDiagram {
+  truncated: boolean
+  tables: DiagramTable[]
+  relations: DiagramRelation[]
+}
