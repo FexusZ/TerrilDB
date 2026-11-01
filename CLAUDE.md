@@ -190,7 +190,7 @@ de sécurité) ; `SpaController` le sert pour toute adresse `/app/…`, `Securit
 `'self'` seulement, pas de script en ligne). `docker/php/router.php` est le routeur du serveur de développement.
 Structure : `api/` (client `fetch` + en-tête CSRF, `ApiError` à code stable, `errors.ts` = messages français),
 `stores/` (Pinia : session, connexions, espace de travail à onglets), `components/`, `views/`, `utils/`,
-`styles/tokens.css` (jetons de design, thème sombre unique : teal = action, ambre = secret/chiffré).
+`styles/tokens.css` (jetons de design : teal = action, ambre = secret/chiffré ; thème sombre par défaut et thème clair sous `:root[data-theme='light']` ; aucune couleur en dur dans les composants, tout passe par les variables, y compris la coloration de CodeMirror). `stores/theme.ts` : automatique (suit le système) / clair / sombre, choix gardé dans `localStorage` (tolérant au refus), bouton dans `AppHeader`.
 L'éditeur a un onglet « Historique » (`HistoryPanel`, alimenté par `/web/connections/{id}/history` et rafraîchi après chaque exécution une fois ouvert) ; `/security/activity` affiche le journal du compte (`utils/audit.ts` = libellés français). Une réponse `unauthenticated`/`locked` ramène à la connexion (`onSessionLost`). Une redirection `?redirect=` n'est suivie
 que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est chargé d'un tiers. Tests Vitest à côté du code
 (`*.test.ts`) ; les rejets simulés se font avec `mockRejectedValueOnce` (un `mockRejectedValue` persistant déclenche un

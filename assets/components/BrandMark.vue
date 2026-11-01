@@ -5,8 +5,8 @@ withDefaults(defineProps<{ size?: number; wordmark?: boolean }>(), { size: 28, w
 <template>
   <span class="brand">
     <svg :width="size" :height="size" viewBox="0 0 28 28" aria-hidden="true">
-      <path d="M2 24 L14 4 L26 24 Z" fill="#12312f" stroke="#5cc8be" stroke-width="1.6" stroke-linejoin="round" />
-      <path d="M7 17h14M10 11.5h8" stroke="#5cc8be" stroke-width="1.6" stroke-linecap="round" />
+      <path d="M2 24 L14 4 L26 24 Z" class="tri" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="M7 17h14M10 11.5h8" class="bar" stroke-width="1.6" stroke-linecap="round" />
     </svg>
     <span v-if="wordmark" class="word">TerrilDB</span>
   </span>
@@ -14,5 +14,7 @@ withDefaults(defineProps<{ size?: number; wordmark?: boolean }>(), { size: 28, w
 
 <style scoped>
 .brand { display: inline-flex; align-items: center; gap: 10px; }
+.tri { fill: var(--acc-bg); stroke: var(--acc); }
+.bar { stroke: var(--acc); }
 .word { font-weight: 700; font-size: 1.15em; letter-spacing: -0.01em; }
 </style>

@@ -28,11 +28,11 @@ const theme = EditorView.theme(
     '&': { color: 'var(--fg)', backgroundColor: 'var(--bg)', fontSize: '13.5px', height: '100%' },
     '.cm-content': { fontFamily: 'var(--font-mono)', caretColor: 'var(--acc)', padding: '14px 0' },
     '.cm-scroller': { lineHeight: '22px', overflow: 'auto' },
-    '.cm-gutters': { backgroundColor: 'var(--bg)', color: '#566a64', border: 'none' },
-    '.cm-activeLine': { backgroundColor: 'rgba(92, 200, 190, 0.05)' },
+    '.cm-gutters': { backgroundColor: 'var(--bg)', color: 'var(--code-gutter)', border: 'none' },
+    '.cm-activeLine': { backgroundColor: 'var(--hover)' },
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--mut)' },
     '&.cm-focused': { outline: 'none' },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'rgba(92, 200, 190, 0.22)' },
+    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--selection)' },
     '.cm-cursor': { borderLeftColor: 'var(--acc)' },
     '.cm-tooltip': { backgroundColor: 'var(--s2)', border: '1px solid var(--line-strong)', color: 'var(--fg)' },
     '.cm-tooltip-autocomplete ul li[aria-selected]': { backgroundColor: 'var(--acc-bg)', color: 'var(--acc)' },
@@ -41,12 +41,12 @@ const theme = EditorView.theme(
 )
 
 const highlight = HighlightStyle.define([
-  { tag: tags.keyword, color: '#7fb2e6' },
-  { tag: [tags.string, tags.special(tags.string)], color: '#9ed49a' },
-  { tag: [tags.number, tags.bool, tags.null], color: '#d5a0e8' },
-  { tag: [tags.function(tags.variableName), tags.standard(tags.name)], color: '#e3a857' },
-  { tag: [tags.lineComment, tags.blockComment], color: '#6f827c', fontStyle: 'italic' },
-  { tag: tags.operator, color: '#9aaba6' },
+  { tag: tags.keyword, color: 'var(--code-keyword)' },
+  { tag: [tags.string, tags.special(tags.string)], color: 'var(--code-string)' },
+  { tag: [tags.number, tags.bool, tags.null], color: 'var(--code-number)' },
+  { tag: [tags.function(tags.variableName), tags.standard(tags.name)], color: 'var(--code-function)' },
+  { tag: [tags.lineComment, tags.blockComment], color: 'var(--code-comment)', fontStyle: 'italic' },
+  { tag: tags.operator, color: 'var(--code-operator)' },
 ])
 
 onMounted(() => {
