@@ -8,12 +8,9 @@ services:
       - composer-cache:/tmp/composer
     environment:
       COMPOSER_HOME: /tmp/composer
-      # Bases cibles de test (tests d'intégration, groupe "integration")
-      TARGET_MYSQL_URL: pdo-mysql://root:root@target-mysql:3306/shop
-      TARGET_MARIADB_URL: pdo-mysql://root:root@target-mariadb:3306/shop
-      TARGET_POSTGRES_URL: pdo-pgsql://postgres:root@target-postgres:5432/shop
-      # Base interne (le suffixe _test est ajouté en environnement de test)
-      DATABASE_URL: pdo-pgsql://terrildb:terrildb@db:5432/terrildb
+    # DATABASE_URL (base interne, suffixe _test ajouté en environnement de test) et TARGET_*_URL (bases cibles de test,
+    # groupe "integration") : générés par docker/init-env.sh, jamais versionnés.
+    env_file: docker/dev/php.env
     depends_on:
       db:
         condition: service_healthy
@@ -41,10 +38,7 @@ services:
   # Base interne de TerrilDB (utilisateurs, connexions chiffrées, historique, audit)
   db:
     image: postgres:18-alpine
-    environment:
-      POSTGRES_DB: terrildb
-      POSTGRES_USER: terrildb
-      POSTGRES_PASSWORD: terrildb
+    env_file: docker/dev/internal-db.env
     volumes:
       - db-data:/var/lib/postgresql
     healthcheck:
@@ -56,23 +50,19 @@ services:
   target-mysql:
     profiles: [targets]
     image: mysql:8.4
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: shop
+    env_file: docker/dev/target-mysql.env
     ports: ["33061:3306"]
     volumes:
       - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 3s
       retries: 40
 
   target-mariadb:
     profiles: [targets]
     image: mariadb:11.8
-    environment:
-      MARIADB_ROOT_PASSWORD: root
-      MARIADB_DATABASE: shop
+    env_file: docker/dev/target-mariadb.env
     ports: ["33062:3306"]
     volumes:
       # même dialecte que MySQL pour ce jeu de données : scripts partagés
@@ -85,9 +75,7 @@ services:
   target-postgres:
     profiles: [targets]
     image: postgres:18-alpine
-    environment:
-      POSTGRES_PASSWORD: root
-      POSTGRES_DB: shop
+    env_file: docker/dev/target-postgres.env
     ports: ["54321:5432"]
     volumes:
       - ./docker/targets/postgres:/docker-entrypoint-initdb.d:ro
