@@ -32,11 +32,28 @@ final readonly class SecretRotator
         #[\SensitiveParameter] string $newPassword,
         array $secrets,
     ): RotationResult {
+        $oldKey = $this->derivation->derive($oldPassword, $oldParameters);
+
+        try {
+            return $this->rotateWithKey($oldKey, $newPassword, $secrets);
+        } finally {
+            $oldKey->wipe();
+        }
+    }
+
+    /**
+     * Comme `rotate`, mais avec l'ancienne clé déjà en main (retrouvée par la phrase de récupération). Elle reste à
+     * l'appelant, qui l'efface.
+     *
+     * @param array<array-key, string> $secrets chiffrés indexés par identifiant (utilisé comme contexte authentifié)
+     */
+    public function rotateWithKey(DerivedKey $oldKey, #[\SensitiveParameter] string $newPassword, array $secrets): RotationResult
+    {
         if ('' === $newPassword) {
             throw new EmptyPasswordException('The new password must not be empty.');
         }
 
-        $plaintexts = $this->decryptAll($oldPassword, $oldParameters, $secrets);
+        $plaintexts = $this->decryptAll($oldKey, $secrets);
 
         $newParameters = $this->derivation->newParameters();
         $newKey = $this->derivation->derive($newPassword, $newParameters);
@@ -62,10 +79,8 @@ final readonly class SecretRotator
      *
      * @return array<array-key, string>
      */
-    private function decryptAll(string $oldPassword, KdfParameters $oldParameters, array $secrets): array
+    private function decryptAll(DerivedKey $oldKey, array $secrets): array
     {
-        $oldKey = $this->derivation->derive($oldPassword, $oldParameters);
-
         $plaintexts = [];
         try {
             foreach ($secrets as $id => $blob) {
@@ -77,8 +92,6 @@ final readonly class SecretRotator
             $this->wipeAll($plaintexts);
 
             throw $e;
-        } finally {
-            $oldKey->wipe();
         }
     }
 
