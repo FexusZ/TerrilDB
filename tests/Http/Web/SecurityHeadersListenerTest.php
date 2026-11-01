@@ -35,7 +35,7 @@ final class SecurityHeadersListenerTest extends TestCase
 
     public function testTheJsonApiIsNeverStored(): void
     {
-        foreach (['/web/connections', '/api/v1/connections'] as $path) {
+        foreach (['/web/connections', '/api/v1/connections', '/mcp'] as $path) {
             self::assertStringContainsString('no-store', (string) $this->handle($path)->headers->get('Cache-Control'), $path);
         }
     }
