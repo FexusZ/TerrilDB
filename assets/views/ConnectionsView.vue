@@ -20,6 +20,7 @@ const filters: { value: Engine | 'all'; label: string }[] = [
   { value: 'mariadb', label: ENGINE_LABELS.mariadb },
   { value: 'postgresql', label: ENGINE_LABELS.postgresql },
   { value: 'clickhouse', label: ENGINE_LABELS.clickhouse },
+  { value: 'redis', label: ENGINE_LABELS.redis },
 ]
 
 function normalize(text: string): string {

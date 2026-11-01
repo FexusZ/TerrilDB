@@ -91,8 +91,9 @@ Un `Driver` (tagué `app.driver`, rassemblés dans `DriverRegistry`) sert un ou 
 `TargetConnection` (DBAL + `SchemaIntrospector`). `DbalConnector` borne le délai de connexion et vérifie par un
 `SELECT 1` ; un échec rend toujours `TargetConnectionFailedException` au message générique (le détail du moteur
 reste dans l'exception précédente, jamais montré à l'utilisateur). Drivers : `MySql` (MySQL + MariaDB, information_schema),
-`PostgreSql` (pg_catalog) et `ClickHouse` (voir plus bas). `TargetConnection` ne dépend d'aucune bibliothèque d'accès : le
-driver lui donne l'introspecteur, le runner et la façon de se libérer. Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
+`PostgreSql` (pg_catalog), `ClickHouse` et `Redis` (voir plus bas). `TargetConnection` ne dépend d'aucune bibliothèque
+d'accès : le driver lui donne l'exécuteur, la façon de se libérer, et selon le moteur un introspecteur (SQL) et/ou une
+navigation par clés (`keys()`). Ce qui manque lève `UnsupportedOperationException` (501 `unsupported_operation`). Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
 primaire d'abord puis par nom, tri à l'octet car l'ordre du moteur dépend de la collation) ; périmètre = base de la
 connexion (MySQL) ou schéma courant (PostgreSQL). Nombres de lignes = estimations du moteur, jamais un COUNT. Les noms
 de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : connexion enregistrée + clé -> cible ouverte.
@@ -154,6 +155,28 @@ les commentaires `/* */` sont lus sans imbrication (ClickHouse les imbrique : la
 non unique nommé « ORDER BY » (« PRIMARY KEY » si différente), jamais une clé primaire relationnelle ; lignes = `total_rows`.
 Pas de plan d'exécution (`PlanNotAvailableException` -> 501 `plan_unavailable`, bouton masqué par `ENGINE_HAS_PLAN`) et pas de
 règle d'audit (relationnelles). Cible de test `target-clickhouse` (`TARGET_CLICKHOUSE_URL`, port hôte 18123) dans le profil `targets`.
+
+## Redis (src/Driver/Redis, src/Core/KeyValue, src/Core/Guard/Redis*)
+
+Pas un moteur SQL (`Engine::speaksSql()` est faux) : une commande Redis est une « instruction » du même pipeline (garde ->
+exécuteur -> audit), donc console, API à jetons et MCP fonctionnent sans plomberie propre ; seul le schéma de tables manque
+(introspecteur absent : /tables, /diagram, /audit, /plan rendent 501). Client `predis/predis` (pur PHP, l'image n'a pas
+ext-redis) ; PHPStan veut `--memory-limit=512M`. Paramètres de connexion : « base » = numéro de base (0-255, vérifié à
+l'ouverture), « identifiant » = utilisateur ACL (`default` sans ACL), port 6380 = TLS. `RedisCommandLine` découpe le texte
+comme redis-cli (guillemets, `\xHH`, une commande par ligne) : le garde juge les ARGUMENTS qui partiront, pas le texte.
+`RedisCommandGuard` = LISTE BLANCHE (lectures, puis écritures en mode lecture-écriture) ; refus nets : KEYS (SCAN le remplace),
+commandes bloquantes ou de flux (dont XREAD : le serveur le classe bloquant), scripts, modules, CONFIG/ACL/CLIENT/DEBUG,
+réplication, AUTH, FLUSHALL ; FLUSHDB demande confirmation. `RedisQueryRunner` : avant d'envoyer en lecture seule, interroge
+`COMMAND INFO commande` et `commande|sous-commande` et refuse ce que le SERVEUR marque write/admin/blocking/pubsub (le serveur
+fait foi ; un test vérifie que toute lecture de la liste blanche passe ce contrôle). Un client Predis NEUF par commande :
+le délai de lecture (`read_write_timeout`) n'est pas modifiable sur une connexion ouverte ; `Predis\TimeoutException` ->
+`QueryTimeoutException`. Réponse -> tableau (`value` ; HGETALL = field/value ; INFO = section/key/value ; imbriqué = JSON).
+`RedisKeyValueStore` : SCAN (jamais KEYS, tranches <= 1000), TYPE + TTL en pipeline, lectures bornées par type (HSCAN/SSCAN,
+LRANGE, ZRANGE, XRANGE COUNT, GETRANGE 64 Kio), noms de clés non UTF-8 laissés de côté. Web : `GET /web/connections/{id}/keys`
+(`pattern`, `cursor`, `count` <= 1000) et `GET .../key?name=&limit=` (nom en paramètre de requête : il peut contenir `/`, `?`,
+de l'unicode). Front : `KeyBrowser` (barre latérale), `KeyPane`, la console réutilise `QueryPane` (pas de plan : `ENGINE_HAS_PLAN`).
+Cible de test `target-redis` (`TARGET_REDIS_URL`, base 15, hôte 63791) : `RedisTarget::seeded()` vide et remplit la base 15
+(refuse toute autre base).
 
 ## Optimiseur local (src/Core/Optimizer)
 
@@ -239,7 +262,7 @@ que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est char
 ```bash
 sh docker/init-env.sh                                     # une fois : mots de passe locaux aléatoires (docker/dev/, ignoré)
 docker compose up -d db                                   # base interne
-docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 / ClickHouse de test
+docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 / ClickHouse / Redis de test
 R="docker compose run --rm --no-deps php"
 $R vendor/bin/phpunit                                     # tests
 $R vendor/bin/phpstan analyse --no-progress --memory-limit=512M   # analyse statique (niveau max)
@@ -270,7 +293,7 @@ Scripts d'init déterministes (SQL pur, sans aléatoire) dans `docker/targets/` 
 MySQL 8.4 et MariaDB 11.8, même dialecte), `postgres/` et `clickhouse/` (même jeu, tables MergeTree sans clés étrangères). Schéma `shop` : `categories` (auto-FK),
 `customers`, `products`, `orders`, `order_items` (11 420 lignes), index simples/composites/uniques et
 vues `v_order_totals`, `v_product_sales`. Les tests d'intégration lisent `TARGET_MYSQL_URL`,
-`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL`, `TARGET_CLICKHOUSE_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
+`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL`, `TARGET_CLICKHOUSE_URL`, `TARGET_REDIS_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
 sautés si la base est injoignable. Un changement de script impose `down -v` pour être rejoué.
 
 ## Conventions PHP

@@ -1,17 +1,18 @@
-export type Engine = 'mysql' | 'mariadb' | 'postgresql' | 'clickhouse'
+export type Engine = 'mysql' | 'mariadb' | 'postgresql' | 'clickhouse' | 'redis'
 
 export const ENGINE_LABELS: Record<Engine, string> = {
   mysql: 'MySQL',
   mariadb: 'MariaDB',
   postgresql: 'PostgreSQL',
   clickhouse: 'ClickHouse',
+  redis: 'Redis',
 }
 
-export const ENGINE_BADGES: Record<Engine, string> = { mysql: 'My', mariadb: 'Ma', postgresql: 'Pg', clickhouse: 'Ch' }
+export const ENGINE_BADGES: Record<Engine, string> = { mysql: 'My', mariadb: 'Ma', postgresql: 'Pg', clickhouse: 'Ch', redis: 'Rd' }
 /** ClickHouse : port de l’interface HTTP, la seule que TerrilDB parle. */
-export const DEFAULT_PORTS: Record<Engine, number> = { mysql: 3306, mariadb: 3306, postgresql: 5432, clickhouse: 8123 }
+export const DEFAULT_PORTS: Record<Engine, number> = { mysql: 3306, mariadb: 3306, postgresql: 5432, clickhouse: 8123, redis: 6379 }
 /** Les moteurs dont TerrilDB sait lire un plan d’exécution. */
-export const ENGINE_HAS_PLAN: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: false }
+export const ENGINE_HAS_PLAN: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: false, redis: false }
 
 export interface User {
   id: string
@@ -93,6 +94,29 @@ export interface TableDetail {
   columns: ColumnInfo[]
   indexes: IndexInfo[]
   foreignKeys: ForeignKeyInfo[]
+}
+
+export type KeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'other'
+
+/** Une clé d’une base clé-valeur (Redis) : `ttl` en secondes, null sans expiration. */
+export interface KeyEntry {
+  name: string
+  type: KeyType
+  ttl: number | null
+}
+
+export interface KeyPage {
+  keys: KeyEntry[]
+  nextCursor: string | null
+  total: number
+}
+
+/** Le contenu d’une clé, ramené à un tableau quel que soit son type. */
+export interface KeyDetail extends KeyEntry {
+  size: number | null
+  columns: string[]
+  rows: Cell[][]
+  truncated: boolean
 }
 
 export type Cell = string | number | boolean | null
