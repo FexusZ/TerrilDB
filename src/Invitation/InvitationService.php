@@ -13,7 +13,7 @@ use App\Invitation\Exception\NotAnAdministratorException;
 use App\Repository\InvitationRepository;
 use App\Security\UserRegistrar;
 use Doctrine\ORM\EntityManagerInterface;
-use Doctrine\ORM\Exception\OptimisticLockException;
+use Doctrine\ORM\OptimisticLockException;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -52,7 +52,7 @@ final readonly class InvitationService
     }
 
     /**
-     * @throws InvalidInvitationTokenException invitation mal formée, inconnue, au secret erroné, utilisée, expirée ou révoquée
+     * Une invitation mal formée, inconnue, au secret erroné, utilisée, expirée ou révoquée rend toujours la même erreur.
      */
     public function register(#[\SensitiveParameter] string $presented, string $email, string $username, #[\SensitiveParameter] string $password): User
     {
