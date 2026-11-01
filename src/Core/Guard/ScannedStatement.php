@@ -1,0 +1,41 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Core\Guard;
+
+/**
+ * Une instruction réduite à ses mots-clés et identifiants, en majuscules, dans l'ordre : commentaires,
+ * chaînes et identifiants entre guillemets ont disparu.
+ */
+final readonly class ScannedStatement
+{
+    /**
+     * @param non-empty-list<string> $words
+     */
+    public function __construct(public array $words)
+    {
+    }
+
+    public function first(): string
+    {
+        return $this->words[0];
+    }
+
+    public function has(string $word): bool
+    {
+        return \in_array($word, $this->words, true);
+    }
+
+    public function hasSequence(string ...$sequence): bool
+    {
+        $length = \count($sequence);
+        for ($i = 0, $max = \count($this->words) - $length; $i <= $max; ++$i) {
+            if (\array_slice($this->words, $i, $length) === array_values($sequence)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
