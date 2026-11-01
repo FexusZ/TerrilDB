@@ -6,6 +6,8 @@ namespace App\Http\Api;
 
 use App\ApiToken\ApiTokenAccess;
 use App\ApiToken\Exception\InvalidApiTokenException;
+use App\Audit\AuditActor;
+use App\Audit\AuditContext;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Event\TerminateEvent;
@@ -28,6 +30,13 @@ final readonly class ApiRequestAccess
         $access = $this->requests->getMainRequest()?->attributes->get(self::ATTRIBUTE);
 
         return $access instanceof ApiTokenAccess ? $access : throw InvalidApiTokenException::create();
+    }
+
+    public function auditContext(AuditActor $actor): AuditContext
+    {
+        $access = $this->get();
+
+        return new AuditContext($actor, $access->user->getId(), $access->token->getId(), $this->requests->getMainRequest()?->getClientIp());
     }
 
     public function __invoke(TerminateEvent $event): void

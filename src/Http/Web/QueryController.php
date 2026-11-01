@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Audit\AuditedQueries;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
-use App\Core\Query\QueryService;
 use App\Http\Json\JsonInput;
 use App\Http\Json\ResultPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,7 +20,8 @@ final readonly class QueryController
 {
     public function __construct(
         private TargetAccess $targets,
-        private QueryService $queries,
+        private AuditedQueries $queries,
+        private WebSession $session,
     ) {
     }
 
@@ -37,9 +38,10 @@ final readonly class QueryController
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
+        $uuid = Uuid::fromString($id);
         $result = $this->targets->withSaved(
-            Uuid::fromString($id),
-            fn (TargetConnection $target) => $this->queries->execute($target, $sql, $options, $confirmed),
+            $uuid,
+            fn (TargetConnection $target) => $this->queries->execute($this->session->auditContext(), $uuid, $target, $sql, $options, $confirmed),
         );
 
         return new JsonResponse(ResultPresenter::present($result));

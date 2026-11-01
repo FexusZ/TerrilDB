@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Audit\AuditActor;
+use App\Audit\AuditContext;
 use App\Crypto\DerivedKey;
 use App\Crypto\SessionKeyVault;
 use App\Entity\User;
@@ -58,6 +60,21 @@ final readonly class WebSession
         $this->security->login(SecurityUser::fromUser($user), ProgrammaticAuthenticator::class, 'main');
         $session->migrate(true);
         $this->vault->put($session->getId(), $key);
+    }
+
+    /**
+     * Qui agit, pour le journal d'audit. Sans session reconnue (connexion en échec), le compte est absent.
+     */
+    public function auditContext(?User $user = null): AuditContext
+    {
+        return new AuditContext(AuditActor::Web, ($user ?? $this->currentUserOrNull())?->getId(), null, $this->requests->getMainRequest()?->getClientIp());
+    }
+
+    private function currentUserOrNull(): ?User
+    {
+        $identifier = $this->security->getUser()?->getUserIdentifier();
+
+        return null === $identifier ? null : $this->users->find(Uuid::fromString($identifier));
     }
 
     public function sessionId(): string
