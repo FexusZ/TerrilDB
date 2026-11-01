@@ -122,6 +122,17 @@ de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même trans
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
 
+## Audit (src/Audit, Entity/AuditEvent)
+
+Journal d'événements immuables (table `audit_event`, insertion par DBAL hors unité de travail ORM). `AuditLog::record`
+ne fait jamais échouer l'action en cours si l'écriture échoue (erreur consignée), mais refuse un détail qui ressemble
+à un secret (`password`, `secret`, `token`, `code`, `key`) ou qui n'est pas un scalaire / une courte liste de chaînes.
+`AuditedQueries` enveloppe `QueryService` pour les trois portes (web, API, MCP) : exécution, refus et échec sont
+journalisés avec le texte de l'instruction ; une simple demande de confirmation ne l'est pas. Les connexions échouées
+sont attribuées au compte visé, les blocages une fois par minute. Lecture : `/web/activity` (pagination par curseur,
+filtre par catégorie) et `/web/connections/{id}/history`. Purge : `app:audit:purge [--days]`, conservation
+`TERRILDB_AUDIT_RETENTION_DAYS` (365).
+
 ## Serveur MCP (src/Http/Mcp, docs/mcp.md)
 
 SDK officiel `mcp/sdk` (0.9, expérimental : les révisions du protocole sont gérées par lui), confiné à `Http/Mcp`.
