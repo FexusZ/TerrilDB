@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\ApiToken\Exception\ApiTokenNotFoundException;
+use App\ApiToken\Exception\InvalidApiTokenException;
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
@@ -16,6 +18,7 @@ use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\CryptoException;
+use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
 use App\Entity\Exception\InvalidUserException;
 use App\Security\Exception\AccountAlreadyExistsException;
@@ -43,7 +46,9 @@ final class ErrorMapper
             $error instanceof TooManyAttemptsException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
+            $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),
             $error instanceof InvalidUserException,
+            $error instanceof InvalidApiTokenDefinitionException,
             $error instanceof InvalidDatabaseConnectionException,
             $error instanceof InvalidConnectionParametersException,
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
@@ -51,7 +56,7 @@ final class ErrorMapper
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
-            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException => new ErrorResponse(404, 'not_found'),
+            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof ApiTokenNotFoundException => new ErrorResponse(404, 'not_found'),
             $error instanceof TargetConnectionFailedException => new ErrorResponse(502, 'target_unreachable'),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),

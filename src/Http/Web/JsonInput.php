@@ -62,6 +62,26 @@ final readonly class JsonInput
         return Engine::tryFrom($this->string($field)) ?? throw new InvalidConnectionParametersException('The engine is not supported.');
     }
 
+    /**
+     * @return list<string>
+     */
+    public function stringList(string $field): array
+    {
+        $value = $this->data[$field] ?? [];
+        if (!\is_array($value) || ([] !== $value && !array_is_list($value))) {
+            throw new BadRequestException(\sprintf('The field "%s" must be a list of strings.', $field));
+        }
+        $strings = [];
+        foreach ($value as $item) {
+            if (!\is_string($item)) {
+                throw new BadRequestException(\sprintf('The field "%s" must be a list of strings.', $field));
+            }
+            $strings[] = $item;
+        }
+
+        return $strings;
+    }
+
     public function int(string $field): int
     {
         $value = $this->data[$field] ?? null;

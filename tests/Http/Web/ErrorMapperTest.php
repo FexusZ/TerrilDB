@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Http\Web;
 
+use App\ApiToken\Exception\ApiTokenNotFoundException;
+use App\ApiToken\Exception\InvalidApiTokenException;
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\Engine;
@@ -18,6 +20,7 @@ use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\DecryptionFailedException;
+use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
 use App\Entity\Exception\InvalidUserException;
 use App\Http\Web\BadRequestException;
@@ -48,6 +51,9 @@ final class ErrorMapperTest extends TestCase
         yield 'account exists' => [AccountAlreadyExistsException::create(), 409, 'account_exists'];
         yield 'totp already enabled' => [TotpAlreadyEnabledException::create(), 409, 'totp_already_enabled'];
         yield 'totp not enabled' => [TotpNotEnabledException::create(), 409, 'totp_not_enabled'];
+        yield 'invalid token' => [InvalidApiTokenException::create(), 401, 'invalid_token'];
+        yield 'token not found' => [ApiTokenNotFoundException::create(), 404, 'not_found'];
+        yield 'invalid token definition' => [new InvalidApiTokenDefinitionException('x'), 422, 'invalid_input'];
         yield 'invalid user' => [new InvalidUserException('x'), 422, 'invalid_input'];
         yield 'invalid connection' => [new InvalidDatabaseConnectionException('x'), 422, 'invalid_input'];
         yield 'invalid parameters' => [new InvalidConnectionParametersException('x'), 422, 'invalid_input'];
