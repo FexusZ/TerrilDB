@@ -13,6 +13,7 @@ const workspace = useWorkspaceStore()
 const connections = useConnectionsStore()
 
 const tab = computed(() => workspace.activeTab)
+const exportable = computed(() => tab.value.result !== null && tab.value.result.affectedRows === null && !tab.value.running && !tab.value.exporting)
 const readOnly = computed(() => tab.value.mode === 'read_only')
 const dialect = computed(() => connections.byId(workspace.connectionId ?? '')?.engine ?? 'postgresql')
 const tableNames = computed(() => workspace.tables.map((table) => table.name))
@@ -55,6 +56,10 @@ function toggleMode(): void {
         </AppButton>
         <span class="shortcut">Ctrl + Entrée</span>
       </div>
+      <div class="export" role="group" aria-label="Exporter le résultat">
+        <AppButton class="export-csv" small :disabled="!exportable" :busy="tab.exporting" @click="workspace.exportTab(tab.id, 'csv')">Exporter CSV</AppButton>
+        <AppButton class="export-json" small :disabled="!exportable" @click="workspace.exportTab(tab.id, 'json')">JSON</AppButton>
+      </div>
       <button type="button" role="switch" class="mode" :class="{ write: !readOnly }" :aria-checked="readOnly" @click="toggleMode">
         {{ readOnly ? 'Lecture seule' : 'Écriture activée' }}
       </button>
@@ -73,6 +78,8 @@ function toggleMode(): void {
     <div v-if="!showHistory" class="editor">
       <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" @update:model-value="workspace.setSql(tab.id, $event)" @run="workspace.run(tab.id)" />
     </div>
+
+    <p v-if="tab.exportNotice" class="export-notice" role="status">{{ tab.exportNotice }}</p>
 
     <div v-if="!showHistory" class="output">
       <p v-if="tab.running" class="state" role="status">Exécution…</p>
@@ -106,6 +113,8 @@ function toggleMode(): void {
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .run-group { display: flex; gap: 10px; align-items: center; }
 .shortcut { font: 400 11px var(--font-mono); color: var(--mut); }
+.export { display: flex; gap: 8px; margin-left: auto; }
+.export-notice { padding: 8px 16px; background: var(--sec-bg); border-bottom: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
 .mode { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--sec-line); background: var(--sec-bg); color: var(--sec); font: 400 12px var(--font-ui); cursor: pointer; }
 .mode.write { border-color: var(--bad-line); background: var(--bad-bg); color: var(--bad); }
 .editor { min-height: 230px; max-height: 40vh; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; }

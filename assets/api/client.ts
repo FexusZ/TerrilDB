@@ -63,6 +63,45 @@ export async function api<T = unknown>(method: Method, path: string, body?: unkn
   return data as T
 }
 
+export interface Download {
+  blob: Blob
+  filename: string
+  /** Vrai quand le serveur a coupé le fichier à sa limite de lignes. */
+  truncated: boolean
+}
+
+/** Télécharge un fichier rendu par un POST (export) : mêmes en-têtes et mêmes erreurs que `api`. */
+export async function apiDownload(path: string, body: unknown): Promise<Download> {
+  const headers = new Headers({ Accept: '*/*', 'X-TerrilDB-Request': '1', 'Content-Type': 'application/json' })
+
+  let response: Response
+  try {
+    response = await fetch(path, { method: 'POST', headers, credentials: 'same-origin', body: JSON.stringify(body) })
+  } catch {
+    throw new ApiError(0, 'network')
+  }
+
+  if (!response.ok) {
+    let data: unknown
+    try {
+      data = JSON.parse(await response.text())
+    } catch {
+      data = undefined
+    }
+    const { error, ...details } = (isRecord(data) ? data : {}) as Record<string, unknown>
+    const code = typeof error === 'string' ? error : 'http_error'
+    if (SESSION_LOST_CODES.has(code)) {
+      sessionLost?.()
+    }
+    throw new ApiError(response.status, code, details)
+  }
+
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const named = /filename="?([^";]+)"?/.exec(disposition)
+
+  return { blob: await response.blob(), filename: named?.[1] ?? 'export', truncated: response.headers.get('X-TerrilDB-Truncated') === '1' }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

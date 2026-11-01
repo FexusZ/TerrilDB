@@ -122,6 +122,13 @@ de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même trans
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
 
+## Export (src/Core/Export, ExportController)
+
+`CsvExporter` (RFC 4180, CRLF, UTF-8, BOM optionnel) et `JsonExporter` (tableau d'objets, colonnes dupliquées suffixées).
+Le CSV neutralise les cellules qu'un tableur lirait comme une formule (`=`, `+`, `-`, `@`, tab, CR en tête) par une
+apostrophe, sauf les nombres. `POST /web/connections/{id}/export` : lecture seule, mêmes garde-fous et même audit qu'une
+exécution (`purpose: export`), 10 000 lignes par défaut, 100 000 au plus, en-tête `X-TerrilDB-Truncated` si coupé.
+
 ## Audit (src/Audit, Entity/AuditEvent)
 
 Journal d'événements immuables (table `audit_event`, insertion par DBAL hors unité de travail ORM). `AuditLog::record`

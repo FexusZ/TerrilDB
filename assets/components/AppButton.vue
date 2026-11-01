@@ -1,12 +1,12 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; small?: boolean; type?: 'button' | 'submit'; busy?: boolean; block?: boolean }>(), {
+withDefaults(defineProps<{ variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; small?: boolean; type?: 'button' | 'submit'; busy?: boolean; block?: boolean; disabled?: boolean }>(), {
   variant: 'secondary',
   type: 'button',
 })
 </script>
 
 <template>
-  <button class="btn" :class="[variant, { small, block }]" :type="type" :disabled="busy" :aria-busy="busy">
+  <button class="btn" :class="[variant, { small, block }]" :type="type" :disabled="busy || disabled" :aria-busy="busy">
     <slot />
   </button>
 </template>
