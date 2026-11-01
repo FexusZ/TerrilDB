@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Audit\AuditActor;
+use App\Audit\AuditedQueries;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
-use App\Core\Query\QueryService;
 use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\ErrorMapper;
@@ -29,7 +30,7 @@ final readonly class McpTools
         private ApiRequestAccess $request,
         private ConnectionManager $connections,
         private TargetSession $targets,
-        private QueryService $queries,
+        private AuditedQueries $queries,
         private ErrorMapper $errors,
     ) {
     }
@@ -82,7 +83,7 @@ final readonly class McpTools
             $defaults = new QueryOptions();
             $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
 
-            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($target, $sql, $options)));
+            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
         });
     }
 

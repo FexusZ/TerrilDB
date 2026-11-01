@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Audit\AuditAction;
+use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
@@ -22,6 +24,7 @@ final readonly class ConnectionController
         private ConnectionManager $connections,
         private TargetAccess $targets,
         private WebSession $session,
+        private AuditLog $audit,
     ) {
     }
 
@@ -41,6 +44,7 @@ final readonly class ConnectionController
         [$name, $engine, $parameters] = $this->read($input, null);
 
         $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters);
+        $this->audit->record($this->session->auditContext(), AuditAction::ConnectionCreated, subject: $connection->getId(), details: ['name' => $connection->getName(), 'engine' => $engine->value]);
 
         return new JsonResponse(['connection' => ConnectionPresenter::summary($connection)], Response::HTTP_CREATED);
     }
@@ -73,6 +77,7 @@ final readonly class ConnectionController
         [$name, $engine, $parameters] = $this->read(JsonInput::fromRequest($request), $current);
 
         $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters);
+        $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionUpdated, subject: $uuid, details: ['name' => $connection->getName(), 'engine' => $engine->value]);
 
         return new JsonResponse(['connection' => ConnectionPresenter::summary($connection)]);
     }
@@ -80,7 +85,11 @@ final readonly class ConnectionController
     #[Route('/web/connections/{id}', requirements: self::ID, methods: ['DELETE'])]
     public function delete(string $id): Response
     {
-        $this->connections->delete($this->session->user(), Uuid::fromString($id));
+        $user = $this->session->user();
+        $uuid = Uuid::fromString($id);
+        $name = $this->connections->get($user, $uuid)->getName();
+        $this->connections->delete($user, $uuid);
+        $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionDeleted, subject: $uuid, details: ['name' => $name]);
 
         return new Response(status: Response::HTTP_NO_CONTENT);
     }

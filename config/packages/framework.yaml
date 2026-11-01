@@ -19,6 +19,11 @@ framework:
             policy: sliding_window
             limit: 8
             interval: '15 minutes'
+        # Une seule mention « tentatives bloquées » par minute et par compte dans le journal d'audit
+        login_notice:
+            policy: fixed_window
+            limit: 1
+            interval: '1 minute'
         # API : échecs d'authentification par adresse, et budget de requêtes par jeton
         api_failures:
             policy: sliding_window
