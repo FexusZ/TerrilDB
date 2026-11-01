@@ -19,6 +19,7 @@ final class UserPresenter
             'role' => $user->getRole()->value,
             'email' => $user->getEmail(),
             'totpEnabled' => $user->isTotpEnabled(),
+            'recoveryPhrase' => $user->hasRecovery(),
             'recoveryCodesLeft' => \count($user->getRecoveryCodeHashes()),
             'createdAt' => $user->getCreatedAt()->format(\DATE_ATOM),
         ];
