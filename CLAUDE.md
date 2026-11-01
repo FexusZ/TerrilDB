@@ -90,8 +90,9 @@ illisible bloque le changement.
 Un `Driver` (tagué `app.driver`, rassemblés dans `DriverRegistry`) sert un ou plusieurs `Engine` : il ouvre une
 `TargetConnection` (DBAL + `SchemaIntrospector`). `DbalConnector` borne le délai de connexion et vérifie par un
 `SELECT 1` ; un échec rend toujours `TargetConnectionFailedException` au message générique (le détail du moteur
-reste dans l'exception précédente, jamais montré à l'utilisateur). Drivers : `MySql` (MySQL + MariaDB, information_schema)
-et `PostgreSql` (pg_catalog). Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
+reste dans l'exception précédente, jamais montré à l'utilisateur). Drivers : `MySql` (MySQL + MariaDB, information_schema),
+`PostgreSql` (pg_catalog) et `ClickHouse` (voir plus bas). `TargetConnection` ne dépend d'aucune bibliothèque d'accès : le
+driver lui donne l'introspecteur, le runner et la façon de se libérer. Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
 primaire d'abord puis par nom, tri à l'octet car l'ordre du moteur dépend de la collation) ; périmètre = base de la
 connexion (MySQL) ou schéma courant (PostgreSQL). Nombres de lignes = estimations du moteur, jamais un COUNT. Les noms
 de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : connexion enregistrée + clé -> cible ouverte.
@@ -133,6 +134,26 @@ uniquement, connexions listées (au moins une), expiration obligatoire (365 jour
 de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
+
+## ClickHouse (src/Driver/ClickHouse)
+
+Pas de pilote DBAL pour ClickHouse : `ClickHouseHttp` parle son interface HTTP (`symfony/http-client`), port 8123 par défaut
+(8443 et 443 = TLS, déduit du port faute d'option dédiée). L'instruction part dans le corps d'un POST, les réglages et les
+paramètres liés (`{nom:Type}`) dans l'adresse, les identifiants dans les en-têtes `X-ClickHouse-User/Key` (jamais dans une
+URL). Réponse `JSONCompact` ; `JSON_BIGINT_AS_STRING` garde les UInt64 démesurés en texte. Erreurs normalisées
+(`ClickHouseException` : code du moteur, message nettoyé du « Code: … (version …) », jamais d'adresse).
+`ClickHouseQueryRunner` : lecture seule = réglage `readonly=1` imposé par le moteur (refuse écritures, DDL, `SETTINGS`,
+fonctions de table sortantes comme `url()`/`remote()`) ; délai = `max_execution_time` (secondes fractionnaires, code 159 ->
+`QueryTimeoutException`) ; limite de lignes = `max_result_rows=maxRows+1` + `result_overflow_mode=break` + `max_block_size`
+ramené à la limite, le surplus est écarté ici. Pas de transaction : une écriture est immédiate. Les fonctions de table qui
+sortent du serveur (`file`, `url`, `s3`, `remote`, `mysql`…) sont refusées par le garde seulement quand elles sont APPELÉES
+(`calls()` du scanner), et la clause `FORMAT` aussi (le runner impose son format). Le dialecte du scanner (`SqlDialect::ClickHouse`) :
+antislash dans chaînes ET identifiants, `--` sans espace, `#` commentaire, pas de commentaire exécutable, guillemets dollar ;
+les commentaires `/* */` sont lus sans imbrication (ClickHouse les imbrique : la lecture est plus stricte, jamais plus laxiste).
+`ClickHouseIntrospector` : `system.tables/columns/data_skipping_indices` ; pas de clé étrangère, et la clé de tri est un index
+non unique nommé « ORDER BY » (« PRIMARY KEY » si différente), jamais une clé primaire relationnelle ; lignes = `total_rows`.
+Pas de plan d'exécution (`PlanNotAvailableException` -> 501 `plan_unavailable`, bouton masqué par `ENGINE_HAS_PLAN`) et pas de
+règle d'audit (relationnelles). Cible de test `target-clickhouse` (`TARGET_CLICKHOUSE_URL`, port hôte 18123) dans le profil `targets`.
 
 ## Optimiseur local (src/Core/Optimizer)
 
@@ -218,7 +239,7 @@ que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est char
 ```bash
 sh docker/init-env.sh                                     # une fois : mots de passe locaux aléatoires (docker/dev/, ignoré)
 docker compose up -d db                                   # base interne
-docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 de test
+docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 / ClickHouse de test
 R="docker compose run --rm --no-deps php"
 $R vendor/bin/phpunit                                     # tests
 $R vendor/bin/phpstan analyse --no-progress               # analyse statique (niveau max)
@@ -246,10 +267,10 @@ persistance (`tests/Integration/Persistence`) tournent dans une transaction annu
 ## Bases cibles de test
 
 Scripts d'init déterministes (SQL pur, sans aléatoire) dans `docker/targets/` : `mysql/` (partagé par
-MySQL 8.4 et MariaDB 11.8, même dialecte) et `postgres/`. Schéma `shop` : `categories` (auto-FK),
+MySQL 8.4 et MariaDB 11.8, même dialecte), `postgres/` et `clickhouse/` (même jeu, tables MergeTree sans clés étrangères). Schéma `shop` : `categories` (auto-FK),
 `customers`, `products`, `orders`, `order_items` (11 420 lignes), index simples/composites/uniques et
 vues `v_order_totals`, `v_product_sales`. Les tests d'intégration lisent `TARGET_MYSQL_URL`,
-`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
+`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL`, `TARGET_CLICKHOUSE_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
 sautés si la base est injoignable. Un changement de script impose `down -v` pour être rejoué.
 
 ## Conventions PHP

@@ -56,6 +56,14 @@ describe('ConnectionFormView', () => {
     expect(wrapper.get('#port').attributes('placeholder')).toBe('3306')
   })
 
+  it('offers ClickHouse, whose HTTP port is 8123', async () => {
+    const { wrapper } = await mountForm()
+
+    await wrapper.get('input[value="clickhouse"]').setValue(true)
+
+    expect(wrapper.get('#port').attributes('placeholder')).toBe('8123')
+  })
+
   it('saves a new connection and goes back to the list', async () => {
     const { wrapper, router } = await mountForm()
     await fill(wrapper, { name: 'Production', host: 'db.exemple.test', port: '5433', database: 'shop', username: 'lecteur', password: 'secret-value' })

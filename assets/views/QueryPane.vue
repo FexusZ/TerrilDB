@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { ENGINE_HAS_PLAN } from '../api/types'
 import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -17,6 +18,7 @@ const tab = computed(() => workspace.activeTab)
 const exportable = computed(() => tab.value.result !== null && tab.value.result.affectedRows === null && !tab.value.running && !tab.value.exporting)
 const readOnly = computed(() => tab.value.mode === 'read_only')
 const dialect = computed(() => connections.byId(workspace.connectionId ?? '')?.engine ?? 'postgresql')
+const hasPlan = computed(() => ENGINE_HAS_PLAN[dialect.value])
 const tableNames = computed(() => workspace.tables.map((table) => table.name))
 
 const showHistory = ref(false)
@@ -56,7 +58,7 @@ function toggleMode(): void {
           Exécuter
         </AppButton>
         <span class="shortcut">Ctrl + Entrée</span>
-        <AppButton class="plan" small :busy="tab.planning" @click="workspace.planTab(tab.id)">Plan d’exécution</AppButton>
+        <AppButton v-if="hasPlan" class="plan" small :busy="tab.planning" @click="workspace.planTab(tab.id)">Plan d’exécution</AppButton>
       </div>
       <div class="export" role="group" aria-label="Exporter le résultat">
         <AppButton class="export-csv" small :disabled="!exportable" :busy="tab.exporting" @click="workspace.exportTab(tab.id, 'csv')">Exporter CSV</AppButton>

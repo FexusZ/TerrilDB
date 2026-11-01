@@ -18,15 +18,23 @@ use App\Core\Query\QueryMode;
 final class StatementGuard
 {
     private const READ = ['SELECT', 'VALUES', 'TABLE'];
-    private const INSPECT = ['SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN'];
+    private const INSPECT = ['SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'EXISTS'];
     private const WRITE = ['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE', 'CALL', 'DO'];
-    private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'REFRESH', 'CLUSTER'];
-    private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE'];
+    private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'REFRESH', 'CLUSTER', 'ATTACH'];
+    private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE'];
     private const WRITE_VERBS = ['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE'];
     // Lecture ou écriture de fichiers du serveur, contrôle du serveur, ouverture de connexions sortantes.
     private const DANGEROUS_FUNCTIONS = [
         'LOAD_FILE', 'PG_READ_FILE', 'PG_READ_BINARY_FILE', 'PG_LS_DIR', 'PG_STAT_FILE', 'LO_IMPORT', 'LO_EXPORT',
         'PG_TERMINATE_BACKEND', 'PG_CANCEL_BACKEND', 'PG_RELOAD_CONF', 'PG_ROTATE_LOGFILE', 'SET_CONFIG',
+    ];
+    // Fonctions de table ClickHouse qui lisent des fichiers du serveur ou ouvrent des connexions sortantes : elles ne
+    // sont refusées que lorsqu'elles sont appelées (« file(…) »), une colonne nommée « file » reste lisible.
+    private const CLICKHOUSE_TABLE_FUNCTIONS = [
+        'FILE', 'FILECLUSTER', 'URL', 'URLCLUSTER', 'S3', 'S3CLUSTER', 'GCS', 'HDFS', 'HDFSCLUSTER', 'REMOTE', 'REMOTESECURE',
+        'CLUSTER', 'CLUSTERALLREPLICAS', 'MYSQL', 'POSTGRESQL', 'MONGODB', 'REDIS', 'SQLITE', 'ODBC', 'JDBC', 'EXECUTABLE',
+        'INPUT', 'AZUREBLOBSTORAGE', 'AZUREBLOBSTORAGECLUSTER', 'DELTALAKE', 'ICEBERG', 'HUDI', 'MERGE', 'YTSAURUS',
+        'ARROWFLIGHT', 'NATS', 'KAFKA', 'RABBITMQ',
     ];
     private const LOCKING_CLAUSES = [
         ['FOR', 'UPDATE'], ['FOR', 'SHARE'], ['FOR', 'NO', 'KEY', 'UPDATE'], ['FOR', 'KEY', 'SHARE'], ['LOCK', 'IN', 'SHARE', 'MODE'],
@@ -69,6 +77,9 @@ final class StatementGuard
         if (null === $kind) {
             return GuardVerdict::refused(GuardReason::UnsupportedStatement);
         }
+        if (Engine::ClickHouse === $engine && $this->usesClickHouseOutsideAccess($statement)) {
+            return GuardVerdict::refused(GuardReason::ForbiddenConstruct, $kind);
+        }
 
         return QueryMode::ReadOnly === $mode
             ? $this->checkReadOnly($statement, $kind)
@@ -88,6 +99,20 @@ final class StatementGuard
             \in_array($first, self::SCHEMA_SAFE, true), \in_array($first, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
             default => null,
         };
+    }
+
+    /**
+     * Fonctions de table qui sortent du serveur, ou clause FORMAT (le runner impose son propre format de sortie).
+     */
+    private function usesClickHouseOutsideAccess(ScannedStatement $statement): bool
+    {
+        foreach (self::CLICKHOUSE_TABLE_FUNCTIONS as $function) {
+            if ($statement->calls($function)) {
+                return true;
+            }
+        }
+
+        return $statement->hasTopLevel('FORMAT') && !$statement->calls('FORMAT');
     }
 
     private function hasWriteVerb(ScannedStatement $statement): bool

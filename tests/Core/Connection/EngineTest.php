@@ -15,6 +15,7 @@ final class EngineTest extends TestCase
         self::assertSame('mysql', Engine::MySql->value);
         self::assertSame('mariadb', Engine::MariaDb->value);
         self::assertSame('postgresql', Engine::PostgreSql->value);
+        self::assertSame('clickhouse', Engine::ClickHouse->value);
     }
 
     public function testDefaultPorts(): void
@@ -22,6 +23,7 @@ final class EngineTest extends TestCase
         self::assertSame(3306, Engine::MySql->defaultPort());
         self::assertSame(3306, Engine::MariaDb->defaultPort());
         self::assertSame(5432, Engine::PostgreSql->defaultPort());
+        self::assertSame(8123, Engine::ClickHouse->defaultPort());
     }
 
     /**

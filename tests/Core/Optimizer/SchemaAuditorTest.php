@@ -57,6 +57,16 @@ final class SchemaAuditorTest extends TestCase
         return (new SchemaAuditor())->audit($engine, $tables);
     }
 
+    public function testRelationalRulesDoNotApplyToClickHouse(): void
+    {
+        $orders = new TableDefinition('orders', TableKind::Table, $this->columns(['id', 'customer_id']), [
+            new IndexDefinition('ORDER BY', ['customer_id'], false, false),
+            new IndexDefinition('ORDER BY copy', ['customer_id'], false, false),
+        ], [], null, 10);
+
+        self::assertSame([], (new SchemaAuditor())->audit(Engine::ClickHouse, [$orders]));
+    }
+
     public function testACleanSchemaHasNoFinding(): void
     {
         $orders = $this->table('orders', ['id', 'customer_id'], [new IndexDefinition('orders_pkey', ['id'], true, true), new IndexDefinition('idx_customer', ['customer_id'], false, false)], [$this->fk('fk_customer', ['customer_id'])]);

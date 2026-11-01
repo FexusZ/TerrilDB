@@ -9,6 +9,7 @@ use App\Core\Guard\Decision;
 use App\Core\Guard\GuardReason;
 use App\Core\Guard\StatementGuard;
 use App\Core\Guard\StatementKind;
+use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\QueryMode;
@@ -27,10 +28,15 @@ final readonly class PlanService
     }
 
     /**
+     * @throws PlanNotAvailableException
      * @throws QueryRefusedException
      */
     public function statementFor(Engine $engine, string $sql): string
     {
+        if (Engine::ClickHouse === $engine) {
+            throw PlanNotAvailableException::for($engine);
+        }
+
         $verdict = $this->guard->check($sql, $engine, QueryMode::ReadOnly);
         if (Decision::Allowed !== $verdict->decision || StatementKind::Read !== $verdict->kind) {
             throw new QueryRefusedException($verdict->reason ?? GuardReason::NotReadOnly);

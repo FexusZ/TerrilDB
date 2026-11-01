@@ -19,6 +19,14 @@ final class SchemaDiagramWebTest extends WebApiTestCase
         yield from TargetDatabase::all();
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
     private function saveTarget(string $envVar): string
     {
         $parameters = TargetDatabase::parameters($envVar);
@@ -36,7 +44,19 @@ final class SchemaDiagramWebTest extends WebApiTestCase
         self::assertSame(401, $this->statusCode());
     }
 
-    #[DataProvider('targets')]
+    public function testDrawsAClickHouseSchemaWithoutRelations(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagram');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertCount(5, self::arrayOf($body['tables']));
+        self::assertSame([], $body['relations']);
+    }
+
+    #[DataProvider('relationalTargets')]
     public function testDrawsTheTablesAndTheirRelations(string $envVar): void
     {
         $this->seedAndLogin();
