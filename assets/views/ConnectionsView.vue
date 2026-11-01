@@ -72,7 +72,7 @@ async function confirmDelete(): Promise<void> {
 
     <div class="filters">
       <label class="sr-only" for="search">Rechercher une connexion</label>
-      <input id="search" v-model="search" type="search" placeholder="Rechercher une connexion" />
+      <input id="search" v-model="search" type="search" placeholder="Rechercher une connexion">
       <button
         v-for="filter in filters"
         :key="filter.value"

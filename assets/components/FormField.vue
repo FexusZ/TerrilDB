@@ -34,7 +34,7 @@ const hintId = computed(() => (props.hint ? `${props.id}-hint` : undefined))
       :required="required"
       :maxlength="maxlength"
       :aria-describedby="hintId"
-    />
+    >
     <p v-if="hint" :id="hintId" class="hint">{{ hint }}</p>
   </div>
 </template>
