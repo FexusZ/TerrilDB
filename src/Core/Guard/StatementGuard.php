@@ -32,6 +32,8 @@ final class StatementGuard
         ['FOR', 'UPDATE'], ['FOR', 'SHARE'], ['FOR', 'NO', 'KEY', 'UPDATE'], ['FOR', 'KEY', 'SHARE'], ['LOCK', 'IN', 'SHARE', 'MODE'],
     ];
 
+    private const MAX_LENGTH_BYTES = 100_000;
+
     private readonly SqlScanner $scanner;
 
     public function __construct(?SqlScanner $scanner = null)
@@ -41,6 +43,10 @@ final class StatementGuard
 
     public function check(string $sql, Engine $engine, QueryMode $mode): GuardVerdict
     {
+        if (\strlen($sql) > self::MAX_LENGTH_BYTES) {
+            return GuardVerdict::refused(GuardReason::TooLong);
+        }
+
         $scan = $this->scanner->scan($sql, SqlDialect::forEngine($engine));
         if (!$scan->complete) {
             return GuardVerdict::refused(GuardReason::IncompleteSql);

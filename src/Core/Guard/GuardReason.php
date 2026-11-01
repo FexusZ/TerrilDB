@@ -13,6 +13,7 @@ enum GuardReason: string
     case EmptyStatement = 'empty_statement';
     case MultipleStatements = 'multiple_statements';
     case IncompleteSql = 'incomplete_sql';
+    case TooLong = 'too_long';
     case NotReadOnly = 'not_read_only';
     case ForbiddenConstruct = 'forbidden_construct';
     case UnsupportedStatement = 'unsupported_statement';
