@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import HistoryPanel from '../components/HistoryPanel.vue'
 import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -16,6 +17,20 @@ const readOnly = computed(() => tab.value.mode === 'read_only')
 const dialect = computed(() => connections.byId(workspace.connectionId ?? '')?.engine ?? 'postgresql')
 const tableNames = computed(() => workspace.tables.map((table) => table.name))
 
+const showHistory = ref(false)
+
+async function toggleHistory(): Promise<void> {
+  showHistory.value = !showHistory.value
+  if (showHistory.value) {
+    await workspace.loadHistory()
+  }
+}
+
+function pick(sql: string): void {
+  workspace.setSql(tab.value.id, sql)
+  showHistory.value = false
+}
+
 function toggleMode(): void {
   workspace.setMode(tab.value.id, readOnly.value ? 'read_write' : 'read_only')
 }
@@ -28,6 +43,7 @@ function toggleMode(): void {
         <button type="button" role="tab" class="label" :aria-selected="item.id === tab.id" @click="workspace.select(item.id)">{{ item.title }}</button>
         <button type="button" class="close-tab" :aria-label="`Fermer ${item.title}`" @click="workspace.closeTab(item.id)">×</button>
       </div>
+      <button type="button" class="history-toggle" :aria-pressed="showHistory" @click="toggleHistory">Historique</button>
       <button type="button" class="add-tab" aria-label="Nouvel onglet" @click="workspace.addTab()">+</button>
     </div>
 
@@ -44,11 +60,21 @@ function toggleMode(): void {
       </button>
     </div>
 
-    <div class="editor">
+    <HistoryPanel
+      v-if="showHistory"
+      :entries="workspace.history"
+      :has-more="workspace.historyHasMore"
+      :loading="workspace.historyLoading"
+      :error="workspace.historyError"
+      @pick="pick"
+      @more="workspace.moreHistory()"
+    />
+
+    <div v-if="!showHistory" class="editor">
       <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" @update:model-value="workspace.setSql(tab.id, $event)" @run="workspace.run(tab.id)" />
     </div>
 
-    <div class="output">
+    <div v-if="!showHistory" class="output">
       <p v-if="tab.running" class="state" role="status">Exécution…</p>
       <p v-else-if="tab.error" class="error" role="alert">{{ tab.error }}</p>
       <ResultTable v-else-if="tab.result" :result="tab.result" />
@@ -74,7 +100,9 @@ function toggleMode(): void {
 .tab.current { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--acc); }
 .label { height: 38px; padding: 0 6px 0 14px; background: none; border: 0; color: inherit; font: 400 13px var(--font-ui); cursor: pointer; }
 .close-tab, .add-tab { background: none; border: 0; color: var(--mut); cursor: pointer; font-size: 16px; padding: 0 10px; height: 38px; }
-.add-tab { margin-left: auto; border-left: 1px solid var(--line); }
+.history-toggle { margin-left: auto; background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
+.history-toggle[aria-pressed='true'] { color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
+.add-tab { border-left: 1px solid var(--line); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .run-group { display: flex; gap: 10px; align-items: center; }
 .shortcut { font: 400 11px var(--font-mono); color: var(--mut); }
