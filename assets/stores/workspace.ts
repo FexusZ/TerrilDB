@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { ApiError, api } from '../api/client'
+import { ApiError, api, apiDownload } from '../api/client'
 import { messageFor } from '../api/errors'
+import { saveFile } from '../utils/download'
 import type { HistoryEntry, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
 
 export interface QueryTab {
@@ -14,6 +15,9 @@ export interface QueryTab {
   error: string | null
   /** Motif de la confirmation demandée par le garde, en attendant la décision de l'utilisateur. */
   pendingConfirmation: string | null
+  exporting: boolean
+  /** Précision à montrer après un export (fichier coupé à la limite de lignes). */
+  exportNotice: string | null
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -36,7 +40,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -162,6 +166,33 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /** Télécharge le résultat de l'instruction de l'onglet (relancée côté serveur, en lecture seule, avec une limite plus haute). */
+  async function exportTab(id: number, format: 'csv' | 'json'): Promise<void> {
+    const target = tab(id)
+    if (!target || connectionId.value === null) {
+      return
+    }
+    if (target.sql.trim() === '') {
+      target.error = 'Saisissez une instruction.'
+      return
+    }
+
+    target.exporting = true
+    target.error = null
+    target.exportNotice = null
+    try {
+      const file = await apiDownload(`/web/connections/${connectionId.value}/export`, { sql: target.sql, format })
+      saveFile(file.blob, file.filename)
+      if (file.truncated) {
+        target.exportNotice = 'Fichier limité à 10 000 lignes : d’autres existent. Affinez la requête pour tout exporter.'
+      }
+    } catch (error) {
+      target.error = messageFor(error)
+    } finally {
+      target.exporting = false
+    }
+  }
+
   function confirmPending(id: number): Promise<void> {
     return run(id, true)
   }
@@ -219,5 +250,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, exportTab, confirmPending, cancelPending, describe }
 })

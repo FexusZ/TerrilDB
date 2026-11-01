@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, api, onSessionLost } from './client'
+import { ApiError, api, apiDownload, onSessionLost } from './client'
 
 function respond(status: number, body?: unknown): Response {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -90,5 +90,50 @@ describe('api client', () => {
     fetchMock.mockResolvedValueOnce(respond(401, { error: 'locked' }))
     await api('GET', '/web/connections').catch(() => undefined)
     expect(lost).toHaveBeenCalledTimes(2)
+  })
+
+  describe('downloads', () => {
+    it('returns the file with its name and whether it was cut', async () => {
+      fetchMock.mockResolvedValue(new Response('id\r\n1\r\n', { status: 200, headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename=terrildb-export-20261101-120000.csv', 'X-TerrilDB-Truncated': '1' } }))
+
+      const file = await apiDownload('/web/connections/a/export', { sql: 'select 1', format: 'csv' })
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('/web/connections/a/export')
+      expect(init.method).toBe('POST')
+      expect(new Headers(init.headers).get('X-TerrilDB-Request')).toBe('1')
+      expect(file.filename).toBe('terrildb-export-20261101-120000.csv')
+      expect(file.truncated).toBe(true)
+      expect(await file.blob.text()).toBe('id\r\n1\r\n')
+    })
+
+    it('reads a quoted file name', async () => {
+      fetchMock.mockResolvedValue(new Response('x', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="a b.json"' } }))
+
+      expect((await apiDownload('/x', {})).filename).toBe('a b.json')
+    })
+
+    it('falls back to a generic name and no truncation', async () => {
+      fetchMock.mockResolvedValue(new Response('x', { status: 200 }))
+
+      const file = await apiDownload('/x', {})
+
+      expect(file.filename).toBe('export')
+      expect(file.truncated).toBe(false)
+    })
+
+    it('turns a refusal into an ApiError', async () => {
+      fetchMock.mockResolvedValue(respond(403, { error: 'query_refused', reason: 'not_read_only' }))
+
+      const error = await apiDownload('/x', {}).catch((e: unknown) => e)
+
+      expect(error).toMatchObject({ status: 403, code: 'query_refused', details: { reason: 'not_read_only' } })
+    })
+
+    it('reports an unreachable server', async () => {
+      fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      expect(await apiDownload('/x', {}).catch((e: unknown) => e)).toMatchObject({ code: 'network' })
+    })
   })
 })
