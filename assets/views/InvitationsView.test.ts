@@ -12,7 +12,7 @@ vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<t
 const mocked = vi.mocked(api)
 const pending: InvitationInfo = { id: 'i1', note: 'Pour Marie', status: 'pending', createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2026-11-08T10:00:00+00:00', usedAt: null, usedBy: null }
 const used: InvitationInfo = { id: 'i2', note: 'Pour Paul', status: 'used', createdAt: '2026-10-25T10:00:00+00:00', expiresAt: '2026-11-01T10:00:00+00:00', usedAt: '2026-10-26T10:00:00+00:00', usedBy: 'paul' }
-const admin = { id: '1', username: 'alice', email: 'a@exemple.test', role: 'admin' as const, totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-10-01T10:00:00+00:00' }
+const admin = { id: '1', username: 'alice', email: 'a@exemple.test', role: 'admin' as const, recoveryPhrase: false, totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-10-01T10:00:00+00:00' }
 
 async function mountView(list: InvitationInfo[] | ApiError = [pending, used], emailEnabled = false) {
   const pinia = createPinia()

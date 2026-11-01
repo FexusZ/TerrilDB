@@ -100,6 +100,36 @@ async function regenerate(): Promise<void> {
     recoveryError.value = messageFor(failure)
   }
 }
+
+// Phrase de récupération
+const phrasePassword = ref('')
+const phraseError = ref<string | null>(null)
+const phraseBusy = ref(false)
+const shownPhrase = ref<string | null>(null)
+
+async function createPhrase(): Promise<void> {
+  phraseError.value = null
+  phraseBusy.value = true
+  try {
+    shownPhrase.value = await session.createRecoveryPhrase(phrasePassword.value)
+    phrasePassword.value = ''
+  } catch (failure) {
+    phraseError.value = messageFor(failure)
+  } finally {
+    phraseBusy.value = false
+  }
+}
+
+async function removePhrase(): Promise<void> {
+  phraseError.value = null
+  try {
+    await session.removeRecoveryPhrase(phrasePassword.value)
+    phrasePassword.value = ''
+    shownPhrase.value = null
+  } catch (failure) {
+    phraseError.value = messageFor(failure)
+  }
+}
 </script>
 
 <template>
@@ -164,6 +194,28 @@ async function regenerate(): Promise<void> {
       </template>
     </section>
 
+    <section class="panel phrase">
+      <div class="head">
+        <h2>Phrase de récupération</h2>
+        <span class="chip" :class="{ ok: session.user.recoveryPhrase }">{{ session.user.recoveryPhrase ? 'Active' : 'Désactivée' }}</span>
+      </div>
+      <p class="lede">Une phrase à noter hors ligne permet de choisir un nouveau mot de passe si vous perdez l’ancien, sans perdre vos connexions. Le serveur n’en garde qu’une copie chiffrée de votre clé : sans la phrase, elle ne lui sert à rien.</p>
+      <p v-if="session.user.recoveryPhrase" class="lede">Elle ne sert qu’une fois, et un changement de mot de passe la retire : pensez à en générer une nouvelle ensuite.</p>
+
+      <div v-if="shownPhrase" class="phrase-box">
+        <p class="notice" role="note">Notez cette phrase en lieu sûr, hors de cet appareil. Elle ne sera plus affichée. Quiconque la possède peut changer votre mot de passe.</p>
+        <code>{{ shownPhrase }}</code>
+        <div><AppButton class="noted" variant="primary" small @click="shownPhrase = null">J’ai noté ma phrase</AppButton></div>
+      </div>
+
+      <form v-else class="phrase-form inline" @submit.prevent="createPhrase">
+        <FormField id="phrase-password" v-model="phrasePassword" label="Mot de passe pour confirmer" type="password" autocomplete="current-password" required />
+        <AppButton type="submit" variant="primary" :busy="phraseBusy">{{ session.user.recoveryPhrase ? 'Remplacer la phrase' : 'Générer une phrase' }}</AppButton>
+        <AppButton v-if="session.user.recoveryPhrase" class="remove" type="button" variant="danger" @click="removePhrase">Retirer</AppButton>
+      </form>
+      <p v-if="phraseError" class="error" role="alert">{{ phraseError }}</p>
+    </section>
+
     <section class="panel api">
       <div class="head">
         <h2>Jetons d’accès à l’API</h2>
@@ -217,6 +269,9 @@ h2 { font-size: 18px; font-weight: 600; }
 .chip.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
 form { display: flex; flex-direction: column; gap: 16px; }
 .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.phrase-box { display: flex; flex-direction: column; gap: 12px; }
+.phrase-box .notice { padding: 10px 12px; border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
+.phrase-box code { padding: 14px 16px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--sec-line); color: var(--sec-ink); font: 500 16px/1.6 var(--font-mono); letter-spacing: 0.04em; word-break: break-all; user-select: all; }
 .inline { flex-direction: row; flex-wrap: wrap; align-items: flex-end; padding-top: 16px; border-top: 1px solid var(--line); }
 .inline > :first-child { flex: 1 1 260px; max-width: 360px; }
 .enrol { display: flex; flex-wrap: wrap; gap: 24px; }

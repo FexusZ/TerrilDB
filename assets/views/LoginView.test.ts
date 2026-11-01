@@ -8,7 +8,7 @@ import LoginView from './LoginView.vue'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
+const user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', recoveryPhrase: false, createdAt: '2026-11-01T10:00:00+00:00' }
 
 async function mountView(path = '/login') {
   const pinia = createPinia()
@@ -18,6 +18,7 @@ async function mountView(path = '/login') {
     routes: [
       { path: '/login', name: 'login', component: LoginView },
       { path: '/register', name: 'register', component: { template: '<p>register</p>' } },
+      { path: '/recover', name: 'recover', component: { template: '<p>recover</p>' } },
       { path: '/connections', name: 'connections', component: { template: '<p>connections</p>' } },
       { path: '/connections/abc', name: 'workspace', component: { template: '<p>workspace</p>' } },
     ],
@@ -46,6 +47,24 @@ describe('LoginView', () => {
     expect(wrapper.get('label[for="password"]').text()).toBe('Mot de passe')
     expect(wrapper.get('[role="note"]').text()).toContain('réinitialiser')
     expect(wrapper.get('input#password').attributes('type')).toBe('password')
+  })
+
+  it('leads to the password recovery', async () => {
+    const { wrapper } = await mountView()
+
+    expect(wrapper.get('a.forgot').attributes('href')).toBe('/recover')
+  })
+
+  it('welcomes someone who just chose a new password', async () => {
+    const { wrapper } = await mountView('/login?recovered=1')
+
+    expect(wrapper.get('[role="status"]').text()).toContain('nouveau mot de passe')
+  })
+
+  it('shows no such notice otherwise', async () => {
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
   })
 
   it('logs in and goes to the connections', async () => {

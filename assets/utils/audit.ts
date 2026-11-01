@@ -6,6 +6,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'login', label: 'Connexions' },
   { value: 'password', label: 'Mot de passe' },
   { value: 'totp', label: 'Double authentification' },
+  { value: 'phrase', label: 'Phrase de récupération' },
   { value: 'connection', label: 'Bases' },
   { value: 'token', label: 'Jetons' },
   { value: 'invitation', label: 'Invitations' },
@@ -50,6 +51,14 @@ export function describeEvent(entry: AuditEntry): string {
       return `Jeton${quoted(details)} créé`
     case 'token.revoked':
       return 'Jeton révoqué'
+    case 'phrase.created':
+      return 'Phrase de récupération créée'
+    case 'phrase.removed':
+      return 'Phrase de récupération retirée'
+    case 'phrase.used':
+      return 'Mot de passe réinitialisé avec la phrase de récupération'
+    case 'phrase.failed':
+      return 'Phrase de récupération refusée'
     case 'invitation.created':
       return 'Invitation créée'
     case 'invitation.revoked':

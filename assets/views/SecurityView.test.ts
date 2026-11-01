@@ -10,7 +10,7 @@ import SecurityView from './SecurityView.vue'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
+const alice: User = { id: '1', username: 'alice', email: 'alice@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', recoveryPhrase: false, createdAt: '2026-11-01T10:00:00+00:00' }
 const codes = Array.from({ length: 10 }, (_, i) => `abcd-efgh-ijkl-mn0${String(i)}`)
 
 async function mountView(user: User = alice) {
@@ -200,5 +200,64 @@ describe('SecurityView', () => {
       expect(wrapper.findAll('.codes li')).toHaveLength(10)
       expect(wrapper.get('section.recovery').text()).toContain('10 sur 10')
     })
+  })
+})
+
+describe('recovery phrase', () => {
+  const phrase = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789'
+
+  it('offers to create one when there is none', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.get('section.phrase').text()).toContain('Désactivée')
+    expect(wrapper.find('section.phrase button.remove').exists()).toBe(false)
+  })
+
+  it('creates it with the password and shows it once', async () => {
+    const wrapper = await mountView()
+    mocked.mockResolvedValueOnce({ phrase })
+
+    await wrapper.get('#phrase-password').setValue('the password!!')
+    await wrapper.get('form.phrase-form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('POST', '/web/account/recovery-phrase', { password: 'the password!!' })
+    expect(wrapper.get('section.phrase .phrase-box code').text()).toBe(phrase)
+    expect(wrapper.get('section.phrase').text()).toContain('Active')
+
+    await wrapper.get('section.phrase button.noted').trigger('click')
+    expect(wrapper.find('section.phrase .phrase-box').exists()).toBe(false)
+    expect(wrapper.get('#phrase-password').element).toBeDefined()
+  })
+
+  it('says so when the password is wrong, and shows no phrase', async () => {
+    const wrapper = await mountView()
+    mocked.mockRejectedValueOnce(new ApiError(401, 'invalid_credentials'))
+
+    await wrapper.get('#phrase-password').setValue('wrong')
+    await wrapper.get('form.phrase-form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('section.phrase [role="alert"]').text()).toContain('incorrect')
+    expect(wrapper.find('section.phrase .phrase-box').exists()).toBe(false)
+  })
+
+  it('removes an existing phrase with the password', async () => {
+    const wrapper = await mountView({ ...alice, recoveryPhrase: true })
+    mocked.mockResolvedValueOnce(undefined)
+
+    expect(wrapper.get('section.phrase').text()).toContain('Active')
+    await wrapper.get('#phrase-password').setValue('the password!!')
+    await wrapper.get('section.phrase button.remove').trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('POST', '/web/account/recovery-phrase/disable', { password: 'the password!!' })
+    expect(wrapper.get('section.phrase').text()).toContain('Désactivée')
+  })
+
+  it('warns that changing the password retires the phrase', async () => {
+    const wrapper = await mountView({ ...alice, recoveryPhrase: true })
+
+    expect(wrapper.get('section.phrase').text()).toContain('changement de mot de passe')
   })
 })
