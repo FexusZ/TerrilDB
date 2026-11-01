@@ -1,0 +1,25 @@
+security:
+    providers:
+        terrildb_users:
+            id: App\Http\Web\Security\SecurityUserProvider
+
+    firewalls:
+        dev:
+            # Ensure dev tools and static assets are always allowed
+            pattern: ^/(_profiler(/|$)|(_wdt|assets|build)/)
+            security: false
+        main:
+            lazy: true
+            provider: terrildb_users
+            # La connexion se fait dans AccountController (mot de passe, second facteur, clé de chiffrement) ;
+            # l'authentificateur n'existe que pour ouvrir la session Symfony.
+            custom_authenticators:
+                - App\Http\Web\Security\ProgrammaticAuthenticator
+            entry_point: App\Http\Web\Security\JsonEntryPoint
+            logout:
+                path: /web/logout
+
+    access_control:
+        - { path: ^/api/health$, roles: PUBLIC_ACCESS }
+        - { path: ^/web/(login|register)$, roles: PUBLIC_ACCESS }
+        - { path: ^/web, roles: IS_AUTHENTICATED_FULLY }
