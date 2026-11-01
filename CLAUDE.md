@@ -112,6 +112,16 @@ erreurs du domaine traduites en codes stables par `ErrorMapper` (jamais le messa
 Inscription : `APP_REGISTRATION=first_only` (défaut, seulement le premier compte) ou `open`.
 Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarré à chaque requête, écritures annulées par DAMA).
 
+## API REST à jetons (src/ApiToken, src/Http/Api, docs/api.md)
+
+Le serveur ne détient jamais la clé de l'utilisateur ; un jeton d'API (`tdb_<id>_<secret>`) emporte donc une copie de
+la clé enveloppée par son propre secret (`SessionKeyWrapper`, contexte = id du jeton). Le serveur ne garde que
+l'empreinte du secret (`ApiTokenSecret::verifier`) et l'enveloppe : sans le jeton, rien n'est lisible. Lecture seule
+uniquement, connexions listées (au moins une), expiration obligatoire (365 jours au plus), supprimé à tout changement
+de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
+(`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
+assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
+
 ## Front (assets/, Vue 3 + TypeScript + Vite + Pinia + CodeMirror 6)
 
 SPA servie sous `/app/` : Vite compile dans `public/app/` (ignoré par git) et l'index sort sous le nom `spa.html`

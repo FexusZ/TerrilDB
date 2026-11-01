@@ -4,21 +4,20 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
-use App\Connection\TargetOpener;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\TargetConnection;
+use App\Http\Json\TargetSession;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Ouvre une base cible le temps d'une action, puis la ferme quoi qu'il arrive : les identifiants ne vivent pas
- * plus longtemps que la requête.
+ * Ouvre une base cible pour l'utilisateur de la session web (voir TargetSession) ou en essaie les paramètres.
  */
 final readonly class TargetAccess
 {
     public function __construct(
-        private TargetOpener $opener,
+        private TargetSession $targets,
         private DriverRegistry $drivers,
         private WebSession $session,
     ) {
@@ -33,13 +32,7 @@ final readonly class TargetAccess
      */
     public function withSaved(Uuid $id, \Closure $action): mixed
     {
-        $target = $this->opener->open($this->session->user(), $this->session->key(), $id);
-
-        try {
-            return $action($target);
-        } finally {
-            $target->close();
-        }
+        return $this->targets->with($this->session->user(), $this->session->key(), $id, $action);
     }
 
     /**
