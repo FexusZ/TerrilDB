@@ -10,6 +10,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryService;
 use App\Http\Json\JsonInput;
+use App\Http\Json\ResultPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
@@ -41,13 +42,6 @@ final readonly class QueryController
             fn (TargetConnection $target) => $this->queries->execute($target, $sql, $options, $confirmed),
         );
 
-        return new JsonResponse([
-            'columns' => $result->columns,
-            'rows' => $result->rows,
-            'rowCount' => $result->rowCount(),
-            'truncated' => $result->truncated,
-            'affectedRows' => $result->affectedRows,
-            'durationMs' => $result->durationMs,
-        ]);
+        return new JsonResponse(ResultPresenter::present($result));
     }
 }

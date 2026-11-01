@@ -35,7 +35,7 @@ final class SecurityHeadersListener
         if ($request->isSecure()) {
             $headers->set('Strict-Transport-Security', 'max-age=15552000');
         }
-        if (str_starts_with($path, '/web/')) {
+        if (str_starts_with($path, '/web/') || str_starts_with($path, '/api/')) {
             $headers->set('Cache-Control', 'no-store');
         }
         if (str_starts_with($path, '/app/') || '/app' === $path) {
