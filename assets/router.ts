@@ -27,6 +27,7 @@ export function createAppRouter(history: RouterHistory): Router {
           { path: '', name: 'workspace', component: () => import('./views/QueryPane.vue') },
           { path: 'audit', name: 'audit', component: () => import('./views/AuditPane.vue'), props: true },
           { path: 'diagram', name: 'diagram', component: () => import('./views/DiagramPane.vue'), props: true },
+          { path: 'key', name: 'key', component: () => import('./views/KeyPane.vue'), props: (route) => ({ id: route.params.id, name: route.query.name }) },
           { path: 'tables/:name(.+)', name: 'table', component: () => import('./views/TablePane.vue'), props: true },
         ],
       },

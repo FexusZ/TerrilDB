@@ -13,6 +13,7 @@
         "doctrine/orm": "^3.7",
         "mcp/sdk": "^0.9.0",
         "nyholm/psr7": "^1.8",
+        "predis/predis": "^3.7",
         "spomky-labs/otphp": "^11.5",
         "symfony/clock": "8.1.*",
         "symfony/console": "8.1.*",

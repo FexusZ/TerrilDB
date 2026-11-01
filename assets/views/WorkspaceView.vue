@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
+import KeyBrowser from '../components/KeyBrowser.vue'
 import SchemaTree from '../components/SchemaTree.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -16,6 +17,7 @@ const error = ref<string | null>(null)
 
 const connection = computed(() => connections.byId(props.id))
 const currentTable = computed(() => (typeof route.params.name === 'string' ? route.params.name : undefined))
+const currentKey = computed(() => (typeof route.query.name === 'string' ? route.query.name : undefined))
 
 async function open(): Promise<void> {
   error.value = null
@@ -53,7 +55,19 @@ watch(() => props.id, open)
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div v-else class="body">
       <aside class="side">
-        <SchemaTree :connection-id="id" :tables="workspace.tables" :current="currentTable" :error="workspace.tablesError" />
+        <KeyBrowser
+          v-if="workspace.isKeyValue"
+          :connection-id="id"
+          :keys="workspace.keys"
+          :total="workspace.keysTotal"
+          :has-more="workspace.keysCursor !== null"
+          :loading="workspace.keysLoading"
+          :current="currentKey"
+          :error="workspace.keysError"
+          @search="workspace.searchKeys"
+          @more="workspace.loadMoreKeys"
+        />
+        <SchemaTree v-else :connection-id="id" :tables="workspace.tables" :current="currentTable" :error="workspace.tablesError" />
       </aside>
       <div class="content"><RouterView /></div>
     </div>

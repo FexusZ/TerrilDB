@@ -3,7 +3,8 @@ import { computed, ref } from 'vue'
 import { ApiError, api, apiDownload } from '../api/client'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { HistoryEntry, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { HistoryEntry, KeyEntry, KeyPage, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import { useConnectionsStore } from './connections'
 
 export interface QueryTab {
   id: number
@@ -28,6 +29,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const connectionId = ref<string | null>(null)
   const tables = ref<TableSummary[]>([])
   const tablesError = ref<string | null>(null)
+  // Une base clé-valeur (Redis) se parcourt par clés : même espace de travail, autre arborescence.
+  const isKeyValue = ref(false)
+  const keys = ref<KeyEntry[]>([])
+  const keysCursor = ref<string | null>(null)
+  const keysTotal = ref(0)
+  const keysPattern = ref('*')
+  const keysLoading = ref(false)
+  const keysError = ref<string | null>(null)
+  let keysRequest = 0
   const tabs = ref<QueryTab[]>([])
   const activeId = ref(0)
   const history = ref<HistoryEntry[]>([])
@@ -70,7 +80,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     connectionId.value = id
     tables.value = []
     tablesError.value = null
+    keys.value = []
+    keysCursor.value = null
+    keysTotal.value = 0
+    keysPattern.value = '*'
+    keysError.value = null
+    isKeyValue.value = useConnectionsStore().byId(id)?.engine === 'redis'
     reset()
+
+    if (isKeyValue.value) {
+      await loadKeys(false)
+      return
+    }
 
     try {
       tables.value = (await api<{ tables: TableSummary[] }>('GET', `/web/connections/${id}/tables`)).tables
@@ -79,9 +100,58 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
+  /** Charge une page de clés : la première (remplace la liste) ou la suivante (s'y ajoute). */
+  async function loadKeys(append: boolean): Promise<void> {
+    if (connectionId.value === null) {
+      return
+    }
+    const request = ++keysRequest
+    const query = new URLSearchParams({ pattern: keysPattern.value, count: '100' })
+    if (append && keysCursor.value !== null) {
+      query.set('cursor', keysCursor.value)
+    }
+
+    keysLoading.value = true
+    keysError.value = null
+    try {
+      const page = await api<KeyPage>('GET', `/web/connections/${connectionId.value}/keys?${query.toString()}`)
+      if (request !== keysRequest) {
+        return
+      }
+      keys.value = append ? [...keys.value, ...page.keys] : page.keys
+      keysCursor.value = page.nextCursor
+      keysTotal.value = page.total
+    } catch (error) {
+      if (request === keysRequest) {
+        keysError.value = messageFor(error)
+        if (!append) {
+          keys.value = []
+          keysCursor.value = null
+        }
+      }
+    } finally {
+      if (request === keysRequest) {
+        keysLoading.value = false
+      }
+    }
+  }
+
+  async function loadMoreKeys(): Promise<void> {
+    if (keysCursor.value !== null && !keysLoading.value) {
+      await loadKeys(true)
+    }
+  }
+
+  async function searchKeys(pattern: string): Promise<void> {
+    keysPattern.value = pattern
+    await loadKeys(false)
+  }
+
   function close(): void {
     connectionId.value = null
     tables.value = []
+    keys.value = []
+    isKeyValue.value = false
     tabs.value = []
   }
 
@@ -281,5 +351,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })

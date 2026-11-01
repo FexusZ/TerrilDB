@@ -74,6 +74,29 @@ final class ApiV1Test extends WebApiTestCase
         self::assertSame('Bearer', $this->client->getResponse()->headers->get('WWW-Authenticate'));
     }
 
+    public function testAPlainTokenReadsARedisConnectionButCannotWriteOrBrowseTables(): void
+    {
+        $seed = \App\Tests\Integration\Driver\RedisTarget::seeded();
+        try {
+            $this->prepare(\App\Tests\Integration\Driver\RedisTarget::ENV);
+            $path = '/api/v1/connections/'.$this->connectionId;
+
+            $read = $this->api('POST', $path.'/query', ['sql' => 'get user:1']);
+            self::assertSame(200, $this->statusCode());
+            self::assertSame([['Alice']], $read['rows']);
+
+            $write = $this->api('POST', $path.'/query', ['sql' => 'set user:1 hacked']);
+            self::assertSame(403, $this->statusCode());
+            self::assertSame('query_refused', $write['error']);
+            self::assertSame('Alice', $seed->get('user:1'));
+
+            $this->api('GET', $path.'/tables');
+            self::assertSame(501, $this->statusCode());
+        } finally {
+            $seed->flushdb();
+        }
+    }
+
     public function testBadTokensAreRefusedIdentically(): void
     {
         $this->prepare();

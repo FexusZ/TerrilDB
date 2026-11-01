@@ -19,3 +19,24 @@ export function formatEstimate(rows: number | null): string {
 export function formatDuration(milliseconds: number): string {
   return milliseconds < 1000 ? `${String(milliseconds)} ms` : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(milliseconds / 1000)} s`
 }
+
+/** Le temps restant avant l'expiration d'une clé, dans la plus grande unité raisonnable. */
+export function formatTtl(seconds: number | null): string {
+  if (seconds === null) {
+    return 'sans expiration'
+  }
+  if (seconds < 1) {
+    return 'moins d’une seconde'
+  }
+  if (seconds < 60) {
+    return `${String(seconds)} s`
+  }
+  if (seconds < 3600) {
+    return `${String(Math.round(seconds / 60))} min`
+  }
+  if (seconds < 86400) {
+    return `${String(Math.round(seconds / 3600))} h`
+  }
+
+  return `${String(Math.round(seconds / 86400))} j`
+}

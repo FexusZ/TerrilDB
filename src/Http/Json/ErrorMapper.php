@@ -11,6 +11,9 @@ use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
+use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\KeyValue\Exception\InvalidKeyException;
+use App\Core\KeyValue\Exception\KeyNotFoundException;
 use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
@@ -62,6 +65,7 @@ final class ErrorMapper
             $error instanceof InvalidApiTokenDefinitionException,
             $error instanceof InvalidDatabaseConnectionException,
             $error instanceof InvalidConnectionParametersException,
+            $error instanceof InvalidKeyException,
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
             $error instanceof InvalidRecoveryException => new ErrorResponse(403, 'invalid_recovery'),
             $error instanceof MailDisabledException => new ErrorResponse(409, 'mail_disabled'),
@@ -69,11 +73,12 @@ final class ErrorMapper
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
-            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException => new ErrorResponse(404, 'not_found'),
+            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException => new ErrorResponse(404, 'not_found'),
             $error instanceof TargetConnectionFailedException => new ErrorResponse(502, 'target_unreachable'),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
+            $error instanceof UnsupportedOperationException => new ErrorResponse(501, 'unsupported_operation'),
             $error instanceof PlanNotAvailableException => new ErrorResponse(501, 'plan_unavailable'),
             $error instanceof UnreadablePlanException => new ErrorResponse(502, 'unreadable_plan'),
             $error instanceof QueryTimeoutException => new ErrorResponse(408, 'query_timeout'),

@@ -85,6 +85,16 @@ describe('ConnectionsView', () => {
     wrapper.unmount()
   })
 
+  it('filters Redis connections too', async () => {
+    const { wrapper } = await mountView([...connections, make('e', 'Cache', 'redis')])
+
+    await wrapper.get('button[data-engine="redis"]').trigger('click')
+
+    expect(wrapper.findAll('article').map((card) => card.text())).toEqual([expect.stringContaining('Cache')])
+    expect(wrapper.get('article .badge').text()).toBe('Rd')
+    wrapper.unmount()
+  })
+
   it('searches by name, ignoring case and accents', async () => {
     const { wrapper } = await mountView()
 

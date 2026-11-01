@@ -17,7 +17,7 @@ const language = new Compartment()
 let view: EditorView | null = null
 let applyingExternalChange = false
 
-const DIALECTS = { postgresql: PostgreSQL, mysql: MySQL, mariadb: MariaSQL, clickhouse: StandardSQL }
+const DIALECTS = { postgresql: PostgreSQL, mysql: MySQL, mariadb: MariaSQL, clickhouse: StandardSQL, redis: StandardSQL }
 
 function languageFor() {
   return sql({ dialect: DIALECTS[props.dialect], upperCaseKeywords: true, schema: Object.fromEntries(props.tables.map((table) => [table, []])) })
