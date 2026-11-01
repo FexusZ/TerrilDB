@@ -12,9 +12,13 @@ final readonly class ScannedStatement
 {
     /**
      * @param non-empty-list<string> $words
+     * @param list<int>              $depths profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
      */
-    public function __construct(public array $words)
+    public function __construct(public array $words, private array $depths)
     {
+        if (\count($depths) !== \count($words)) {
+            throw new \InvalidArgumentException('Each word needs a depth.');
+        }
     }
 
     public function first(): string
@@ -25,6 +29,20 @@ final readonly class ScannedStatement
     public function has(string $word): bool
     {
         return \in_array($word, $this->words, true);
+    }
+
+    /**
+     * Présent hors de toute parenthèse : un WHERE d'une sous-requête ne protège pas l'UPDATE qui l'entoure.
+     */
+    public function hasTopLevel(string $word): bool
+    {
+        foreach ($this->words as $index => $candidate) {
+            if ($candidate === $word && 0 === $this->depths[$index]) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function hasSequence(string ...$sequence): bool

@@ -23,6 +23,8 @@ final class SqlScanner
         $length = \strlen($sql);
         $statements = [];
         $words = [];
+        $depths = [];
+        $depth = 0;
         $complete = true;
         $executableComment = false;
         $i = 0;
@@ -37,7 +39,14 @@ final class SqlScanner
             } elseif (ctype_space($char)) {
                 ++$i;
             } elseif (';' === $char) {
-                $this->flush($words, $statements);
+                $this->flush($words, $depths, $statements);
+                $depth = 0;
+                ++$i;
+            } elseif ('(' === $char) {
+                ++$depth;
+                ++$i;
+            } elseif (')' === $char) {
+                $depth = max(0, $depth - 1);
                 ++$i;
             } elseif ('-' === $char && '-' === $next && (!$mysql || $this->endsOrSpaces($sql, $i + 2))) {
                 $i = $this->endOfLine($sql, $i);
@@ -93,6 +102,7 @@ final class SqlScanner
                     }
                 } else {
                     $words[] = strtoupper($word);
+                    $depths[] = $depth;
                 }
             } elseif (ctype_digit($char)) {
                 while ($i < $length && (ctype_alnum($sql[$i]) || '_' === $sql[$i] || '.' === $sql[$i])) {
@@ -103,21 +113,23 @@ final class SqlScanner
             }
         }
 
-        $this->flush($words, $statements);
+        $this->flush($words, $depths, $statements);
 
         return new ScannedSql($statements, $complete);
     }
 
     /**
      * @param list<string>           $words
+     * @param list<int>              $depths
      * @param list<ScannedStatement> $statements
      */
-    private function flush(array &$words, array &$statements): void
+    private function flush(array &$words, array &$depths, array &$statements): void
     {
         if ([] !== $words) {
-            $statements[] = new ScannedStatement($words);
-            $words = [];
+            $statements[] = new ScannedStatement($words, $depths);
         }
+        $words = [];
+        $depths = [];
     }
 
     private function endsOrSpaces(string $sql, int $position): bool
