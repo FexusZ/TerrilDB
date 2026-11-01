@@ -18,7 +18,6 @@ use App\Core\Query\QueryRunner;
 use App\Core\Query\QueryService;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
-use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 
 final class QueryServiceTest extends TestCase
@@ -44,7 +43,8 @@ final class QueryServiceTest extends TestCase
             }
         };
 
-        return new TargetConnection($engine, DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $introspector, $this->runner);
+        return new TargetConnection($engine, $introspector, $this->runner, static function (): void {
+        });
     }
 
     private function service(): QueryService
