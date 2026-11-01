@@ -22,6 +22,8 @@ describe('audit labels', () => {
     expect(describeEvent(entry('connection.deleted', { name: 'Blog' }))).toBe('Connexion « Blog » supprimée')
     expect(describeEvent(entry('token.created', { name: 'Assistant' }))).toBe('Jeton « Assistant » créé')
     expect(describeEvent(entry('token.revoked'))).toBe('Jeton révoqué')
+    expect(describeEvent(entry('invitation.created'))).toBe('Invitation créée')
+    expect(describeEvent(entry('invitation.revoked'))).toBe('Invitation révoquée')
   })
 
   it('tells a query that ran from one that was refused or failed', () => {
@@ -43,6 +45,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'connection', 'token', 'query'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'connection', 'token', 'invitation', 'query'])
   })
 })

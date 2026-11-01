@@ -7,7 +7,7 @@ import { useSessionStore } from './stores/session'
 
 vi.mock('./api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./api/client')>()), api: vi.fn() }))
 
-const alice: User = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+const alice: User = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
 
 function routerFor(user: User | null) {
   setActivePinia(createPinia())
@@ -66,6 +66,8 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('audit')
     await router.push('/connections/abc/diagram')
     expect(router.currentRoute.value.name).toBe('diagram')
+    await router.push('/security/invitations')
+    expect(router.currentRoute.value.name).toBe('invitations')
     await router.push('/connections/abc/edit')
     expect(router.currentRoute.value.name).toBe('connection-edit')
     await router.push('/connections/new')

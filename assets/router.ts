@@ -31,6 +31,7 @@ export function createAppRouter(history: RouterHistory): Router {
       },
       { path: '/security', name: 'security', component: () => import('./views/SecurityView.vue') },
       { path: '/security/activity', name: 'activity', component: () => import('./views/ActivityView.vue') },
+      { path: '/security/invitations', name: 'invitations', component: () => import('./views/InvitationsView.vue') },
       { path: '/security/tokens', name: 'tokens', component: () => import('./views/TokensView.vue') },
       { path: '/:pathMatch(.*)*', redirect: { name: 'connections' } },
     ],
