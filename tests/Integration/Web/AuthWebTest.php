@@ -87,8 +87,7 @@ final class AuthWebTest extends WebApiTestCase
         self::assertFalse($body['user']['totpEnabled']);
         self::assertStringNotContainsString('argon2id', json_encode($body, \JSON_THROW_ON_ERROR));
         $names = array_map(static fn ($cookie): string => $cookie->getName(), $this->client->getCookieJar()->all());
-        // Le stockage de session simulé des tests nomme son cookie MOCKSESSID ; le vrai nom est vérifié dans SessionWiringTest.
-        self::assertContains('MOCKSESSID', $names);
+        self::assertContains('TERRILDB_SESSION', $names);
         self::assertContains('TERRILDB_UNLOCK', $names);
 
         $me = $this->call('GET', '/web/me');

@@ -47,3 +47,10 @@ when@test:
             arguments:
                 $opsLimit: 1
                 $memLimit: 8192
+        # Le stockage de session simulé nomme son cookie MOCKSESSID : le coffre de clés ne reconnaîtrait alors
+        # pas la session précédente (hasPreviousSession). On lui donne le vrai nom.
+        session.storage.factory.mock_file:
+            class: Symfony\Component\HttpFoundation\Session\Storage\MockFileSessionStorageFactory
+            arguments:
+                - '%kernel.cache_dir%/sessions'
+                - TERRILDB_SESSION

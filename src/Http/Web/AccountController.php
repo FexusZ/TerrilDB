@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
-use App\Crypto\SessionKeyVault;
 use App\Http\Web\Security\LoginThrottle;
-use App\Http\Web\Security\ProgrammaticAuthenticator;
-use App\Http\Web\Security\SecurityUser;
 use App\Security\LoginService;
 use App\Security\UserRegistrar;
-use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -23,8 +19,6 @@ final readonly class AccountController
         private UserRegistrar $registrar,
         private LoginService $login,
         private LoginThrottle $throttle,
-        private Security $security,
-        private SessionKeyVault $vault,
         private WebSession $session,
     ) {
     }
@@ -56,9 +50,7 @@ final readonly class AccountController
         $result = $this->login->authenticate($login, $password, $code);
         $this->throttle->succeeded($login);
 
-        // Ouvre la session Symfony (ce qui renouvelle son identifiant), puis confie la clé au coffre sous ce nouvel identifiant.
-        $this->security->login(SecurityUser::fromUser($result->user), ProgrammaticAuthenticator::class, 'main');
-        $this->vault->put($request->getSession()->getId(), $result->key);
+        $this->session->open($result->user, $result->key);
 
         return new JsonResponse(['user' => UserPresenter::present($result->user), 'recoveryCodeUsed' => $result->usedRecoveryCode]);
     }

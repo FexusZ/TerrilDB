@@ -24,6 +24,7 @@ use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\PasswordPolicyException;
 use App\Security\Exception\SecondFactorRequiredException;
 use App\Security\Exception\TotpAlreadyEnabledException;
+use App\Security\Exception\TotpNotEnabledException;
 
 /**
  * Traduit une erreur du domaine en réponse HTTP. Le client ne voit que des codes stables et, quand c'est sans
@@ -48,6 +49,7 @@ final class ErrorMapper
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
             $error instanceof AccountAlreadyExistsException => new ErrorResponse(409, 'account_exists'),
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
+            $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
             $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException => new ErrorResponse(404, 'not_found'),
             $error instanceof TargetConnectionFailedException => new ErrorResponse(502, 'target_unreachable'),
