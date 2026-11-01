@@ -16,6 +16,7 @@ final class EngineTest extends TestCase
         self::assertSame('mariadb', Engine::MariaDb->value);
         self::assertSame('postgresql', Engine::PostgreSql->value);
         self::assertSame('clickhouse', Engine::ClickHouse->value);
+        self::assertSame('redis', Engine::Redis->value);
     }
 
     public function testDefaultPorts(): void
@@ -24,6 +25,15 @@ final class EngineTest extends TestCase
         self::assertSame(3306, Engine::MariaDb->defaultPort());
         self::assertSame(5432, Engine::PostgreSql->defaultPort());
         self::assertSame(8123, Engine::ClickHouse->defaultPort());
+        self::assertSame(6379, Engine::Redis->defaultPort());
+    }
+
+    public function testOnlyRedisIsNotSql(): void
+    {
+        self::assertFalse(Engine::Redis->speaksSql());
+        foreach ([Engine::MySql, Engine::MariaDb, Engine::PostgreSql, Engine::ClickHouse] as $engine) {
+            self::assertTrue($engine->speaksSql(), $engine->value);
+        }
     }
 
     /**
