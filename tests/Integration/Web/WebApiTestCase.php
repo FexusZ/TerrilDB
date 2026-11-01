@@ -66,6 +66,21 @@ abstract class WebApiTestCase extends WebTestCase
         return $typed;
     }
 
+    /**
+     * Un niveau de plus dans une réponse décodée : échoue si la valeur n'est pas un tableau.
+     *
+     * @return array<array-key, mixed>
+     */
+    protected static function arrayOf(mixed $value): array
+    {
+        self::assertIsArray($value);
+
+        return $value;
+    }
+
+    /**
+     * @phpstan-impure
+     */
     protected function statusCode(): int
     {
         return $this->client->getResponse()->getStatusCode();

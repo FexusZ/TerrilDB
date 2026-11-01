@@ -19,6 +19,15 @@ final class CellValueTest extends TestCase
         self::assertSame('', CellValue::normalize(''));
     }
 
+    public function testIntegersBeyondWhatJavaScriptCanHoldTravelAsStrings(): void
+    {
+        self::assertSame(9007199254740991, CellValue::normalize(9007199254740991));
+        self::assertSame('9007199254740992', CellValue::normalize(9007199254740992));
+        self::assertSame(-9007199254740991, CellValue::normalize(-9007199254740991));
+        self::assertSame('-9007199254740992', CellValue::normalize(-9007199254740992));
+        self::assertSame('9223372036854775807', CellValue::normalize(\PHP_INT_MAX));
+    }
+
     public function testBinaryStringsBecomeHex(): void
     {
         self::assertSame('0xff00fe', CellValue::normalize("\xff\x00\xfe"));

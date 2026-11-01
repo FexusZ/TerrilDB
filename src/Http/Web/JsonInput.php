@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Core\Connection\Engine;
+use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -53,6 +55,11 @@ final readonly class JsonInput
     public function optionalString(string $field): ?string
     {
         return null === ($this->data[$field] ?? null) ? null : $this->string($field);
+    }
+
+    public function engine(string $field): Engine
+    {
+        return Engine::tryFrom($this->string($field)) ?? throw new InvalidConnectionParametersException('The engine is not supported.');
     }
 
     public function int(string $field): int
