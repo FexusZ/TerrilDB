@@ -12,7 +12,6 @@ use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
-use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\TestCase;
 
 final class TargetConnectionTest extends TestCase
@@ -46,22 +45,24 @@ final class TargetConnectionTest extends TestCase
     {
         $introspector = $this->introspector();
         $runner = $this->runner();
-        $connection = new TargetConnection(Engine::PostgreSql, DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]), $introspector, $runner);
+        $connection = new TargetConnection(Engine::PostgreSql, $introspector, $runner, static function (): void {
+        });
 
         self::assertSame(Engine::PostgreSql, $connection->engine);
         self::assertSame($introspector, $connection->introspector());
         self::assertSame($runner, $connection->runner());
     }
 
-    public function testClosingTwiceIsHarmless(): void
+    public function testClosingReleasesTheResourceOnlyOnce(): void
     {
-        $dbal = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'memory' => true]);
-        $dbal->executeQuery('SELECT 1');
-        $connection = new TargetConnection(Engine::MySql, $dbal, $this->introspector(), $this->runner());
+        $closed = 0;
+        $connection = new TargetConnection(Engine::MySql, $this->introspector(), $this->runner(), static function () use (&$closed): void {
+            ++$closed;
+        });
 
         $connection->close();
         $connection->close();
 
-        $this->addToAssertionCount(1);
+        self::assertSame(1, $closed);
     }
 }
