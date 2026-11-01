@@ -112,6 +112,20 @@ erreurs du domaine traduites en codes stables par `ErrorMapper` (jamais le messa
 Inscription : `APP_REGISTRATION=first_only` (défaut, seulement le premier compte) ou `open`.
 Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarré à chaque requête, écritures annulées par DAMA).
 
+## Front (assets/, Vue 3 + TypeScript + Vite + Pinia + CodeMirror 6)
+
+SPA servie sous `/app/` : Vite compile dans `public/app/` (ignoré par git) et l'index sort sous le nom `spa.html`
+(voir `vite.config.ts` : le serveur PHP intégré servirait un `index.html` sans passer par Symfony, donc sans en-têtes
+de sécurité) ; `SpaController` le sert pour toute adresse `/app/…`, `SecurityHeadersListener` pose la CSP (scripts
+`'self'` seulement, pas de script en ligne). `docker/php/router.php` est le routeur du serveur de développement.
+Structure : `api/` (client `fetch` + en-tête CSRF, `ApiError` à code stable, `errors.ts` = messages français),
+`stores/` (Pinia : session, connexions, espace de travail à onglets), `components/`, `views/`, `utils/`,
+`styles/tokens.css` (jetons de design, thème sombre unique : teal = action, ambre = secret/chiffré).
+Une réponse `unauthenticated`/`locked` ramène à la connexion (`onSessionLost`). Une redirection `?redirect=` n'est suivie
+que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est chargé d'un tiers. Tests Vitest à côté du code
+(`*.test.ts`) ; les rejets simulés se font avec `mockRejectedValueOnce` (un `mockRejectedValue` persistant déclenche un
+« unhandled rejection »).
+
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash
@@ -125,7 +139,13 @@ $R composer require <paquet>
 docker compose --profile targets up -d --wait             # attend les healthchecks (init SQL terminée)
 $R vendor/bin/phpunit --group integration                 # tests d'intégration (exclus de la suite par défaut)
 docker compose --profile targets down -v                  # arrêt + remise à zéro (rejoue l'init SQL)
-docker compose up php                                     # serveur sur :8000 (GET /api/health)
+docker compose up php                                     # serveur sur :8000 (GET /api/health, interface sur /app/)
+N="docker compose run --rm --no-deps node"
+$N npm install                                            # dépendances front
+$N npx vitest run                                         # tests front
+$N npm run typecheck && $N npm run lint                   # vue-tsc, ESLint
+$N npm run build                                          # compile dans public/app/ (à refaire pour voir un changement sur :8000)
+docker compose --profile front up node                    # Vite en développement sur :5173/app/ (proxy vers le PHP)
 $R php bin/console doctrine:migrations:migrate            # migrations de la base interne
 $R php bin/console doctrine:database:create --env=test --if-not-exists   # base terrildb_test (une fois)
 $R php bin/console doctrine:migrations:migrate --env=test # schéma de test (tests --group integration)

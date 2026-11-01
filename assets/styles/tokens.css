@@ -1,0 +1,29 @@
+/* Jetons de design : thème sombre unique. Teal = action, ambre = ce qui est secret ou chiffré. */
+:root {
+  color-scheme: dark;
+  --bg: #0e1316;
+  --s1: #141b1f;
+  --s2: #1a2328;
+  --s3: #222d33;
+  --line: #2a373d;
+  --line-strong: #3b4d55;
+  --fg: #e6edea;
+  --mut: #9aaba6;
+  --acc: #5cc8be;
+  --acc-ink: #06201e;
+  --acc-bg: #12312f;
+  --acc-line: #1f5c57;
+  --sec: #e3a857;
+  --sec-ink: #f0cf9d;
+  --sec-bg: #33260f;
+  --sec-line: #6b4d1d;
+  --ok: #7bd39a;
+  --ok-bg: #12281c;
+  --ok-line: #2c6b45;
+  --bad: #f28b82;
+  --bad-bg: #2d1614;
+  --bad-line: #6b2c27;
+  --font-ui: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --radius: 6px;
+}
