@@ -73,6 +73,17 @@ sont toujours cloisonnées par propriétaire (`findOwned`), une connexion d'autr
 connexion inexistante. `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
 illisible bloque le changement.
 
+## Introspection (src/Core/Driver, src/Core/Schema, src/Driver)
+
+Un `Driver` (tagué `app.driver`, rassemblés dans `DriverRegistry`) sert un ou plusieurs `Engine` : il ouvre une
+`TargetConnection` (DBAL + `SchemaIntrospector`). `DbalConnector` borne le délai de connexion et vérifie par un
+`SELECT 1` ; un échec rend toujours `TargetConnectionFailedException` au message générique (le détail du moteur
+reste dans l'exception précédente, jamais montré à l'utilisateur). Drivers : `MySql` (MySQL + MariaDB, information_schema)
+et `PostgreSql` (pg_catalog). Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
+primaire d'abord puis par nom, tri à l'octet car l'ordre du moteur dépend de la collation) ; périmètre = base de la
+connexion (MySQL) ou schéma courant (PostgreSQL). Nombres de lignes = estimations du moteur, jamais un COUNT. Les noms
+de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : connexion enregistrée + clé -> cible ouverte.
+
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash

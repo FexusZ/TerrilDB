@@ -65,6 +65,11 @@ final readonly class ConnectionManager
         return $connection;
     }
 
+    public function get(User $owner, Uuid $id): DatabaseConnection
+    {
+        return $this->owned($owner, $id);
+    }
+
     public function delete(User $owner, Uuid $id): void
     {
         $this->connections->remove($this->owned($owner, $id));
