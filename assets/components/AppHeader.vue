@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router'
 import { useConnectionsStore } from '../stores/connections'
 import { useSessionStore } from '../stores/session'
+import { useTokensStore } from '../stores/tokens'
 import { useWorkspaceStore } from '../stores/workspace'
 import AppButton from './AppButton.vue'
 import BrandMark from './BrandMark.vue'
@@ -13,6 +14,7 @@ const router = useRouter()
 async function logout(): Promise<void> {
   await session.logout()
   useConnectionsStore().reset()
+  useTokensStore().reset()
   useWorkspaceStore().close()
   await router.push({ name: 'login' })
 }

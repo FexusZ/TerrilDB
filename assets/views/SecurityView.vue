@@ -164,6 +164,14 @@ async function regenerate(): Promise<void> {
       </template>
     </section>
 
+    <section class="panel api">
+      <div class="head">
+        <h2>Jetons d’accès à l’API</h2>
+        <RouterLink class="more" :to="{ name: 'tokens' }">Gérer les jetons</RouterLink>
+      </div>
+      <p class="lede">Donnez à un outil un accès en lecture seule à certaines de vos connexions, pour une durée limitée.</p>
+    </section>
+
     <section v-if="session.user.totpEnabled" class="panel recovery">
       <div class="head">
         <h2>Codes de récupération</h2>
