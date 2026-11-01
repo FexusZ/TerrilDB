@@ -21,6 +21,9 @@ const busy = ref(false)
 const fresh = ref<string | null>(null)
 const toRevoke = ref<InvitationInfo | null>(null)
 const copyFailed = ref(false)
+const emailEnabled = ref(false)
+const email = ref('')
+const mailStatus = ref<'none' | 'sent' | 'failed'>('none')
 
 const LIFETIMES = [
   { value: '1', label: '1 jour' },
@@ -38,7 +41,9 @@ function state(invitation: InvitationInfo): string {
 
 onMounted(async () => {
   try {
-    items.value = (await api<{ invitations: InvitationInfo[] }>('GET', '/web/invitations')).invitations
+    const result = await api<{ invitations: InvitationInfo[]; emailEnabled: boolean }>('GET', '/web/invitations')
+    items.value = result.invitations
+    emailEnabled.value = result.emailEnabled
   } catch (failure) {
     listError.value = messageFor(failure)
   }
@@ -48,7 +53,11 @@ async function create(): Promise<void> {
   error.value = null
   busy.value = true
   try {
-    const { token, invitation } = await api<{ token: string; invitation: InvitationInfo }>('POST', '/web/invitations', { note: note.value, lifetimeDays: Number(lifetime.value) })
+    const address = email.value.trim()
+    const body = { note: note.value, lifetimeDays: Number(lifetime.value), ...(address === '' ? {} : { email: address }) }
+    const { token, invitation, emailSent } = await api<{ token: string; invitation: InvitationInfo; emailSent?: boolean }>('POST', '/web/invitations', body)
+    mailStatus.value = address === '' ? 'none' : emailSent === true ? 'sent' : 'failed'
+    email.value = ''
     items.value = [invitation, ...items.value]
     // Le lien est construit ici : le serveur ignore sous quelle adresse on le joint.
     fresh.value = `${window.location.origin}${router.resolve({ name: 'register', query: { invitation: token } }).href}`
@@ -102,6 +111,8 @@ async function revoke(): Promise<void> {
 
     <section v-if="fresh" class="fresh" aria-live="polite">
       <h2>Votre nouveau lien</h2>
+      <p v-if="mailStatus === 'sent'">Un e-mail a été envoyé à la personne invitée (son adresse n’est conservée nulle part). Le lien ci-dessous est aussi à vous, au cas où.</p>
+      <p v-else-if="mailStatus === 'failed'" class="warn">L’e-mail n’a pas pu être envoyé : transmettez le lien vous-même.</p>
       <p>Copiez-le maintenant : il ne sera plus affiché. Seule une empreinte est conservée.</p>
       <code>{{ fresh }}</code>
       <p v-if="copyFailed" class="hint">La copie automatique a échoué : sélectionnez le lien ci-dessus.</p>
@@ -115,6 +126,7 @@ async function revoke(): Promise<void> {
       <h2>Créer une invitation</h2>
       <form class="create" @submit.prevent="create">
         <FormField id="invitation-note" v-model="note" label="Pour qui ? (facultatif)" hint="Un repère pour vous, par exemple « Pour Marie »." />
+        <FormField v-if="emailEnabled" id="invitation-email" v-model="email" label="Envoyer par e-mail (facultatif)" type="email" autocomplete="off" inputmode="email" hint="Le serveur envoie le lien puis oublie l’adresse. Sans adresse, copiez le lien vous-même." />
         <div class="field">
           <label for="invitation-lifetime">Validité</label>
           <select id="invitation-lifetime" v-model="lifetime">
@@ -170,5 +182,6 @@ ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: col
 .fresh { padding: 16px 18px; border-radius: 8px; border: 1px solid var(--sec-line); background: var(--sec-bg); display: flex; flex-direction: column; gap: 10px; }
 .fresh code { display: block; padding: 10px 12px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--line); color: var(--sec-ink); font: 400 12.5px/1.5 var(--font-mono); word-break: break-all; user-select: all; }
 .row { display: flex; gap: 8px; }
+.warn { color: var(--sec-ink); }
 .error { padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 </style>
