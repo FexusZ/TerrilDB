@@ -26,4 +26,57 @@
   --font-ui: 'Archivo', 'Helvetica Neue', Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
   --radius: 6px;
+  --line-soft: #1f2b30;
+  --hover: rgba(92, 200, 190, 0.05);
+  --selection: rgba(92, 200, 190, 0.22);
+  --auth-bg: #101a1d;
+  --auth-stripe: rgba(92, 200, 190, 0.07);
+  --auth-stripe-sec: rgba(227, 168, 87, 0.1);
+  --code-gutter: #566a64;
+  --code-keyword: #7fb2e6;
+  --code-string: #9ed49a;
+  --code-number: #d5a0e8;
+  --code-function: #e3a857;
+  --code-comment: #6f827c;
+  --code-operator: #9aaba6;
+}
+
+/* Thème clair : mêmes rôles (teal = action, ambre = secret), contrastes revus pour un fond blanc. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f7f6;
+  --s1: #ffffff;
+  --s2: #eef3f1;
+  --s3: #e1e9e6;
+  --line: #d3ddd9;
+  --line-strong: #b4c4be;
+  --fg: #14211f;
+  --mut: #50625d;
+  --acc: #0b7a70;
+  --acc-ink: #ffffff;
+  --acc-bg: #def3f0;
+  --acc-line: #8cc9c1;
+  --sec: #9a5b00;
+  --sec-ink: #6b3f00;
+  --sec-bg: #fbefd9;
+  --sec-line: #e0b872;
+  --ok: #1d6b3e;
+  --ok-bg: #e1f3e8;
+  --ok-line: #8cc6a2;
+  --bad: #b3261e;
+  --bad-bg: #fce8e6;
+  --bad-line: #e6a39d;
+  --line-soft: #e3eae7;
+  --hover: rgba(11, 122, 112, 0.06);
+  --selection: rgba(11, 122, 112, 0.2);
+  --auth-bg: #e6efec;
+  --auth-stripe: rgba(11, 122, 112, 0.08);
+  --auth-stripe-sec: rgba(154, 91, 0, 0.1);
+  --code-gutter: #8a9b95;
+  --code-keyword: #1f5fa8;
+  --code-string: #2e7d32;
+  --code-number: #8b3fa8;
+  --code-function: #9a5b00;
+  --code-comment: #6c7f79;
+  --code-operator: #50625d;
 }

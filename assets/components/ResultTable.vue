@@ -63,7 +63,7 @@ const affected = computed(() => props.result.affectedRows)
 .scroll { overflow: auto; min-height: 120px; }
 table { border-collapse: collapse; width: 100%; font: 400 13px var(--font-mono); }
 th { position: sticky; top: 0; text-align: left; font-weight: 500; color: var(--mut); background: var(--s2); padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-td { padding: 7px 14px; border-bottom: 1px solid #1f2b30; white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+td { padding: 7px 14px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.null { color: var(--mut); font-style: italic; }
 .empty { padding: 24px 16px; color: var(--mut); }

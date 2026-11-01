@@ -93,7 +93,7 @@ h2 { font-size: 15px; font-weight: 600; }
 .box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--s1); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th { text-align: left; font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mut); padding: 9px 16px; background: var(--s2); border-bottom: 1px solid var(--line); white-space: nowrap; }
-td { padding: 10px 16px; border-bottom: 1px solid #1f2b30; white-space: nowrap; }
+td { padding: 10px 16px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
 .m { font-family: var(--font-mono); font-size: 12.5px; }
 .dim { color: var(--mut); }
