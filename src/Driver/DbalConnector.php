@@ -36,6 +36,10 @@ final readonly class DbalConnector
         ];
         if (Engine::PostgreSql !== $engine) {
             $options['charset'] = 'utf8mb4';
+            // Lecture non tamponnée : une requête qui ramène des millions de lignes n'est pas chargée en mémoire.
+            // Plusieurs instructions par envoi sont désactivées : défense en plus du garde.
+            $options['driverOptions'][\Pdo\Mysql::ATTR_USE_BUFFERED_QUERY] = false;
+            $options['driverOptions'][\Pdo\Mysql::ATTR_MULTI_STATEMENTS] = false;
         }
 
         try {

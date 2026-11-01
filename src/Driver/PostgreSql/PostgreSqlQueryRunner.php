@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Driver\PostgreSql;
 
 use App\Core\Guard\StatementKind;
-use App\Core\Query\CellValue;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
 
 /**
@@ -71,7 +71,7 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
         $statement = $pdo->query(\sprintf('FETCH FORWARD %d FROM %s', $options->maxRows + 1, self::CURSOR));
         \assert($statement instanceof \PDOStatement);
 
-        return $this->rowsFrom($statement, $options, $started);
+        return PdoRows::read($statement, $options->maxRows, $started);
     }
 
     private function execute(\PDO $pdo, string $sql, QueryOptions $options, int $started): QueryResult
@@ -80,34 +80,8 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
         \assert($statement instanceof \PDOStatement);
 
         return $statement->columnCount() > 0
-            ? $this->rowsFrom($statement, $options, $started)
-            : QueryResult::affected($statement->rowCount(), self::elapsed($started));
-    }
-
-    private function rowsFrom(\PDOStatement $statement, QueryOptions $options, int $started): QueryResult
-    {
-        $columns = [];
-        for ($i = 0, $count = $statement->columnCount(); $i < $count; ++$i) {
-            $meta = $statement->getColumnMeta($i);
-            $columns[] = false === $meta ? '' : $meta['name'];
-        }
-
-        $rows = [];
-        $truncated = false;
-        while (false !== ($row = $statement->fetch(\PDO::FETCH_NUM))) {
-            if (\count($rows) >= $options->maxRows) {
-                $truncated = true;
-                break;
-            }
-            $rows[] = array_map(CellValue::normalize(...), $row);
-        }
-
-        return QueryResult::rows($columns, $rows, $truncated, self::elapsed($started));
-    }
-
-    private static function elapsed(int $started): int
-    {
-        return intdiv(hrtime(true) - $started, 1_000_000);
+            ? PdoRows::read($statement, $options->maxRows, $started)
+            : QueryResult::affected($statement->rowCount(), PdoRows::elapsed($started));
     }
 
     private function rollBack(\PDO $pdo): void
