@@ -26,7 +26,7 @@ final class SchemaAuditorTest extends TestCase
      */
     private function columns(array $columns): array
     {
-        return array_values(array_map(static fn (string $name): ColumnDefinition => new ColumnDefinition($name, 'integer', false, null, false, null), $columns));
+        return array_map(static fn (string $name): ColumnDefinition => new ColumnDefinition($name, 'integer', false, null, false, null), $columns);
     }
 
     /**
