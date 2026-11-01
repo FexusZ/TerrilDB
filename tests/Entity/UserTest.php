@@ -7,6 +7,7 @@ namespace App\Tests\Entity;
 use App\Crypto\KdfParameters;
 use App\Crypto\KeyDerivation;
 use App\Entity\Exception\InvalidUserException;
+use App\Entity\Role;
 use App\Entity\User;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -32,6 +33,17 @@ final class UserTest extends TestCase
         $user->enableTotp('v1:encrypted-secret', ['hash-1', 'hash-2']);
 
         return $user;
+    }
+
+    public function testAnAccountIsAMemberUnlessMadeAnAdministrator(): void
+    {
+        $member = $this->user();
+        $admin = new User('root@example.test', 'root', self::HASH, $this->kdf(), new \DateTimeImmutable('2026-10-29T12:00:00Z'), Role::Admin);
+
+        self::assertSame(Role::Member, $member->getRole());
+        self::assertFalse($member->isAdmin());
+        self::assertSame(Role::Admin, $admin->getRole());
+        self::assertTrue($admin->isAdmin());
     }
 
     public function testEmailAndUsernameAreNormalizedToLowercase(): void

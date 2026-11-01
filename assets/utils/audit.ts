@@ -8,6 +8,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'totp', label: 'Double authentification' },
   { value: 'connection', label: 'Bases' },
   { value: 'token', label: 'Jetons' },
+  { value: 'invitation', label: 'Invitations' },
   { value: 'query', label: 'Requêtes' },
 ]
 
@@ -49,6 +50,10 @@ export function describeEvent(entry: AuditEntry): string {
       return `Jeton${quoted(details)} créé`
     case 'token.revoked':
       return 'Jeton révoqué'
+    case 'invitation.created':
+      return 'Invitation créée'
+    case 'invitation.revoked':
+      return 'Invitation révoquée'
     case 'query.executed':
       return 'Requête exécutée'
     case 'query.refused':

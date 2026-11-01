@@ -18,7 +18,7 @@ const token = (id: string, name: string, extra: Partial<ApiTokenInfo> = {}): Api
 async function mountView(tokens: ApiTokenInfo[] = [], connections: ConnectionSummary[] = [connection('c1', 'Production'), connection('c2', 'Recette')]) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
   mocked.mockResolvedValueOnce({ connections })
   mocked.mockResolvedValueOnce({ tokens })
   const router = createRouter({

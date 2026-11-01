@@ -172,6 +172,14 @@ async function regenerate(): Promise<void> {
       <p class="lede">Donnez à un outil un accès en lecture seule à certaines de vos connexions, pour une durée limitée.</p>
     </section>
 
+    <section v-if="session.user?.role === 'admin'" class="panel invitations">
+      <div class="head">
+        <h2>Invitations</h2>
+        <RouterLink class="more" :to="{ name: 'invitations' }">Inviter quelqu’un</RouterLink>
+      </div>
+      <p class="lede">Chaque personne invitée crée son propre compte, avec son propre mot de passe : vous ne voyez jamais ses connexions.</p>
+    </section>
+
     <section class="panel activity">
       <div class="head">
         <h2>Journal d’activité</h2>

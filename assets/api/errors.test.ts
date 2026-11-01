@@ -11,6 +11,11 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(401, 'locked'))).toContain('reconnect')
   })
 
+  it('explains a refused invitation and a forbidden action', () => {
+    expect(messageFor(new ApiError(403, 'invalid_invitation'))).toContain('invitation')
+    expect(messageFor(new ApiError(403, 'forbidden'))).toContain('administrateur')
+  })
+
   it('says how long to wait when throttled', () => {
     expect(messageFor(new ApiError(429, 'too_many_attempts', { retryAfter: 42 }))).toContain('42')
   })

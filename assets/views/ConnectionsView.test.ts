@@ -27,7 +27,7 @@ function namedRouter() {
 async function mountView(list: ConnectionSummary[] = connections) {
   const pinia = createPinia()
   setActivePinia(pinia)
-  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-11-01T10:00:00+00:00' }
+  useSessionStore().user = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', createdAt: '2026-11-01T10:00:00+00:00' }
   mocked.mockResolvedValueOnce({ connections: list })
   const router = namedRouter()
   await router.push('/connections')
