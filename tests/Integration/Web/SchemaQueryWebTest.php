@@ -65,7 +65,15 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertArrayHasKey('estimatedRows', $first);
     }
 
-    #[DataProvider('targets')]
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
+    #[DataProvider('relationalTargets')]
     public function testDescribesATable(string $envVar): void
     {
         $this->seedAndLogin();
@@ -86,6 +94,22 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertCount(2, $foreignKeys);
         self::assertSame(['name', 'columns', 'referencedTable', 'referencedColumns', 'onUpdate', 'onDelete'], array_keys(self::arrayOf($foreignKeys[0])));
         self::assertNull($table['viewDefinition']);
+    }
+
+    public function testDescribesAClickHouseTableWithItsSortingKeyAndNoForeignKey(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/tables/order_items');
+
+        self::assertSame(200, $this->statusCode());
+        $table = self::arrayOf($body['table']);
+        self::assertSame(['id', 'order_id', 'line_no', 'product_id', 'quantity', 'unit_price_cents'], array_column(self::arrayOf($table['columns']), 'name'));
+        $indexes = array_map(self::arrayOf(...), self::arrayOf($table['indexes']));
+        self::assertSame(['ORDER BY', 'idx_order_items_product'], array_column($indexes, 'name'));
+        self::assertSame([false, false], array_column($indexes, 'primary'));
+        self::assertSame([], $table['foreignKeys']);
     }
 
     #[DataProvider('targets')]

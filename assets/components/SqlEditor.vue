@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { MariaSQL, MySQL, PostgreSQL, sql } from '@codemirror/lang-sql'
+import { MariaSQL, MySQL, PostgreSQL, StandardSQL, sql } from '@codemirror/lang-sql'
 import { bracketMatching, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from '@codemirror/view'
@@ -17,7 +17,7 @@ const language = new Compartment()
 let view: EditorView | null = null
 let applyingExternalChange = false
 
-const DIALECTS = { postgresql: PostgreSQL, mysql: MySQL, mariadb: MariaSQL }
+const DIALECTS = { postgresql: PostgreSQL, mysql: MySQL, mariadb: MariaSQL, clickhouse: StandardSQL }
 
 function languageFor() {
   return sql({ dialect: DIALECTS[props.dialect], upperCaseKeywords: true, schema: Object.fromEntries(props.tables.map((table) => [table, []])) })

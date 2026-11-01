@@ -11,6 +11,7 @@ use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
+use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\Exception\QueryFailedException;
@@ -73,6 +74,7 @@ final class ErrorMapper
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
+            $error instanceof PlanNotAvailableException => new ErrorResponse(501, 'plan_unavailable'),
             $error instanceof UnreadablePlanException => new ErrorResponse(502, 'unreadable_plan'),
             $error instanceof QueryTimeoutException => new ErrorResponse(408, 'query_timeout'),
             $error instanceof QueryFailedException => new ErrorResponse(400, 'query_failed', ['message' => $error->getMessage()]),

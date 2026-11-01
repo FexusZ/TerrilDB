@@ -28,6 +28,13 @@ describe('SqlEditor', () => {
     wrapper.unmount()
   })
 
+  it('accepts the ClickHouse dialect', () => {
+    const wrapper = mountEditor({ dialect: 'clickhouse', modelValue: 'select count() from orders' })
+
+    expect(wrapper.get('.cm-content').text()).toContain('select count() from orders')
+    wrapper.unmount()
+  })
+
   it('reports what the user types', () => {
     const wrapper = mountEditor({ modelValue: '' })
 

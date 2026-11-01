@@ -1,13 +1,17 @@
-export type Engine = 'mysql' | 'mariadb' | 'postgresql'
+export type Engine = 'mysql' | 'mariadb' | 'postgresql' | 'clickhouse'
 
 export const ENGINE_LABELS: Record<Engine, string> = {
   mysql: 'MySQL',
   mariadb: 'MariaDB',
   postgresql: 'PostgreSQL',
+  clickhouse: 'ClickHouse',
 }
 
-export const ENGINE_BADGES: Record<Engine, string> = { mysql: 'My', mariadb: 'Ma', postgresql: 'Pg' }
-export const DEFAULT_PORTS: Record<Engine, number> = { mysql: 3306, mariadb: 3306, postgresql: 5432 }
+export const ENGINE_BADGES: Record<Engine, string> = { mysql: 'My', mariadb: 'Ma', postgresql: 'Pg', clickhouse: 'Ch' }
+/** ClickHouse : port de l’interface HTTP, la seule que TerrilDB parle. */
+export const DEFAULT_PORTS: Record<Engine, number> = { mysql: 3306, mariadb: 3306, postgresql: 5432, clickhouse: 8123 }
+/** Les moteurs dont TerrilDB sait lire un plan d’exécution. */
+export const ENGINE_HAS_PLAN: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: false }
 
 export interface User {
   id: string

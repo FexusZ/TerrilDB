@@ -20,7 +20,7 @@ final class DbalConnectorTest extends TestCase
      */
     public static function targets(): iterable
     {
-        yield from TargetDatabase::all();
+        yield from TargetDatabase::relational();
     }
 
     private function skipIfUnreachable(string $envVar): void

@@ -7,6 +7,7 @@ namespace App\Tests\Core\Optimizer;
 use App\Core\Connection\Engine;
 use App\Core\Guard\GuardReason;
 use App\Core\Guard\StatementGuard;
+use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Optimizer\PlanAnalyzer;
 use App\Core\Optimizer\PlanKind;
@@ -35,6 +36,13 @@ final class PlanServiceTest extends TestCase
         self::assertSame('EXPLAIN (FORMAT JSON) select * from orders', $this->service()->statementFor(Engine::PostgreSql, 'select * from orders'));
         self::assertSame('EXPLAIN FORMAT=JSON select * from orders', $this->service()->statementFor(Engine::MySql, 'select * from orders'));
         self::assertSame('EXPLAIN FORMAT=JSON select * from orders', $this->service()->statementFor(Engine::MariaDb, 'select * from orders'));
+    }
+
+    public function testNoPlanIsOfferedForAnEngineWithoutOne(): void
+    {
+        $this->expectException(PlanNotAvailableException::class);
+
+        $this->service()->statementFor(Engine::ClickHouse, 'select * from orders');
     }
 
     public function testDropsTheTrailingSemicolonAndSpaces(): void

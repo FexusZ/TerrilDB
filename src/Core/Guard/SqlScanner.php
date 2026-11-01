@@ -10,8 +10,9 @@ namespace App\Core\Guard;
  * C'est ici que se joue le filtre lexical : tout écart entre cette lecture et celle du moteur est un angle
  * d'attaque (un second ordre caché dans un commentaire que le moteur exécute, une chaîne que le moteur ferme
  * plus tôt). D'où un traitement par dialecte : commentaires exécutables `/*!` de MySQL, `--` qui exige une
- * espace en MySQL, `#` commentaire en MySQL seulement, échappements par antislash des chaînes MySQL et des
- * chaînes `E'…'` de PostgreSQL, guillemets dollar et commentaires imbriqués de PostgreSQL.
+ * espace en MySQL, `#` commentaire en MySQL et ClickHouse, échappements par antislash des chaînes MySQL et
+ * ClickHouse (et de leurs identifiants pour ClickHouse) et des chaînes `E'…'` de PostgreSQL, guillemets dollar
+ * de PostgreSQL et ClickHouse, commentaires imbriqués de PostgreSQL.
  *
  * Le filtre n'est jamais seul : la transaction en lecture seule du moteur fait foi.
  */
@@ -20,12 +21,18 @@ final class SqlScanner
     public function scan(string $sql, SqlDialect $dialect): ScannedSql
     {
         $mysql = SqlDialect::MySql === $dialect;
+        $clickhouse = SqlDialect::ClickHouse === $dialect;
+        // MySQL et ClickHouse : antislash dans les chaînes, « # » commentaire. Le guillemet double est une chaîne en MySQL,
+        // un identifiant ailleurs. Les guillemets dollar existent en PostgreSQL et en ClickHouse.
+        $backslash = $mysql || $clickhouse;
+        $dollarQuotes = !$mysql;
         $length = \strlen($sql);
         $statements = [];
         $words = [];
         $depths = [];
         $depth = 0;
         $complete = true;
+        $called = [];
         $executableComment = false;
         $i = 0;
 
@@ -39,7 +46,7 @@ final class SqlScanner
             } elseif (ctype_space($char)) {
                 ++$i;
             } elseif (';' === $char) {
-                $this->flush($words, $depths, $statements);
+                $this->flush($words, $depths, $called, $statements);
                 $depth = 0;
                 ++$i;
             } elseif ('(' === $char) {
@@ -50,7 +57,7 @@ final class SqlScanner
                 ++$i;
             } elseif ('-' === $char && '-' === $next && (!$mysql || $this->endsOrSpaces($sql, $i + 2))) {
                 $i = $this->endOfLine($sql, $i);
-            } elseif ($mysql && '#' === $char) {
+            } elseif ($backslash && '#' === $char) {
                 $i = $this->endOfLine($sql, $i);
             } elseif ('/' === $char && '*' === $next) {
                 if ($mysql && ('!' === ($sql[$i + 2] ?? '') || ('M' === ($sql[$i + 2] ?? '') && '!' === ($sql[$i + 3] ?? '')))) {
@@ -61,25 +68,25 @@ final class SqlScanner
                         ++$i;
                     }
                 } else {
-                    $i = $this->endOfBlockComment($sql, $i, !$mysql);
+                    $i = $this->endOfBlockComment($sql, $i, SqlDialect::PostgreSql === $dialect);
                     if (null === $i) {
                         $complete = false;
                         break;
                     }
                 }
             } elseif ("'" === $char || ($mysql && '"' === $char)) {
-                $i = $this->endOfQuoted($sql, $i, $char, $mysql);
+                $i = $this->endOfQuoted($sql, $i, $char, $backslash);
                 if (null === $i) {
                     $complete = false;
                     break;
                 }
-            } elseif (($mysql && '`' === $char) || (!$mysql && '"' === $char)) {
-                $i = $this->endOfQuoted($sql, $i, $char, false);
+            } elseif (($backslash && '`' === $char) || (!$mysql && '"' === $char)) {
+                $i = $this->endOfQuoted($sql, $i, $char, $clickhouse);
                 if (null === $i) {
                     $complete = false;
                     break;
                 }
-            } elseif (!$mysql && '$' === $char && 1 === preg_match('/\G\$([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)?\$/', $sql, $tag, 0, $i)) {
+            } elseif ($dollarQuotes && '$' === $char && 1 === preg_match('/\G\$([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)?\$/', $sql, $tag, 0, $i)) {
                 $end = strpos($sql, $tag[0], $i + \strlen($tag[0]));
                 if (false === $end) {
                     $complete = false;
@@ -95,7 +102,7 @@ final class SqlScanner
                 $prefix = 1 === \strlen($word) && "'" === ($sql[$i] ?? '') ? strtoupper($word) : '';
                 if ('' !== $prefix && \in_array($prefix, ['E', 'B', 'X', 'N'], true)) {
                     // Préfixe de chaîne (E'…', B'…', X'…', N'…'), pas un mot ; seul E'…' accepte l'antislash en PostgreSQL.
-                    $i = $this->endOfQuoted($sql, $i, "'", $mysql || 'E' === $prefix);
+                    $i = $this->endOfQuoted($sql, $i, "'", $backslash || 'E' === $prefix);
                     if (null === $i) {
                         $complete = false;
                         break;
@@ -103,6 +110,9 @@ final class SqlScanner
                 } else {
                     $words[] = strtoupper($word);
                     $depths[] = $depth;
+                    if ('(' === $this->nextNonSpace($sql, $i)) {
+                        $called[] = strtoupper($word);
+                    }
                 }
             } elseif (ctype_digit($char)) {
                 while ($i < $length && (ctype_alnum($sql[$i]) || '_' === $sql[$i] || '.' === $sql[$i])) {
@@ -113,7 +123,7 @@ final class SqlScanner
             }
         }
 
-        $this->flush($words, $depths, $statements);
+        $this->flush($words, $depths, $called, $statements);
 
         return new ScannedSql($statements, $complete);
     }
@@ -121,15 +131,27 @@ final class SqlScanner
     /**
      * @param list<string>           $words
      * @param list<int>              $depths
+     * @param list<string>           $called
      * @param list<ScannedStatement> $statements
      */
-    private function flush(array &$words, array &$depths, array &$statements): void
+    private function flush(array &$words, array &$depths, array &$called, array &$statements): void
     {
         if ([] !== $words) {
-            $statements[] = new ScannedStatement($words, $depths);
+            $statements[] = new ScannedStatement($words, $depths, $called);
         }
         $words = [];
         $depths = [];
+        $called = [];
+    }
+
+    private function nextNonSpace(string $sql, int $from): string
+    {
+        $length = \strlen($sql);
+        while ($from < $length && ctype_space($sql[$from])) {
+            ++$from;
+        }
+
+        return $sql[$from] ?? '';
     }
 
     private function endsOrSpaces(string $sql, int $position): bool

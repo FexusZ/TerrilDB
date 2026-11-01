@@ -13,8 +13,9 @@ final readonly class ScannedStatement
     /**
      * @param non-empty-list<string> $words
      * @param list<int>              $depths profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
+     * @param list<string>           $called mots directement suivis d'une parenthèse ouvrante (appels de fonction)
      */
-    public function __construct(public array $words, private array $depths)
+    public function __construct(public array $words, private array $depths, private array $called = [])
     {
         if (\count($depths) !== \count($words)) {
             throw new \InvalidArgumentException('Each word needs a depth.');
@@ -24,6 +25,14 @@ final readonly class ScannedStatement
     public function first(): string
     {
         return $this->words[0];
+    }
+
+    /**
+     * Le mot est écrit comme un appel de fonction (« FILE ('x') »), pas comme un nom de colonne.
+     */
+    public function calls(string $word): bool
+    {
+        return \in_array($word, $this->called, true);
     }
 
     public function has(string $word): bool

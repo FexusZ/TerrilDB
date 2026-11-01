@@ -18,6 +18,10 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(403, 'invalid_recovery'))).toContain('phrase')
   })
 
+  it('says when a plan is not available for the engine', () => {
+    expect(messageFor(new ApiError(501, 'plan_unavailable'))).toContain('plan')
+  })
+
   it('says how long to wait when throttled', () => {
     expect(messageFor(new ApiError(429, 'too_many_attempts', { retryAfter: 42 }))).toContain('42')
   })
