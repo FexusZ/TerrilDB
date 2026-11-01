@@ -19,7 +19,7 @@ async function mountView(user: User = alice) {
   useSessionStore().user = user
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'security', 'login'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'security', 'login', 'tokens'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/security')
   const wrapper = mount(SecurityView, { global: { plugins: [pinia, router] } })
@@ -35,6 +35,12 @@ describe('SecurityView', () => {
     const wrapper = await mountView()
 
     expect(wrapper.text()).toContain('alice@exemple.test')
+  })
+
+  it('leads to the API tokens', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.get('section.api a.more').attributes('href')).toBe('/tokens')
   })
 
   describe('password', () => {

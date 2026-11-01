@@ -68,6 +68,8 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('connection-new')
     await router.push('/security')
     expect(router.currentRoute.value.name).toBe('security')
+    await router.push('/security/tokens')
+    expect(router.currentRoute.value.name).toBe('tokens')
   })
 
   it('answers an unknown address with the connections list', async () => {

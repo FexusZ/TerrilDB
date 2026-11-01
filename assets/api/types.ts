@@ -100,3 +100,18 @@ export interface QueryResult {
   affectedRows: number | null
   durationMs: number
 }
+
+export interface ApiTokenInfo {
+  id: string
+  name: string
+  connectionIds: string[]
+  createdAt: string
+  expiresAt: string
+  lastUsedAt: string | null
+}
+
+export interface ApiTokenInput {
+  name: string
+  connectionIds: string[]
+  lifetimeDays: number
+}
