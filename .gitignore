@@ -35,3 +35,7 @@
 ###> front cache ###
 node_modules/
 ###< front cache ###
+
+###> docker ###
+/docker/dev/
+###< docker ###
