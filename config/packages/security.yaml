@@ -8,6 +8,14 @@ security:
             # Ensure dev tools and static assets are always allowed
             pattern: ^/(_profiler(/|$)|(_wdt|assets|build)/)
             security: false
+        # API REST : sans session, uniquement par jeton (Authorization: Bearer).
+        api:
+            pattern: ^/api/v1
+            stateless: true
+            provider: terrildb_users
+            custom_authenticators:
+                - App\Http\Api\BearerTokenAuthenticator
+            entry_point: App\Http\Api\BearerTokenAuthenticator
         main:
             lazy: true
             provider: terrildb_users
@@ -21,5 +29,6 @@ security:
 
     access_control:
         - { path: ^/api/health$, roles: PUBLIC_ACCESS }
+        - { path: ^/api/v1, roles: IS_AUTHENTICATED_FULLY }
         - { path: ^/web/(login|register)$, roles: PUBLIC_ACCESS }
         - { path: ^/web, roles: IS_AUTHENTICATED_FULLY }

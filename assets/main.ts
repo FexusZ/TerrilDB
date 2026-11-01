@@ -11,6 +11,7 @@ import App from './App.vue'
 import { router } from './router'
 import { useConnectionsStore } from './stores/connections'
 import { useSessionStore } from './stores/session'
+import { useTokensStore } from './stores/tokens'
 import { useWorkspaceStore } from './stores/workspace'
 import './styles/tokens.css'
 import './styles/base.css'
@@ -24,6 +25,7 @@ app.use(router)
 onSessionLost(() => {
   useSessionStore(pinia).dropUser()
   useConnectionsStore(pinia).reset()
+  useTokensStore(pinia).reset()
   useWorkspaceStore(pinia).close()
   void router.push({ name: 'login', query: { redirect: router.currentRoute.value.fullPath } })
 })

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Http\Web\Security;
 
+use App\Http\Json\TooManyAttemptsException;
 use App\Http\Web\Security\LoginThrottle;
-use App\Http\Web\TooManyAttemptsException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\InMemoryStorage;

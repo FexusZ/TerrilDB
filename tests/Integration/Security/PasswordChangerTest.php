@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Security;
 
+use App\ApiToken\ApiTokenService;
+use App\ApiToken\Exception\InvalidApiTokenException;
 use App\Connection\ConnectionManager;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
@@ -12,7 +14,9 @@ use App\Crypto\Exception\DecryptionFailedException;
 use App\Crypto\KeyDerivation;
 use App\Crypto\SecretCipher;
 use App\Crypto\SecretRotator;
+use App\Crypto\SessionKeyWrapper;
 use App\Entity\User;
+use App\Repository\ApiTokenRepository;
 use App\Repository\DatabaseConnectionRepository;
 use App\Repository\UserRepository;
 use App\Security\AuthPasswordHasher;
@@ -43,6 +47,7 @@ final class PasswordChangerTest extends DatabaseTestCase
     private MockClock $clock;
     private DatabaseConnectionRepository $connections;
     private ConnectionManager $manager;
+    private ApiTokenService $apiTokens;
     private PasswordChanger $changer;
     private LoginService $login;
     private User $user;
@@ -61,14 +66,18 @@ final class PasswordChangerTest extends DatabaseTestCase
         $this->hasher = new AuthPasswordHasher(opsLimit: 3, memLimit: 16384);
         $this->derivation = new KeyDerivation(opsLimit: 1, memLimit: 8192);
         $this->clock = new MockClock('2026-10-29 12:00:00 UTC');
+        $this->manager = new ConnectionManager(new SecretCipher(), $this->connections, $this->clock);
+        $tokenRepository = self::getContainer()->get(ApiTokenRepository::class);
+        self::assertInstanceOf(ApiTokenRepository::class, $tokenRepository);
+        $this->apiTokens = new ApiTokenService(new SessionKeyWrapper(), $tokenRepository, $this->manager, $this->clock);
         $this->changer = new PasswordChanger(
             new PasswordPolicy(),
             $this->hasher,
             new SecretRotator($this->derivation, new SecretCipher()),
             $this->repository,
             $this->connections,
+            $this->apiTokens,
         );
-        $this->manager = new ConnectionManager(new SecretCipher(), $this->connections, $this->clock);
         $this->login = new LoginService(
             $this->hasher,
             $this->derivation,
@@ -317,5 +326,46 @@ final class PasswordChangerTest extends DatabaseTestCase
 
         self::assertSame('first-secret', $this->manager->reveal($user, $newKey, $connection->getId())->password());
         self::assertSame('alice', $this->login->authenticate('alice', self::NEW, $this->codeFor($secret))->user->getUsername());
+    }
+
+    public function testApiTokensDoNotSurviveAPasswordChange(): void
+    {
+        $connection = $this->manager->create($this->user, $this->oldKey(), 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+        $issued = $this->apiTokens->issue($this->user, $this->oldKey(), 'Assistant', [$connection->getId()], 30);
+        $this->apiTokens->authenticate($issued->token);
+
+        $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+
+        $this->expectException(InvalidApiTokenException::class);
+        $this->apiTokens->authenticate($issued->token);
+    }
+
+    public function testAFailedChangeKeepsTheApiTokens(): void
+    {
+        $connection = $this->manager->create($this->user, $this->oldKey(), 'Production', Engine::PostgreSql, $this->parameters('first-secret'));
+        $issued = $this->apiTokens->issue($this->user, $this->oldKey(), 'Assistant', [$connection->getId()], 30);
+
+        try {
+            $this->changer->change($this->user, 'not the password!!', self::NEW);
+            self::fail('Expected a refusal.');
+        } catch (InvalidCredentialsException) {
+            $this->entityManager->clear();
+            self::assertSame($this->user->getId()->toRfc4122(), $this->apiTokens->authenticate($issued->token)->user->getId()->toRfc4122());
+        }
+    }
+
+    public function testOtherUsersTokensSurvive(): void
+    {
+        $bob = (new UserRegistrar(new PasswordPolicy(), $this->hasher, $this->derivation, $this->repository, $this->clock))
+            ->register('bob@example.test', 'bob', 'bob has a long password');
+        $bobKey = $this->derivation->derive('bob has a long password', $bob->getKdfParameters());
+        $theirs = $this->manager->create($bob, $bobKey, 'Theirs', Engine::PostgreSql, $this->parameters('bob-secret'));
+        $issued = $this->apiTokens->issue($bob, $bobKey, 'Bobs', [$theirs->getId()], 30);
+
+        $this->changer->change($this->user, self::OLD, self::NEW);
+        $this->entityManager->clear();
+
+        self::assertSame('bob', $this->apiTokens->authenticate($issued->token)->user->getUsername());
     }
 }

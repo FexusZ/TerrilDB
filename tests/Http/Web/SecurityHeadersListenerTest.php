@@ -35,9 +35,9 @@ final class SecurityHeadersListenerTest extends TestCase
 
     public function testTheJsonApiIsNeverStored(): void
     {
-        $response = $this->handle('/web/connections');
-
-        self::assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+        foreach (['/web/connections', '/api/v1/connections'] as $path) {
+            self::assertStringContainsString('no-store', (string) $this->handle($path)->headers->get('Cache-Control'), $path);
+        }
     }
 
     public function testThePageCarriesAStrictContentSecurityPolicy(): void

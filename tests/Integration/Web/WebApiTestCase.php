@@ -39,13 +39,14 @@ abstract class WebApiTestCase extends WebTestCase
     }
 
     /**
-     * @param array<string, mixed> $body
+     * @param array<string, mixed>  $body
+     * @param array<string, string> $extraServer en-têtes supplémentaires (clés de type HTTP_AUTHORIZATION)
      *
      * @return array<string, mixed>
      */
-    protected function call(string $method, string $uri, array $body = [], bool $csrf = true): array
+    protected function call(string $method, string $uri, array $body = [], bool $csrf = true, array $extraServer = []): array
     {
-        $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+        $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'] + $extraServer;
         if ($csrf) {
             $server['HTTP_X_TERRILDB_REQUEST'] = '1';
         }
