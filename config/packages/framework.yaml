@@ -9,11 +9,28 @@ framework:
         cookie_samesite: lax
         cookie_httponly: true
 
+    rate_limiter:
+        # Tentatives de connexion : par adresse (beaucoup de comptes) et par compte (mot de passe ou code TOTP deviné)
+        login_ip:
+            policy: sliding_window
+            limit: 30
+            interval: '15 minutes'
+        login_account:
+            policy: sliding_window
+            limit: 8
+            interval: '15 minutes'
+
     #esi: true
     #fragments: true
 
 when@test:
     framework:
+        cache:
+            pools:
+                # Compteurs de limitation sur fichier, comme en production : ils survivent au redémarrage du
+                # conteneur entre deux requêtes (WebApiTestCase les vide au début de chaque test).
+                cache.rate_limiter:
+                    adapter: cache.adapter.filesystem
         test: true
         session:
             storage_factory_id: session.storage.factory.mock_file
