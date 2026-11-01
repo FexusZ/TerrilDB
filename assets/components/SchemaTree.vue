@@ -18,7 +18,10 @@ const viewNodes = computed(() => matching.value.filter((table) => table.kind !==
       <input id="filter" v-model="filter" type="search" placeholder="Filtrer les tables">
     </div>
 
-    <RouterLink class="audit" :to="{ name: 'audit', params: { id: connectionId } }">Audit du schéma</RouterLink>
+    <div class="tools">
+      <RouterLink class="audit" :to="{ name: 'audit', params: { id: connectionId } }">Audit du schéma</RouterLink>
+      <RouterLink class="diagram" :to="{ name: 'diagram', params: { id: connectionId } }">Diagramme</RouterLink>
+    </div>
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <p v-else-if="props.tables.length === 0" class="note">Aucune table dans cette base.</p>
@@ -45,8 +48,9 @@ const viewNodes = computed(() => matching.value.filter((table) => table.kind !==
 .tree { display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; }
 .search { padding: 0 4px 8px; }
 input { width: 100%; height: 34px; padding: 0 10px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s1); color: var(--fg); font: 400 13px var(--font-ui); }
-.audit { margin: 0 4px 8px; padding: 8px 12px; border-radius: 5px; border: 1px solid var(--line); color: var(--acc); font-size: 13px; text-decoration: none; }
-.audit:hover { background: var(--s2); }
+.tools { display: flex; gap: 6px; margin: 0 4px 8px; }
+.audit, .diagram { flex: 1; padding: 8px 12px; border-radius: 5px; border: 1px solid var(--line); color: var(--acc); font-size: 13px; text-align: center; text-decoration: none; }
+.audit:hover, .diagram:hover { background: var(--s2); }
 .group { font: 500 11px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--mut); padding: 14px 12px 6px; }
 .node { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-radius: 5px; color: var(--fg); text-decoration: none; font-size: 13px; }
 .node:hover { background: var(--s2); }

@@ -64,6 +64,8 @@ describe('router guard', () => {
     expect(router.currentRoute.value.params.name).toBe('orders')
     await router.push('/connections/abc/audit')
     expect(router.currentRoute.value.name).toBe('audit')
+    await router.push('/connections/abc/diagram')
+    expect(router.currentRoute.value.name).toBe('diagram')
     await router.push('/connections/abc/edit')
     expect(router.currentRoute.value.name).toBe('connection-edit')
     await router.push('/connections/new')
