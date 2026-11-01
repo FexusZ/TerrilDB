@@ -134,6 +134,14 @@ d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête.
 avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
 1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
 
+## Diagramme ER (SchemaDiagramController, assets/utils/erLayout.ts, DiagramPane)
+
+`GET /web/connections/{id}/diagram` : tables (pas les vues, 300 au plus) avec colonnes (type, nullable, clé primaire) et
+relations = clés étrangères, tirées de l'introspection. La mise en page est côté front, sans bibliothèque : `layoutDiagram`
+range les tables sur une grille dans l'ordre d'un parcours en profondeur des clés étrangères (tables liées côte à côte,
+isolées en dernier, indépendant de l'ordre d'entrée) et trace chaque relation de la ligne de la clé étrangère à celle de
+la colonne référencée (auto-référence = boucle à droite). `DiagramPane` dessine le tout en SVG (route `diagram`).
+
 ## Export (src/Core/Export, ExportController)
 
 `CsvExporter` (RFC 4180, CRLF, UTF-8, BOM optionnel) et `JsonExporter` (tableau d'objets, colonnes dupliquées suffixées).
