@@ -28,3 +28,7 @@ when@test:
         App\Crypto\SessionKeyVault:
             alias: App\Http\Web\Session\WrappedSessionKeyVault
             public: true
+        # Pas encore injecté par un contrôleur : sans cela le conteneur compilé le retire.
+        App\Core\Driver\DriverRegistry:
+            autowire: true
+            public: true
