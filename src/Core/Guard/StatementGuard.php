@@ -43,14 +43,20 @@ final class StatementGuard
     private const MAX_LENGTH_BYTES = 100_000;
 
     private readonly SqlScanner $scanner;
+    private readonly RedisCommandGuard $redis;
 
-    public function __construct(?SqlScanner $scanner = null)
+    public function __construct(?SqlScanner $scanner = null, ?RedisCommandGuard $redis = null)
     {
         $this->scanner = $scanner ?? new SqlScanner();
+        $this->redis = $redis ?? new RedisCommandGuard();
     }
 
     public function check(string $sql, Engine $engine, QueryMode $mode): GuardVerdict
     {
+        if (!$engine->speaksSql()) {
+            return $this->redis->check($sql, $mode);
+        }
+
         if (\strlen($sql) > self::MAX_LENGTH_BYTES) {
             return GuardVerdict::refused(GuardReason::TooLong);
         }

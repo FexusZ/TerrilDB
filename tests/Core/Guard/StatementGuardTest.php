@@ -291,6 +291,14 @@ final class StatementGuardTest extends TestCase
         $this->assertAllowed('select '.str_repeat('1,', 1000).'1', $engine, QueryMode::ReadOnly);
     }
 
+    public function testRedisCommandsGoThroughTheCommandGuardNotTheSqlOne(): void
+    {
+        $this->assertAllowed('get user:1', Engine::Redis, QueryMode::ReadOnly, StatementKind::Read);
+        $this->assertRefused('set user:1 x', Engine::Redis, QueryMode::ReadOnly, GuardReason::NotReadOnly);
+        $this->assertRefused('select * from t', Engine::Redis, QueryMode::ReadOnly, GuardReason::UnsupportedStatement);
+        $this->assertAllowed('set user:1 x', Engine::Redis, QueryMode::ReadWrite, StatementKind::Write);
+    }
+
     public function testTheVerdictCarriesNoReasonWhenAllowed(): void
     {
         $verdict = $this->check('select 1', Engine::PostgreSql, QueryMode::ReadOnly);
