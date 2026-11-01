@@ -21,6 +21,7 @@ final class TargetDatabase
         'TARGET_MARIADB_URL' => Engine::MariaDb,
         'TARGET_POSTGRES_URL' => Engine::PostgreSql,
         'TARGET_CLICKHOUSE_URL' => Engine::ClickHouse,
+        'TARGET_REDIS_URL' => Engine::Redis,
     ];
 
     /**
@@ -59,7 +60,7 @@ final class TargetDatabase
         }
 
         /** @var array<string, mixed> $parts */
-        $parts = (new DsnParser(['pdo-mysql' => 'pdo_mysql', 'pdo-pgsql' => 'pdo_pgsql', 'clickhouse' => 'pdo_mysql']))->parse($url);
+        $parts = (new DsnParser(['pdo-mysql' => 'pdo_mysql', 'pdo-pgsql' => 'pdo_pgsql', 'clickhouse' => 'pdo_mysql', 'redis' => 'pdo_mysql']))->parse($url);
 
         return new ConnectionParameters(
             self::part($parts, 'host'),

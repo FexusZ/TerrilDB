@@ -11,7 +11,7 @@ use App\Core\Query\QueryMode;
  * de commandes connues passe, en lecture ou en écriture. Redis n'a pas de transaction en lecture seule côté client ;
  * la liste blanche (revérifiée par le serveur au moment d'exécuter, voir RedisQueryRunner) tient ce rôle.
  *
- * Refus nets : commandes bloquantes ou de flux (MONITOR, SUBSCRIBE, BLPOP, XREAD BLOCK), KEYS (SCAN le remplace sans
+ * Refus nets : commandes bloquantes ou de flux (MONITOR, SUBSCRIBE, BLPOP, XREAD : le serveur classe XREAD comme bloquant), KEYS (SCAN le remplace sans
  * bloquer le serveur), scripts et modules (ils contourneraient le filtre), administration (CONFIG, ACL, CLIENT, DEBUG,
  * SHUTDOWN, réplication, sauvegardes), AUTH, FLUSHALL (hors de la base de la connexion). FLUSHDB demande confirmation.
  */
@@ -25,7 +25,7 @@ final class RedisCommandGuard
         'HRANDFIELD', 'LRANGE', 'LLEN', 'LINDEX', 'LPOS', 'SMEMBERS', 'SCARD', 'SISMEMBER', 'SMISMEMBER', 'SSCAN', 'SRANDMEMBER',
         'SINTER', 'SUNION', 'SDIFF', 'SINTERCARD', 'ZRANGE', 'ZRANGEBYSCORE', 'ZRANGEBYLEX', 'ZREVRANGE', 'ZREVRANGEBYSCORE',
         'ZREVRANGEBYLEX', 'ZCARD', 'ZCOUNT', 'ZLEXCOUNT', 'ZSCORE', 'ZMSCORE', 'ZRANK', 'ZREVRANK', 'ZSCAN', 'ZRANDMEMBER',
-        'ZINTER', 'ZUNION', 'ZDIFF', 'XRANGE', 'XREVRANGE', 'XLEN', 'XPENDING', 'XREAD', 'GETBIT', 'BITCOUNT', 'BITPOS',
+        'ZINTER', 'ZUNION', 'ZDIFF', 'XRANGE', 'XREVRANGE', 'XLEN', 'XPENDING', 'GETBIT', 'BITCOUNT', 'BITPOS',
         'GEOPOS', 'GEODIST', 'GEOHASH', 'GEOSEARCH', 'PING', 'ECHO', 'INFO', 'TIME', 'SORT_RO',
     ];
 
@@ -49,7 +49,7 @@ final class RedisCommandGuard
     // Refus avec un motif « interdit » : dangereux, bloquant ou hors de la base de la connexion.
     private const FORBIDDEN = [
         'KEYS', 'MONITOR', 'SUBSCRIBE', 'PSUBSCRIBE', 'SSUBSCRIBE', 'UNSUBSCRIBE', 'PUNSUBSCRIBE', 'PUBLISH', 'SPUBLISH', 'BLPOP', 'BRPOP',
-        'BRPOPLPUSH', 'BLMOVE', 'BLMPOP', 'BZPOPMIN', 'BZPOPMAX', 'BZMPOP', 'XREADGROUP', 'DEBUG', 'EVAL', 'EVALSHA', 'EVAL_RO',
+        'BRPOPLPUSH', 'BLMOVE', 'BLMPOP', 'BZPOPMIN', 'BZPOPMAX', 'BZMPOP', 'XREAD', 'XREADGROUP', 'DEBUG', 'EVAL', 'EVALSHA', 'EVAL_RO',
         'EVALSHA_RO', 'FCALL', 'FCALL_RO', 'FUNCTION', 'SCRIPT', 'MODULE', 'CONFIG', 'ACL', 'CLIENT', 'SHUTDOWN', 'REPLICAOF', 'SLAVEOF',
         'MIGRATE', 'SAVE', 'BGSAVE', 'BGREWRITEAOF', 'FLUSHALL', 'AUTH', 'HELLO', 'FAILOVER', 'CLUSTER', 'READONLY', 'READWRITE', 'SLOWLOG',
         'LATENCY', 'PSYNC', 'SYNC', 'WAIT', 'WAITAOF', 'LOLWUT', 'RESTORE', 'RESTORE-ASKING', 'SWAPDB',
@@ -57,6 +57,24 @@ final class RedisCommandGuard
 
     // Contrôle de session ou de transaction : la connexion est fixée, il n'y a pas de session côté TerrilDB.
     private const SESSION = ['SELECT', 'MULTI', 'EXEC', 'DISCARD', 'WATCH', 'UNWATCH', 'QUIT', 'RESET', 'MOVE'];
+
+    /**
+     * Les commandes de lecture que le garde laisse passer, sous la forme où le serveur les connaît (« OBJECT|ENCODING »
+     * pour une sous-commande) : sert à vérifier que le serveur ne les classe pas parmi les écritures ou l'administration.
+     *
+     * @return list<string>
+     */
+    public static function readCommandNames(): array
+    {
+        $names = self::READ;
+        foreach (self::READ_SUBCOMMANDS as $command => $subcommands) {
+            foreach ($subcommands as $subcommand) {
+                $names[] = $command.'|'.$subcommand;
+            }
+        }
+
+        return $names;
+    }
 
     public function check(string $text, QueryMode $mode): GuardVerdict
     {
@@ -84,9 +102,6 @@ final class RedisCommandGuard
         if (\in_array($name, self::SESSION, true)) {
             return GuardVerdict::refused(GuardReason::UnsupportedStatement);
         }
-        if ('XREAD' === $name && $this->hasArgument($arguments, 'BLOCK')) {
-            return GuardVerdict::refused(GuardReason::ForbiddenConstruct, StatementKind::Read);
-        }
         if (isset(self::READ_SUBCOMMANDS[$name])) {
             $sub = isset($arguments[1]) ? strtoupper($arguments[1]) : null;
             if (null === $sub) {
@@ -111,19 +126,5 @@ final class RedisCommandGuard
         }
 
         return GuardVerdict::refused(GuardReason::UnsupportedStatement);
-    }
-
-    /**
-     * @param list<string> $arguments
-     */
-    private function hasArgument(array $arguments, string $word): bool
-    {
-        foreach (\array_slice($arguments, 1) as $argument) {
-            if (strtoupper($argument) === $word) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
