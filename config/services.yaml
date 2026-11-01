@@ -14,6 +14,11 @@ parameters:
     # Noms d'hôte acceptés par le point d'entrée MCP (protection contre le « DNS rebinding »), séparés par des virgules
     env(TERRILDB_ALLOWED_HOSTS): 'localhost,127.0.0.1,[::1]'
 
+    # Envoi des invitations par e-mail : actif seulement si l'expéditeur ET l'adresse publique sont renseignés
+    # (avec MAILER_DSN). Sans cela, l'administrateur transmet le lien lui-même.
+    env(TERRILDB_MAIL_FROM): ''
+    env(TERRILDB_PUBLIC_URL): ''
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -24,6 +29,11 @@ services:
     # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
+
+    App\Invitation\InvitationMailer:
+        arguments:
+            $from: '%env(TERRILDB_MAIL_FROM)%'
+            $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
 
     App\Http\Web\RegistrationPolicy:
         arguments:

@@ -118,4 +118,109 @@ final class InvitationsWebTest extends WebApiTestCase
 
         self::assertSame(['invitation.revoked', 'invitation.created'], $actions);
     }
+
+    /** @var array<string, string|null> valeurs d'origine, rendues à la fin du test */
+    private array $originalEnv = [];
+
+    /**
+     * @param array<string, string> $env
+     */
+    private function withMail(array $env): void
+    {
+        foreach ($env as $name => $value) {
+            $original = $_SERVER[$name] ?? null;
+            $this->originalEnv += [$name => \is_string($original) ? $original : null];
+            $_SERVER[$name] = $_ENV[$name] = $value;
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        foreach ($this->originalEnv as $name => $value) {
+            if (null === $value) {
+                unset($_SERVER[$name], $_ENV[$name]);
+            } else {
+                $_SERVER[$name] = $_ENV[$name] = $value;
+            }
+        }
+        $this->originalEnv = [];
+        parent::tearDown();
+    }
+
+    private function configureMail(string $dsn = 'null://null'): void
+    {
+        $this->withMail(['TERRILDB_MAIL_FROM' => 'terrildb@example.test', 'TERRILDB_PUBLIC_URL' => 'https://db.example.test', 'MAILER_DSN' => $dsn]);
+    }
+
+    public function testTellsWhetherInvitationsCanBeMailed(): void
+    {
+        $this->seedAndLogin();
+        self::assertFalse($this->call('GET', '/web/invitations')['emailEnabled']);
+
+        $this->configureMail();
+
+        self::assertTrue($this->call('GET', '/web/invitations')['emailEnabled']);
+    }
+
+    public function testRefusesToMailWhenNothingIsConfiguredAndCreatesNothing(): void
+    {
+        $this->seedAndLogin();
+
+        $body = $this->call('POST', '/web/invitations', ['note' => 'x', 'email' => 'marie@example.test']);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('mail_disabled', $body['error']);
+        self::assertSame([], $this->call('GET', '/web/invitations')['invitations']);
+    }
+
+    public function testMailsTheInvitationAndStillShowsTheLink(): void
+    {
+        $admin = $this->seedAndLogin();
+        $this->configureMail();
+
+        $body = $this->call('POST', '/web/invitations', ['note' => 'Pour Marie', 'email' => 'marie@example.test']);
+
+        self::assertSame(201, $this->statusCode());
+        self::assertTrue($body['emailSent']);
+        self::assertIsString($body['token']);
+        $created = $this->auditEvents($admin, 'invitation')[0];
+        self::assertSame(['lifetimeDays' => 7, 'emailed' => true], $created->getDetails());
+        self::assertStringNotContainsString('marie@', json_encode($created->getDetails(), \JSON_THROW_ON_ERROR));
+    }
+
+    public function testAFailingTransportKeepsTheInvitation(): void
+    {
+        $admin = $this->seedAndLogin();
+        $this->configureMail('smtp://127.0.0.1:1');
+
+        $body = $this->call('POST', '/web/invitations', ['note' => 'Pour Marie', 'email' => 'marie@example.test']);
+
+        self::assertSame(201, $this->statusCode());
+        self::assertFalse($body['emailSent']);
+        self::assertIsString($body['token']);
+        self::assertCount(1, self::arrayOf($this->call('GET', '/web/invitations')['invitations']));
+        self::assertFalse($this->auditEvents($admin, 'invitation')[0]->getDetails()['emailed'] ?? null);
+    }
+
+    public function testAnInvalidAddressCreatesNothing(): void
+    {
+        $this->seedAndLogin();
+        $this->configureMail();
+
+        $this->call('POST', '/web/invitations', ['email' => 'not an address']);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame([], $this->call('GET', '/web/invitations')['invitations']);
+    }
+
+    public function testWithoutAnAddressNothingIsSent(): void
+    {
+        $this->seedAndLogin();
+        $this->configureMail();
+
+        $body = $this->call('POST', '/web/invitations', ['note' => 'x']);
+
+        self::assertSame(201, $this->statusCode());
+        self::assertFalse($body['emailSent']);
+    }
 }

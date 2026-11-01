@@ -14,14 +14,14 @@ const pending: InvitationInfo = { id: 'i1', note: 'Pour Marie', status: 'pending
 const used: InvitationInfo = { id: 'i2', note: 'Pour Paul', status: 'used', createdAt: '2026-10-25T10:00:00+00:00', expiresAt: '2026-11-01T10:00:00+00:00', usedAt: '2026-10-26T10:00:00+00:00', usedBy: 'paul' }
 const admin = { id: '1', username: 'alice', email: 'a@exemple.test', role: 'admin' as const, totpEnabled: false, recoveryCodesLeft: 0, createdAt: '2026-10-01T10:00:00+00:00' }
 
-async function mountView(list: InvitationInfo[] | ApiError = [pending, used]) {
+async function mountView(list: InvitationInfo[] | ApiError = [pending, used], emailEnabled = false) {
   const pinia = createPinia()
   setActivePinia(pinia)
   useSessionStore().user = admin
   if (list instanceof ApiError) {
     mocked.mockRejectedValueOnce(list)
   } else {
-    mocked.mockResolvedValueOnce({ invitations: list })
+    mocked.mockResolvedValueOnce({ invitations: list, emailEnabled })
   }
   const router = createRouter({
     history: createMemoryHistory(),
@@ -62,6 +62,50 @@ describe('InvitationsView', () => {
 
     await wrapper.get('button.copied').trigger('click')
     expect(wrapper.find('.fresh').exists()).toBe(false)
+  })
+
+  it('only offers the e-mail field when the server can send mail', async () => {
+    const without = await mountView([], false)
+    const withMail = await mountView([], true)
+
+    expect(without.find('#invitation-email').exists()).toBe(false)
+    expect(withMail.find('#invitation-email').exists()).toBe(true)
+  })
+
+  it('sends the address along and says the mail went out, keeping the link', async () => {
+    const wrapper = await mountView([], true)
+    mocked.mockResolvedValueOnce({ token: 'inv_secret', invitation: pending, emailSent: true })
+
+    await wrapper.get('#invitation-email').setValue('marie@exemple.test')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/invitations', { note: '', lifetimeDays: 7, email: 'marie@exemple.test' })
+    expect(wrapper.get('.fresh').text()).toContain('e-mail a été envoyé')
+    expect(wrapper.get('.fresh code').text()).toContain('inv_secret')
+    expect((wrapper.get('#invitation-email').element as HTMLInputElement).value).toBe('')
+  })
+
+  it('tells the administrator to pass the link on when the mail failed', async () => {
+    const wrapper = await mountView([], true)
+    mocked.mockResolvedValueOnce({ token: 'inv_secret', invitation: pending, emailSent: false })
+
+    await wrapper.get('#invitation-email').setValue('marie@exemple.test')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('.fresh').text()).toContain('n’a pas pu être envoyé')
+  })
+
+  it('does not mention any mail when no address was given', async () => {
+    const wrapper = await mountView([], true)
+    mocked.mockResolvedValueOnce({ token: 'inv_secret', invitation: pending, emailSent: false })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/invitations', { note: '', lifetimeDays: 7 })
+    expect(wrapper.get('.fresh').text()).not.toContain('e-mail')
   })
 
   it('revokes an invitation after confirmation', async () => {

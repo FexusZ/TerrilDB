@@ -42,6 +42,8 @@ export function messageFor(error: unknown): string {
       return 'Les inscriptions sont fermées : il faut une invitation.'
     case 'invalid_invitation':
       return 'Cette invitation n’est pas valable : elle a peut-être déjà servi, expiré ou été révoquée.'
+    case 'mail_disabled':
+      return 'L’envoi par e-mail n’est pas configuré sur ce serveur.'
     case 'forbidden':
       return 'Cette page est réservée aux administrateurs.'
     case 'locked':
