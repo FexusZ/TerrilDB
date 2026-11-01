@@ -29,6 +29,6 @@ final readonly class PostgreSqlDriver implements Driver
 
         $connection = $this->connector->connect($engine, $parameters);
 
-        return new TargetConnection($engine, $connection, new PostgreSqlIntrospector($connection));
+        return new TargetConnection($engine, $connection, new PostgreSqlIntrospector($connection), new PostgreSqlQueryRunner($connection));
     }
 }
