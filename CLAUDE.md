@@ -8,10 +8,10 @@ Trois entrées partageant le même cœur : **interface web**, **API REST**, **se
 
 1. **TDD only** : test rouge d'abord, puis le code minimum pour le vert, puis refactor. Aucun code de
    production sans test qui l'a précédé. Un commit = un lot atomique (test + code).
-2. **Dépôt GitHub privé** (compte `gh`), pour l'instant ; ne le rendre public que sur demande explicite.
+2. **Dépôt GitHub public** (compte `gh`) depuis le 3 novembre 2026 : tout ce qui est poussé est lisible par tous.
    Aucune référence à un projet ou une organisation
    tiers dans le code, les docs, les tests ou l'historique.
-3. **Dépôt potentiellement public** : aucune donnée personnelle visible (e-mail, nom réel, chemins
+3. **Dépôt public** : aucune donnée personnelle visible (e-mail, nom réel, chemins
    absolus de la machine, secrets), ni dans les fichiers ni dans l'historique. Identité git = compte GitHub
    configuré avec `gh` (adresse `…@users.noreply.github.com`). Pour GitHub, utiliser `gh`.
 4. **Zéro information de connexion dans le code** (hôte, base, identifiant, même placeholder).
