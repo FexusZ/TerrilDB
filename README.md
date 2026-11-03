@@ -60,4 +60,7 @@ propre et `TERRILDB_ALLOWED_HOSTS` en production. Les valeurs de développement 
 
 ## Licence
 
-[MIT](LICENSE)
+[GNU AGPL-3.0](LICENSE) — Copyright (c) 2026 FexusZ.
+
+Vous pouvez utiliser, étudier et modifier TerrilDB librement, y compris dans une entreprise. Si vous proposez une
+version modifiée comme service accessible par le réseau, vous devez en publier les sources sous la même licence.
