@@ -102,5 +102,5 @@ jobs:
           persist-credentials: false
       - name: Déployer
         env:
-          TERRILDB_DOMAIN: ${{ vars.TERRILDB_DOMAIN }}
+          TERRILDB_DOMAIN: ${{ secrets.TERRILDB_DOMAIN }}
         run: sh docker/prod/deploy.sh

@@ -14,12 +14,12 @@ navigateur ─► nginx (HTTPS, certbot) ─► 127.0.0.1:8090 ─► conteneur 
 
 Tout vit dans `$TERRILDB_DEPLOY_DIR` (défaut `~/.config/terrildb`, droits 700) : `app.env` (APP_SECRET, URL de la base),
 `db.env` (mot de passe PostgreSQL), `deploy.env` (domaine, port local) et `backups/`. Les secrets sont tirés au hasard
-au premier déploiement et jamais réécrits. Le domaine arrive par la variable GitHub `TERRILDB_DOMAIN` (Settings →
-Secrets and variables → Actions → Variables).
+au premier déploiement et jamais réécrits. Le domaine arrive par le secret GitHub `TERRILDB_DOMAIN` (masqué dans les journaux, publics sur un dépôt public ; Settings →
+Secrets and variables → Actions).
 
 ## Mise en place (une fois)
 
-1. `gh variable set TERRILDB_DOMAIN --body <domaine>` puis `TERRILDB_DOMAIN=<domaine> sh docker/prod/deploy.sh` :
+1. `printf <domaine> | gh secret set TERRILDB_DOMAIN` puis `TERRILDB_DOMAIN=<domaine> sh docker/prod/deploy.sh` :
    premier déploiement, application sur `http://127.0.0.1:8090/app/` seulement.
 2. Ouvrir cette adresse et **créer le premier compte** : il administre l'installation. Tant qu'aucun compte n'existe,
    le premier visiteur deviendrait administrateur, donc rien n'est exposé avant.
@@ -37,6 +37,8 @@ Un runner auto-hébergé exécute le code d'un workflow sur la machine. Garde-fo
   approval for all external contributors », à ne pas relâcher). **Ne jamais approuver** la PR d'un inconnu qui modifie
   `.github/` ou `docker/` : un workflow modifié pourrait cibler le runner ;
 - le jeton du workflow est en lecture seule, le runner n'est enregistré que sur ce dépôt ;
+- les journaux d'un dépôt public sont publics : le job de déploiement y affiche le nom de la machine et le chemin du
+  runner (« Set up job », « Checkout »). Le domaine est un secret, donc masqué ; ne jamais `echo` autre chose dans le script ;
 - le runner a accès à Docker, c'est-à-dire en pratique les droits de son utilisateur sur la machine.
 
 ## Exploitation
