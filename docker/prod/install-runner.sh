@@ -23,7 +23,7 @@ if [ ! -e "$dir/.runner" ]; then
 
     token="$(gh api -X POST "repos/$repo/actions/runners/registration-token" --jq .token)"
     "$dir/config.sh" --unattended --url "https://github.com/$repo" --token "$token" \
-        --name "terrildb-$(hostname -s)" --labels terrildb --work _work --replace
+        --name terrildb-runner --labels terrildb --work _work --replace
     echo "Runner enregistré dans $dir (étiquette terrildb)."
 else
     echo "Runner déjà enregistré dans $dir."
