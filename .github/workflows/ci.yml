@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    name: PHP (style, analyse, tests unitaires)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-php-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Outils et dépendances
+        run: |
+          sh docker/init-env.sh
+          DC="env UID=$(id -u) GID=$(id -g) docker compose"
+          $DC build php
+          $DC run --rm --no-deps php composer install --no-interaction --no-progress
+      - name: Contrôles
+        run: |
+          DC="env UID=$(id -u) GID=$(id -g) docker compose"
+          R="$DC run --rm --no-deps php"
+          $R vendor/bin/php-cs-fixer fix --dry-run --diff
+          $R vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+          $R php bin/console lint:container
+          $R vendor/bin/phpunit
+
+  front:
+    name: Interface (lint, types, tests, build)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-front-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Contrôles
+        run: |
+          sh docker/init-env.sh
+          DC="env UID=$(id -u) GID=$(id -g) docker compose"
+          N="$DC run --rm --no-deps node"
+          $N npm ci
+          $N npm run lint
+          $N npm run typecheck
+          $N npx vitest run
+          $N npm run build
+
+  integration:
+    name: Intégration (bases MySQL, MariaDB, PostgreSQL, ClickHouse, Redis)
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ci-integration-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bases et dépendances
+        run: |
+          sh docker/init-env.sh
+          DC="env UID=$(id -u) GID=$(id -g) docker compose"
+          $DC build php
+          $DC run --rm --no-deps php composer install --no-interaction --no-progress
+          $DC up -d db
+          $DC --profile targets up -d --wait
+      - name: Schémas de la base interne
+        run: |
+          DC="env UID=$(id -u) GID=$(id -g) docker compose"
+          R="$DC run --rm php"
+          $R php bin/console doctrine:database:create --env=test --if-not-exists
+          $R php bin/console doctrine:migrations:migrate --env=test --no-interaction
+      - name: Tests d'intégration
+        run: |
+          DC="env UID=$(id -u) GID=$(id -g) docker compose"
+          $DC run --rm php vendor/bin/phpunit --group integration
+      - name: Journaux en cas d'échec
+        if: failure()
+        run: docker compose --profile targets logs --tail 50
+
+  deploy:
+    name: Déploiement
+    needs: [php, front, integration]
+    # Jamais pour une pull request : ce job tourne sur la machine de production.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, terrildb]
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Déployer
+        env:
+          TERRILDB_DOMAIN: ${{ vars.TERRILDB_DOMAIN }}
+        run: sh docker/prod/deploy.sh
