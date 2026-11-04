@@ -9,7 +9,7 @@ dir="${TERRILDB_DEPLOY_DIR:-$HOME/.config/terrildb}"
 [ -r "$dir/deploy.env" ] || { echo "Lancez d'abord docker/prod/deploy.sh (configuration absente : $dir)." >&2; exit 2; }
 . "$dir/deploy.env"
 
-curl -fsS "http://127.0.0.1:$TERRILDB_PORT/api/health" >/dev/null \
+curl -fsS "http://${TERRILDB_BIND:-127.0.0.1}:$TERRILDB_PORT/api/health" >/dev/null \
     || { echo "L'application ne répond pas sur 127.0.0.1:$TERRILDB_PORT : déployez d'abord." >&2; exit 2; }
 
 # Tant qu'aucun compte n'existe, le premier visiteur deviendrait administrateur : on n'expose rien avant.
@@ -33,6 +33,13 @@ sudo systemctl reload nginx
 sudo certbot --nginx -d "$TERRILDB_DOMAIN" --redirect
 sudo nginx -t
 sudo systemctl reload nginx
+
+# L'application ne doit plus écouter que sur la boucle locale une fois derrière nginx.
+if [ "${TERRILDB_BIND:-127.0.0.1}" != "127.0.0.1" ]; then
+    sed -i 's/^TERRILDB_BIND=.*/TERRILDB_BIND=127.0.0.1/' "$dir/deploy.env"
+    (cd "$root" && TERRILDB_DEPLOY_DIR="$dir" TERRILDB_DOMAIN="$TERRILDB_DOMAIN" TERRILDB_PORT="$TERRILDB_PORT" TERRILDB_BIND=127.0.0.1 \
+        TERRILDB_TAG="$(cat "$dir/current-tag")" docker compose -f compose.prod.yaml up -d --no-build app)
+fi
 
 sh "$root/docker/prod/install-runner.sh" --service
 echo "Terminé : https://$TERRILDB_DOMAIN/app/"

@@ -28,7 +28,7 @@ fi
 
 # Réglages propres à l'installation (domaine, port local) : fournis par l'environnement, puis conservés.
 if [ -n "${TERRILDB_DOMAIN:-}" ]; then
-    printf 'TERRILDB_DOMAIN=%s\nTERRILDB_PORT=%s\n' "$TERRILDB_DOMAIN" "${TERRILDB_PORT:-8090}" > "$dir/deploy.env"
+    printf 'TERRILDB_DOMAIN=%s\nTERRILDB_PORT=%s\nTERRILDB_BIND=%s\n' "$TERRILDB_DOMAIN" "${TERRILDB_PORT:-8090}" "${TERRILDB_BIND:-127.0.0.1}" > "$dir/deploy.env"
     chmod 600 "$dir/deploy.env"
 fi
 if [ ! -e "$dir/deploy.env" ]; then
