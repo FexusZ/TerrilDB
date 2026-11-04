@@ -21,7 +21,10 @@ Secrets and variables → Actions).
 
 1. `printf <domaine> | gh secret set TERRILDB_DOMAIN` puis `TERRILDB_DOMAIN=<domaine> sh docker/prod/deploy.sh` :
    premier déploiement, application sur `http://127.0.0.1:8090/app/` seulement.
-2. Ouvrir cette adresse et **créer le premier compte** : il administre l'installation. Tant qu'aucun compte n'existe,
+2. Ouvrir cette adresse et **créer le premier compte** (depuis une autre machine du réseau : tunnel SSH
+   `ssh -L 8090:127.0.0.1:8090 <utilisateur>@<machine>` puis `http://localhost:8090/app/`, ou, en clair sur le réseau
+   privé et pour quelques minutes seulement, `TERRILDB_BIND=<adresse privée>` dans `deploy.env` puis
+   `docker compose -f compose.prod.yaml up -d app`) : il administre l'installation. Tant qu'aucun compte n'existe,
    le premier visiteur deviendrait administrateur, donc rien n'est exposé avant.
 3. `sh docker/prod/setup-host.sh` (sudo) : refuse de continuer sans compte, crée l'hôte virtuel nginx
    (`docker/prod/nginx.conf.template`), obtient le certificat (certbot), installe le service du runner.

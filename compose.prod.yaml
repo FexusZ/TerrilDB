@@ -18,7 +18,8 @@ services:
       # la sienne (et les plafonds de tentatives, partagés).
       SYMFONY_TRUSTED_PROXIES: private_ranges
     ports:
-      - "127.0.0.1:${TERRILDB_PORT:-8090}:8080"
+      # Local par défaut ; TERRILDB_BIND ouvre temporairement une adresse du réseau privé (création du premier compte).
+      - "${TERRILDB_BIND:-127.0.0.1}:${TERRILDB_PORT:-8090}:8080"
     depends_on:
       db:
         condition: service_healthy
