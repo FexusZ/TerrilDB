@@ -1,0 +1,13 @@
+.git
+.github
+.phpunit.cache
+.php-cs-fixer.cache
+node_modules
+vendor
+var
+public/app
+docker/dev
+docker/targets
+tests
+compose*.yaml
+*.md
