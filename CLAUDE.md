@@ -257,6 +257,16 @@ que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est char
 (`*.test.ts`) ; les rejets simulés se font avec `mockRejectedValueOnce` (un `mockRejectedValue` persistant déclenche un
 « unhandled rejection »).
 
+## Déploiement (docker/prod, compose.prod.yaml, .github/workflows/ci.yml, docs/deploy.md)
+
+CI sur les serveurs GitHub (php, front, integration) puis, sur `push` vers `main` seulement, un runner auto-hébergé dédié
+(étiquette `terrildb`) lance `docker/prod/deploy.sh` : build de l'image (FrankenPHP, interface compilée, sans root),
+`pg_dump`, migrations, relance avec contrôle de santé et retour à l'image précédente si KO. Secrets et domaine hors dépôt
+(`~/.config/terrildb`, variable GitHub `TERRILDB_DOMAIN`) : ne jamais écrire le domaine ni un secret dans le dépôt, qui est
+public. L'application n'écoute que sur 127.0.0.1 (port 8090) derrière le nginx de la machine (`setup-host.sh`, une fois,
+sudo). Dépôt public + runner : les workflows de PR externes exigent une approbation, ne jamais approuver une PR qui touche
+`.github/` ou `docker/`.
+
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash
