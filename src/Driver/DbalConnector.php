@@ -28,7 +28,7 @@ final readonly class DbalConnector
                 Engine::PostgreSql => 'pdo_pgsql',
                 Engine::ClickHouse, Engine::Redis => throw new \InvalidArgumentException('This engine is not reached through DBAL.'),
             },
-            'host' => $parameters->host,
+            'host' => $parameters->address(),
             'port' => $parameters->port,
             'dbname' => $parameters->database,
             'user' => $parameters->username,

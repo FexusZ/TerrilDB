@@ -34,8 +34,7 @@ final readonly class TargetOpener
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
-        $this->hosts->assertAllowed($owner, $parameters);
 
-        return $this->drivers->for($engine)->connect($engine, $parameters);
+        return $this->drivers->for($engine)->connect($engine, $this->hosts->pinned($owner, $parameters));
     }
 }

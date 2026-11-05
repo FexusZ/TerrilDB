@@ -26,7 +26,7 @@ final readonly class RedisConnector
 
         $options = [
             'scheme' => \in_array($parameters->port, self::TLS_PORTS, true) ? 'tls' : 'tcp',
-            'host' => $parameters->host,
+            'host' => $parameters->address(),
             'port' => $parameters->port,
             'username' => $parameters->username,
             'password' => $parameters->password(),
@@ -35,7 +35,8 @@ final readonly class RedisConnector
             'read_write_timeout' => $readWriteTimeout,
         ];
         if ('tls' === $options['scheme']) {
-            $options['ssl'] = ['verify_peer' => true, 'verify_peer_name' => true];
+            // On se connecte à l'adresse contrôlée, mais le certificat se vérifie contre le nom saisi.
+            $options['ssl'] = ['verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $parameters->host];
         }
 
         return new Client($options);

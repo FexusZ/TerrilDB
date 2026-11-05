@@ -26,6 +26,7 @@ final readonly class ConnectionParameters
         public string $database,
         public string $username,
         #[\SensitiveParameter] private string $password,
+        private ?string $pinnedAddress = null,
     ) {
         if ('' === $host || \strlen($host) > self::HOST_MAX_LENGTH || 1 !== preg_match('/^[^\s\p{Cc}]+$/uD', $host)) {
             throw new InvalidConnectionParametersException('The host is not valid.');
@@ -38,6 +39,9 @@ final readonly class ConnectionParameters
         if (\strlen($password) > self::PASSWORD_MAX_LENGTH || !mb_check_encoding($password, 'UTF-8')) {
             throw new InvalidConnectionParametersException('The password is not valid.');
         }
+        if (null !== $pinnedAddress && false === filter_var($pinnedAddress, \FILTER_VALIDATE_IP)) {
+            throw new InvalidConnectionParametersException('The pinned address is not an IP address.');
+        }
     }
 
     public function password(): string
@@ -47,7 +51,25 @@ final readonly class ConnectionParameters
 
     public function withPassword(#[\SensitiveParameter] string $password): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $password);
+        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress);
+    }
+
+    /**
+     * L'adresse IP que le driver doit joindre : celle qui a été vérifiée (voir `withAddress`), à défaut l'hôte lui-même.
+     */
+    public function address(): string
+    {
+        return $this->pinnedAddress ?? $this->host;
+    }
+
+    /**
+     * Épingle l'adresse déjà résolue et contrôlée : le driver s'y connecte sans résoudre le nom une seconde fois (une
+     * réponse DNS qui changerait entre le contrôle et la connexion n'a plus d'effet). L'hôte reste le nom, pour l'identité
+     * (TLS, en-tête Host). L'adresse n'entre jamais dans le JSON chiffré : elle ne vit que le temps de l'ouverture.
+     */
+    public function withAddress(string $address): self
+    {
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address);
     }
 
     public function toJson(): string
@@ -96,6 +118,7 @@ final readonly class ConnectionParameters
             'port' => (string) $this->port,
             'database' => $this->database,
             'username' => $this->username,
+            'address' => $this->address(),
             'password' => '***',
         ];
     }

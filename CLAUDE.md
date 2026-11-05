@@ -86,8 +86,11 @@ connexion inexistante. `TargetHostPolicy` (+ `HostResolver`) : seul un administr
 127.x/::1, lien local 169.254.x/fe80::, 0.0.0.0, `localhost`, et la base interne repérée par l'hôte de `DATABASE_URL`, par nom OU par
 adresse) ; un membre garde les autres machines, réseaux privés compris. Contrôle à la création, à la modification, à l'essai et à
 l'OUVERTURE (`TargetOpener`, donc aussi pour une connexion enregistrée avant la règle), pour l'interface comme pour les jetons ;
-erreur 403 `forbidden_target` sans jamais dire ce que le nom a donné ; tout refus est journalisé (`AuditedTargetHosts`, action `target.forbidden`, adresse saisie et port seulement, porte et jeton attribués). Limite connue : un nom dont la réponse change entre le contrôle
-et la connexion du driver n'est pas couvert (pas d'épinglage de l'adresse). `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
+erreur 403 `forbidden_target` sans jamais dire ce que le nom a donné ; tout refus est journalisé (`AuditedTargetHosts`, action `target.forbidden`, adresse saisie et port seulement, porte et jeton attribués). Le nom n'est résolu qu'UNE fois (`TargetHostPolicy::pinnedAddress`, IPv4 d'abord) et le driver reçoit
+l'adresse contrôlée (`ConnectionParameters::withAddress`, jamais dans le JSON chiffré ; `AuditedTargetHosts::pinned`) : une réponse DNS qui change
+ensuite n'a plus d'effet. L'hôte reste le nom pour l'identité : en-tête Host et TLS ClickHouse (option `resolve` du client HTTP), `peer_name` Redis TLS ;
+PDO MySQL/PostgreSQL se connectent à l'adresse (aucune vérification de nom TLS n'y est configurée). Un nom à plusieurs adresses n'a pas de repli
+sur la suivante (la première est épinglée). `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
 illisible bloque le changement.
 
 ## Introspection (src/Core/Driver, src/Core/Schema, src/Driver)

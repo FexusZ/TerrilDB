@@ -131,4 +131,64 @@ final class TargetHostPolicyTest extends TestCase
             self::assertStringNotContainsString('127.0.0.1', $refused->getMessage());
         }
     }
+
+    public function testItGivesBackTheAddressToConnectToWithIpv4First(): void
+    {
+        $resolver = $this->countingResolver(['db.example.org' => ['2606:4700:4700::1111', '93.184.216.34']]);
+        $policy = new TargetHostPolicy($resolver, null);
+
+        $address = $policy->pinnedAddress($this->user(Role::Member), $this->parameters('db.example.org'));
+
+        self::assertSame('93.184.216.34', $address);
+        self::assertSame(['db.example.org' => 1], $resolver->calls);
+    }
+
+    public function testTheNameIsResolvedOnceWhateverTheAnswersLater(): void
+    {
+        $resolver = $this->countingResolver(['flip.example' => ['93.184.216.34']]);
+        $policy = new TargetHostPolicy($resolver, null);
+
+        $first = $policy->pinnedAddress($this->user(Role::Member), $this->parameters('flip.example'));
+        $resolver->names['flip.example'] = ['127.0.0.1'];
+
+        self::assertSame('93.184.216.34', $first);
+        self::assertSame(1, $resolver->calls['flip.example']);
+    }
+
+    public function testAnAdministratorIsPinnedWithoutBeingRefused(): void
+    {
+        $policy = new TargetHostPolicy($this->countingResolver(['sneaky.example' => ['127.0.0.1']]), null);
+
+        self::assertSame('127.0.0.1', $policy->pinnedAddress($this->user(Role::Admin), $this->parameters('sneaky.example')));
+    }
+
+    public function testAMemberStillCannotBePinnedToTheServerItself(): void
+    {
+        $policy = new TargetHostPolicy($this->countingResolver(['sneaky.example' => ['127.0.0.1']]), null);
+
+        $this->expectException(ForbiddenTargetHostException::class);
+        $policy->pinnedAddress($this->user(Role::Member), $this->parameters('sneaky.example'));
+    }
+
+    public function testALiteralAddressIsItsOwnPin(): void
+    {
+        $policy = new TargetHostPolicy($this->countingResolver(), null);
+
+        self::assertSame('10.0.0.5', $policy->pinnedAddress($this->user(Role::Member), $this->parameters('10.0.0.5')));
+    }
+
+    public function testAnUnresolvableNameIsNotPinned(): void
+    {
+        $policy = new TargetHostPolicy($this->countingResolver(), null);
+
+        self::assertNull($policy->pinnedAddress($this->user(Role::Member), $this->parameters('nowhere.invalid')));
+    }
+
+    /**
+     * @param array<string, list<string>> $names
+     */
+    private function countingResolver(array $names = []): CountingResolver
+    {
+        return new CountingResolver($names);
+    }
 }

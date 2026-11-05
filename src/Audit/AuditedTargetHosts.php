@@ -33,8 +33,26 @@ final readonly class AuditedTargetHosts
      */
     public function assertAllowed(User $user, ConnectionParameters $parameters): void
     {
+        $this->check($user, $parameters);
+    }
+
+    /**
+     * Les mêmes paramètres, épinglés sur l'adresse qui vient d'être contrôlée : à donner au driver à la place des
+     * paramètres d'origine. Sans réponse du DNS, ils reviennent tels quels (la connexion échouera d'elle-même).
+     *
+     * @throws ForbiddenTargetHostException
+     */
+    public function pinned(User $user, ConnectionParameters $parameters): ConnectionParameters
+    {
+        $address = $this->check($user, $parameters);
+
+        return null === $address ? $parameters : $parameters->withAddress($address);
+    }
+
+    private function check(User $user, ConnectionParameters $parameters): ?string
+    {
         try {
-            $this->policy->assertAllowed($user, $parameters);
+            return $this->policy->pinnedAddress($user, $parameters);
         } catch (ForbiddenTargetHostException $refused) {
             $this->audit->record(
                 $this->context($user),
