@@ -50,6 +50,19 @@ final class TokensWebTest extends WebApiTestCase
         self::assertStringNotContainsString(substr($created['token'], -43), json_encode($list, \JSON_THROW_ON_ERROR));
     }
 
+    public function testCreatesATokenThatNeverExpires(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$connection], 'neverExpires' => true]);
+
+        self::assertSame(201, $this->statusCode());
+        self::assertNull(self::arrayOf($created['tokenInfo'])['expiresAt']);
+        $this->call('POST', '/web/tokens', ['name' => 'Autre', 'connectionIds' => [$connection], 'neverExpires' => 'oui']);
+        self::assertSame(400, $this->statusCode());
+    }
+
     public function testTheLifetimeDefaultsToThirtyDays(): void
     {
         $this->seedAndLogin();

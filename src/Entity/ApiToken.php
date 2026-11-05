@@ -22,7 +22,6 @@ use Symfony\Component\Uid\Uuid;
 final class ApiToken
 {
     private const NAME_MAX_LENGTH = 100;
-    private const MAX_CONNECTIONS = 50;
     private const WRAPPED_PATTERN = '/^v\d+:[A-Za-z0-9_-]+$/D';
     private const VERIFIER_PATTERN = '/^[0-9a-f]{64}$/D';
     private const USE_RECORD_INTERVAL_SECONDS = 60;
@@ -54,8 +53,8 @@ final class ApiToken
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
-    #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
-    private \DateTimeImmutable $expiresAt;
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $expiresAt;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $lastUsedAt = null;
@@ -75,7 +74,7 @@ final class ApiToken
         string $wrappedKey,
         array $connectionIds,
         \DateTimeImmutable $createdAt,
-        \DateTimeImmutable $expiresAt,
+        ?\DateTimeImmutable $expiresAt,
         bool $allConnections = false,
     ) {
         $name = trim($name);
@@ -90,8 +89,8 @@ final class ApiToken
         }
         $utc = new \DateTimeZone('UTC');
         $createdAt = $createdAt->setTimezone($utc);
-        $expiresAt = $expiresAt->setTimezone($utc);
-        if ($expiresAt <= $createdAt) {
+        $expiresAt = $expiresAt?->setTimezone($utc);
+        if (null !== $expiresAt && $expiresAt <= $createdAt) {
             throw new InvalidApiTokenDefinitionException('The token must expire after its creation.');
         }
 
@@ -168,7 +167,10 @@ final class ApiToken
         return $this->createdAt;
     }
 
-    public function getExpiresAt(): \DateTimeImmutable
+    /**
+     * Nul : le jeton n'expire pas, seule sa révocation (ou un changement de mot de passe) y met fin.
+     */
+    public function getExpiresAt(): ?\DateTimeImmutable
     {
         return $this->expiresAt;
     }
@@ -180,7 +182,7 @@ final class ApiToken
 
     public function isExpired(\DateTimeImmutable $now): bool
     {
-        return $now >= $this->expiresAt;
+        return null !== $this->expiresAt && $now >= $this->expiresAt;
     }
 
     public function allows(Uuid $connectionId): bool
@@ -223,9 +225,6 @@ final class ApiToken
                 throw new InvalidApiTokenDefinitionException('A token connection must be identified by a UUID.');
             }
             $normalized[Uuid::fromString($id)->toRfc4122()] = true;
-        }
-        if (\count($normalized) > self::MAX_CONNECTIONS) {
-            throw new InvalidApiTokenDefinitionException('A token can open at most 50 connections.');
         }
 
         return array_keys($normalized);

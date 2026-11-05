@@ -131,14 +131,14 @@ Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarr
 Le serveur ne détient jamais la clé de l'utilisateur ; un jeton d'API (`tdb_<id>_<secret>`) emporte donc une copie de
 la clé enveloppée par son propre secret (`SessionKeyWrapper`, contexte = id du jeton). Le serveur ne garde que
 l'empreinte du secret (`ApiTokenSecret::verifier`) et l'enveloppe : sans le jeton, rien n'est lisible. Lecture seule
-uniquement, connexions listées (au moins une), expiration obligatoire (365 jours au plus), supprimé à tout changement
+uniquement, connexions listées (au moins une), expiration de 365 jours au plus OU aucune (`neverExpires: true`, `expires_at` nul : choix du propriétaire, la révocation reste possible à tout moment), supprimé à tout changement
 de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
 Un jeton peut être émis pour « toutes mes connexions » (`allConnections: true` à la création, colonne `all_connections`) : la
 liste est celle du compte à cet instant, puis ne bouge que par `POST /web/tokens/{id}/refresh` (`ApiTokenService::refresh`,
-session requise, texte du jeton inchangé, connexions supprimées retirées, 50 au plus, refusé 422 pour un jeton à liste
-fixe). Jamais automatique : le propriétaire décide quand les nouvelles connexions deviennent lisibles (audit `token.refreshed`).
+session requise, texte du jeton inchangé, connexions supprimées retirées, pas de plafond de connexions, refusé 422
+pour un jeton à liste fixe ; l'actualisation ne prolonge pas l'expiration). Jamais automatique : le propriétaire décide quand les nouvelles connexions deviennent lisibles (audit `token.refreshed`).
 
 ## ClickHouse (src/Driver/ClickHouse)
 

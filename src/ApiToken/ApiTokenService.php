@@ -38,11 +38,12 @@ final readonly class ApiTokenService
     /**
      * @param list<Uuid> $connectionIds  connexions que le jeton pourra ouvrir (au moins une, toutes à l'utilisateur) ;
      *                                   ignorées si $allConnections : le jeton prend alors toutes celles du compte
+     * @param int|null   $lifetimeDays   durée de vie en jours (1 à 365), ou null pour un jeton qui n'expire jamais
      * @param bool       $allConnections jeton « toutes mes connexions », dont la liste s'actualise ensuite à la demande
      */
-    public function issue(User $owner, DerivedKey $key, string $name, array $connectionIds, int $lifetimeDays, bool $allConnections = false): IssuedApiToken
+    public function issue(User $owner, DerivedKey $key, string $name, array $connectionIds, ?int $lifetimeDays, bool $allConnections = false): IssuedApiToken
     {
-        if ($lifetimeDays < 1 || $lifetimeDays > self::MAX_LIFETIME_DAYS) {
+        if (null !== $lifetimeDays && ($lifetimeDays < 1 || $lifetimeDays > self::MAX_LIFETIME_DAYS)) {
             throw new InvalidApiTokenDefinitionException('The token lifetime must be between 1 and 365 days.');
         }
         if ($allConnections) {
@@ -66,7 +67,7 @@ final readonly class ApiTokenService
             $this->wrapper->wrap($key, $secret->secret(), $id->toRfc4122()),
             array_map(static fn (Uuid $connectionId): string => $connectionId->toRfc4122(), $connectionIds),
             $now,
-            $now->modify(\sprintf('+%d days', $lifetimeDays)),
+            null === $lifetimeDays ? null : $now->modify(\sprintf('+%d days', $lifetimeDays)),
             $allConnections,
         );
         $this->tokens->save($token);

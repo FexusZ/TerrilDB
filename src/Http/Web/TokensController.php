@@ -45,7 +45,8 @@ final readonly class TokensController
             static fn (string $id): Uuid => Uuid::isValid($id) ? Uuid::fromString($id) : throw ConnectionNotFoundException::create(),
             $input->stringList('connectionIds'),
         );
-        $lifetime = $input->optionalInt('lifetimeDays', self::DEFAULT_LIFETIME_DAYS) ?? self::DEFAULT_LIFETIME_DAYS;
+        $never = $input->bool('neverExpires', false);
+        $lifetime = $never ? null : ($input->optionalInt('lifetimeDays', self::DEFAULT_LIFETIME_DAYS) ?? self::DEFAULT_LIFETIME_DAYS);
 
         $issued = $this->tokens->issue($this->session->user(), $this->session->key(), $name, $connections, $lifetime, $all);
         $this->audit->record($this->session->auditContext(), AuditAction::TokenCreated, subject: $issued->entity->getId(), details: ['name' => $issued->entity->getName(), 'connections' => \count($issued->entity->getConnectionIds()), 'lifetimeDays' => $lifetime]);

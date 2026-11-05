@@ -30,11 +30,12 @@ const LIFETIMES = [
   { value: '30', label: '30 jours' },
   { value: '90', label: '90 jours' },
   { value: '365', label: '1 an' },
+  { value: 'never', label: 'Jamais (jusqu’à révocation)' },
 ]
 
 const nameOf = computed(() => new Map(connections.items.map((connection) => [connection.id, connection.name])))
 const connectionsOf = (token: ApiTokenInfo): string => token.connectionIds.map((id) => nameOf.value.get(id) ?? 'connexion supprimée').join(', ')
-const expired = (token: ApiTokenInfo): boolean => new Date(token.expiresAt) <= new Date()
+const expired = (token: ApiTokenInfo): boolean => token.expiresAt !== null && new Date(token.expiresAt) <= new Date()
 
 onMounted(async () => {
   try {
@@ -52,9 +53,9 @@ async function create(): Promise<void> {
   }
   busy.value = true
   try {
-    const lifetimeDays = Number(lifetime.value)
+    const validity = lifetime.value === 'never' ? { neverExpires: true } : { lifetimeDays: Number(lifetime.value) }
     fresh.value = await tokens.create(
-      everything.value ? { name: name.value, allConnections: true, lifetimeDays } : { name: name.value, connectionIds: chosen.value, lifetimeDays },
+      everything.value ? { name: name.value, allConnections: true, ...validity } : { name: name.value, connectionIds: chosen.value, ...validity },
     )
     name.value = ''
     chosen.value = []
@@ -111,7 +112,7 @@ async function revoke(): Promise<void> {
     </nav>
     <div class="title">
       <h1>Jetons d’accès à l’API</h1>
-      <p>Un jeton donne à un outil (assistant, script, intégration) un accès en lecture seule aux connexions que vous choisissez. Il expire, et il est supprimé si vous changez de mot de passe.</p>
+      <p>Un jeton donne à un outil (assistant, script, intégration) un accès en lecture seule aux connexions que vous choisissez. Il expire à la date choisie (ou jamais, si vous le décidez), peut être révoqué à tout moment, et il est supprimé si vous changez de mot de passe.</p>
     </div>
 
     <p class="usage">API REST : <code>/api/v1</code>. Serveur MCP pour un assistant : <code>/mcp</code>. Dans les deux cas, l’en-tête <code>Authorization: Bearer &lt;jeton&gt;</code>.</p>
@@ -165,7 +166,8 @@ async function revoke(): Promise<void> {
             <p class="token-name">{{ token.name }} <span v-if="expired(token)" class="chip bad">Expiré</span></p>
             <p class="meta"><span v-if="token.allConnections" class="chip">Toutes mes connexions</span> {{ connectionsOf(token) }}</p>
             <p class="meta">
-              {{ expired(token) ? 'Expiré' : 'Expire' }} le {{ formatDate(token.expiresAt) }} ·
+              <template v-if="token.expiresAt === null">N’expire jamais</template>
+              <template v-else>{{ expired(token) ? 'Expiré' : 'Expire' }} le {{ formatDate(token.expiresAt) }}</template> ·
               {{ token.lastUsedAt ? `Dernière utilisation le ${formatDate(token.lastUsedAt)}` : 'Jamais utilisé' }}
             </p>
           </div>
