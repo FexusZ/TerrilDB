@@ -41,6 +41,8 @@ final readonly class ClickHouseHttp
 
         try {
             $response = $this->client->request('POST', $this->baseUrl().'?'.http_build_query($query, '', '&', \PHP_QUERY_RFC3986), [
+                // Adresse déjà contrôlée : l'URL garde le nom (en-tête Host, TLS) mais la connexion part vers cette adresse.
+                'resolve' => $this->parameters->address() === $this->parameters->host ? [] : [trim($this->parameters->host, '[]') => $this->parameters->address()],
                 'headers' => [
                     'X-ClickHouse-User: '.$this->parameters->username,
                     'X-ClickHouse-Key: '.$this->parameters->password(),

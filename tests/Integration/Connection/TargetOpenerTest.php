@@ -7,7 +7,10 @@ namespace App\Tests\Integration\Connection;
 use App\Audit\AuditedTargetHosts;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Connection\HostResolver;
+use App\Connection\TargetHostPolicy;
 use App\Connection\TargetOpener;
+use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
@@ -25,6 +28,7 @@ use App\Tests\Integration\Persistence\DatabaseTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 #[Group('integration')]
 final class TargetOpenerTest extends DatabaseTestCase
@@ -93,6 +97,37 @@ final class TargetOpenerTest extends DatabaseTestCase
         }
 
         self::assertSame($engine, $target->engine);
+        self::assertCount(7, $target->introspector()->listTables());
+        $target->close();
+    }
+
+    public function testTheDriverGetsTheAddressThatWasCheckedNotTheNameAgain(): void
+    {
+        $real = TargetDatabase::parameters('TARGET_POSTGRES_URL');
+        $address = gethostbyname($real->host);
+        $saved = $this->manager->create($this->alice, $this->key, 'Flip', TargetDatabase::engine('TARGET_POSTGRES_URL'), new ConnectionParameters('flip.example', $real->port, $real->database, $real->username, $real->password()));
+        $resolver = new class($address) implements HostResolver {
+            public int $calls = 0;
+
+            public function __construct(private string $address)
+            {
+            }
+
+            public function resolve(string $host): array
+            {
+                ++$this->calls;
+
+                // Première réponse : la vraie base ; toute réponse suivante : la boucle locale.
+                return 1 === $this->calls ? [$this->address] : ['127.0.0.1'];
+            }
+        };
+        $audit = self::getContainer()->get(\App\Audit\AuditLog::class);
+        self::assertInstanceOf(\App\Audit\AuditLog::class, $audit);
+        $hosts = new AuditedTargetHosts(new TargetHostPolicy($resolver, null), $audit, new RequestStack());
+
+        $target = (new TargetOpener($this->manager, $this->drivers, $hosts))->open($this->alice, $this->key, $saved->getId());
+
+        self::assertSame(1, $resolver->calls);
         self::assertCount(7, $target->introspector()->listTables());
         $target->close();
     }

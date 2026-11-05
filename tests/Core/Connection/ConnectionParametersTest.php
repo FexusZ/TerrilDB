@@ -27,6 +27,33 @@ final class ConnectionParametersTest extends TestCase
         self::assertSame('p@ss w0rd/é', $parameters->password());
     }
 
+    public function testTheAddressToConnectToIsTheHostUntilOnePinned(): void
+    {
+        self::assertSame('db.internal', $this->parameters()->address());
+    }
+
+    public function testPinningAnAddressKeepsTheHostForNamesAndLeavesTheStoredFormatAlone(): void
+    {
+        $pinned = $this->parameters()->withAddress('93.184.216.34');
+
+        self::assertSame('93.184.216.34', $pinned->address());
+        self::assertSame('db.internal', $pinned->host);
+        self::assertSame($this->parameters()->toJson(), $pinned->toJson());
+        self::assertStringNotContainsString('93.184.216.34', $pinned->toJson());
+    }
+
+    public function testThePinnedAddressSurvivesAPasswordChange(): void
+    {
+        self::assertSame('2001:db8::1', $this->parameters()->withAddress('2001:db8::1')->withPassword('other')->address());
+    }
+
+    public function testOnlyAnIpAddressCanBePinned(): void
+    {
+        $this->expectException(InvalidConnectionParametersException::class);
+
+        $this->parameters()->withAddress('not-an-ip.example');
+    }
+
     public function testAnEmptyPasswordIsAllowed(): void
     {
         $parameters = new ConnectionParameters('localhost', 3306, 'shop', 'root', '');
