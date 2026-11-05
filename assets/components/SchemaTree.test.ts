@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { TableSummary } from '../api/types'
 import SchemaTree from './SchemaTree.vue'
@@ -52,13 +52,70 @@ describe('SchemaTree', () => {
     expect(wrapper.findAll('a.node')[1]?.attributes('href')).toBe('/connections/abc/tables/order_items')
   })
 
-  it('filters by name, ignoring case', async () => {
+  describe('with timers', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('asks the server to search once typing pauses, instead of filtering what is loaded', async () => {
+      const wrapper = await mountTree()
+
+      await wrapper.get('input[type="search"]').setValue('ORD')
+      await wrapper.get('input[type="search"]').setValue('ORDER')
+      expect(wrapper.emitted('search')).toBeUndefined()
+      vi.advanceTimersByTime(300)
+
+      expect(wrapper.emitted('search')).toEqual([['ORDER']])
+      expect(wrapper.findAll('a.node')).toHaveLength(4)
+    })
+
+    it('sends an empty search when the field is cleared', async () => {
+      const wrapper = await mountTree()
+      await wrapper.get('input[type="search"]').setValue('ORDER')
+      vi.advanceTimersByTime(300)
+
+      await wrapper.get('input[type="search"]').setValue('')
+      vi.advanceTimersByTime(300)
+
+      expect(wrapper.emitted('search')).toEqual([['ORDER'], ['']])
+    })
+  })
+
+  it('counts what is loaded against the total of the database', async () => {
+    const wrapper = await mountTree({ total: 1240 })
+
+    expect(wrapper.get('.counter').text()).toMatch(/4\s*\/\s*1\s?240/)
+  })
+
+  it('offers to load the next hundred only when there are more', async () => {
+    const without = await mountTree({ hasMore: false })
+    expect(without.find('button.more').exists()).toBe(false)
+
+    const wrapper = await mountTree({ hasMore: true })
+    await wrapper.get('button.more').trigger('click')
+
+    expect(wrapper.get('button.more').text()).toContain('100 suivantes')
+    expect(wrapper.emitted('more')).toHaveLength(1)
+  })
+
+  it('disables the button and says so while a page loads', async () => {
+    const wrapper = await mountTree({ hasMore: true, loading: true })
+
+    expect(wrapper.get('button.more').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('button.more').text()).toContain('Chargement')
+  })
+
+  it('says when a search finds nothing, instead of claiming the database is empty', async () => {
+    const wrapper = await mountTree({ tables: [], search: 'zzz' })
+
+    expect(wrapper.text()).toContain('Aucune table ne correspond')
+    expect(wrapper.text()).not.toContain('Aucune table dans cette base')
+  })
+
+  it('tells tables from views with an icon, not only by the group', async () => {
     const wrapper = await mountTree()
 
-    await wrapper.get('input[type="search"]').setValue('ORDER')
-
-    expect(wrapper.findAll('a.node').map((node) => node.get('span').text())).toEqual(['order_items', 'orders', 'v_order_totals'])
-    expect(wrapper.get('.group').text()).toContain('Tables · 2')
+    expect(wrapper.findAll('a.node')[0]?.find('.icon.table').exists()).toBe(true)
+    expect(wrapper.findAll('a.node')[3]?.find('.icon.view').exists()).toBe(true)
   })
 
   it('marks the open table', async () => {

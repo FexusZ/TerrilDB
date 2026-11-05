@@ -33,11 +33,103 @@ describe('workspace store', () => {
   it('opens a connection: loads its tables and starts with one empty read-only tab', async () => {
     const store = await opened()
 
-    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/conn-1/tables')
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/conn-1/tables?limit=100')
     expect(store.tables).toEqual(tables)
     expect(store.tabs).toHaveLength(1)
     expect(store.activeTab.title).toBe('Requête 1')
     expect(store.activeTab.mode).toBe('read_only')
+  })
+
+  it('loads the tables a hundred at a time and says how many there are in all', async () => {
+    mocked.mockResolvedValueOnce({ tables, nextCursor: 'orders', total: 1240 })
+    const store = useWorkspaceStore()
+
+    await store.open('conn-1')
+
+    expect(store.tables).toEqual(tables)
+    expect(store.tablesTotal).toBe(1240)
+    expect(store.tablesHasMore).toBe(true)
+  })
+
+  it('appends the next page from the cursor, and keeps the total of the first one', async () => {
+    mocked.mockResolvedValueOnce({ tables, nextCursor: 'orders', total: 1240 })
+    const store = useWorkspaceStore()
+    await store.open('conn-1')
+    const more: TableSummary[] = [{ name: 'products', kind: 'table', estimatedRows: 5 }]
+    mocked.mockResolvedValueOnce({ tables: more, nextCursor: null, total: null })
+
+    await store.loadMoreTables()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?limit=100&cursor=orders')
+    expect(store.tables.map((table) => table.name)).toEqual(['orders', 'products'])
+    expect(store.tablesTotal).toBe(1240)
+    expect(store.tablesHasMore).toBe(false)
+  })
+
+  it('does nothing when there is no next page, or while a page is loading', async () => {
+    const store = await opened()
+    await store.loadMoreTables()
+    expect(mocked).toHaveBeenCalledTimes(1)
+  })
+
+  it('searches on the server and starts again from the first page', async () => {
+    mocked.mockResolvedValueOnce({ tables, nextCursor: 'orders', total: 1240 })
+    const store = useWorkspaceStore()
+    await store.open('conn-1')
+    const found: TableSummary[] = [{ name: 'order_items', kind: 'table', estimatedRows: 3 }]
+    mocked.mockResolvedValueOnce({ tables: found, nextCursor: null, total: 1 })
+
+    await store.searchTables('order items')
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?limit=100&q=order+items')
+    expect(store.tables).toEqual(found)
+    expect(store.tablesTotal).toBe(1)
+    expect(store.tablesSearch).toBe('order items')
+  })
+
+  it('keeps the search when loading further, and in another database', async () => {
+    mocked.mockResolvedValueOnce({ tables, nextCursor: null, total: 1 })
+    const store = useWorkspaceStore()
+    await store.open('conn-1')
+    mocked.mockResolvedValueOnce({ tables, nextCursor: 'orders', total: 5 })
+    await store.searchTables('or')
+    mocked.mockResolvedValueOnce({ tables, nextCursor: null, total: null })
+    await store.loadMoreTables()
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?limit=100&cursor=orders&q=or')
+
+    mocked.mockResolvedValueOnce({ tables, nextCursor: null, total: 2 })
+    await store.selectDatabase('reporting')
+    expect(store.tablesSearch).toBe('')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?limit=100&database=reporting')
+  })
+
+  it('ignores a page that answers after a newer request', async () => {
+    mocked.mockResolvedValueOnce({ tables, nextCursor: null, total: 1 })
+    const store = useWorkspaceStore()
+    await store.open('conn-1')
+    let release: (value: unknown) => void = () => undefined
+    mocked.mockReturnValueOnce(new Promise((resolve) => { release = resolve }))
+    const slow = store.searchTables('slow')
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'fast', kind: 'table', estimatedRows: 1 }], nextCursor: null, total: 1 })
+    await store.searchTables('fast')
+
+    release({ tables: [{ name: 'slow', kind: 'table', estimatedRows: 1 }], nextCursor: null, total: 1 })
+    await slow
+
+    expect(store.tables.map((table) => table.name)).toEqual(['fast'])
+  })
+
+  it('keeps what was loaded and reports the error when a next page fails', async () => {
+    mocked.mockResolvedValueOnce({ tables, nextCursor: 'orders', total: 1240 })
+    const store = useWorkspaceStore()
+    await store.open('conn-1')
+    mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
+
+    await store.loadMoreTables()
+
+    expect(store.tables).toEqual(tables)
+    expect(store.tablesError).toContain('joindre')
+    expect(store.tablesHasMore).toBe(true)
   })
 
   it('lists the databases of the server on demand, without touching the tables', async () => {
@@ -80,7 +172,7 @@ describe('workspace store', () => {
 
     await store.selectDatabase('reporting')
 
-    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?database=reporting')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?limit=100&database=reporting')
     expect(store.database).toBe('reporting')
     expect(store.tables).toEqual(other)
     mocked.mockResolvedValueOnce({ table: detail })
@@ -123,7 +215,7 @@ describe('workspace store', () => {
 
     expect(store.database).toBeNull()
     expect(store.databases).toEqual([])
-    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-2/tables')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-2/tables?limit=100')
   })
 
   it('reports why the tables could not be loaded', async () => {

@@ -54,7 +54,7 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('.current').text()).toContain('Production')
     expect(wrapper.get('a.node').text()).toContain('orders')
     expect(wrapper.get('.child').text()).toBe('éditeur')
-    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables')
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100')
   })
 
   it('highlights the table that is open', async () => {
@@ -74,7 +74,7 @@ describe('WorkspaceView', () => {
     const { wrapper } = await mountView()
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/keys?pattern=*&count=100')
-    expect(mocked).not.toHaveBeenCalledWith('GET', '/web/connections/abc/tables')
+    expect(mocked).not.toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100')
     expect(wrapper.find('nav[aria-label="Clés"]').exists()).toBe(true)
     expect(wrapper.find('nav[aria-label="Schéma"]').exists()).toBe(false)
     expect(wrapper.find('select.databases').exists()).toBe(false)

@@ -11,6 +11,8 @@ use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Schema\TablePage;
+use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
 use App\Driver\RowReader;
 
@@ -65,6 +67,40 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
         usort($tables, static fn (TableSummary $a, TableSummary $b): int => strcmp($a->name, $b->name));
 
         return $tables;
+    }
+
+    public function listTablesPage(TablePageRequest $request): TablePage
+    {
+        $where = "database = {db:String} AND NOT is_temporary AND name NOT LIKE '.inner%'";
+        $params = ['db' => $this->database];
+        if (null !== $request->search) {
+            $where .= ' AND positionCaseInsensitive(name, {q:String}) > 0';
+            $params['q'] = $request->search;
+        }
+        $total = null === $request->after
+            ? (int) (new RowReader($this->http->query('SELECT count() AS n FROM system.tables WHERE '.$where, params: $params)->records()[0] ?? ['n' => 0]))->nullableInt('n')
+            : null;
+        if (null !== $request->after) {
+            // Les chaînes de ClickHouse se comparent octet par octet : l'ordre est celui du reste de TerrilDB.
+            $where .= ' AND name > {after:String}';
+            $params['after'] = $request->after;
+        }
+        $params['limit'] = (string) ($request->limit + 1);
+
+        $records = $this->http->query(
+            'SELECT name, engine, total_rows FROM system.tables WHERE '.$where.' ORDER BY name LIMIT {limit:UInt32}',
+            params: $params,
+        )->records();
+
+        $more = \count($records) > $request->limit;
+        $tables = [];
+        foreach (\array_slice($records, 0, $request->limit) as $record) {
+            $row = new RowReader($record);
+            $kind = self::kind($row->string('engine'));
+            $tables[] = new TableSummary($row->string('name'), $kind, TableKind::Table === $kind ? $row->nullableInt('total_rows') : null);
+        }
+
+        return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
     }
 
     public function describeTable(string $name): TableDefinition

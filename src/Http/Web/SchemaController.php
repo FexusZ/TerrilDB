@@ -6,6 +6,9 @@ namespace App\Http\Web;
 
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\DatabaseSummary;
+use App\Core\Schema\TablePage;
+use App\Core\Schema\TablePageRequest;
+use App\Http\Json\BadRequestException;
 use App\Http\Json\SchemaPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -38,6 +41,13 @@ final readonly class SchemaController
     #[Route('/web/connections/{id}/tables', requirements: self::ID, methods: ['GET'])]
     public function tables(string $id, Request $request): JsonResponse
     {
+        // Sans `limit`, `cursor` ni `q`, la liste complète (l'éditeur s'en sert pour la complétion) ; avec l'un d'eux, une page.
+        if (null !== $request->query->get('limit') || null !== $request->query->get('cursor') || null !== $request->query->get('q')) {
+            $page = $this->targets->withSaved(Uuid::fromString($id), static fn (TargetConnection $target): TablePage => $target->introspector()->listTablesPage(self::pageRequest($request)), DatabaseParam::fromQuery($request));
+
+            return new JsonResponse(['tables' => array_map(SchemaPresenter::summary(...), $page->tables), 'nextCursor' => $page->nextCursor, 'total' => $page->total]);
+        }
+
         $tables = $this->targets->withSaved(Uuid::fromString($id), static fn (TargetConnection $target): array => $target->introspector()->listTables(), DatabaseParam::fromQuery($request));
 
         return new JsonResponse(['tables' => array_map(SchemaPresenter::summary(...), $tables)]);
@@ -49,5 +59,17 @@ final readonly class SchemaController
         $table = $this->targets->withSaved(Uuid::fromString($id), static fn (TargetConnection $target) => $target->introspector()->describeTable($name), DatabaseParam::fromQuery($request));
 
         return new JsonResponse(['table' => SchemaPresenter::table($table)]);
+    }
+
+    private static function pageRequest(Request $request): TablePageRequest
+    {
+        $value = filter_var($request->query->get('limit', (string) TablePageRequest::DEFAULT_LIMIT), \FILTER_VALIDATE_INT);
+        if (!\is_int($value) || $value < 1 || $value > TablePageRequest::MAX_LIMIT) {
+            throw new BadRequestException(\sprintf('The limit must be an integer between 1 and %d.', TablePageRequest::MAX_LIMIT));
+        }
+        $cursor = $request->query->get('cursor');
+        $search = $request->query->get('q');
+
+        return new TablePageRequest($value, \is_string($cursor) && '' !== $cursor ? $cursor : null, \is_string($search) ? $search : null);
     }
 }

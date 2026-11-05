@@ -70,7 +70,18 @@ watch(() => props.id, open)
         />
         <template v-else>
           <DatabasePicker />
-          <SchemaTree :connection-id="id" :tables="workspace.tables" :current="currentTable" :error="workspace.tablesError" />
+          <SchemaTree
+            :connection-id="id"
+            :tables="workspace.tables"
+            :total="workspace.tablesTotal"
+            :has-more="workspace.tablesHasMore"
+            :loading="workspace.tablesLoading"
+            :search="workspace.tablesSearch"
+            :current="currentTable"
+            :error="workspace.tablesError"
+            @search="workspace.searchTables"
+            @more="workspace.loadMoreTables"
+          />
         </template>
       </aside>
       <div class="content"><RouterView /></div>

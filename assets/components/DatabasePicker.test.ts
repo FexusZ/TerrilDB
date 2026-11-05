@@ -43,7 +43,7 @@ describe('DatabasePicker', () => {
     await wrapper.get('select').setValue('reporting')
     await flushPromises()
 
-    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?database=reporting')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?limit=100&database=reporting')
     expect(useWorkspaceStore().database).toBe('reporting')
   })
 
@@ -58,7 +58,7 @@ describe('DatabasePicker', () => {
     await flushPromises()
 
     expect(useWorkspaceStore().database).toBeNull()
-    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?limit=100')
   })
 
   it('stays hidden when the engine has no database list', async () => {

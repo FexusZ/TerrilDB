@@ -13,6 +13,8 @@ use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Schema\TablePage;
+use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -66,6 +68,56 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         usort($tables, static fn (TableSummary $a, TableSummary $b): int => strcmp($a->name, $b->name));
 
         return $tables;
+    }
+
+    private static function count(mixed $value): int
+    {
+        return is_numeric($value) ? (int) $value : 0;
+    }
+
+    public function listTablesPage(TablePageRequest $request): TablePage
+    {
+        $where = 'TABLE_SCHEMA = DATABASE()';
+        $params = [];
+        if (null !== $request->search) {
+            $where .= ' AND INSTR(LOWER(TABLE_NAME), LOWER(?)) > 0';
+            $params[] = $request->search;
+        }
+        $total = null === $request->after
+            ? self::count($this->connection->fetchOne('SELECT COUNT(*) FROM information_schema.TABLES WHERE '.$where, $params))
+            : null;
+        if (null !== $request->after) {
+            // BINARY : on compare les octets, pas selon la collation (qui ignore la casse).
+            $where .= ' AND BINARY TABLE_NAME > BINARY ?';
+            $params[] = $request->after;
+        }
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate
+               FROM information_schema.TABLES
+              WHERE '.$where.'
+              ORDER BY BINARY TABLE_NAME
+              LIMIT '.($request->limit + 1),
+            $params,
+        );
+
+        return self::page($rows, $request->limit, $total);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows une ligne de plus que la limite : elle dit seulement qu'il y a une suite
+     */
+    private static function page(array $rows, int $limit, ?int $total): TablePage
+    {
+        $more = \count($rows) > $limit;
+        $tables = [];
+        foreach (\array_slice($rows, 0, $limit) as $row) {
+            $row = new RowReader($row);
+            $kind = self::kind($row->string('kind'));
+            $tables[] = new TableSummary($row->string('name'), $kind, TableKind::View === $kind ? null : $row->nullableInt('estimate'));
+        }
+
+        return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
     }
 
     public function describeTable(string $name): TableDefinition

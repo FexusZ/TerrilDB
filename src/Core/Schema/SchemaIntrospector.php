@@ -29,6 +29,12 @@ interface SchemaIntrospector
     public function listTables(): array;
 
     /**
+     * Une page de tables, paginée et filtrée par le moteur (clé de tri à l'octet et LIMIT, jamais en tranchant une liste
+     * complète) : pour les bases à des milliers de tables.
+     */
+    public function listTablesPage(TablePageRequest $request): TablePage;
+
+    /**
      * @throws TableNotFoundException
      */
     public function describeTable(string $name): TableDefinition;

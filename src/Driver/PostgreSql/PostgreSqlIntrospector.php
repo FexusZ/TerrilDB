@@ -14,6 +14,8 @@ use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Schema\TablePage;
+use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -67,6 +69,49 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
         usort($tables, static fn (TableSummary $a, TableSummary $b): int => strcmp($a->name, $b->name));
 
         return $tables;
+    }
+
+    private static function count(mixed $value): int
+    {
+        return is_numeric($value) ? (int) $value : 0;
+    }
+
+    public function listTablesPage(TablePageRequest $request): TablePage
+    {
+        $where = self::RELATIONS;
+        $params = [];
+        if (null !== $request->search) {
+            $where .= ' AND strpos(lower(c.relname), lower(?)) > 0';
+            $params[] = $request->search;
+        }
+        $total = null === $request->after
+            ? self::count($this->connection->fetchOne('SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE '.$where, $params))
+            : null;
+        if (null !== $request->after) {
+            // Collation « C » : les octets, comme partout ailleurs dans TerrilDB.
+            $where .= ' AND c.relname COLLATE "C" > ?';
+            $params[] = $request->after;
+        }
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT c.relname AS name, c.relkind AS kind, c.reltuples::bigint AS estimate
+               FROM pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE '.$where.'
+              ORDER BY c.relname COLLATE "C"
+              LIMIT '.($request->limit + 1),
+            $params,
+        );
+
+        $more = \count($rows) > $request->limit;
+        $tables = [];
+        foreach (\array_slice($rows, 0, $request->limit) as $row) {
+            $row = new RowReader($row);
+            $kind = self::kind($row->string('kind'));
+            $tables[] = new TableSummary($row->string('name'), $kind, self::estimate($kind, $row));
+        }
+
+        return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
     }
 
     public function describeTable(string $name): TableDefinition

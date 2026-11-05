@@ -29,10 +29,17 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const connectionId = ref<string | null>(null)
   const tables = ref<TableSummary[]>([])
   const tablesError = ref<string | null>(null)
+  // Les tables arrivent cent par cent (curseur = nom de la dernière) ; la recherche est faite par le moteur.
+  const tablesNext = ref<string | null>(null)
+  const tablesTotal = ref<number | null>(null)
+  const tablesLoading = ref(false)
+  const tablesSearch = ref('')
+  let tablesRequest = 0
   // La base explorée : nulle = celle de la connexion. Les autres bases du serveur se choisissent à la demande.
   const database = ref<string | null>(null)
   const databases = ref<DatabaseInfo[]>([])
   const databasesError = ref<string | null>(null)
+  const tablesHasMore = computed(() => tablesNext.value !== null)
   // Une base clé-valeur (Redis) se parcourt par clés : même espace de travail, autre arborescence.
   const isKeyValue = ref(false)
   const keys = ref<KeyEntry[]>([])
@@ -84,6 +91,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     connectionId.value = id
     tables.value = []
     tablesError.value = null
+    tablesNext.value = null
+    tablesTotal.value = null
+    tablesSearch.value = ''
     database.value = null
     databases.value = []
     databasesError.value = null
@@ -100,11 +110,71 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return
     }
 
-    try {
-      tables.value = (await api<{ tables: TableSummary[] }>('GET', `/web/connections/${id}/tables`)).tables
-    } catch (error) {
-      tablesError.value = messageFor(error)
+    await loadTables(false)
+  }
+
+  function tablesUrl(cursor: string | null): string {
+    const params = new URLSearchParams({ limit: '100' })
+    if (database.value !== null) {
+      params.set('database', database.value)
     }
+    if (cursor !== null) {
+      params.set('cursor', cursor)
+    }
+    if (tablesSearch.value !== '') {
+      params.set('q', tablesSearch.value)
+    }
+
+    return `/web/connections/${connectionId.value ?? ''}/tables?${params.toString()}`
+  }
+
+  /** Une page de tables : la première remplace la liste, la suivante s'y ajoute. Une réponse périmée est ignorée. */
+  async function loadTables(append: boolean): Promise<void> {
+    const id = connectionId.value
+    const cursor = append ? tablesNext.value : null
+    if (id === null || (append && cursor === null)) {
+      return
+    }
+    const request = ++tablesRequest
+    tablesLoading.value = true
+    tablesError.value = null
+    try {
+      const page = await api<{ tables: TableSummary[]; nextCursor?: string | null; total?: number | null }>('GET', tablesUrl(cursor))
+      if (request !== tablesRequest || connectionId.value !== id) {
+        return
+      }
+      tables.value = append ? [...tables.value, ...page.tables] : page.tables
+      tablesNext.value = page.nextCursor ?? null
+      if (!append) {
+        tablesTotal.value = page.total ?? null
+      }
+    } catch (error) {
+      if (request !== tablesRequest || connectionId.value !== id) {
+        return
+      }
+      tablesError.value = messageFor(error)
+      if (!append) {
+        tables.value = []
+        tablesNext.value = null
+        tablesTotal.value = null
+      }
+    } finally {
+      if (request === tablesRequest) {
+        tablesLoading.value = false
+      }
+    }
+  }
+
+  async function loadMoreTables(): Promise<void> {
+    if (tablesNext.value !== null && !tablesLoading.value) {
+      await loadTables(true)
+    }
+  }
+
+  /** Recherche faite par le moteur, depuis la première page. */
+  async function searchTables(query: string): Promise<void> {
+    tablesSearch.value = query.trim()
+    await loadTables(false)
   }
 
   /** Les bases visibles sur le serveur, pour le sélecteur. Un moteur sans liste (Redis) n'est pas une erreur. */
@@ -132,24 +202,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Explore une autre base du même serveur (null : celle de la connexion) : tables rechargées, descriptions oubliées. */
   async function selectDatabase(name: string | null): Promise<void> {
-    const id = connectionId.value
-    if (id === null || name === database.value) {
+    if (connectionId.value === null || name === database.value) {
       return
     }
     database.value = name
     described.clear()
-    tables.value = []
-    tablesError.value = null
-    try {
-      const loaded = (await api<{ tables: TableSummary[] }>('GET', `/web/connections/${id}/tables${databaseQuery()}`)).tables
-      if (database.value === name && connectionId.value === id) {
-        tables.value = loaded
-      }
-    } catch (error) {
-      if (database.value === name && connectionId.value === id) {
-        tablesError.value = messageFor(error)
-      }
-    }
+    tablesSearch.value = ''
+    await loadTables(false)
   }
 
   function databaseQuery(): string {
@@ -206,6 +265,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   function close(): void {
     connectionId.value = null
     tables.value = []
+    tablesNext.value = null
+    tablesTotal.value = null
     keys.value = []
     isKeyValue.value = false
     tabs.value = []
@@ -407,5 +468,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, database, databases, databasesError, loadDatabases, selectDatabase, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, database, databases, databasesError, loadDatabases, selectDatabase, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })
