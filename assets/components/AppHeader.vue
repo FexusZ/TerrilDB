@@ -4,6 +4,7 @@ import { useActivityStore } from '../stores/activity'
 import { useConnectionsStore } from '../stores/connections'
 import { useSessionStore } from '../stores/session'
 import { useThemeStore, type ThemeMode } from '../stores/theme'
+import { useTreeStore } from '../stores/tree'
 import { useTokensStore } from '../stores/tokens'
 import { useWorkspaceStore } from '../stores/workspace'
 import AppButton from './AppButton.vue'
@@ -23,6 +24,7 @@ async function logout(): Promise<void> {
   useActivityStore().reset()
   useTokensStore().reset()
   useWorkspaceStore().close()
+  useTreeStore().reset()
   await router.push({ name: 'login' })
 }
 </script>
@@ -30,7 +32,7 @@ async function logout(): Promise<void> {
 <template>
   <header class="top">
     <div class="left">
-      <RouterLink :to="{ name: 'connections' }" class="home" aria-label="Mes connexions"><BrandMark :size="24" /></RouterLink>
+      <RouterLink :to="{ name: 'workspace-home' }" class="home" aria-label="Espace de travail"><BrandMark :size="24" /></RouterLink>
       <slot name="left" />
     </div>
     <div class="right">

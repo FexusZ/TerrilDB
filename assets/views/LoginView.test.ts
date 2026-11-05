@@ -20,6 +20,7 @@ async function mountView(path = '/login') {
       { path: '/register', name: 'register', component: { template: '<p>register</p>' } },
       { path: '/recover', name: 'recover', component: { template: '<p>recover</p>' } },
       { path: '/connections', name: 'connections', component: { template: '<p>connections</p>' } },
+      { path: '/workspace', name: 'workspace-home', component: { template: '<p>home</p>' } },
       { path: '/connections/abc', name: 'workspace', component: { template: '<p>workspace</p>' } },
     ],
   })
@@ -74,7 +75,7 @@ describe('LoginView', () => {
     await submit(wrapper)
 
     expect(mocked).toHaveBeenCalledWith('POST', '/web/login', { login: 'alice', password: 'a long enough password' })
-    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.name).toBe('workspace-home')
   })
 
   it('goes back to where the visitor wanted to go', async () => {
@@ -92,7 +93,7 @@ describe('LoginView', () => {
 
     await submit(wrapper)
 
-    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.name).toBe('workspace-home')
   })
 
   it('says so when the credentials are wrong, and stays on the form', async () => {
@@ -120,7 +121,7 @@ describe('LoginView', () => {
     await flushPromises()
 
     expect(mocked).toHaveBeenLastCalledWith('POST', '/web/login', { login: 'alice', password: 'a long enough password', code: '123456' })
-    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.name).toBe('workspace-home')
   })
 
   it('reports a wrong code and lets the user try again', async () => {

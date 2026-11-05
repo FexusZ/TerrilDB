@@ -19,6 +19,9 @@ async function mountView(path = '/connections/abc') {
     history: createMemoryHistory(),
     routes: [
       { path: '/connections', name: 'connections', component: { template: '<p />' } },
+      { path: '/connections/new', name: 'connection-new', component: { template: '<p />' } },
+      { path: '/connections/:id/edit', name: 'connection-edit', component: { template: '<p />' } },
+      { path: '/workspace', name: 'workspace-home', component: { template: '<p class="home">accueil</p>' } },
       { path: '/security', name: 'security', component: { template: '<p />' } },
       { path: '/login', name: 'login', component: { template: '<p />' } },
       {
@@ -40,6 +43,12 @@ async function mountView(path = '/connections/abc') {
   await flushPromises()
 
   return { wrapper, router }
+}
+
+/** Réponses du serveur par adresse. Vitest rappelle le mock sans argument comme crochet de nettoyage : l'adresse peut manquer. */
+function answer(databases: { name: string; system: boolean }[] = []) {
+  return (method?: string, url = ''): Promise<unknown> =>
+    Promise.resolve(method === 'DELETE' ? undefined : url === '/web/connections' ? { connections: [summary] } : url.includes('/databases') ? { databases } : { tables: [] })
 }
 
 describe('WorkspaceView', () => {
@@ -91,6 +100,37 @@ describe('WorkspaceView', () => {
 
     expect(wrapper.find('select.databases').exists()).toBe(true)
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/databases')
+  })
+
+  it('keeps the connections sidebar on every page of the workspace', async () => {
+    for (const path of ['/connections/abc', '/connections/abc/audit', '/connections/abc/diagram', '/connections/abc/tables/orders']) {
+      mocked.mockReset()
+      mocked.mockImplementation(answer())
+
+      const { wrapper } = await mountView(path)
+
+      expect(wrapper.find('nav.workbench [role="tree"]').exists(), path).toBe(true)
+      wrapper.unmount()
+    }
+  })
+
+  it('goes back to the workspace home when the open connection is deleted from the tree', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc')
+
+    await wrapper.get('nav.workbench button.delete').trigger('click')
+    await wrapper.get('button.confirm').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('workspace-home')
+  })
+
+  it('explores the database named in the address, so a table of another database opens there', async () => {
+    mocked.mockImplementation(answer([{ name: 'shop', system: false }, { name: 'reporting', system: false }]))
+
+    await mountView('/connections/abc/tables/events?database=reporting')
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100&database=reporting')
   })
 
   it('says so when the connection does not exist', async () => {

@@ -21,7 +21,7 @@ async function mountView(events: AuditEntry[] = [], next: string | null = null) 
   mocked.mockResolvedValueOnce({ events, next })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'security', 'login', 'activity'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'security', 'login', 'activity', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/activity')
   const wrapper = mount(ActivityView, { global: { plugins: [pinia, router] } })
@@ -94,7 +94,7 @@ describe('ActivityView', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     mocked.mockRejectedValueOnce(new ApiError(0, 'network'))
-    const router = createRouter({ history: createMemoryHistory(), routes: ['connections', 'security', 'login'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })) })
+    const router = createRouter({ history: createMemoryHistory(), routes: ['connections', 'security', 'login', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })) })
     const wrapper = mount(ActivityView, { global: { plugins: [pinia, router] } })
     await flushPromises()
 

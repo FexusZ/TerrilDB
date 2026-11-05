@@ -43,13 +43,22 @@ describe('router guard', () => {
 
     await router.push('/login')
 
-    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.name).toBe('workspace-home')
   })
 
-  it('opens the connections list at the root', async () => {
+  it('opens the workspace, with its permanent sidebar, at the root', async () => {
     const router = routerFor(alice)
 
     await router.push('/')
+
+    expect(router.currentRoute.value.name).toBe('workspace-home')
+    expect(router.currentRoute.value.path).toBe('/workspace')
+  })
+
+  it('keeps the connections list as the place to manage connections', async () => {
+    const router = routerFor(alice)
+
+    await router.push('/connections')
 
     expect(router.currentRoute.value.name).toBe('connections')
   })
@@ -88,11 +97,11 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('tokens')
   })
 
-  it('answers an unknown address with the connections list', async () => {
+  it('answers an unknown address with the workspace', async () => {
     const router = routerFor(alice)
 
     await router.push('/nothing/here')
 
-    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.name).toBe('workspace-home')
   })
 })

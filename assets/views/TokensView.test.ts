@@ -23,7 +23,7 @@ async function mountView(tokens: ApiTokenInfo[] = [], connections: ConnectionSum
   mocked.mockResolvedValueOnce({ tokens })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'connection-new', 'security', 'login', 'tokens'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'connection-new', 'security', 'login', 'tokens', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/tokens')
   const wrapper = mount(TokensView, { global: { plugins: [pinia, router] }, attachTo: document.body })

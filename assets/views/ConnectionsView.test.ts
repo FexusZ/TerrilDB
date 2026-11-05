@@ -16,7 +16,7 @@ const connections = [make('a', 'Boutique, production', 'postgresql'), make('b', 
 function namedRouter() {
   return createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'connection-new', 'connection-edit', 'workspace', 'security', 'login'].map((name) => ({
+    routes: ['connections', 'connection-new', 'connection-edit', 'workspace', 'security', 'login', 'workspace-home'].map((name) => ({
       path: name === 'connection-edit' ? '/connections/:id/edit' : name === 'workspace' ? '/connections/:id' : `/${name}`,
       name,
       component: { template: '<p />' },

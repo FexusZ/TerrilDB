@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
 import DatabasePicker from '../components/DatabasePicker.vue'
 import KeyBrowser from '../components/KeyBrowser.vue'
 import SchemaTree from '../components/SchemaTree.vue'
+import WorkbenchSidebar from '../components/WorkbenchSidebar.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
+const router = useRouter()
 const connections = useConnectionsStore()
 const workspace = useWorkspaceStore()
 const error = ref<string | null>(null)
@@ -31,13 +33,33 @@ async function open(): Promise<void> {
       return
     }
     await workspace.open(props.id)
+    await applyRouteDatabase()
   } catch (failure) {
     error.value = messageFor(failure)
   }
 }
 
+// Une table de l'arbre d'une autre base s'ouvre avec `?database=` : l'espace de travail explore alors cette base-là.
+async function applyRouteDatabase(): Promise<void> {
+  const requested = route.query.database
+  await workspace.selectDatabase(typeof requested === 'string' && requested !== '' ? requested : null)
+}
+
+// Supprimer depuis la barre la connexion qu'on regarde : il n'y a plus rien à afficher ici.
+async function onDeleted(deleted: string): Promise<void> {
+  if (deleted === props.id) {
+    workspace.close()
+    await router.push({ name: 'workspace-home' })
+  }
+}
+
 onMounted(open)
 watch(() => props.id, open)
+watch(() => route.query.database, () => {
+  if (workspace.connectionId === props.id) {
+    void applyRouteDatabase()
+  }
+})
 </script>
 
 <template>
@@ -55,6 +77,7 @@ watch(() => props.id, open)
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div v-else class="body">
+      <WorkbenchSidebar @deleted="onDeleted" />
       <aside class="side">
         <KeyBrowser
           v-if="workspace.isKeyValue"

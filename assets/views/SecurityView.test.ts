@@ -19,7 +19,7 @@ async function mountView(user: User = alice) {
   useSessionStore().user = user
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'security', 'login', 'tokens', 'activity', 'invitations'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'security', 'login', 'tokens', 'activity', 'invitations', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/security')
   const wrapper = mount(SecurityView, { global: { plugins: [pinia, router] } })

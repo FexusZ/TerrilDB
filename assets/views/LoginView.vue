@@ -26,7 +26,7 @@ const codeLabel = computed(() => (useRecoveryCode.value ? 'Code de récupératio
 /** Seule une adresse interne est suivie : un lien de connexion ne doit pas renvoyer vers un autre site. */
 function destination(): string | { name: string } {
   const redirect = route.query.redirect
-  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : { name: 'connections' }
+  return typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') ? redirect : { name: 'workspace-home' }
 }
 
 async function submit(): Promise<void> {

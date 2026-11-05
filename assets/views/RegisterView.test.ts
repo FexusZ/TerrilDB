@@ -19,6 +19,7 @@ async function mountView(path = '/register') {
       { path: '/register', name: 'register', component: RegisterView },
       { path: '/login', name: 'login', component: { template: '<p />' } },
       { path: '/connections', name: 'connections', component: { template: '<p />' } },
+      { path: '/workspace', name: 'workspace-home', component: { template: '<p />' } },
     ],
   })
   await router.push(path)
@@ -47,7 +48,7 @@ describe('RegisterView', () => {
     await fill(wrapper)
 
     expect(mocked).toHaveBeenNthCalledWith(1, 'POST', '/web/register', { email: 'm@exemple.test', username: 'marie', password: 'a long enough password', invitation: 'inv_abc' })
-    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.name).toBe('workspace-home')
   })
 
   it('registers without invitation when the link has none', async () => {

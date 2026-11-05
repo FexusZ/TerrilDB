@@ -25,7 +25,7 @@ async function mountView(list: InvitationInfo[] | ApiError = [pending, used], em
   }
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'security', 'login', 'register', 'invitations'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'security', 'login', 'register', 'invitations', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/invitations')
   const wrapper = mount(InvitationsView, { global: { plugins: [pinia, router] } })

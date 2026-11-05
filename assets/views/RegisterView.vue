@@ -30,7 +30,7 @@ async function submit(): Promise<void> {
   try {
     await session.register(email.value, username.value, password.value, invitation)
     await session.login(username.value, password.value)
-    await router.push({ name: 'connections' })
+    await router.push({ name: 'workspace-home' })
   } catch (failure) {
     error.value = messageFor(failure)
   } finally {
