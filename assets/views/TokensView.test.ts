@@ -12,7 +12,7 @@ vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<t
 const mocked = vi.mocked(api)
 const connection = (id: string, name: string): ConnectionSummary => ({ id, name, engine: 'postgresql', createdAt: '', updatedAt: '' })
 const token = (id: string, name: string, extra: Partial<ApiTokenInfo> = {}): ApiTokenInfo => ({
-  id, name, connectionIds: ['c1'], allConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
+  id, name, connectionIds: ['c1'], allConnections: false, writeData: false, writeSchema: false, createConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
 })
 
 async function mountView(tokens: ApiTokenInfo[] = [], connections: ConnectionSummary[] = [connection('c1', 'Production'), connection('c2', 'Recette')]) {
@@ -67,11 +67,78 @@ describe('TokensView', () => {
     wrapper.unmount()
   })
 
-  it('invites to create a connection first when there is none', async () => {
+  it('lets you create a token before any connection exists', async () => {
     const wrapper = await mountView([], [])
 
-    expect(wrapper.find('form.create').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Créez d’abord une connexion')
+    expect(wrapper.find('form.create').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Aucune connexion pour l’instant')
+    wrapper.unmount()
+  })
+
+  it('is read-only by default and offers three rights to tick', async () => {
+    const wrapper = await mountView()
+
+    expect(wrapper.text()).toContain('lecture seule par défaut')
+    for (const id of ['#token-write-data', '#token-write-schema', '#token-create-connections']) {
+      expect((wrapper.get(id).element as HTMLInputElement).checked).toBe(false)
+    }
+    wrapper.unmount()
+  })
+
+  it('sends the ticked rights, and only those', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('#token-name').setValue('Assistant')
+    await wrapper.get('input[value="c1"]').setValue(true)
+    await wrapper.get('#token-write-data').setValue(true)
+    await wrapper.get('#token-create-connections').setValue(true)
+    mocked.mockResolvedValueOnce({ token: 'tdb_x', tokenInfo: token('n', 'Assistant', { writeData: true, createConnections: true }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', connectionIds: ['c1'], lifetimeDays: 30, writeData: true, createConnections: true })
+    wrapper.unmount()
+  })
+
+  it('accepts a token with no connection when it can create them', async () => {
+    const wrapper = await mountView([], [])
+    await wrapper.get('#token-name').setValue('Assistant')
+    await wrapper.get('#token-create-connections').setValue(true)
+    mocked.mockResolvedValueOnce({ token: 'tdb_x', tokenInfo: token('n', 'Assistant', { connectionIds: [], createConnections: true }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', connectionIds: [], lifetimeDays: 30, createConnections: true })
+    expect(wrapper.find('form.create [role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('accepts a token for all connections even when there are none yet', async () => {
+    const wrapper = await mountView([], [])
+    await wrapper.get('#token-name').setValue('Assistant')
+    await wrapper.get('#token-all').setValue(true)
+    mocked.mockResolvedValueOnce({ token: 'tdb_x', tokenInfo: token('n', 'Assistant', { allConnections: true, connectionIds: [] }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', allConnections: true, lifetimeDays: 30 })
+    wrapper.unmount()
+  })
+
+  it('shows the rights a token holds, and read-only when it holds none', async () => {
+    const wrapper = await mountView([
+      token('a', 'Lecteur'),
+      token('b', 'Plein', { writeData: true, writeSchema: true, createConnections: true }),
+    ])
+
+    const rows = wrapper.findAll('li.token')
+    expect(rows[0]?.text()).toContain('Lecture seule')
+    expect(rows[1]?.text()).toContain('Modifie les données')
+    expect(rows[1]?.text()).toContain('Modifie la structure')
+    expect(rows[1]?.text()).toContain('Crée des connexions')
+    expect(rows[1]?.text()).not.toContain('Lecture seule')
     wrapper.unmount()
   })
 

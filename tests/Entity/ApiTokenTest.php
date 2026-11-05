@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Entity;
 
+use App\ApiToken\TokenPermissions;
 use App\Crypto\KeyDerivation;
 use App\Entity\ApiToken;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
@@ -144,6 +145,26 @@ final class ApiTokenTest extends TestCase
 
         self::assertNull($token->getExpiresAt());
         self::assertFalse($token->isExpired(new \DateTimeImmutable('2126-01-01T00:00:00+00:00')));
+    }
+
+    public function testATokenCanOnlyReadByDefault(): void
+    {
+        $permissions = $this->token()->getPermissions();
+
+        self::assertFalse($permissions->writeData);
+        self::assertFalse($permissions->writeSchema);
+        self::assertFalse($permissions->createConnections);
+        self::assertFalse($permissions->canWrite());
+    }
+
+    public function testKeepsTheGrantedPermissions(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [], new \DateTimeImmutable(self::NOW), null, permissions: new TokenPermissions(writeData: true, createConnections: true));
+
+        self::assertTrue($token->getPermissions()->writeData);
+        self::assertFalse($token->getPermissions()->writeSchema);
+        self::assertTrue($token->getPermissions()->createConnections);
+        self::assertTrue($token->getPermissions()->canWrite());
     }
 
     public function testTheLastUseIsRecordedAtMostOncePerMinute(): void

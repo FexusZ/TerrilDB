@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\ApiToken\TokenPermissions;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Repository\ApiTokenRepository;
 use Doctrine\DBAL\Types\Types;
@@ -50,6 +51,15 @@ final class ApiToken
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
     private bool $allConnections;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $writeData;
+
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $writeSchema;
+
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $createConnections;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -76,6 +86,7 @@ final class ApiToken
         \DateTimeImmutable $createdAt,
         ?\DateTimeImmutable $expiresAt,
         bool $allConnections = false,
+        TokenPermissions $permissions = new TokenPermissions(),
     ) {
         $name = trim($name);
         if ('' === $name || mb_strlen($name) > self::NAME_MAX_LENGTH || 1 === preg_match('/\p{Cc}/u', $name)) {
@@ -101,6 +112,9 @@ final class ApiToken
         $this->wrappedKey = $wrappedKey;
         $this->connectionIds = self::normalizeConnections($connectionIds);
         $this->allConnections = $allConnections;
+        $this->writeData = $permissions->writeData;
+        $this->writeSchema = $permissions->writeSchema;
+        $this->createConnections = $permissions->createConnections;
         $this->createdAt = $createdAt;
         $this->expiresAt = $expiresAt;
     }
@@ -160,6 +174,11 @@ final class ApiToken
         }
 
         $this->connectionIds = self::normalizeConnections($connectionIds);
+    }
+
+    public function getPermissions(): TokenPermissions
+    {
+        return new TokenPermissions($this->writeData, $this->writeSchema, $this->createConnections);
     }
 
     public function getCreatedAt(): \DateTimeImmutable

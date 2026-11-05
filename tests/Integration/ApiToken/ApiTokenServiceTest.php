@@ -7,6 +7,7 @@ namespace App\Tests\Integration\ApiToken;
 use App\ApiToken\ApiTokenService;
 use App\ApiToken\Exception\ApiTokenNotFoundException;
 use App\ApiToken\Exception\InvalidApiTokenException;
+use App\ApiToken\TokenPermissions;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\ConnectionParameters;
@@ -149,6 +150,49 @@ final class ApiTokenServiceTest extends DatabaseTestCase
         $this->expectException(InvalidApiTokenException::class);
 
         $this->service->authenticate($token);
+    }
+
+    public function testIssuesATokenWithItsPermissions(): void
+    {
+        $issued = $this->service->issue($this->alice, $this->key, 'Assistant', [$this->connectionId], 30, permissions: new TokenPermissions(writeData: true, writeSchema: true, createConnections: true));
+
+        self::assertTrue($issued->entity->getPermissions()->writeData);
+        self::assertTrue($issued->entity->getPermissions()->writeSchema);
+        self::assertTrue($issued->entity->getPermissions()->createConnections);
+    }
+
+    public function testATokenIsReadOnlyUnlessToldOtherwise(): void
+    {
+        $issued = $this->service->issue($this->alice, $this->key, 'Assistant', [$this->connectionId], 30);
+
+        self::assertFalse($issued->entity->getPermissions()->canWrite());
+        self::assertFalse($issued->entity->getPermissions()->createConnections);
+    }
+
+    public function testATokenWithoutConnectionIsRefusedUnlessItCoversAllOrCreatesThem(): void
+    {
+        $this->expectException(InvalidApiTokenDefinitionException::class);
+        $this->service->issue($this->alice, $this->key, 'Assistant', [], 30, permissions: new TokenPermissions(writeData: true));
+    }
+
+    public function testATokenMayStartWithoutAnyConnectionWhenItCoversAll(): void
+    {
+        $bob = $this->user('bob');
+        $bobKey = new DerivedKey(random_bytes(DerivedKey::LENGTH));
+
+        $issued = $this->service->issue($bob, $bobKey, 'Tout', [], 30, allConnections: true);
+        self::assertSame([], $issued->entity->getConnectionIds());
+
+        $later = $this->connections->create($bob, $bobKey, 'Plus tard', Engine::MySql, new ConnectionParameters('h', 3306, 'd', 'u', 'p'))->getId();
+        $this->service->refresh($bob, $issued->entity->getId());
+        self::assertTrue($issued->entity->allows($later));
+    }
+
+    public function testATokenMayStartWithoutAnyConnectionWhenItCanCreateThem(): void
+    {
+        $issued = $this->service->issue($this->alice, $this->key, 'Assistant', [], 30, permissions: new TokenPermissions(createConnections: true));
+
+        self::assertSame([], $issued->entity->getConnectionIds());
     }
 
     public function testATokenWithoutLifetimeNeverExpires(): void

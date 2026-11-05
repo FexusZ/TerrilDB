@@ -40,8 +40,10 @@ final readonly class ApiTokenService
      *                                   ignorées si $allConnections : le jeton prend alors toutes celles du compte
      * @param int|null   $lifetimeDays   durée de vie en jours (1 à 365), ou null pour un jeton qui n'expire jamais
      * @param bool       $allConnections jeton « toutes mes connexions », dont la liste s'actualise ensuite à la demande
+     *
+     * Une liste vide n'est permise que si le jeton couvre toutes les connexions ou peut en créer
      */
-    public function issue(User $owner, DerivedKey $key, string $name, array $connectionIds, ?int $lifetimeDays, bool $allConnections = false): IssuedApiToken
+    public function issue(User $owner, DerivedKey $key, string $name, array $connectionIds, ?int $lifetimeDays, bool $allConnections = false, TokenPermissions $permissions = new TokenPermissions()): IssuedApiToken
     {
         if (null !== $lifetimeDays && ($lifetimeDays < 1 || $lifetimeDays > self::MAX_LIFETIME_DAYS)) {
             throw new InvalidApiTokenDefinitionException('The token lifetime must be between 1 and 365 days.');
@@ -49,7 +51,7 @@ final readonly class ApiTokenService
         if ($allConnections) {
             $connectionIds = $this->ownedConnectionIds($owner);
         }
-        if ([] === $connectionIds) {
+        if ([] === $connectionIds && !$allConnections && !$permissions->createConnections) {
             throw new InvalidApiTokenDefinitionException('A token needs at least one connection.');
         }
         foreach ($connectionIds as $connectionId) {
@@ -69,6 +71,7 @@ final readonly class ApiTokenService
             $now,
             null === $lifetimeDays ? null : $now->modify(\sprintf('+%d days', $lifetimeDays)),
             $allConnections,
+            $permissions,
         );
         $this->tokens->save($token);
 
@@ -107,11 +110,7 @@ final readonly class ApiTokenService
     public function refresh(User $owner, Uuid $id): ApiToken
     {
         $token = $this->tokens->findOwned($owner, $id) ?? throw ApiTokenNotFoundException::create();
-        $connectionIds = $this->ownedConnectionIds($owner);
-        if ([] === $connectionIds) {
-            throw new InvalidApiTokenDefinitionException('A token needs at least one connection.');
-        }
-        $token->refreshConnections(array_map(static fn (Uuid $connectionId): string => $connectionId->toRfc4122(), $connectionIds));
+        $token->refreshConnections(array_map(static fn (Uuid $connectionId): string => $connectionId->toRfc4122(), $this->ownedConnectionIds($owner)));
         $this->tokens->save($token);
 
         return $token;
