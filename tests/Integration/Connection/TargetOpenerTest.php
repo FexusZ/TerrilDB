@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Connection;
 
+use App\Audit\AuditedTargetHosts;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
-use App\Connection\TargetHostPolicy;
 use App\Connection\TargetOpener;
 use App\Core\Connection\Engine;
 use App\Core\Driver\DriverRegistry;
@@ -48,10 +48,10 @@ final class TargetOpenerTest extends DatabaseTestCase
         $this->key = new DerivedKey(random_bytes(DerivedKey::LENGTH));
     }
 
-    private function hostPolicy(): TargetHostPolicy
+    private function hostPolicy(): AuditedTargetHosts
     {
-        $policy = self::getContainer()->get(TargetHostPolicy::class);
-        self::assertInstanceOf(TargetHostPolicy::class, $policy);
+        $policy = self::getContainer()->get(AuditedTargetHosts::class);
+        self::assertInstanceOf(AuditedTargetHosts::class, $policy);
 
         return $policy;
     }

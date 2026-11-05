@@ -396,6 +396,21 @@ final class ApiV1Test extends WebApiTestCase
         self::assertSame($this->tokenId, $row['token_id']);
     }
 
+    public function testConnectionCreationIsCappedPerToken(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+
+        for ($i = 1; $i <= 20; ++$i) {
+            $this->api('POST', '/api/v1/connections', $this->targetBody('Created '.$i));
+            self::assertSame(201, $this->statusCode(), 'creation '.$i);
+        }
+        $body = $this->api('POST', '/api/v1/connections', $this->targetBody('One too many'));
+
+        self::assertSame(429, $this->statusCode());
+        self::assertSame('too_many_attempts', $body['error']);
+        self::assertArrayHasKey('retryAfter', $body);
+    }
+
     public function testAHiddenSecondStatementIsRefused(): void
     {
         $this->prepare('TARGET_MYSQL_URL');

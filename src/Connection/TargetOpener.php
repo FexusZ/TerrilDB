@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Connection;
 
+use App\Audit\AuditedTargetHosts;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
@@ -20,7 +21,7 @@ final readonly class TargetOpener
     public function __construct(
         private ConnectionManager $connections,
         private DriverRegistry $drivers,
-        private TargetHostPolicy $hosts,
+        private AuditedTargetHosts $hosts,
     ) {
     }
 

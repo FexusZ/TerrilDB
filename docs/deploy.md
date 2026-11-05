@@ -44,6 +44,38 @@ Un runner auto-hébergé exécute le code d'un workflow sur la machine. Garde-fo
   runner (« Set up job », « Checkout »). Le domaine est un secret, donc masqué ; ne jamais `echo` autre chose dans le script ;
 - le runner a accès à Docker, c'est-à-dire en pratique les droits de son utilisateur sur la machine.
 
+## Limiter ce que le serveur peut joindre
+
+TerrilDB ouvre des connexions vers les bases que les utilisateurs lui indiquent. Le logiciel réserve déjà aux administrateurs
+la boucle locale, les liens locaux et la base interne (`TargetHostPolicy`), mais un filtre applicatif n'est pas un pare-feu :
+la limite solide se pose sur la machine.
+
+**Base interne isolée (déjà en place).** `compose.prod.yaml` met PostgreSQL sur un réseau Docker `backend` déclaré `internal` : il
+n'est partagé qu'avec l'application, n'est pas publié, et la base ne peut elle-même joindre aucune adresse extérieure. L'application
+est en plus sur le réseau `default`, par lequel elle joint les bases des utilisateurs.
+
+**Règles de sortie du conteneur (à poser une fois, sur l'hôte, avec sudo).** Elles ne sont pas appliquées par `deploy.sh` : elles
+dépendent des bases que vous connectez, et un réglage de pare-feu qui se trompe coupe l'application. Principe : tout ce qui sort du
+réseau `terrildb-prod_default` est refusé, sauf les réponses aux connexions déjà ouvertes, le DNS, et les bases cibles listées.
+
+```bash
+SUBNET=$(docker network inspect terrildb-prod_default --format '{{(index .IPAM.Config 0).Subnet}}')
+
+sudo iptables -N TERRILDB-EGRESS
+sudo iptables -A TERRILDB-EGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+sudo iptables -A TERRILDB-EGRESS -p udp --dport 53 -j RETURN                       # DNS
+sudo iptables -A TERRILDB-EGRESS -d <adresse de la base> -p tcp --dport <port> -j RETURN   # une ligne par base cible
+sudo iptables -A TERRILDB-EGRESS -j DROP
+sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
+```
+
+À savoir avant de les poser :
+- `DOCKER-USER` est la chaîne que Docker réserve à l'administrateur pour filtrer le trafic des conteneurs ; les règles y survivent au redémarrage de Docker, pas à celui de la machine (`netfilter-persistent` ou équivalent pour les garder).
+- Chaque nouvelle base cible demande une ligne de plus : c'est le prix de la limite. Les adresses IPv6 relèvent de `ip6tables`.
+- Le trafic du conteneur vers la machine elle-même ne passe pas par `DOCKER-USER` mais par la chaîne `INPUT` : pour fermer aussi cette voie, filtrer `INPUT` pour `-s "$SUBNET"` (laisser passer le DNS et les réponses établies).
+- Après la pose, vérifier depuis le conteneur qu'une adresse non listée est bien injoignable (`docker compose -f compose.prod.yaml exec app php -r 'var_dump(@fsockopen("1.1.1.1", 443, $e, $m, 3));'` doit rendre `false`) et qu'une base listée l'est toujours, avant de fermer la session.
+- Ces règles ne sont pas testées par l'intégration continue : à valider sur votre machine.
+
 ## Exploitation
 
 - Journaux : `docker compose -f compose.prod.yaml logs app` avec `TERRILDB_DEPLOY_DIR` et `TERRILDB_DOMAIN` exportés

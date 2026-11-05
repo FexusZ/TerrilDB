@@ -23,6 +23,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # « default » pour joindre les bases des utilisateurs, « backend » (sans sortie) pour la base interne.
+    networks: [default, backend]
     volumes:
       - sessions:/data/sessions
     cap_drop: [ALL]
@@ -43,12 +45,18 @@ services:
     image: postgres:18-alpine
     restart: unless-stopped
     env_file: ${TERRILDB_DEPLOY_DIR:?}/db.env
+    # Seul réseau de la base interne : interne à Docker (aucune sortie), partagé avec l'application et rien d'autre.
+    networks: [backend]
     volumes:
       - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U terrildb"]
       interval: 3s
       retries: 20
+
+networks:
+  backend:
+    internal: true
 
 volumes:
   db-data:

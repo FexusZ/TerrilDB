@@ -68,6 +68,8 @@ final class AuditEventTest extends TestCase
         self::assertSame('connection.deleted', AuditAction::ConnectionDeleted->value);
         self::assertSame('login', AuditAction::LoginSuccess->category());
         self::assertSame('query', AuditAction::QueryRefused->category());
+        self::assertSame('target.forbidden', AuditAction::TargetForbidden->value);
+        self::assertSame('target', AuditAction::TargetForbidden->category());
         foreach (AuditAction::cases() as $action) {
             self::assertMatchesRegularExpression('/^[a-z]+\.[a-z_]+$/D', $action->value);
         }
