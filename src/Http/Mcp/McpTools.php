@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedQueries;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\Engine;
+use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
@@ -33,6 +37,7 @@ final readonly class McpTools
         private TargetSession $targets,
         private AuditedQueries $queries,
         private ErrorMapper $errors,
+        private TokenConnections $created,
     ) {
     }
 
@@ -85,6 +90,25 @@ final readonly class McpTools
             $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function createConnection(string $name, string $engine, string $host, string $database, string $username, string $password, ?int $port = null): array
+    {
+        return $this->guard(function () use ($name, $engine, $host, $database, $username, $password, $port): array {
+            $driver = Engine::tryFrom($engine) ?? throw new InvalidConnectionParametersException('The engine is not supported.');
+            $connection = $this->created->create(
+                $this->request->get(),
+                $this->request->auditContext(AuditActor::Mcp),
+                $name,
+                $driver,
+                new ConnectionParameters($host, $port ?? $driver->defaultPort(), $database, $username, $password),
+            );
+
+            return ['connection' => ['id' => $connection->getId()->toRfc4122(), 'name' => $connection->getName(), 'engine' => $connection->getEngine()->value]];
         });
     }
 

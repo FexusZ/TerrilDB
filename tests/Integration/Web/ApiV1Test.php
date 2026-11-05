@@ -315,6 +315,87 @@ final class ApiV1Test extends WebApiTestCase
         }
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function targetBody(string $name = 'Created by token'): array
+    {
+        $parameters = TargetDatabase::parameters('TARGET_POSTGRES_URL');
+
+        return ['name' => $name, 'engine' => TargetDatabase::engine('TARGET_POSTGRES_URL')->value, 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
+    }
+
+    public function testAPlainTokenCannotCreateAConnection(): void
+    {
+        $this->prepare();
+
+        $body = $this->api('POST', '/api/v1/connections', $this->targetBody());
+
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $body);
+    }
+
+    public function testATokenWithTheRightCreatesAConnectionItCanThenUse(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+
+        $created = $this->api('POST', '/api/v1/connections', $this->targetBody());
+
+        self::assertSame(201, $this->statusCode());
+        $connection = self::arrayOf($created['connection']);
+        self::assertSame('Created by token', $connection['name']);
+        self::assertSame('postgresql', $connection['engine']);
+        self::assertStringNotContainsString(TargetDatabase::parameters('TARGET_POSTGRES_URL')->password(), json_encode($created, \JSON_THROW_ON_ERROR));
+
+        $listed = array_map(static fn (mixed $row): mixed => self::arrayOf($row)['id'], self::arrayOf($this->api('GET', '/api/v1/connections')['connections']));
+        self::assertContains($connection['id'], $listed);
+
+        self::assertIsString($connection['id']);
+        $query = $this->api('POST', '/api/v1/connections/'.$connection['id'].'/query', ['sql' => 'select count(*) from categories']);
+        self::assertSame(200, $this->statusCode());
+        self::assertNotEmpty($query['rows']);
+    }
+
+    public function testAnAllConnectionsTokenAlsoSeesWhatItCreates(): void
+    {
+        $this->seedAndLogin();
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Tout', 'allConnections' => true, 'createConnections' => true]);
+        self::assertSame(201, $this->statusCode());
+        self::assertIsString($created['token']);
+        $this->client->getCookieJar()->clear();
+
+        $new = $this->api('POST', '/api/v1/connections', $this->targetBody(), $created['token']);
+        self::assertSame(201, $this->statusCode());
+
+        $listed = $this->api('GET', '/api/v1/connections', token: $created['token']);
+        self::assertCount(1, self::arrayOf($listed['connections']));
+        self::assertSame(self::arrayOf($new['connection'])['id'], self::arrayOf(self::arrayOf($listed['connections'])[0])['id']);
+    }
+
+    public function testCreatingAConnectionRefusesBadInput(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+
+        $this->api('POST', '/api/v1/connections', ['name' => 'X'] + ['engine' => 'nope'] + $this->targetBody());
+        self::assertSame(422, $this->statusCode());
+        $this->api('POST', '/api/v1/connections', ['name' => 'X', 'engine' => 'postgresql']);
+        self::assertSame(400, $this->statusCode());
+    }
+
+    public function testCreatingAConnectionIsAuditedAsAnApiAction(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+        $this->api('POST', '/api/v1/connections', $this->targetBody());
+
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        $row = $entityManager->getConnection()->fetchAssociative("SELECT actor, token_id FROM audit_event WHERE action = 'connection.created' AND token_id IS NOT NULL ORDER BY occurred_at DESC LIMIT 1");
+
+        self::assertIsArray($row);
+        self::assertSame('api', $row['actor']);
+        self::assertSame($this->tokenId, $row['token_id']);
+    }
+
     public function testAHiddenSecondStatementIsRefused(): void
     {
         $this->prepare('TARGET_MYSQL_URL');

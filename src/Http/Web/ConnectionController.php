@@ -7,8 +7,7 @@ namespace App\Http\Web;
 use App\Audit\AuditAction;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
-use App\Core\Connection\ConnectionParameters;
-use App\Core\Connection\Engine;
+use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -41,7 +40,7 @@ final readonly class ConnectionController
     public function create(Request $request): JsonResponse
     {
         $input = JsonInput::fromRequest($request);
-        [$name, $engine, $parameters] = $this->read($input, null);
+        [$name, $engine, $parameters] = ConnectionInput::read($input, null);
 
         $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters);
         $this->audit->record($this->session->auditContext(), AuditAction::ConnectionCreated, subject: $connection->getId(), details: ['name' => $connection->getName(), 'engine' => $engine->value]);
@@ -52,7 +51,7 @@ final readonly class ConnectionController
     #[Route('/web/connections/test', methods: ['POST'])]
     public function probe(Request $request): JsonResponse
     {
-        [, $engine, $parameters] = $this->read(JsonInput::fromRequest($request), null, nameRequired: false);
+        [, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), null, nameRequired: false);
 
         return new JsonResponse(['ok' => true, 'durationMs' => $this->targets->probe($engine, $parameters)]);
     }
@@ -74,7 +73,7 @@ final readonly class ConnectionController
         $user = $this->session->user();
         $key = $this->session->key();
         $current = $this->connections->reveal($user, $key, $uuid);
-        [$name, $engine, $parameters] = $this->read(JsonInput::fromRequest($request), $current);
+        [$name, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), $current);
 
         $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters);
         $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionUpdated, subject: $uuid, details: ['name' => $connection->getName(), 'engine' => $engine->value]);
@@ -101,28 +100,5 @@ final readonly class ConnectionController
         $this->targets->withSaved(Uuid::fromString($id), static fn () => null);
 
         return new JsonResponse(['ok' => true, 'durationMs' => intdiv(hrtime(true) - $started, 1_000_000)]);
-    }
-
-    /**
-     * @param ConnectionParameters|null $current les paramètres déjà enregistrés : un mot de passe absent les conserve
-     *
-     * @return array{string, Engine, ConnectionParameters}
-     */
-    private function read(JsonInput $input, ?ConnectionParameters $current, bool $nameRequired = true): array
-    {
-        $engine = $input->engine('engine');
-        $password = $input->optionalString('password') ?? $current?->password() ?? '';
-
-        return [
-            $nameRequired ? $input->string('name') : ($input->optionalString('name') ?? ''),
-            $engine,
-            new ConnectionParameters(
-                $input->string('host'),
-                $input->optionalInt('port') ?? $engine->defaultPort(),
-                $input->string('database'),
-                $input->string('username'),
-                $password,
-            ),
-        ];
     }
 }
