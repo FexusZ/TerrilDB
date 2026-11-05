@@ -92,6 +92,52 @@ final class ApiTokenTest extends TestCase
         return $token->getLastUsedAt()?->format(\DATE_ATOM);
     }
 
+    public function testAFixedListTokenIsNotMarkedAsCoveringAllConnections(): void
+    {
+        self::assertFalse($this->token()->coversAllConnections());
+    }
+
+    public function testATokenForAllConnectionsCanRefreshItsList(): void
+    {
+        $first = Uuid::v7();
+        $second = Uuid::v7();
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [$first->toRfc4122()], new \DateTimeImmutable(self::NOW), new \DateTimeImmutable('2026-12-01T10:00:00+00:00'), allConnections: true);
+
+        $token->refreshConnections([$first->toRfc4122(), $second->toRfc4122()]);
+
+        self::assertTrue($token->coversAllConnections());
+        self::assertSame([$first->toRfc4122(), $second->toRfc4122()], $token->getConnectionIds());
+        self::assertTrue($token->allows($second));
+    }
+
+    public function testRefreshDropsConnectionsThatNoLongerExist(): void
+    {
+        $gone = Uuid::v7();
+        $kept = Uuid::v7();
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [$gone->toRfc4122(), $kept->toRfc4122()], new \DateTimeImmutable(self::NOW), new \DateTimeImmutable('2026-12-01T10:00:00+00:00'), allConnections: true);
+
+        $token->refreshConnections([$kept->toRfc4122()]);
+
+        self::assertFalse($token->allows($gone));
+        self::assertTrue($token->allows($kept));
+    }
+
+    public function testAFixedListTokenCannotBeRefreshed(): void
+    {
+        $this->expectException(InvalidApiTokenDefinitionException::class);
+
+        $this->token([Uuid::v7()->toRfc4122()])->refreshConnections([Uuid::v7()->toRfc4122()]);
+    }
+
+    public function testRefreshStillRefusesTooManyConnections(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [Uuid::v7()->toRfc4122()], new \DateTimeImmutable(self::NOW), new \DateTimeImmutable('2026-12-01T10:00:00+00:00'), allConnections: true);
+
+        $this->expectException(InvalidApiTokenDefinitionException::class);
+
+        $token->refreshConnections(array_map(static fn (): string => Uuid::v7()->toRfc4122(), range(1, 51)));
+    }
+
     public function testTheLastUseIsRecordedAtMostOncePerMinute(): void
     {
         $token = $this->token();

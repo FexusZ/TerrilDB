@@ -185,6 +185,15 @@ final class AuditEventsTest extends WebApiTestCase
         self::assertSame(['name' => 'Assistant', 'connections' => 1, 'lifetimeDays' => 7], $event->getDetails());
         self::assertStringNotContainsString(substr($created['token'], -43), json_encode($event->getDetails(), \JSON_THROW_ON_ERROR));
 
+        $all = $this->call('POST', '/web/tokens', ['name' => 'Tout', 'allConnections' => true]);
+        $allId = self::arrayOf($all['tokenInfo'])['id'];
+        self::assertIsString($allId);
+        $this->call('POST', '/web/tokens/'.$allId.'/refresh');
+        $refreshed = $this->last($user);
+        self::assertSame(AuditAction::TokenRefreshed, $refreshed->getAction());
+        self::assertSame($allId, $refreshed->getSubjectId()?->toRfc4122());
+        self::assertSame(['name' => 'Tout', 'connections' => 1], $refreshed->getDetails());
+
         $this->call('DELETE', '/web/tokens/'.$tokenId);
         self::assertSame(AuditAction::TokenRevoked, $this->last($user)->getAction());
     }

@@ -48,6 +48,9 @@ final class ApiToken
     #[ORM\Column(type: Types::JSON)]
     private array $connectionIds;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $allConnections;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -73,6 +76,7 @@ final class ApiToken
         array $connectionIds,
         \DateTimeImmutable $createdAt,
         \DateTimeImmutable $expiresAt,
+        bool $allConnections = false,
     ) {
         $name = trim($name);
         if ('' === $name || mb_strlen($name) > self::NAME_MAX_LENGTH || 1 === preg_match('/\p{Cc}/u', $name)) {
@@ -97,6 +101,7 @@ final class ApiToken
         $this->verifier = $verifier;
         $this->wrappedKey = $wrappedKey;
         $this->connectionIds = self::normalizeConnections($connectionIds);
+        $this->allConnections = $allConnections;
         $this->createdAt = $createdAt;
         $this->expiresAt = $expiresAt;
     }
@@ -135,6 +140,27 @@ final class ApiToken
     public function getConnectionIds(): array
     {
         return $this->connectionIds;
+    }
+
+    /**
+     * Vrai si le jeton a été émis pour « toutes mes connexions » : sa liste suit alors celles du compte à chaque
+     * actualisation (jamais toute seule, c'est le propriétaire qui décide quand).
+     */
+    public function coversAllConnections(): bool
+    {
+        return $this->allConnections;
+    }
+
+    /**
+     * @param list<string> $connectionIds les connexions du compte à cet instant
+     */
+    public function refreshConnections(array $connectionIds): void
+    {
+        if (!$this->allConnections) {
+            throw new InvalidApiTokenDefinitionException('Only a token issued for all connections can be refreshed.');
+        }
+
+        $this->connectionIds = self::normalizeConnections($connectionIds);
     }
 
     public function getCreatedAt(): \DateTimeImmutable

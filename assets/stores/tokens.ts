@@ -20,6 +20,12 @@ export const useTokensStore = defineStore('tokens', () => {
     return token
   }
 
+  /** Remet à jour la liste des connexions d'un jeton « toutes mes connexions » ; son texte ne change pas. */
+  async function refresh(id: string): Promise<void> {
+    const { tokenInfo } = await api<{ tokenInfo: ApiTokenInfo }>('POST', `/web/tokens/${id}/refresh`)
+    items.value = items.value.map((token) => (token.id === id ? tokenInfo : token))
+  }
+
   async function revoke(id: string): Promise<void> {
     await api('DELETE', `/web/tokens/${id}`)
     items.value = items.value.filter((token) => token.id !== id)
@@ -30,5 +36,5 @@ export const useTokensStore = defineStore('tokens', () => {
     loaded.value = false
   }
 
-  return { items, loaded, load, create, revoke, reset }
+  return { items, loaded, load, create, refresh, revoke, reset }
 })

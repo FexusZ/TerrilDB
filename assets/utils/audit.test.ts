@@ -22,6 +22,7 @@ describe('audit labels', () => {
     expect(describeEvent(entry('connection.deleted', { name: 'Blog' }))).toBe('Connexion « Blog » supprimée')
     expect(describeEvent(entry('token.created', { name: 'Assistant' }))).toBe('Jeton « Assistant » créé')
     expect(describeEvent(entry('token.revoked'))).toBe('Jeton révoqué')
+    expect(describeEvent(entry('token.refreshed', { name: 'Assistant' }))).toBe('Jeton « Assistant » actualisé')
     expect(describeEvent(entry('phrase.created'))).toBe('Phrase de récupération créée')
     expect(describeEvent(entry('phrase.removed'))).toBe('Phrase de récupération retirée')
     expect(describeEvent(entry('phrase.used'))).toBe('Mot de passe réinitialisé avec la phrase de récupération')
