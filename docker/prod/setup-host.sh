@@ -7,7 +7,10 @@ set -eu
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 dir="${TERRILDB_DEPLOY_DIR:-$HOME/.config/terrildb}"
 [ -r "$dir/deploy.env" ] || { echo "Lancez d'abord docker/prod/deploy.sh (configuration absente : $dir)." >&2; exit 2; }
+# Exporté : compose lit TERRILDB_DOMAIN dans l'environnement (comme deploy.sh).
+set -a
 . "$dir/deploy.env"
+set +a
 
 curl -fsS "http://${TERRILDB_BIND:-127.0.0.1}:$TERRILDB_PORT/api/health" >/dev/null \
     || { echo "L'application ne répond pas sur 127.0.0.1:$TERRILDB_PORT : déployez d'abord." >&2; exit 2; }
