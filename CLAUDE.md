@@ -46,7 +46,7 @@ tests/
 
 Les contrôleurs, l'API et le MCP ne contiennent **aucune** logique métier : ils appellent `Core`.
 Toute spécificité moteur passe par une interface de driver (SQLite / SQL Server ajoutables sans refonte).
-Lecture seule MCP/API : filtre lexical **et** transaction read-only côté moteur (le moteur fait foi).
+Lecture seule MCP/API par défaut : filtre lexical **et** transaction read-only côté moteur (le moteur fait foi). Un jeton peut recevoir des droits d'écriture (voir « API REST à jetons ») : le filtre les borne alors seul, sans filet du moteur pour la distinction données/structure.
 
 ## Périmètre
 
@@ -104,7 +104,7 @@ de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : 
 Le garde (lexical, `SqlScanner` par dialecte) n'accepte qu'UNE instruction, refuse les constructs hors transaction
 (INTO OUTFILE, FOR UPDATE, fonctions de fichiers, LOAD/COPY, SET/BEGIN/COMMIT…) et demande confirmation pour ce qui
 détruit (UPDATE/DELETE sans WHERE de même niveau, DROP, TRUNCATE, ALTER, GRANT, CALL). Un refus est définitif, aucune
-confirmation ne le lève. `QueryMode::ReadOnly` par défaut ; l'API et le MCP n'en ont pas d'autre. Le filtre peut se
+confirmation ne le lève. `QueryMode::ReadOnly` par défaut ; l'API et le MCP ne passent en lecture-écriture que par `ApiTokenAccess::writeOptions` (jeton avec droit d'écriture, `QueryOptions::$writes` = `WritePermissions` données/structure, refus définitif `write_not_permitted` du garde, avant toute confirmation ; CALL/DO exigent le droit structure). Le filtre peut se
 tromper : le moteur fait foi. PostgreSQL : `BEGIN READ ONLY` + `statement_timeout` local + curseur serveur (limite de
 lignes). MySQL/MariaDB : `SET SESSION TRANSACTION READ ONLY` (et non `START TRANSACTION READ ONLY`, qui laisse passer
 le DDL), `MAX_EXECUTION_TIME` / `max_statement_time`, lecture non tamponnée, instructions multiples désactivées. Une
@@ -131,10 +131,19 @@ Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarr
 Le serveur ne détient jamais la clé de l'utilisateur ; un jeton d'API (`tdb_<id>_<secret>`) emporte donc une copie de
 la clé enveloppée par son propre secret (`SessionKeyWrapper`, contexte = id du jeton). Le serveur ne garde que
 l'empreinte du secret (`ApiTokenSecret::verifier`) et l'enveloppe : sans le jeton, rien n'est lisible. Lecture seule
-uniquement, connexions listées (au moins une), expiration de 365 jours au plus OU aucune (`neverExpires: true`, `expires_at` nul : choix du propriétaire, la révocation reste possible à tout moment), supprimé à tout changement
+par défaut, connexions listées (au moins une, sauf jeton « toutes » ou autorisé à en créer), expiration de 365 jours au plus OU aucune (`neverExpires: true`, `expires_at` nul : choix du propriétaire, la révocation reste possible à tout moment), supprimé à tout changement
 de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
+Droits d'un jeton (`TokenPermissions`, fixés à la création, tous refusés par défaut) : `writeData` (INSERT/UPDATE/DELETE),
+`writeSchema` (CREATE/ALTER/DROP/TRUNCATE/GRANT/CALL), `createConnections`. Écrire passe par `POST /api/v1/connections/{id}/execute`
+(et l'outil MCP `execute_statement`, visible des seuls jetons qui écrivent) ; `/query` et `run_query` restent en lecture seule pour
+tous. Un destructif (UPDATE/DELETE sans WHERE, DROP, TRUNCATE…) répond 409 `confirmation_required` tant que `confirmed: true` manque ;
+sans aucun droit d'écriture, 403 `permission_denied`. Limite connue : seul le filtre lexical sépare données et structure
+(un SELECT d'une fonction qui écrit n'est pas retenu en lecture-écriture ; les droits du compte de la base cible restent le dernier rempart).
+`POST /api/v1/connections` (outil MCP `create_connection`, `TokenConnections`) enregistre une connexion chiffrée par la clé du jeton,
+avec les mêmes adresses libres que l'interface web, l'ajoute à la liste du jeton et journalise `connection.created` (acteur api/mcp).
+Un jeton peut naître sans connexion s'il est « toutes » ou autorisé à en créer.
 Un jeton peut être émis pour « toutes mes connexions » (`allConnections: true` à la création, colonne `all_connections`) : la
 liste est celle du compte à cet instant, puis ne bouge que par `POST /web/tokens/{id}/refresh` (`ApiTokenService::refresh`,
 session requise, texte du jeton inchangé, connexions supprimées retirées, pas de plafond de connexions, refusé 422
@@ -242,8 +251,8 @@ filtre par catégorie) et `/web/connections/{id}/history`. Purge : `app:audit:pu
 
 SDK officiel `mcp/sdk` (0.9, expérimental : les révisions du protocole sont gérées par lui), confiné à `Http/Mcp`.
 `POST|DELETE /mcp` derrière le même pare-feu `api` que l'API REST (jeton porteur) ; `McpServerFactory` rebâtit le serveur
-à chaque requête (quatre outils déclarés explicitement, sessions du protocole sur fichiers dans le cache) ; `McpTools`
-réutilise `TargetSession`/`QueryService` en lecture seule ; `McpSessionBinding` lie une session MCP au jeton qui l'a ouverte.
+à chaque requête (quatre outils de lecture déclarés explicitement, plus `execute_statement` et `create_connection` selon les droits du jeton, sessions du protocole sur fichiers dans le cache) ; `McpTools`
+réutilise `TargetSession`/`QueryService` (lecture seule sauf `execute_statement`) ; `McpSessionBinding` lie une session MCP au jeton qui l'a ouverte.
 Pas de flux serveur (GET → 405). Hôtes acceptés : `TERRILDB_ALLOWED_HOSTS`. Les arguments d'outil portent le nom exact du
 paramètre PHP (camelCase : `maxRows`, `timeoutMs`).
 

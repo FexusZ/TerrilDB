@@ -1,4 +1,4 @@
-# Serveur MCP (lecture seule)
+# Serveur MCP
 
 Adresse : `POST /mcp` (transport HTTP « streamable »), avec `Authorization: Bearer <jeton>`. C'est le même jeton que
 pour l'API REST (voir `docs/api.md`) : il n'ouvre que les connexions choisies à sa création, expire (sauf choix contraire), et disparaît au
@@ -12,18 +12,21 @@ passe. Les noms d'hôte acceptés se règlent avec `TERRILDB_ALLOWED_HOSTS` (lis
 
 ## Outils
 
-Tous en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement.
+Les quatre premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les deux derniers n'existent que pour
+les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit pas).
 
 | Outil | Arguments | Rôle |
 | --- | --- | --- |
 | `list_connections` | – | `id`, `name`, `engine` des connexions permises |
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
-| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée |
+| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
+| `execute_statement` | `connection`, `sql`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
+| `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
 comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `invalid_input`,
-`target_unreachable`.
+`target_unreachable`, `permission_denied`, `confirmation_required` (avec `reason`) ; le motif `write_not_permitted` signale un droit manquant.
 
 ## Configuration d'un client
 

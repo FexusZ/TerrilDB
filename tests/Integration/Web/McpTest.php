@@ -285,6 +285,42 @@ final class McpTest extends WebApiTestCase
         self::assertStringContainsString('write_not_permitted', self::str(self::obj(self::first($schema['content']))['text']));
     }
 
+    public function testAPlainTokenDoesNotSeeTheConnectionTool(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('create_connection', $this->toolNames());
+    }
+
+    public function testATokenThatMayCreateSeesTheConnectionTool(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+        $this->initialize();
+
+        self::assertContains('create_connection', $this->toolNames());
+    }
+
+    public function testCreatesAConnectionThroughMcpAndSeesItAtOnce(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+        $this->initialize();
+        $parameters = TargetDatabase::parameters('TARGET_POSTGRES_URL');
+
+        $created = self::textOf($this->callTool('create_connection', [
+            'name' => 'Via MCP', 'engine' => TargetDatabase::engine('TARGET_POSTGRES_URL')->value, 'host' => $parameters->host, 'port' => $parameters->port,
+            'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password(),
+        ]));
+
+        $connection = self::obj($created['connection']);
+        self::assertSame('Via MCP', $connection['name']);
+        self::assertStringNotContainsString($parameters->password(), json_encode($created, \JSON_THROW_ON_ERROR));
+        $listed = self::textOf($this->callTool('list_connections'));
+        self::assertContains($connection['id'], array_map(static fn (mixed $row): mixed => self::obj($row)['id'], self::list($listed['connections'])));
+        $rows = self::textOf($this->callTool('run_query', ['connection' => self::str($connection['id']), 'sql' => 'select count(*) from categories']));
+        self::assertNotEmpty($rows['rows']);
+    }
+
     public function testListsOnlyTheGrantedConnections(): void
     {
         $this->prepare();

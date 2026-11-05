@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Api;
 
+use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedQueries;
 use App\Connection\ConnectionManager;
@@ -13,6 +14,7 @@ use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
+use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
@@ -38,6 +40,7 @@ final readonly class ApiController
         private ConnectionManager $connections,
         private TargetSession $targets,
         private AuditedQueries $queries,
+        private TokenConnections $created,
     ) {
     }
 
@@ -62,6 +65,15 @@ final readonly class ApiController
             static fn (DatabaseConnection $connection): array => ['id' => $connection->getId()->toRfc4122(), 'name' => $connection->getName(), 'engine' => $connection->getEngine()->value],
             $granted,
         ))]);
+    }
+
+    #[Route('/api/v1/connections', methods: ['POST'])]
+    public function create(Request $request): JsonResponse
+    {
+        [$name, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), null);
+        $connection = $this->created->create($this->request->get(), $this->request->auditContext(AuditActor::Api), $name, $engine, $parameters);
+
+        return new JsonResponse(['connection' => ['id' => $connection->getId()->toRfc4122(), 'name' => $connection->getName(), 'engine' => $connection->getEngine()->value]], 201);
     }
 
     #[Route('/api/v1/connections/{id}/tables', requirements: self::ID, methods: ['GET'])]

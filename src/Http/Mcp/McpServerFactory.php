@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Core\Connection\Engine;
 use App\Http\Api\ApiRequestAccess;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
@@ -74,6 +75,29 @@ final readonly class McpServerFactory
                     'additionalProperties' => false,
                 ],
             );
+
+        if ($this->access->get()->token->getPermissions()->createConnections) {
+            $builder->addTool(
+                [$this->tools, 'createConnection'],
+                name: 'create_connection',
+                description: 'Enregistre une nouvelle connexion dans le compte (chiffrée comme celles créées dans l’interface) ; elle rejoint aussitôt les connexions de ce jeton. Le mot de passe n’est jamais rendu.',
+                annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true),
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'name' => ['type' => 'string', 'description' => 'Nom affiché de la connexion.'],
+                        'engine' => ['type' => 'string', 'enum' => array_map(static fn (Engine $engine): string => $engine->value, Engine::cases()), 'description' => 'Moteur de la base.'],
+                        'host' => ['type' => 'string', 'description' => 'Adresse du serveur.'],
+                        'port' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 65535, 'description' => 'Port (celui par défaut du moteur si absent).'],
+                        'database' => ['type' => 'string', 'description' => 'Nom de la base (numéro de base pour Redis).'],
+                        'username' => ['type' => 'string', 'description' => 'Identifiant.'],
+                        'password' => ['type' => 'string', 'description' => 'Mot de passe.'],
+                    ],
+                    'required' => ['name', 'engine', 'host', 'database', 'username', 'password'],
+                    'additionalProperties' => false,
+                ],
+            );
+        }
 
         if ($writes) {
             $builder->addTool(

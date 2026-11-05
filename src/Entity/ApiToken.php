@@ -176,6 +176,14 @@ final class ApiToken
         $this->connectionIds = self::normalizeConnections($connectionIds);
     }
 
+    /**
+     * Ajoute une connexion à la liste (celle que le jeton vient de créer lui-même). Sans effet si elle y est déjà.
+     */
+    public function grantConnection(Uuid $connectionId): void
+    {
+        $this->connectionIds = self::normalizeConnections([...$this->connectionIds, $connectionId->toRfc4122()]);
+    }
+
     public function getPermissions(): TokenPermissions
     {
         return new TokenPermissions($this->writeData, $this->writeSchema, $this->createConnections);

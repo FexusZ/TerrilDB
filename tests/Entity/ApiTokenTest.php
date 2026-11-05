@@ -167,6 +167,19 @@ final class ApiTokenTest extends TestCase
         self::assertTrue($token->getPermissions()->canWrite());
     }
 
+    public function testGrantingAConnectionAddsItOnce(): void
+    {
+        $first = Uuid::v7();
+        $second = Uuid::v7();
+        $token = $this->token([$first->toRfc4122()]);
+
+        $token->grantConnection($second);
+        $token->grantConnection($second);
+
+        self::assertSame([$first->toRfc4122(), $second->toRfc4122()], $token->getConnectionIds());
+        self::assertTrue($token->allows($second));
+    }
+
     public function testTheLastUseIsRecordedAtMostOncePerMinute(): void
     {
         $token = $this->token();
