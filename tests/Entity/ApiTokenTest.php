@@ -45,7 +45,7 @@ final class ApiTokenTest extends TestCase
         self::assertSame('v1:AAAAwrapped', $token->getWrappedKey());
         self::assertSame([$other], $token->getConnectionIds());
         self::assertSame('2026-11-01T10:00:00+00:00', $token->getCreatedAt()->format(\DATE_ATOM));
-        self::assertSame('2026-12-01T10:00:00+00:00', $token->getExpiresAt()->format(\DATE_ATOM));
+        self::assertSame('2026-12-01T10:00:00+00:00', $token->getExpiresAt()?->format(\DATE_ATOM));
         self::assertNull($token->getLastUsedAt());
         self::assertTrue($token->belongsTo($owner));
         self::assertFalse($token->belongsTo($this->user('bob')));
@@ -56,7 +56,7 @@ final class ApiTokenTest extends TestCase
         $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [], new \DateTimeImmutable('2026-11-01T12:00:00+02:00'), new \DateTimeImmutable('2026-12-01T12:00:00+02:00'));
 
         self::assertSame('2026-11-01T10:00:00+00:00', $token->getCreatedAt()->format(\DATE_ATOM));
-        self::assertSame('2026-12-01T10:00:00+00:00', $token->getExpiresAt()->format(\DATE_ATOM));
+        self::assertSame('2026-12-01T10:00:00+00:00', $token->getExpiresAt()?->format(\DATE_ATOM));
     }
 
     public function testExpiresAtItsExpiryInstant(): void
@@ -129,13 +129,21 @@ final class ApiTokenTest extends TestCase
         $this->token([Uuid::v7()->toRfc4122()])->refreshConnections([Uuid::v7()->toRfc4122()]);
     }
 
-    public function testRefreshStillRefusesTooManyConnections(): void
+    public function testRefreshHasNoCeilingOnTheNumberOfConnections(): void
     {
         $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [Uuid::v7()->toRfc4122()], new \DateTimeImmutable(self::NOW), new \DateTimeImmutable('2026-12-01T10:00:00+00:00'), allConnections: true);
 
-        $this->expectException(InvalidApiTokenDefinitionException::class);
+        $token->refreshConnections(array_map(static fn (): string => Uuid::v7()->toRfc4122(), range(1, 120)));
 
-        $token->refreshConnections(array_map(static fn (): string => Uuid::v7()->toRfc4122(), range(1, 51)));
+        self::assertCount(120, $token->getConnectionIds());
+    }
+
+    public function testATokenWithoutExpiryNeverExpires(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [], new \DateTimeImmutable(self::NOW), null);
+
+        self::assertNull($token->getExpiresAt());
+        self::assertFalse($token->isExpired(new \DateTimeImmutable('2126-01-01T00:00:00+00:00')));
     }
 
     public function testTheLastUseIsRecordedAtMostOncePerMinute(): void
@@ -202,12 +210,11 @@ final class ApiTokenTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    public function testDeduplicatesConnectionsAndBoundsTheirNumber(): void
+    public function testDeduplicatesConnectionsWithoutBoundingTheirNumber(): void
     {
         $id = Uuid::v7()->toRfc4122();
         self::assertSame([$id], $this->token([$id, $id])->getConnectionIds());
 
-        $this->expectException(InvalidApiTokenDefinitionException::class);
-        $this->token(array_map(static fn (): string => Uuid::v7()->toRfc4122(), range(1, 51)));
+        self::assertCount(120, $this->token(array_map(static fn (): string => Uuid::v7()->toRfc4122(), range(1, 120)))->getConnectionIds());
     }
 }

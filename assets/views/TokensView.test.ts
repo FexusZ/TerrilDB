@@ -144,6 +144,30 @@ describe('TokensView', () => {
     wrapper.unmount()
   })
 
+  it('creates a token that never expires', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('#token-name').setValue('Assistant')
+    await wrapper.get('input[value="c1"]').setValue(true)
+    await wrapper.get('#token-lifetime').setValue('never')
+    mocked.mockResolvedValueOnce({ token: 'tdb_0123_secret', tokenInfo: token('n', 'Assistant', { expiresAt: null }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', connectionIds: ['c1'], neverExpires: true })
+    wrapper.unmount()
+  })
+
+  it('shows a token without expiry as such, still refreshable', async () => {
+    const wrapper = await mountView([token('a', 'Pour toujours', { expiresAt: null, allConnections: true })])
+
+    const row = wrapper.get('li.token')
+    expect(row.text()).toContain('N’expire jamais')
+    expect(row.text()).not.toContain('Expiré')
+    expect(row.find('button.refresh').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('refuses to create a token without any connection chosen', async () => {
     const wrapper = await mountView()
     await wrapper.get('#token-name').setValue('Assistant')

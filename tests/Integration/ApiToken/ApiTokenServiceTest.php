@@ -77,7 +77,7 @@ final class ApiTokenServiceTest extends DatabaseTestCase
         self::assertMatchesRegularExpression('/^tdb_[0-9a-f]{32}_[A-Za-z0-9_-]{43}$/D', $issued->token);
         self::assertSame('Assistant', $issued->entity->getName());
         self::assertTrue($issued->entity->allows($this->connectionId));
-        self::assertSame('2026-12-01T10:00:00+00:00', $issued->entity->getExpiresAt()->format(\DATE_ATOM));
+        self::assertSame('2026-12-01T10:00:00+00:00', $issued->entity->getExpiresAt()?->format(\DATE_ATOM));
     }
 
     public function testNeitherTheSecretNorTheKeyIsStored(): void
@@ -149,6 +149,15 @@ final class ApiTokenServiceTest extends DatabaseTestCase
         $this->expectException(InvalidApiTokenException::class);
 
         $this->service->authenticate($token);
+    }
+
+    public function testATokenWithoutLifetimeNeverExpires(): void
+    {
+        $issued = $this->service->issue($this->alice, $this->key, 'Assistant', [$this->connectionId], null);
+        $this->clock->sleep(86400 * 365 * 10);
+
+        self::assertNull($issued->entity->getExpiresAt());
+        self::assertSame($this->connectionId->toRfc4122(), $this->service->authenticate($issued->token)->token->getConnectionIds()[0]);
     }
 
     public function testRefusesATokenWhoseWrappedKeyWasTamperedWith(): void

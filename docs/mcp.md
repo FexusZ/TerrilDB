@@ -1,7 +1,7 @@
 # Serveur MCP (lecture seule)
 
 Adresse : `POST /mcp` (transport HTTP « streamable »), avec `Authorization: Bearer <jeton>`. C'est le même jeton que
-pour l'API REST (voir `docs/api.md`) : il n'ouvre que les connexions choisies à sa création, expire, et disparaît au
+pour l'API REST (voir `docs/api.md`) : il n'ouvre que les connexions choisies à sa création, expire (sauf choix contraire), et disparaît au
 changement de mot de passe. Chaque requête est authentifiée par le jeton, session MCP ou non ; une session MCP est liée
 au jeton qui l'a ouverte (un autre jeton ne peut pas la reprendre).
 

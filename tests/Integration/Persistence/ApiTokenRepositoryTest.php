@@ -59,9 +59,21 @@ final class ApiTokenRepositoryTest extends DatabaseTestCase
         self::assertSame('CI', $found->getName());
         self::assertSame('v1:AAAAwrapped', $found->getWrappedKey());
         self::assertSame($token->getConnectionIds(), $found->getConnectionIds());
-        self::assertSame('2026-12-01T10:00:00+00:00', $found->getExpiresAt()->format(\DATE_ATOM));
+        self::assertSame('2026-12-01T10:00:00+00:00', $found->getExpiresAt()?->format(\DATE_ATOM));
         self::assertSame('2026-11-02T08:00:00+00:00', $found->getLastUsedAt()?->format(\DATE_ATOM));
         self::assertTrue($found->matches(self::VERIFIER));
+    }
+
+    public function testATokenWithoutExpiryComesBackWithoutExpiry(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user('alice'), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [Uuid::v7()->toRfc4122()], new \DateTimeImmutable('2026-11-01T10:00:00Z'), null);
+        $this->repository->save($token);
+        $this->entityManager->clear();
+
+        $found = $this->repository->find($token->getId());
+
+        self::assertNotNull($found);
+        self::assertNull($found->getExpiresAt());
     }
 
     public function testTokensAreListedNewestFirstForTheirOwnerOnly(): void
