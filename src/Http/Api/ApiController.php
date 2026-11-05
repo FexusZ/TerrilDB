@@ -25,9 +25,9 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * L'API REST en lecture seule. Elle n'ouvre que les connexions listées sur le jeton, une connexion hors liste
- * étant indiscernable d'une connexion inexistante. Elle ne connaît qu'un mode, la lecture seule : aucune
- * confirmation ne lève un refus du garde.
+ * L'API REST. Elle n'ouvre que les connexions listées sur le jeton, une connexion hors liste étant indiscernable
+ * d'une connexion inexistante. `/query` reste en lecture seule pour tous les jetons (aucune confirmation ne lève un
+ * refus du garde) ; `/execute` écrit, dans les seuls droits du jeton et avec confirmation explicite du destructif.
  */
 final readonly class ApiController
 {
@@ -97,6 +97,23 @@ final readonly class ApiController
         );
 
         $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options));
+
+        return new JsonResponse(ResultPresenter::present($result));
+    }
+
+    #[Route('/api/v1/connections/{id}/execute', requirements: self::ID, methods: ['POST'])]
+    public function execute(string $id, Request $request): JsonResponse
+    {
+        $input = JsonInput::fromRequest($request);
+        $sql = $input->string('sql');
+        $confirmed = $input->bool('confirmed', false);
+        $defaults = new QueryOptions();
+        $options = $this->request->get()->writeOptions(
+            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
+        );
+
+        $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options, $confirmed));
 
         return new JsonResponse(ResultPresenter::present($result));
     }

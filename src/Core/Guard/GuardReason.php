@@ -19,4 +19,5 @@ enum GuardReason: string
     case UnsupportedStatement = 'unsupported_statement';
     case DestructiveWithoutWhere = 'destructive_without_where';
     case DestructiveStatement = 'destructive_statement';
+    case WriteNotPermitted = 'write_not_permitted';
 }

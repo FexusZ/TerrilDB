@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Guard;
 
 use App\Core\Query\QueryMode;
+use App\Core\Query\WritePermissions;
 
 /**
  * Le garde des commandes Redis. Contrairement au SQL, on ne cherche pas ce qui est interdit : seule une liste blanche
@@ -76,7 +77,7 @@ final class RedisCommandGuard
         return $names;
     }
 
-    public function check(string $text, QueryMode $mode): GuardVerdict
+    public function check(string $text, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true)): GuardVerdict
     {
         if (\strlen($text) > self::MAX_LENGTH_BYTES) {
             return GuardVerdict::refused(GuardReason::TooLong);
@@ -118,6 +119,9 @@ final class RedisCommandGuard
         if (\in_array($name, self::WRITE, true)) {
             if (QueryMode::ReadOnly === $mode) {
                 return GuardVerdict::refused(GuardReason::NotReadOnly, StatementKind::Write);
+            }
+            if (!$writes->data) {
+                return GuardVerdict::refused(GuardReason::WriteNotPermitted, StatementKind::Write);
             }
 
             return 'FLUSHDB' === $name

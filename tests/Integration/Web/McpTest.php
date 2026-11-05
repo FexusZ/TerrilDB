@@ -20,14 +20,17 @@ final class McpTest extends WebApiTestCase
     /**
      * Un compte avec deux connexions et un jeton qui n'ouvre que la première, puis un client sans cookie.
      */
-    private function prepare(string $envVar = 'TARGET_POSTGRES_URL'): void
+    /**
+     * @param array<string, bool> $rights droits du jeton (writeData, writeSchema, createConnections)
+     */
+    private function prepare(string $envVar = 'TARGET_POSTGRES_URL', array $rights = []): void
     {
         $this->seedAndLogin();
         $parameters = TargetDatabase::parameters($envVar);
         $body = ['name' => 'Target', 'engine' => TargetDatabase::engine($envVar)->value, 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
         $this->connectionId = $this->idOf($this->call('POST', '/web/connections', $body)['connection']);
         $this->otherConnectionId = $this->idOf($this->call('POST', '/web/connections', ['name' => 'Other'] + $body)['connection']);
-        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId]]);
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId]] + $rights);
         self::assertIsString($created['token']);
         $this->token = $created['token'];
         $this->client->getCookieJar()->clear();
@@ -202,6 +205,84 @@ final class McpTest extends WebApiTestCase
             self::assertTrue(self::obj($tool['annotations'])['readOnlyHint'], self::str($tool['name']));
             self::assertFalse(self::obj($tool['annotations'])['destructiveHint'], self::str($tool['name']));
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function toolNames(): array
+    {
+        $message = $this->post(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+        $names = array_map(static fn (mixed $tool): string => self::str(self::obj($tool)['name']), self::list(self::obj($message['result'])['tools']));
+        sort($names);
+
+        return $names;
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private static function list(mixed $value): array
+    {
+        self::assertIsArray($value);
+
+        return array_values($value);
+    }
+
+    public function testAPlainTokenDoesNotSeeTheWritingTool(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('execute_statement', $this->toolNames());
+    }
+
+    public function testAWritingTokenSeesAnExplicitlyDestructiveTool(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+
+        self::assertContains('execute_statement', $this->toolNames());
+        $message = $this->post(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
+        foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
+            $tool = self::obj($tool);
+            if ('execute_statement' === $tool['name']) {
+                self::assertFalse(self::obj($tool['annotations'])['readOnlyHint']);
+                self::assertTrue(self::obj($tool['annotations'])['destructiveHint']);
+            } else {
+                self::assertTrue(self::obj($tool['annotations'])['readOnlyHint'], self::str($tool['name']));
+            }
+        }
+    }
+
+    public function testAWritingTokenExecutesAWriteAndRunQueryStaysReadOnly(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+
+        $done = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => 'update categories set name = name where id = 1']));
+        self::assertSame(1, $done['affectedRows']);
+
+        $refused = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'update categories set name = name where id = 1']);
+        self::assertTrue($refused['isError']);
+        self::assertStringContainsString('not_read_only', self::str(self::obj(self::first($refused['content']))['text']));
+    }
+
+    public function testExecuteStatementAsksForConfirmationAndRefusesMissingRights(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+
+        $asked = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => 'update categories set name = name']);
+        self::assertTrue($asked['isError']);
+        self::assertStringContainsString('confirmation_required', self::str(self::obj(self::first($asked['content']))['text']));
+
+        $confirmed = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => 'update categories set name = name', 'confirmed' => true]));
+        self::assertGreaterThan(0, $confirmed['affectedRows']);
+
+        $schema = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => 'create table sneaky (a int)']);
+        self::assertTrue($schema['isError']);
+        self::assertStringContainsString('write_not_permitted', self::str(self::obj(self::first($schema['content']))['text']));
     }
 
     public function testListsOnlyTheGrantedConnections(): void

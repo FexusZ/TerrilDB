@@ -21,6 +21,14 @@ final class QueryOptionsTest extends TestCase
         self::assertSame(1_000, $options->maxRows);
     }
 
+    public function testEveryWriteRightIsGrantedByDefaultButOnlyMattersInReadWriteMode(): void
+    {
+        $options = new QueryOptions();
+
+        self::assertTrue($options->writes->data);
+        self::assertTrue($options->writes->schema);
+    }
+
     public function testKeepsWhatWasGiven(): void
     {
         $options = new QueryOptions(QueryMode::ReadWrite, 5_000, 50);

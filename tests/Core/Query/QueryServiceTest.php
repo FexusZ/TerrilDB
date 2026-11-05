@@ -16,6 +16,7 @@ use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
 use App\Core\Query\QueryService;
+use App\Core\Query\WritePermissions;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
 use PHPUnit\Framework\TestCase;
@@ -50,6 +51,19 @@ final class QueryServiceTest extends TestCase
     private function service(): QueryService
     {
         return new QueryService(new StatementGuard());
+    }
+
+    public function testTheWriteRightsOfTheOptionsAreEnforcedBeforeRunning(): void
+    {
+        $options = new QueryOptions(QueryMode::ReadWrite, writes: new WritePermissions(data: true));
+
+        try {
+            $this->service()->execute($this->target(), 'create table t (a int)', $options);
+            self::fail('Expected a refusal.');
+        } catch (QueryRefusedException $refused) {
+            self::assertSame(GuardReason::WriteNotPermitted, $refused->reason);
+        }
+        self::assertSame([], $this->runner->calls);
     }
 
     public function testAnAllowedStatementIsRunWithItsKindAndOptions(): void
