@@ -9,6 +9,7 @@ use App\ApiToken\Exception\ApiTokenPermissionException;
 use App\ApiToken\Exception\InvalidApiTokenException;
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -60,6 +61,7 @@ final class ErrorMapper
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),
             $error instanceof ApiTokenPermissionException => new ErrorResponse(403, 'permission_denied'),
+            $error instanceof ForbiddenTargetHostException => new ErrorResponse(403, 'forbidden_target'),
             $error instanceof NotAnAdministratorException => new ErrorResponse(403, 'forbidden'),
             $error instanceof InvalidInvitationTokenException => new ErrorResponse(403, 'invalid_invitation'),
             $error instanceof InvalidUserException,

@@ -18,6 +18,12 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(403, 'invalid_recovery'))).toContain('phrase')
   })
 
+  it('explains that an address of the server itself is reserved to administrators', () => {
+    const message = messageFor(new ApiError(403, 'forbidden_target'))
+    expect(message).toContain('serveur')
+    expect(message).toContain('administrateur')
+  })
+
   it('says when a plan is not available for the engine', () => {
     expect(messageFor(new ApiError(501, 'plan_unavailable'))).toContain('plan')
   })

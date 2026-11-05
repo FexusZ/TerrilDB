@@ -20,17 +20,20 @@ final readonly class TargetOpener
     public function __construct(
         private ConnectionManager $connections,
         private DriverRegistry $drivers,
+        private TargetHostPolicy $hosts,
     ) {
     }
 
     /**
      * @throws Exception\ConnectionNotFoundException
+     * @throws Exception\ForbiddenTargetHostException
      * @throws TargetConnectionFailedException
      */
     public function open(User $owner, DerivedKey $key, Uuid $id): TargetConnection
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
+        $this->hosts->assertAllowed($owner, $parameters);
 
         return $this->drivers->for($engine)->connect($engine, $parameters);
     }

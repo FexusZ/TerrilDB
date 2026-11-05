@@ -6,6 +6,7 @@ namespace App\Tests\Integration\Connection;
 
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Connection\TargetHostPolicy;
 use App\Connection\TargetOpener;
 use App\Core\Connection\Engine;
 use App\Core\Driver\DriverRegistry;
@@ -47,6 +48,14 @@ final class TargetOpenerTest extends DatabaseTestCase
         $this->key = new DerivedKey(random_bytes(DerivedKey::LENGTH));
     }
 
+    private function hostPolicy(): TargetHostPolicy
+    {
+        $policy = self::getContainer()->get(TargetHostPolicy::class);
+        self::assertInstanceOf(TargetHostPolicy::class, $policy);
+
+        return $policy;
+    }
+
     private function user(string $name): User
     {
         $user = new User(
@@ -78,7 +87,7 @@ final class TargetOpenerTest extends DatabaseTestCase
         $saved = $this->manager->create($this->alice, $this->key, 'Target', $engine, TargetDatabase::parameters($envVar));
 
         try {
-            $target = (new TargetOpener($this->manager, $this->drivers))->open($this->alice, $this->key, $saved->getId());
+            $target = (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId());
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }
@@ -102,7 +111,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(ConnectionNotFoundException::class);
 
-        (new TargetOpener($this->manager, $this->drivers))->open($bob, $this->key, $saved->getId());
+        (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($bob, $this->key, $saved->getId());
     }
 
     public function testTheWrongKeyCannotOpenIt(): void
@@ -111,7 +120,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(DecryptionFailedException::class);
 
-        (new TargetOpener($this->manager, $this->drivers))->open($this->alice, new DerivedKey(random_bytes(DerivedKey::LENGTH)), $saved->getId());
+        (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($this->alice, new DerivedKey(random_bytes(DerivedKey::LENGTH)), $saved->getId());
     }
 
     public function testASavedWrongPasswordIsReportedAsAFailedConnection(): void
@@ -121,7 +130,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(TargetConnectionFailedException::class);
 
-        (new TargetOpener($this->manager, $this->drivers))->open($this->alice, $this->key, $saved->getId());
+        (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId());
     }
 
     public function testAnEngineWithoutDriverIsRefused(): void
@@ -130,6 +139,6 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(UnsupportedEngineException::class);
 
-        (new TargetOpener($this->manager, new DriverRegistry([])))->open($this->alice, $this->key, $saved->getId());
+        (new TargetOpener($this->manager, new DriverRegistry([]), $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId());
     }
 }
