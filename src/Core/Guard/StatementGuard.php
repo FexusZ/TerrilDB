@@ -6,6 +6,7 @@ namespace App\Core\Guard;
 
 use App\Core\Connection\Engine;
 use App\Core\Query\QueryMode;
+use App\Core\Query\WritePermissions;
 
 /**
  * Premier rempart avant d'envoyer une instruction à une cible : une instruction à la fois, classée par son
@@ -51,10 +52,10 @@ final class StatementGuard
         $this->redis = $redis ?? new RedisCommandGuard();
     }
 
-    public function check(string $sql, Engine $engine, QueryMode $mode): GuardVerdict
+    public function check(string $sql, Engine $engine, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true)): GuardVerdict
     {
         if (!$engine->speaksSql()) {
-            return $this->redis->check($sql, $mode);
+            return $this->redis->check($sql, $mode, $writes);
         }
 
         if (\strlen($sql) > self::MAX_LENGTH_BYTES) {
@@ -89,7 +90,7 @@ final class StatementGuard
 
         return QueryMode::ReadOnly === $mode
             ? $this->checkReadOnly($statement, $kind)
-            : $this->checkReadWrite($statement, $kind);
+            : $this->checkReadWrite($statement, $kind, $writes);
     }
 
     private function kind(ScannedStatement $statement): ?StatementKind
@@ -144,9 +145,19 @@ final class StatementGuard
         return GuardVerdict::allowed($kind);
     }
 
-    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind): GuardVerdict
+    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes): GuardVerdict
     {
         $first = $statement->first();
+
+        // Un refus faute de droit est définitif et passe avant toute demande de confirmation. CALL et DO exécutent du
+        // code opaque : ils exigent le droit sur la structure, le plus large.
+        $opaque = \in_array($first, ['CALL', 'DO'], true);
+        if (($opaque || StatementKind::Schema === $kind) && !$writes->schema) {
+            return GuardVerdict::refused(GuardReason::WriteNotPermitted, $kind);
+        }
+        if (StatementKind::Write === $kind && !$opaque && !$writes->data) {
+            return GuardVerdict::refused(GuardReason::WriteNotPermitted, $kind);
+        }
 
         if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true)) {
             return GuardVerdict::needsConfirmation($kind, GuardReason::DestructiveStatement);

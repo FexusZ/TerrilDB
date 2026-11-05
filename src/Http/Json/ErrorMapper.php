@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Json;
 
 use App\ApiToken\Exception\ApiTokenNotFoundException;
+use App\ApiToken\Exception\ApiTokenPermissionException;
 use App\ApiToken\Exception\InvalidApiTokenException;
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
@@ -58,6 +59,7 @@ final class ErrorMapper
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),
+            $error instanceof ApiTokenPermissionException => new ErrorResponse(403, 'permission_denied'),
             $error instanceof NotAnAdministratorException => new ErrorResponse(403, 'forbidden'),
             $error instanceof InvalidInvitationTokenException => new ErrorResponse(403, 'invalid_invitation'),
             $error instanceof InvalidUserException,

@@ -9,6 +9,7 @@ use App\Core\Guard\GuardReason;
 use App\Core\Guard\RedisCommandGuard;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\QueryMode;
+use App\Core\Query\WritePermissions;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -123,6 +124,17 @@ final class RedisCommandGuardTest extends TestCase
     public function testAnUnknownCommandIsUnsupported(): void
     {
         self::assertSame(GuardReason::UnsupportedStatement, $this->guard()->check('frobnicate k', QueryMode::ReadWrite)->reason);
+    }
+
+    public function testRedisWritesNeedTheDataRight(): void
+    {
+        $guard = $this->guard();
+
+        self::assertSame(Decision::Allowed, $guard->check('set a 1', QueryMode::ReadWrite, new WritePermissions(data: true))->decision);
+        self::assertSame(GuardReason::WriteNotPermitted, $guard->check('set a 1', QueryMode::ReadWrite, new WritePermissions(schema: true))->reason);
+        self::assertSame(GuardReason::WriteNotPermitted, $guard->check('flushdb', QueryMode::ReadWrite, new WritePermissions())->reason);
+        self::assertSame(Decision::NeedsConfirmation, $guard->check('flushdb', QueryMode::ReadWrite, new WritePermissions(data: true))->decision);
+        self::assertSame(Decision::Allowed, $guard->check('get a', QueryMode::ReadWrite, new WritePermissions())->decision);
     }
 
     public function testFlushingTheDatabaseAsksForConfirmation(): void

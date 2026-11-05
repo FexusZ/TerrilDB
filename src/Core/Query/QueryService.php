@@ -32,7 +32,7 @@ final readonly class QueryService
      */
     public function execute(TargetConnection $target, string $sql, QueryOptions $options = new QueryOptions(), bool $confirmed = false): QueryResult
     {
-        $verdict = $this->guard->check($sql, $target->engine, $options->mode);
+        $verdict = $this->guard->check($sql, $target->engine, $options->mode, $options->writes);
 
         if (Decision::Refused === $verdict->decision || null === $verdict->kind) {
             throw new QueryRefusedException($verdict->reason ?? GuardReason::UnsupportedStatement);

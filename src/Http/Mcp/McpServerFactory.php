@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Mcp;
 
+use App\Http\Api\ApiRequestAccess;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Session\FileSessionStore;
@@ -16,9 +17,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 final readonly class McpServerFactory
 {
     private const INSTRUCTIONS = 'TerrilDB donne un accès en lecture seule à des bases de données. Commencez par list_connections, puis list_tables et describe_table pour comprendre le schéma avant d’écrire une requête avec run_query. Une seule instruction à la fois ; toute écriture est refusée.';
+    private const WRITE_INSTRUCTIONS = ' Ce jeton peut aussi modifier : execute_statement exécute UNE instruction d’écriture dans les seuls droits du jeton ; une instruction destructrice (UPDATE ou DELETE sans WHERE, DROP, TRUNCATE…) n’est exécutée que si l’utilisateur l’a demandé expressément et que confirmed vaut true. run_query reste en lecture seule.';
 
     public function __construct(
         private McpTools $tools,
+        private ApiRequestAccess $access,
         #[Autowire('%kernel.cache_dir%/mcp-sessions')] private string $sessionDirectory,
     ) {
     }
@@ -28,9 +31,10 @@ final readonly class McpServerFactory
         $readOnly = new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true);
         $connection = ['type' => 'string', 'description' => 'Identifiant (UUID) d’une connexion rendu par list_connections.'];
 
-        return Server::builder()
+        $writes = $this->access->get()->token->getPermissions()->canWrite();
+        $builder = Server::builder()
             ->setServerInfo('TerrilDB', '1.0.0')
-            ->setInstructions(self::INSTRUCTIONS)
+            ->setInstructions(self::INSTRUCTIONS.($writes ? self::WRITE_INSTRUCTIONS : ''))
             ->setSession(new FileSessionStore($this->sessionDirectory))
             ->addTool(
                 [$this->tools, 'listConnections'],
@@ -69,7 +73,29 @@ final readonly class McpServerFactory
                     'required' => ['connection', 'sql'],
                     'additionalProperties' => false,
                 ],
-            )
-            ->build();
+            );
+
+        if ($writes) {
+            $builder->addTool(
+                [$this->tools, 'executeStatement'],
+                name: 'execute_statement',
+                description: 'Exécute UNE instruction SQL qui modifie (INSERT, UPDATE, DELETE, et selon les droits du jeton CREATE, ALTER, DROP…), validée si elle réussit. Les droits du jeton bornent ce qui passe ; un refus dit « write_not_permitted ». Une instruction destructrice (UPDATE ou DELETE sans WHERE, DROP, TRUNCATE…) répond « confirmation_required » : ne renvoyez-la avec confirmed=true que si l’utilisateur l’a demandé expressément.',
+                annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true),
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'sql' => ['type' => 'string', 'description' => 'Une instruction SQL d’écriture, dans le dialecte du moteur de la connexion.'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Vrai pour confirmer une instruction destructrice que l’utilisateur a demandée expressément (faux par défaut).'],
+                        'maxRows' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000, 'description' => 'Nombre maximal de lignes rendues (1000 par défaut).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => 600000, 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
+                    ],
+                    'required' => ['connection', 'sql'],
+                    'additionalProperties' => false,
+                ],
+            );
+        }
+
+        return $builder->build();
     }
 }

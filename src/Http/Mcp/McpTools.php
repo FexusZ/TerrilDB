@@ -21,7 +21,8 @@ use Mcp\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Les outils MCP : les mêmes opérations que l'API REST, en lecture seule, pour les connexions du jeton. Un échec
+ * Les outils MCP : les mêmes opérations que l'API REST pour les connexions du jeton (lecture seule, sauf
+ * `execute_statement`, que seuls les jetons qui ont un droit d'écriture voient). Un échec
  * est rendu à l'assistant comme une erreur d'outil (code stable, motif du refus), jamais comme un détail interne.
  */
 final readonly class McpTools
@@ -84,6 +85,19 @@ final readonly class McpTools
             $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function executeStatement(string $connection, string $sql, ?bool $confirmed = null, ?int $maxRows = null, ?int $timeoutMs = null): array
+    {
+        return $this->guard(function () use ($connection, $sql, $confirmed, $maxRows, $timeoutMs): array {
+            $defaults = new QueryOptions();
+            $options = $this->request->get()->writeOptions($timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+
+            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options, $confirmed ?? false)));
         });
     }
 

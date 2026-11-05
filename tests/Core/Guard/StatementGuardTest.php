@@ -11,6 +11,7 @@ use App\Core\Guard\GuardVerdict;
 use App\Core\Guard\StatementGuard;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\QueryMode;
+use App\Core\Query\WritePermissions;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -251,6 +252,60 @@ final class StatementGuardTest extends TestCase
         $this->assertAllowed('update t set a = 1 where id = 3', $engine, QueryMode::ReadWrite, StatementKind::Write);
         $this->assertAllowed('delete from t where id = 3', $engine, QueryMode::ReadWrite, StatementKind::Write);
         $this->assertAllowed('create table t (a int)', $engine, QueryMode::ReadWrite, StatementKind::Schema);
+    }
+
+    private function checkWith(string $sql, Engine $engine, WritePermissions $writes): GuardVerdict
+    {
+        return (new StatementGuard())->check($sql, $engine, QueryMode::ReadWrite, $writes);
+    }
+
+    #[DataProvider('engines')]
+    public function testDataRightsAllowRowChangesButNotTheSchema(Engine $engine): void
+    {
+        $data = new WritePermissions(data: true);
+
+        foreach (['insert into t values (1)', 'update t set a = 1 where id = 3', 'delete from t where id = 3', 'select 1'] as $sql) {
+            self::assertSame(Decision::Allowed, $this->checkWith($sql, $engine, $data)->decision, $sql);
+        }
+        foreach (['create table t (a int)', 'drop table t', 'alter table t add b int', 'truncate table t', 'grant all on t to u', 'call do_things()'] as $sql) {
+            $verdict = $this->checkWith($sql, $engine, $data);
+            self::assertSame(Decision::Refused, $verdict->decision, $sql);
+            self::assertSame(GuardReason::WriteNotPermitted, $verdict->reason, $sql);
+        }
+    }
+
+    #[DataProvider('engines')]
+    public function testSchemaRightsAllowTheSchemaButNotRowChanges(Engine $engine): void
+    {
+        $schema = new WritePermissions(schema: true);
+
+        self::assertSame(Decision::Allowed, $this->checkWith('create table t (a int)', $engine, $schema)->decision);
+        self::assertSame(Decision::NeedsConfirmation, $this->checkWith('drop table t', $engine, $schema)->decision);
+        foreach (['insert into t values (1)', 'update t set a = 1 where id = 3', 'delete from t where id = 3', 'with x as (select 1) insert into t select * from x'] as $sql) {
+            $verdict = $this->checkWith($sql, $engine, $schema);
+            self::assertSame(Decision::Refused, $verdict->decision, $sql);
+            self::assertSame(GuardReason::WriteNotPermitted, $verdict->reason, $sql);
+        }
+    }
+
+    #[DataProvider('engines')]
+    public function testWithoutAnyWriteRightOnlyReadsPassInReadWriteMode(Engine $engine): void
+    {
+        $none = new WritePermissions();
+
+        self::assertSame(Decision::Allowed, $this->checkWith('select 1', $engine, $none)->decision);
+        foreach (['insert into t values (1)', 'create table t (a int)', 'delete from t'] as $sql) {
+            self::assertSame(GuardReason::WriteNotPermitted, $this->checkWith($sql, $engine, $none)->reason, $sql);
+        }
+    }
+
+    #[DataProvider('engines')]
+    public function testARefusalForMissingRightsIsNotLiftedByConfirmationLogic(Engine $engine): void
+    {
+        $data = new WritePermissions(data: true);
+
+        self::assertSame(GuardReason::WriteNotPermitted, $this->checkWith('drop table t', $engine, $data)->reason);
+        self::assertSame(Decision::NeedsConfirmation, $this->checkWith('delete from t', $engine, $data)->decision);
     }
 
     #[DataProvider('engines')]
