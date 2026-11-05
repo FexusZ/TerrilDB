@@ -70,8 +70,17 @@ final class RecoveryPhraseTest extends TestCase
 
         self::assertSame($one->unlockSecret(), RecoveryPhrase::parse($one->toString())->unlockSecret());
         self::assertNotSame($one->unlockSecret(), $other->unlockSecret());
-        self::assertDoesNotMatchRegularExpression('/[0-9A-Z]{4}-/', $one->unlockSecret());
         self::assertSame(43, \strlen($one->unlockSecret()));
+    }
+
+    public function testTheUnlockSecretDoesNotContainThePhrase(): void
+    {
+        $text = 'ABCD-EFGH-JKMN-PQRS-TVWX-YZ01-2345-6789';
+        $secret = RecoveryPhrase::parse($text)->unlockSecret();
+
+        self::assertStringNotContainsString($text, $secret);
+        self::assertStringNotContainsString(str_replace('-', '', $text), $secret);
+        self::assertStringNotContainsString('ABCD-EFGH', $secret);
     }
 
     public function testDoesNotLeakThroughDebuggingOrSerialization(): void
