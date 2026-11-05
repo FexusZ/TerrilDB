@@ -151,14 +151,65 @@ final class TokensWebTest extends WebApiTestCase
         self::assertFalse(self::arrayOf($created['tokenInfo'])['allConnections']);
     }
 
-    public function testATokenForAllConnectionsNeedsAtLeastOneConnection(): void
+    public function testATokenForAllConnectionsMayStartWithoutAny(): void
     {
         $this->seedAndLogin();
 
-        $body = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+
+        self::assertSame(201, $this->statusCode());
+        self::assertSame([], self::arrayOf($created['tokenInfo'])['connectionIds']);
+        $id = self::arrayOf($created['tokenInfo'])['id'];
+        self::assertIsString($id);
+        $connection = $this->createConnection();
+        $refreshed = $this->call('POST', '/web/tokens/'.$id.'/refresh');
+        self::assertSame([$connection], self::arrayOf($refreshed['tokenInfo'])['connectionIds']);
+    }
+
+    public function testATokenIsReadOnlyByDefaultAndSaysSo(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$connection]]);
+
+        $info = self::arrayOf($created['tokenInfo']);
+        self::assertFalse($info['writeData']);
+        self::assertFalse($info['writeSchema']);
+        self::assertFalse($info['createConnections']);
+    }
+
+    public function testCreatesATokenWithPermissionsAndNoConnection(): void
+    {
+        $this->seedAndLogin();
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [], 'writeData' => true, 'writeSchema' => true, 'createConnections' => true]);
+
+        self::assertSame(201, $this->statusCode());
+        $info = self::arrayOf($created['tokenInfo']);
+        self::assertTrue($info['writeData']);
+        self::assertTrue($info['writeSchema']);
+        self::assertTrue($info['createConnections']);
+        self::assertSame([], $info['connectionIds']);
+    }
+
+    public function testWriteRightsAloneDoNotAllowAnEmptyToken(): void
+    {
+        $this->seedAndLogin();
+
+        $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [], 'writeData' => true]);
 
         self::assertSame(422, $this->statusCode());
-        self::assertSame('invalid_input', $body['error']);
+    }
+
+    public function testPermissionsMustBeBooleans(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$connection], 'writeData' => 'oui']);
+
+        self::assertSame(400, $this->statusCode());
     }
 
     public function testRefreshAddsConnectionsCreatedSince(): void

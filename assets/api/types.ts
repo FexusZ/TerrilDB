@@ -136,6 +136,9 @@ export interface ApiTokenInfo {
   name: string
   connectionIds: string[]
   allConnections: boolean
+  writeData: boolean
+  writeSchema: boolean
+  createConnections: boolean
   createdAt: string
   /** Nul : le jeton n'expire jamais. */
   expiresAt: string | null
@@ -150,6 +153,9 @@ export interface ApiTokenInput {
   lifetimeDays?: number
   /** Vrai : pas de date d'expiration, `lifetimeDays` est alors ignoré. */
   neverExpires?: boolean
+  writeData?: boolean
+  writeSchema?: boolean
+  createConnections?: boolean
 }
 
 export type AuditOutcome = 'success' | 'refused' | 'failed'

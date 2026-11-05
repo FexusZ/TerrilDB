@@ -16,6 +16,9 @@ const connections = useConnectionsStore()
 const name = ref('')
 const chosen = ref<string[]>([])
 const everything = ref(false)
+const writeData = ref(false)
+const writeSchema = ref(false)
+const createConnections = ref(false)
 const lifetime = ref('30')
 const error = ref<string | null>(null)
 const listError = ref<string | null>(null)
@@ -47,19 +50,27 @@ onMounted(async () => {
 
 async function create(): Promise<void> {
   error.value = null
-  if (!everything.value && chosen.value.length === 0) {
+  if (!everything.value && !createConnections.value && chosen.value.length === 0) {
     error.value = 'Choisissez au moins une connexion.'
     return
   }
   busy.value = true
   try {
     const validity = lifetime.value === 'never' ? { neverExpires: true } : { lifetimeDays: Number(lifetime.value) }
+    const rights = {
+      ...(writeData.value ? { writeData: true } : {}),
+      ...(writeSchema.value ? { writeSchema: true } : {}),
+      ...(createConnections.value ? { createConnections: true } : {}),
+    }
     fresh.value = await tokens.create(
-      everything.value ? { name: name.value, allConnections: true, ...validity } : { name: name.value, connectionIds: chosen.value, ...validity },
+      everything.value ? { name: name.value, allConnections: true, ...validity, ...rights } : { name: name.value, connectionIds: chosen.value, ...validity, ...rights },
     )
     name.value = ''
     chosen.value = []
     everything.value = false
+    writeData.value = false
+    writeSchema.value = false
+    createConnections.value = false
     copyFailed.value = false
   } catch (failure) {
     error.value = messageFor(failure)
@@ -112,7 +123,7 @@ async function revoke(): Promise<void> {
     </nav>
     <div class="title">
       <h1>Jetons d’accès à l’API</h1>
-      <p>Un jeton donne à un outil (assistant, script, intégration) un accès en lecture seule aux connexions que vous choisissez. Il expire à la date choisie (ou jamais, si vous le décidez), peut être révoqué à tout moment, et il est supprimé si vous changez de mot de passe.</p>
+      <p>Un jeton donne à un outil (assistant, script, intégration) un accès aux connexions que vous choisissez, en lecture seule sauf droits cochés ci-dessous. Il expire à la date choisie (ou jamais, si vous le décidez), peut être révoqué à tout moment, et il est supprimé si vous changez de mot de passe.</p>
     </div>
 
     <p class="usage">API REST : <code>/api/v1</code>. Serveur MCP pour un assistant : <code>/mcp</code>. Dans les deux cas, l’en-tête <code>Authorization: Bearer &lt;jeton&gt;</code>.</p>
@@ -132,8 +143,7 @@ async function revoke(): Promise<void> {
 
     <section class="panel">
       <h2>Créer un jeton</h2>
-      <p v-if="connections.loaded && connections.items.length === 0" class="empty">Créez d’abord une connexion : un jeton ouvre une ou plusieurs connexions. <RouterLink :to="{ name: 'connection-new' }">Ajouter une base</RouterLink></p>
-      <form v-else class="create" @submit.prevent="create">
+      <form class="create" @submit.prevent="create">
         <FormField id="token-name" v-model="name" label="Nom du jeton" hint="Par exemple « Assistant de reporting »." required />
         <fieldset>
           <legend>Connexions autorisées</legend>
@@ -141,9 +151,25 @@ async function revoke(): Promise<void> {
             <input id="token-all" v-model="everything" type="checkbox">
             <span>Toutes mes connexions <small class="hint">(actuelles ; « Actualiser » ajoutera les suivantes)</small></span>
           </label>
+          <p v-if="connections.loaded && connections.items.length === 0" class="hint">Aucune connexion pour l’instant. Cochez « Toutes mes connexions » ou « Créer des connexions » pour créer le jeton quand même, ou <RouterLink :to="{ name: 'connection-new' }">ajoutez une base</RouterLink>.</p>
           <label v-for="connection in everything ? [] : connections.items" :key="connection.id" class="choice">
             <input v-model="chosen" type="checkbox" :value="connection.id">
             <span>{{ connection.name }}</span>
+          </label>
+        </fieldset>
+        <fieldset>
+          <legend>Autorisations (lecture seule par défaut)</legend>
+          <label class="choice">
+            <input id="token-write-data" v-model="writeData" type="checkbox">
+            <span>Modifier les données <small class="hint">(INSERT, UPDATE, DELETE)</small></span>
+          </label>
+          <label class="choice">
+            <input id="token-write-schema" v-model="writeSchema" type="checkbox">
+            <span>Modifier la structure <small class="hint">(CREATE, ALTER, DROP, TRUNCATE…)</small></span>
+          </label>
+          <label class="choice">
+            <input id="token-create-connections" v-model="createConnections" type="checkbox">
+            <span>Créer des connexions <small class="hint">(elles rejoignent automatiquement le jeton)</small></span>
           </label>
         </fieldset>
         <div class="field">
@@ -165,6 +191,12 @@ async function revoke(): Promise<void> {
           <div class="info">
             <p class="token-name">{{ token.name }} <span v-if="expired(token)" class="chip bad">Expiré</span></p>
             <p class="meta"><span v-if="token.allConnections" class="chip">Toutes mes connexions</span> {{ connectionsOf(token) }}</p>
+            <p class="meta rights">
+              <span v-if="!token.writeData && !token.writeSchema && !token.createConnections" class="chip">Lecture seule</span>
+              <span v-if="token.writeData" class="chip warn">Modifie les données</span>
+              <span v-if="token.writeSchema" class="chip warn">Modifie la structure</span>
+              <span v-if="token.createConnections" class="chip warn">Crée des connexions</span>
+            </p>
             <p class="meta">
               <template v-if="token.expiresAt === null">N’expire jamais</template>
               <template v-else>{{ expired(token) ? 'Expiré' : 'Expire' }} le {{ formatDate(token.expiresAt) }}</template> ·
@@ -219,6 +251,8 @@ select { height: 42px; padding: 0 12px; border-radius: var(--radius); border: 1p
 .usage code { font: 400 12px var(--font-mono); color: var(--fg); }
 .meta, .empty, .hint { color: var(--mut); font-size: 13px; }
 .chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px; border: 1px solid var(--line); }
+.chip.warn { color: var(--sec-ink); border-color: var(--sec-line); background: var(--sec-bg); }
+.rights { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip.bad { color: var(--bad); border-color: var(--bad-line); background: var(--bad-bg); }
 .error { padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 </style>

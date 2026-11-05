@@ -7,7 +7,7 @@ import { useTokensStore } from './tokens'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const info = (id: string, name: string): ApiTokenInfo => ({ id, name, connectionIds: ['c1'], allConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2026-12-01T10:00:00+00:00', lastUsedAt: null })
+const info = (id: string, name: string): ApiTokenInfo => ({ id, name, connectionIds: ['c1'], allConnections: false, writeData: false, writeSchema: false, createConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2026-12-01T10:00:00+00:00', lastUsedAt: null })
 
 describe('tokens store', () => {
   beforeEach(() => {
