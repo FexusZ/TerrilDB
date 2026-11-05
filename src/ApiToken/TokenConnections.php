@@ -9,6 +9,7 @@ use App\Audit\AuditAction;
 use App\Audit\AuditContext;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
+use App\Connection\TargetHostPolicy;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Entity\DatabaseConnection;
@@ -24,6 +25,7 @@ final readonly class TokenConnections
     public function __construct(
         private ConnectionManager $connections,
         private ApiTokenRepository $tokens,
+        private TargetHostPolicy $hosts,
         private AuditLog $audit,
     ) {
     }
@@ -37,6 +39,7 @@ final readonly class TokenConnections
             throw ApiTokenPermissionException::create();
         }
 
+        $this->hosts->assertAllowed($access->user, $parameters);
         $connection = $this->connections->create($access->user, $access->key, $name, $engine, $parameters);
         $access->token->grantConnection($connection->getId());
         $this->tokens->save($access->token);

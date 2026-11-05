@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Connection;
 
 use App\Connection\ConnectionManager;
+use App\Connection\TargetHostPolicy;
 use App\Connection\TargetOpener;
 use App\Core\Connection\Engine;
 use App\Core\Driver\DriverRegistry;
@@ -71,7 +72,9 @@ final class QueryEndToEndTest extends DatabaseTestCase
         $saved = $manager->create($user, $key, 'Target', TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
 
         try {
-            $this->target = (new TargetOpener($manager, $drivers))->open($user, $key, $saved->getId());
+            $policy = self::getContainer()->get(TargetHostPolicy::class);
+            self::assertInstanceOf(TargetHostPolicy::class, $policy);
+            $this->target = (new TargetOpener($manager, $drivers, $policy))->open($user, $key, $saved->getId());
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }

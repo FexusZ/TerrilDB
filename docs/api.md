@@ -43,7 +43,8 @@ elle réussit. Attention : la distinction données/structure est faite par un fi
 pour la tenir ; limitez aussi les droits du compte de la base elle-même.
 
 Une connexion créée par jeton est chiffrée par la clé du jeton, rejoint aussitôt la liste de ce jeton, et n'est visible des autres jetons
-« toutes mes connexions » qu'à leur actualisation. Les adresses ne sont pas restreintes (comme dans l'interface web).
+« toutes mes connexions » qu'à leur actualisation. Une adresse qui désigne le serveur de TerrilDB lui-même (boucle locale, lien local, base interne) répond 403 `forbidden_target` sauf si le
+compte est administrateur, comme dans l'interface web ; les autres machines, réseaux privés compris, restent permises.
 
 ## Limites
 

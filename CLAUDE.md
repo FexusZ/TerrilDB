@@ -82,7 +82,12 @@ Une `DatabaseConnection` garde en clair son nom et son moteur (`Engine`) ; hôte
 de passe forment un `ConnectionParameters` (JSON versionné) chiffré d'un bloc avec la clé de l'utilisateur,
 contexte authentifié `connection:<uuid>`. L'entité refuse tout ce qui n'a pas la forme d'un chiffré. Les lectures
 sont toujours cloisonnées par propriétaire (`findOwned`), une connexion d'autrui est indiscernable d'une
-connexion inexistante. `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
+connexion inexistante. `TargetHostPolicy` (+ `HostResolver`) : seul un administrateur peut viser le serveur lui-même (boucle locale
+127.x/::1, lien local 169.254.x/fe80::, 0.0.0.0, `localhost`, et la base interne repérée par l'hôte de `DATABASE_URL`, par nom OU par
+adresse) ; un membre garde les autres machines, réseaux privés compris. Contrôle à la création, à la modification, à l'essai et à
+l'OUVERTURE (`TargetOpener`, donc aussi pour une connexion enregistrée avant la règle), pour l'interface comme pour les jetons ;
+erreur 403 `forbidden_target` sans jamais dire ce que le nom a donné. Limite connue : un nom dont la réponse change entre le contrôle
+et la connexion du driver n'est pas couvert (pas d'épinglage de l'adresse). `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
 illisible bloque le changement.
 
 ## Introspection (src/Core/Driver, src/Core/Schema, src/Driver)
@@ -142,7 +147,7 @@ tous. Un destructif (UPDATE/DELETE sans WHERE, DROP, TRUNCATE…) répond 409 `c
 sans aucun droit d'écriture, 403 `permission_denied`. Limite connue : seul le filtre lexical sépare données et structure
 (un SELECT d'une fonction qui écrit n'est pas retenu en lecture-écriture ; les droits du compte de la base cible restent le dernier rempart).
 `POST /api/v1/connections` (outil MCP `create_connection`, `TokenConnections`) enregistre une connexion chiffrée par la clé du jeton,
-avec les mêmes adresses libres que l'interface web, l'ajoute à la liste du jeton et journalise `connection.created` (acteur api/mcp).
+sous la même règle d'adresses que l'interface web (`TargetHostPolicy`), l'ajoute à la liste du jeton et journalise `connection.created` (acteur api/mcp).
 Un jeton peut naître sans connexion s'il est « toutes » ou autorisé à en créer.
 Un jeton peut être émis pour « toutes mes connexions » (`allConnections: true` à la création, colonne `all_connections`) : la
 liste est celle du compte à cet instant, puis ne bouge que par `POST /web/tokens/{id}/refresh` (`ApiTokenService::refresh`,

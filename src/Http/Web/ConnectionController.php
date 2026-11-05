@@ -7,6 +7,7 @@ namespace App\Http\Web;
 use App\Audit\AuditAction;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
+use App\Connection\TargetHostPolicy;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -22,6 +23,7 @@ final readonly class ConnectionController
     public function __construct(
         private ConnectionManager $connections,
         private TargetAccess $targets,
+        private TargetHostPolicy $hosts,
         private WebSession $session,
         private AuditLog $audit,
     ) {
@@ -41,6 +43,7 @@ final readonly class ConnectionController
     {
         $input = JsonInput::fromRequest($request);
         [$name, $engine, $parameters] = ConnectionInput::read($input, null);
+        $this->hosts->assertAllowed($this->session->user(), $parameters);
 
         $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters);
         $this->audit->record($this->session->auditContext(), AuditAction::ConnectionCreated, subject: $connection->getId(), details: ['name' => $connection->getName(), 'engine' => $engine->value]);
@@ -52,6 +55,7 @@ final readonly class ConnectionController
     public function probe(Request $request): JsonResponse
     {
         [, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), null, nameRequired: false);
+        $this->hosts->assertAllowed($this->session->user(), $parameters);
 
         return new JsonResponse(['ok' => true, 'durationMs' => $this->targets->probe($engine, $parameters)]);
     }
@@ -74,6 +78,7 @@ final readonly class ConnectionController
         $key = $this->session->key();
         $current = $this->connections->reveal($user, $key, $uuid);
         [$name, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), $current);
+        $this->hosts->assertAllowed($user, $parameters);
 
         $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters);
         $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionUpdated, subject: $uuid, details: ['name' => $connection->getName(), 'engine' => $engine->value]);
