@@ -40,16 +40,27 @@ final readonly class TokensController
     {
         $input = JsonInput::fromRequest($request);
         $name = $input->string('name');
-        $connections = array_map(
+        $all = $input->bool('allConnections', false);
+        $connections = $all ? [] : array_map(
             static fn (string $id): Uuid => Uuid::isValid($id) ? Uuid::fromString($id) : throw ConnectionNotFoundException::create(),
             $input->stringList('connectionIds'),
         );
         $lifetime = $input->optionalInt('lifetimeDays', self::DEFAULT_LIFETIME_DAYS) ?? self::DEFAULT_LIFETIME_DAYS;
 
-        $issued = $this->tokens->issue($this->session->user(), $this->session->key(), $name, $connections, $lifetime);
-        $this->audit->record($this->session->auditContext(), AuditAction::TokenCreated, subject: $issued->entity->getId(), details: ['name' => $issued->entity->getName(), 'connections' => \count($connections), 'lifetimeDays' => $lifetime]);
+        $issued = $this->tokens->issue($this->session->user(), $this->session->key(), $name, $connections, $lifetime, $all);
+        $this->audit->record($this->session->auditContext(), AuditAction::TokenCreated, subject: $issued->entity->getId(), details: ['name' => $issued->entity->getName(), 'connections' => \count($issued->entity->getConnectionIds()), 'lifetimeDays' => $lifetime]);
 
         return new JsonResponse(['token' => $issued->token, 'tokenInfo' => TokenPresenter::present($issued->entity)], Response::HTTP_CREATED);
+    }
+
+    #[Route('/web/tokens/{id}/refresh', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['POST'])]
+    public function refresh(string $id): JsonResponse
+    {
+        $user = $this->session->user();
+        $token = $this->tokens->refresh($user, Uuid::fromString($id));
+        $this->audit->record($this->session->auditContext($user), AuditAction::TokenRefreshed, subject: $token->getId(), details: ['name' => $token->getName(), 'connections' => \count($token->getConnectionIds())]);
+
+        return new JsonResponse(['tokenInfo' => TokenPresenter::present($token)]);
     }
 
     #[Route('/web/tokens/{id}', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['DELETE'])]

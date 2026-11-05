@@ -12,7 +12,7 @@ vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<t
 const mocked = vi.mocked(api)
 const connection = (id: string, name: string): ConnectionSummary => ({ id, name, engine: 'postgresql', createdAt: '', updatedAt: '' })
 const token = (id: string, name: string, extra: Partial<ApiTokenInfo> = {}): ApiTokenInfo => ({
-  id, name, connectionIds: ['c1'], createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
+  id, name, connectionIds: ['c1'], allConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
 })
 
 async function mountView(tokens: ApiTokenInfo[] = [], connections: ConnectionSummary[] = [connection('c1', 'Production'), connection('c2', 'Recette')]) {
@@ -93,6 +93,54 @@ describe('TokensView', () => {
     expect(wrapper.find('.fresh').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('tdb_0123_secret')
     expect(wrapper.findAll('li.token')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('creates a token for all connections, without sending a list', async () => {
+    const wrapper = await mountView()
+    await wrapper.get('#token-name').setValue('Assistant')
+    await wrapper.get('#token-all').setValue(true)
+    expect(wrapper.find('input[value="c1"]').exists()).toBe(false)
+    mocked.mockResolvedValueOnce({ token: 'tdb_0123_secret', tokenInfo: token('n', 'Assistant', { allConnections: true, connectionIds: ['c1', 'c2'] }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', allConnections: true, lifetimeDays: 30 })
+    expect(wrapper.get('.fresh code').text()).toBe('tdb_0123_secret')
+    wrapper.unmount()
+  })
+
+  it('says a token covers all connections and offers to refresh only those', async () => {
+    const wrapper = await mountView([token('a', 'Tout', { allConnections: true, connectionIds: ['c1'] }), token('b', 'Fixe')])
+
+    const rows = wrapper.findAll('li.token')
+    expect(rows[0]?.text()).toContain('Toutes mes connexions')
+    expect(rows[0]?.find('button.refresh').exists()).toBe(true)
+    expect(rows[1]?.find('button.refresh').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('refreshes a token and shows its new connections', async () => {
+    const wrapper = await mountView([token('a', 'Tout', { allConnections: true, connectionIds: ['c1'] })])
+    mocked.mockResolvedValueOnce({ tokenInfo: token('a', 'Tout', { allConnections: true, connectionIds: ['c1', 'c2'] }) })
+
+    await wrapper.get('button.refresh').trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens/a/refresh')
+    expect(wrapper.get('li.token').text()).toContain('Production, Recette')
+    wrapper.unmount()
+  })
+
+  it('shows a refresh failure', async () => {
+    const wrapper = await mountView([token('a', 'Tout', { allConnections: true })])
+    mocked.mockRejectedValueOnce(new ApiError(401, 'locked'))
+
+    await wrapper.get('button.refresh').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('reconnect')
     wrapper.unmount()
   })
 

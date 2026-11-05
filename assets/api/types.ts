@@ -135,6 +135,7 @@ export interface ApiTokenInfo {
   id: string
   name: string
   connectionIds: string[]
+  allConnections: boolean
   createdAt: string
   expiresAt: string
   lastUsedAt: string | null
@@ -142,7 +143,9 @@ export interface ApiTokenInfo {
 
 export interface ApiTokenInput {
   name: string
-  connectionIds: string[]
+  /** Absent quand `allConnections` est vrai : le serveur prend alors toutes les connexions du compte. */
+  connectionIds?: string[]
+  allConnections?: boolean
   lifetimeDays: number
 }
 

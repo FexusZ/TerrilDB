@@ -7,7 +7,7 @@ import { useTokensStore } from './tokens'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const info = (id: string, name: string): ApiTokenInfo => ({ id, name, connectionIds: ['c1'], createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2026-12-01T10:00:00+00:00', lastUsedAt: null })
+const info = (id: string, name: string): ApiTokenInfo => ({ id, name, connectionIds: ['c1'], allConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2026-12-01T10:00:00+00:00', lastUsedAt: null })
 
 describe('tokens store', () => {
   beforeEach(() => {
@@ -47,6 +47,19 @@ describe('tokens store', () => {
     await store.create({ name: 'new', connectionIds: ['c1'], lifetimeDays: 7 })
 
     expect(store.items.map((token) => token.name)).toEqual(['new', 'old'])
+  })
+
+  it('refreshes a token in place, without touching its text or its position', async () => {
+    mocked.mockResolvedValueOnce({ tokens: [info('a', 'one'), info('b', 'two')] })
+    const store = useTokensStore()
+    await store.load()
+    mocked.mockResolvedValueOnce({ tokenInfo: { ...info('b', 'two'), allConnections: true, connectionIds: ['c1', 'c2'] } })
+
+    await store.refresh('b')
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens/b/refresh')
+    expect(store.items.map((token) => token.id)).toEqual(['a', 'b'])
+    expect(store.items[1]?.connectionIds).toEqual(['c1', 'c2'])
   })
 
   it('revokes a token', async () => {

@@ -114,6 +114,129 @@ final class TokensWebTest extends WebApiTestCase
         self::assertSame('not_found', $body['error']);
     }
 
+    public function testCreatesATokenForAllConnections(): void
+    {
+        $this->seedAndLogin();
+        $first = $this->createConnection('Production');
+        $second = $this->createConnection('Reporting');
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+
+        self::assertSame(201, $this->statusCode());
+        $info = self::arrayOf($created['tokenInfo']);
+        self::assertTrue($info['allConnections']);
+        self::assertEqualsCanonicalizing([$first, $second], $info['connectionIds']);
+    }
+
+    public function testAFixedTokenIsNotMarkedForAllConnections(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$connection]]);
+
+        self::assertFalse(self::arrayOf($created['tokenInfo'])['allConnections']);
+    }
+
+    public function testATokenForAllConnectionsNeedsAtLeastOneConnection(): void
+    {
+        $this->seedAndLogin();
+
+        $body = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+    }
+
+    public function testRefreshAddsConnectionsCreatedSince(): void
+    {
+        $this->seedAndLogin();
+        $first = $this->createConnection('Production');
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+        $id = self::arrayOf($created['tokenInfo'])['id'];
+        self::assertIsString($id);
+        $second = $this->createConnection('Reporting');
+
+        $refreshed = $this->call('POST', '/web/tokens/'.$id.'/refresh');
+
+        self::assertSame(200, $this->statusCode());
+        $info = self::arrayOf($refreshed['tokenInfo']);
+        self::assertSame($id, $info['id']);
+        self::assertEqualsCanonicalizing([$first, $second], $info['connectionIds']);
+        self::assertArrayNotHasKey('token', $refreshed);
+    }
+
+    public function testRefreshDropsDeletedConnections(): void
+    {
+        $this->seedAndLogin();
+        $first = $this->createConnection('Production');
+        $second = $this->createConnection('Reporting');
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+        $id = self::arrayOf($created['tokenInfo'])['id'];
+        self::assertIsString($id);
+        $this->call('DELETE', '/web/connections/'.$second);
+
+        $refreshed = $this->call('POST', '/web/tokens/'.$id.'/refresh');
+
+        self::assertSame([$first], self::arrayOf($refreshed['tokenInfo'])['connectionIds']);
+    }
+
+    public function testAFixedTokenCannotBeRefreshed(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$connection]]);
+        $id = self::arrayOf($created['tokenInfo'])['id'];
+        self::assertIsString($id);
+        $this->createConnection('Reporting');
+
+        $body = $this->call('POST', '/web/tokens/'.$id.'/refresh');
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+    }
+
+    public function testAnotherAccountsTokenCannotBeRefreshed(): void
+    {
+        $this->seedAndLogin('alice');
+        $this->createConnection();
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+        $id = self::arrayOf($created['tokenInfo'])['id'];
+        self::assertIsString($id);
+        $this->call('POST', '/web/logout');
+        $this->seedUser('bob');
+        $this->login('bob');
+
+        $this->call('POST', '/web/tokens/'.$id.'/refresh');
+
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testRefreshNeedsAnAuthenticatedSession(): void
+    {
+        $this->call('POST', '/web/tokens/'.\Symfony\Component\Uid\Uuid::v7()->toRfc4122().'/refresh');
+
+        self::assertSame(401, $this->statusCode());
+    }
+
+    public function testRefreshedAccessWorksThroughTheTokenItself(): void
+    {
+        $this->seedAndLogin();
+        $this->createConnection('Production');
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'allConnections' => true]);
+        $id = self::arrayOf($created['tokenInfo'])['id'];
+        self::assertIsString($id);
+        $second = $this->createConnection('Reporting');
+
+        $this->call('POST', '/web/tokens/'.$id.'/refresh');
+
+        $stored = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertInstanceOf(EntityManagerInterface::class, $stored);
+        $ids = $stored->getConnection()->fetchOne('SELECT connection_ids FROM api_token WHERE id = ?', [$id]);
+        self::assertIsString($ids);
+        self::assertStringContainsString($second, $ids);
+    }
+
     public function testRevokesAToken(): void
     {
         $this->seedAndLogin();

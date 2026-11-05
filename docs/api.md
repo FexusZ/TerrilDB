@@ -3,7 +3,10 @@
 Base : `/api/v1`. Authentification : `Authorization: Bearer <jeton>` uniquement (ni cookie, ni autre schéma).
 Les jetons se créent dans l'interface (Sécurité du compte) : le texte du jeton n'est montré qu'une fois.
 
-Un jeton n'ouvre que les connexions cochées à sa création, jusqu'à son expiration (365 jours au plus). Il est
+Un jeton n'ouvre que les connexions cochées à sa création, jusqu'à son expiration (365 jours au plus).
+Un jeton « toutes mes connexions » couvre celles du compte au moment de sa création ; le bouton « Actualiser » de
+l'interface y ajoute ensuite les connexions créées depuis (et retire les supprimées) sans changer le texte du jeton,
+donc sans rien reconfigurer côté client. Maximum 50 connexions par jeton. Il est
 supprimé quand le mot de passe du compte change. L'API ne connaît que la lecture seule : une écriture est refusée
 par le filtre puis, en dernier recours, par le moteur lui-même (transaction en lecture seule).
 

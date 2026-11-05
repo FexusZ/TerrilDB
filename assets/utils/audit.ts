@@ -49,6 +49,8 @@ export function describeEvent(entry: AuditEntry): string {
       return `Connexion${quoted(details)} supprimée`
     case 'token.created':
       return `Jeton${quoted(details)} créé`
+    case 'token.refreshed':
+      return `Jeton${quoted(details)} actualisé`
     case 'token.revoked':
       return 'Jeton révoqué'
     case 'phrase.created':

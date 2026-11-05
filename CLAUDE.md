@@ -135,6 +135,10 @@ uniquement, connexions listées (au moins une), expiration obligatoire (365 jour
 de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
+Un jeton peut être émis pour « toutes mes connexions » (`allConnections: true` à la création, colonne `all_connections`) : la
+liste est celle du compte à cet instant, puis ne bouge que par `POST /web/tokens/{id}/refresh` (`ApiTokenService::refresh`,
+session requise, texte du jeton inchangé, connexions supprimées retirées, 50 au plus, refusé 422 pour un jeton à liste
+fixe). Jamais automatique : le propriétaire décide quand les nouvelles connexions deviennent lisibles (audit `token.refreshed`).
 
 ## ClickHouse (src/Driver/ClickHouse)
 

@@ -15,6 +15,7 @@ const connections = useConnectionsStore()
 
 const name = ref('')
 const chosen = ref<string[]>([])
+const everything = ref(false)
 const lifetime = ref('30')
 const error = ref<string | null>(null)
 const listError = ref<string | null>(null)
@@ -22,6 +23,7 @@ const busy = ref(false)
 const fresh = ref<string | null>(null)
 const toRevoke = ref<ApiTokenInfo | null>(null)
 const copyFailed = ref(false)
+const refreshing = ref<string | null>(null)
 
 const LIFETIMES = [
   { value: '7', label: '7 jours' },
@@ -44,15 +46,19 @@ onMounted(async () => {
 
 async function create(): Promise<void> {
   error.value = null
-  if (chosen.value.length === 0) {
+  if (!everything.value && chosen.value.length === 0) {
     error.value = 'Choisissez au moins une connexion.'
     return
   }
   busy.value = true
   try {
-    fresh.value = await tokens.create({ name: name.value, connectionIds: chosen.value, lifetimeDays: Number(lifetime.value) })
+    const lifetimeDays = Number(lifetime.value)
+    fresh.value = await tokens.create(
+      everything.value ? { name: name.value, allConnections: true, lifetimeDays } : { name: name.value, connectionIds: chosen.value, lifetimeDays },
+    )
     name.value = ''
     chosen.value = []
+    everything.value = false
     copyFailed.value = false
   } catch (failure) {
     error.value = messageFor(failure)
@@ -68,6 +74,18 @@ async function copy(): Promise<void> {
   } catch {
     // Le presse-papiers peut être refusé : le jeton reste sélectionnable à l'écran.
     copyFailed.value = true
+  }
+}
+
+async function refresh(token: ApiTokenInfo): Promise<void> {
+  listError.value = null
+  refreshing.value = token.id
+  try {
+    await tokens.refresh(token.id)
+  } catch (failure) {
+    listError.value = messageFor(failure)
+  } finally {
+    refreshing.value = null
   }
 }
 
@@ -118,7 +136,11 @@ async function revoke(): Promise<void> {
         <FormField id="token-name" v-model="name" label="Nom du jeton" hint="Par exemple « Assistant de reporting »." required />
         <fieldset>
           <legend>Connexions autorisées</legend>
-          <label v-for="connection in connections.items" :key="connection.id" class="choice">
+          <label class="choice">
+            <input id="token-all" v-model="everything" type="checkbox">
+            <span>Toutes mes connexions <small class="hint">(actuelles ; « Actualiser » ajoutera les suivantes)</small></span>
+          </label>
+          <label v-for="connection in everything ? [] : connections.items" :key="connection.id" class="choice">
             <input v-model="chosen" type="checkbox" :value="connection.id">
             <span>{{ connection.name }}</span>
           </label>
@@ -141,13 +163,16 @@ async function revoke(): Promise<void> {
         <li v-for="token in tokens.items" :key="token.id" class="token">
           <div class="info">
             <p class="token-name">{{ token.name }} <span v-if="expired(token)" class="chip bad">Expiré</span></p>
-            <p class="meta">{{ connectionsOf(token) }}</p>
+            <p class="meta"><span v-if="token.allConnections" class="chip">Toutes mes connexions</span> {{ connectionsOf(token) }}</p>
             <p class="meta">
               {{ expired(token) ? 'Expiré' : 'Expire' }} le {{ formatDate(token.expiresAt) }} ·
               {{ token.lastUsedAt ? `Dernière utilisation le ${formatDate(token.lastUsedAt)}` : 'Jamais utilisé' }}
             </p>
           </div>
-          <AppButton class="revoke" small variant="danger" :aria-label="`Révoquer ${token.name}`" @click="toRevoke = token">Révoquer</AppButton>
+          <div class="actions">
+            <AppButton v-if="token.allConnections && !expired(token)" class="refresh" small :busy="refreshing === token.id" :aria-label="`Actualiser ${token.name}`" @click="refresh(token)">Actualiser</AppButton>
+            <AppButton class="revoke" small variant="danger" :aria-label="`Révoquer ${token.name}`" @click="toRevoke = token">Révoquer</AppButton>
+          </div>
         </li>
       </ul>
     </section>
@@ -187,6 +212,7 @@ select { height: 42px; padding: 0 12px; border-radius: var(--radius); border: 1p
 .token { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 14px 0; border-top: 1px solid var(--line); }
 .token:first-child { border-top: 0; padding-top: 0; }
 .token-name { font-weight: 600; }
+.actions { display: flex; gap: 8px; }
 .usage { color: var(--mut); font-size: 13px; }
 .usage code { font: 400 12px var(--font-mono); color: var(--fg); }
 .meta, .empty, .hint { color: var(--mut); font-size: 13px; }
