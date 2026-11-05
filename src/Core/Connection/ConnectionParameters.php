@@ -72,6 +72,14 @@ final readonly class ConnectionParameters
         return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address);
     }
 
+    /**
+     * Les mêmes paramètres sur une autre base du même serveur (hôte, port, identifiants et adresse épinglée inchangés).
+     */
+    public function withDatabase(string $database): self
+    {
+        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress);
+    }
+
     public function toJson(): string
     {
         return json_encode([

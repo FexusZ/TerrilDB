@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Schema\ColumnDefinition;
+use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
@@ -27,6 +28,23 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 {
     public function __construct(private Connection $connection)
     {
+    }
+
+    private const SYSTEM_DATABASES = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+
+    public function listDatabases(): array
+    {
+        // information_schema.SCHEMATA ne montre que les bases sur lesquelles le compte a un droit.
+        $names = $this->connection->fetchFirstColumn('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA');
+        $databases = [];
+        foreach ($names as $name) {
+            $name = (new RowReader(['name' => $name]))->string('name');
+            $databases[] = new DatabaseSummary($name, \in_array(strtolower($name), self::SYSTEM_DATABASES, true));
+        }
+        // À l'octet : l'ordre du moteur dépend de la collation.
+        usort($databases, static fn (DatabaseSummary $a, DatabaseSummary $b): int => strcmp($a->name, $b->name));
+
+        return $databases;
     }
 
     public function listTables(): array

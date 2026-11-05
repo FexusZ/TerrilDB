@@ -30,9 +30,9 @@ final readonly class TargetAccess
      *
      * @return T
      */
-    public function withSaved(Uuid $id, \Closure $action): mixed
+    public function withSaved(Uuid $id, \Closure $action, ?string $database = null): mixed
     {
-        return $this->targets->with($this->session->user(), $this->session->key(), $id, $action);
+        return $this->targets->with($this->session->user(), $this->session->key(), $id, $action, $database);
     }
 
     /**

@@ -77,7 +77,20 @@ describe('WorkspaceView', () => {
     expect(mocked).not.toHaveBeenCalledWith('GET', '/web/connections/abc/tables')
     expect(wrapper.find('nav[aria-label="Clés"]').exists()).toBe(true)
     expect(wrapper.find('nav[aria-label="Schéma"]').exists()).toBe(false)
+    expect(wrapper.find('select.databases').exists()).toBe(false)
+    expect(mocked).not.toHaveBeenCalledWith('GET', '/web/connections/abc/databases')
     expect(wrapper.get('a.node').text()).toContain('user:1')
+  })
+
+  it('offers the database picker on a SQL connection, not on a key-value one', async () => {
+    mocked.mockResolvedValueOnce({ connections: [summary] })
+    mocked.mockResolvedValueOnce({ tables: [] })
+    mocked.mockResolvedValueOnce({ databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('select.databases').exists()).toBe(true)
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/databases')
   })
 
   it('says so when the connection does not exist', async () => {

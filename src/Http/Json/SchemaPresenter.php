@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Json;
 
 use App\Core\Schema\ColumnDefinition;
+use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\TableDefinition;
@@ -12,6 +13,14 @@ use App\Core\Schema\TableSummary;
 
 final class SchemaPresenter
 {
+    /**
+     * @return array<string, bool|string>
+     */
+    public static function database(DatabaseSummary $database): array
+    {
+        return ['name' => $database->name, 'system' => $database->system];
+    }
+
     /**
      * @return array<string, int|string|null>
      */

@@ -33,6 +33,11 @@ final class QueryServiceTest extends TestCase
     private function target(Engine $engine = Engine::PostgreSql): TargetConnection
     {
         $introspector = new class implements SchemaIntrospector {
+            public function listDatabases(): array
+            {
+                return [];
+            }
+
             public function listTables(): array
             {
                 return [];

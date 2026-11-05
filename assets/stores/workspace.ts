@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { ApiError, api, apiDownload } from '../api/client'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { HistoryEntry, KeyEntry, KeyPage, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
 import { useConnectionsStore } from './connections'
 
 export interface QueryTab {
@@ -29,6 +29,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const connectionId = ref<string | null>(null)
   const tables = ref<TableSummary[]>([])
   const tablesError = ref<string | null>(null)
+  // La base explorée : nulle = celle de la connexion. Les autres bases du serveur se choisissent à la demande.
+  const database = ref<string | null>(null)
+  const databases = ref<DatabaseInfo[]>([])
+  const databasesError = ref<string | null>(null)
   // Une base clé-valeur (Redis) se parcourt par clés : même espace de travail, autre arborescence.
   const isKeyValue = ref(false)
   const keys = ref<KeyEntry[]>([])
@@ -80,6 +84,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     connectionId.value = id
     tables.value = []
     tablesError.value = null
+    database.value = null
+    databases.value = []
+    databasesError.value = null
     keys.value = []
     keysCursor.value = null
     keysTotal.value = 0
@@ -98,6 +105,55 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     } catch (error) {
       tablesError.value = messageFor(error)
     }
+  }
+
+  /** Les bases visibles sur le serveur, pour le sélecteur. Un moteur sans liste (Redis) n'est pas une erreur. */
+  async function loadDatabases(): Promise<void> {
+    if (connectionId.value === null || isKeyValue.value) {
+      return
+    }
+    const id = connectionId.value
+    databasesError.value = null
+    try {
+      const result = await api<{ databases: DatabaseInfo[] } | undefined>('GET', `/web/connections/${id}/databases`)
+      if (connectionId.value === id) {
+        databases.value = result?.databases ?? []
+      }
+    } catch (error) {
+      if (connectionId.value !== id) {
+        return
+      }
+      databases.value = []
+      if (!(error instanceof ApiError && error.code === 'unsupported_operation')) {
+        databasesError.value = messageFor(error)
+      }
+    }
+  }
+
+  /** Explore une autre base du même serveur (null : celle de la connexion) : tables rechargées, descriptions oubliées. */
+  async function selectDatabase(name: string | null): Promise<void> {
+    const id = connectionId.value
+    if (id === null || name === database.value) {
+      return
+    }
+    database.value = name
+    described.clear()
+    tables.value = []
+    tablesError.value = null
+    try {
+      const loaded = (await api<{ tables: TableSummary[] }>('GET', `/web/connections/${id}/tables${databaseQuery()}`)).tables
+      if (database.value === name && connectionId.value === id) {
+        tables.value = loaded
+      }
+    } catch (error) {
+      if (database.value === name && connectionId.value === id) {
+        tablesError.value = messageFor(error)
+      }
+    }
+  }
+
+  function databaseQuery(): string {
+    return database.value === null ? '' : `?database=${encodeURIComponent(database.value)}`
   }
 
   /** Charge une page de clés : la première (remplace la liste) ou la suivante (s'y ajoute). */
@@ -217,7 +273,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     target.view = 'result'
 
     try {
-      const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: target.sql, mode: target.mode, confirmed })
+      const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: target.sql, mode: target.mode, confirmed, ...(database.value === null ? {} : { database: database.value }) })
       if (latestRun.get(id) === run) {
         target.result = result
       }
@@ -343,7 +399,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (known) {
       return known
     }
-    const { table } = await api<{ table: TableDetail }>('GET', `/web/connections/${connectionId.value ?? ''}/tables/${encodeURIComponent(name)}`)
+    const { table } = await api<{ table: TableDetail }>('GET', `/web/connections/${connectionId.value ?? ''}/tables/${encodeURIComponent(name)}${databaseQuery()}`)
     described.set(name, table)
 
     return table
@@ -351,5 +407,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, database, databases, databasesError, loadDatabases, selectDatabase, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })

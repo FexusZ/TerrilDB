@@ -9,6 +9,7 @@ use App\Core\Optimizer\Finding;
 use App\Core\Optimizer\SchemaAuditor;
 use App\Core\Schema\TableKind;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
@@ -27,7 +28,7 @@ final readonly class SchemaAuditController
     }
 
     #[Route('/web/connections/{id}/audit', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]
-    public function audit(string $id): JsonResponse
+    public function audit(string $id, Request $request): JsonResponse
     {
         [$findings, $audited, $truncated] = $this->targets->withSaved(Uuid::fromString($id), function (TargetConnection $target): array {
             $introspector = $target->introspector();
@@ -45,7 +46,7 @@ final readonly class SchemaAuditController
             }
 
             return [$this->auditor->audit($target->engine, $definitions), \count($definitions), $truncated];
-        });
+        }, DatabaseParam::fromQuery($request));
 
         return new JsonResponse([
             'tablesAudited' => $audited,

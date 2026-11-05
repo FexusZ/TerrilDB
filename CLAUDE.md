@@ -105,6 +105,7 @@ navigation par clés (`keys()`). Ce qui manque lève `UnsupportedOperationExcept
 primaire d'abord puis par nom, tri à l'octet car l'ordre du moteur dépend de la collation) ; périmètre = base de la
 connexion (MySQL) ou schéma courant (PostgreSQL). Nombres de lignes = estimations du moteur, jamais un COUNT. Les noms
 de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : connexion enregistrée + clé -> cible ouverte.
+Bases du serveur : `SchemaIntrospector::listDatabases()` (MySQL/MariaDB `information_schema.SCHEMATA` = seulement celles où le compte a un droit ; PostgreSQL `pg_database` sans modèles et avec `CONNECT` ; ClickHouse `system.databases` ; tri à l'octet ; `DatabaseSummary::system` pour information_schema/mysql/performance_schema/sys/system, masquées sauf `?system=1`). `GET /web/connections/{id}/databases` ; une autre base s'explore en OUVRANT la connexion sur elle (`TargetOpener::open(…, $database)` -> `ConnectionParameters::withDatabase`, adresse épinglée conservée) : une connexion reste une base, y compris sur PostgreSQL. Routes tables, structure, diagramme, audit et console acceptent `?database=` (corps `database` pour la console). Une base inconnue = échec de connexion générique (502). Redis : pas de liste (501). Front : `DatabasePicker` (sélecteur masqué s'il n'y a qu'une base ou pas de liste), `workspace.database`.
 
 ## Exécution et garde-fous (src/Core/Guard, src/Core/Query, src/Driver/*/…QueryRunner)
 

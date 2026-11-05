@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\PostgreSql;
 
 use App\Core\Schema\ColumnDefinition;
+use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\InvalidSchemaException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
@@ -30,6 +31,20 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
 
     public function __construct(private Connection $connection)
     {
+    }
+
+    public function listDatabases(): array
+    {
+        // Sans les modèles, et seulement celles où le compte a le droit de se connecter.
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn AND has_database_privilege(datname, 'CONNECT') ORDER BY datname COLLATE \"C\"",
+        );
+        $databases = [];
+        foreach ($names as $name) {
+            $databases[] = new DatabaseSummary((new RowReader(['name' => $name]))->string('name'), false);
+        }
+
+        return $databases;
     }
 
     public function listTables(): array

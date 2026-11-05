@@ -10,6 +10,7 @@ use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
@@ -26,7 +27,7 @@ final readonly class SchemaDiagramController
     }
 
     #[Route('/web/connections/{id}/diagram', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]
-    public function diagram(string $id): JsonResponse
+    public function diagram(string $id, Request $request): JsonResponse
     {
         [$definitions, $truncated] = $this->targets->withSaved(Uuid::fromString($id), static function (TargetConnection $target): array {
             $introspector = $target->introspector();
@@ -44,7 +45,7 @@ final readonly class SchemaDiagramController
             }
 
             return [$definitions, $truncated];
-        });
+        }, DatabaseParam::fromQuery($request));
 
         $relations = [];
         foreach ($definitions as $definition) {

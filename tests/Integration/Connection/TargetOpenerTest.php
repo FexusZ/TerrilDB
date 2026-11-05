@@ -132,6 +132,38 @@ final class TargetOpenerTest extends DatabaseTestCase
         $target->close();
     }
 
+    /**
+     * @return iterable<string, array{string, string}> cible, base voisine à ouvrir à la place de « shop »
+     */
+    public static function neighbours(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL', 'information_schema'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL', 'information_schema'];
+        yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL', 'system'];
+    }
+
+    #[DataProvider('neighbours')]
+    public function testOpensAnotherDatabaseOfTheSameConnection(string $envVar, string $other): void
+    {
+        $saved = $this->manager->create($this->alice, $this->key, 'Target', TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+
+        $target = (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId(), $other);
+
+        $names = array_map(static fn ($table): string => $table->name, $target->introspector()->listTables());
+        self::assertNotContains('categories', $names);
+        self::assertNotSame([], $names);
+        $target->close();
+    }
+
+    public function testAnInvalidDatabaseNameIsRefusedBeforeConnecting(): void
+    {
+        $saved = $this->manager->create($this->alice, $this->key, 'Target', TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        $this->expectException(\App\Core\Connection\Exception\InvalidConnectionParametersException::class);
+
+        (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId(), "bad\x00name");
+    }
+
     public function testTheContainerKnowsADriverForEveryEngine(): void
     {
         foreach (Engine::cases() as $engine) {

@@ -59,6 +59,25 @@ final class MySqlIntrospectorTest extends TestCase
     }
 
     #[DataProvider('targets')]
+    public function testListsTheDatabasesTheAccountCanSeeWithTheSystemOnesFlagged(string $envVar): void
+    {
+        $databases = $this->introspector($envVar)->listDatabases();
+
+        $byName = [];
+        foreach ($databases as $database) {
+            $byName[$database->name] = $database->system;
+        }
+        self::assertArrayHasKey('shop', $byName);
+        self::assertFalse($byName['shop']);
+        self::assertArrayHasKey('information_schema', $byName);
+        self::assertTrue($byName['information_schema']);
+        $names = array_keys($byName);
+        $sorted = $names;
+        usort($sorted, strcmp(...));
+        self::assertSame($sorted, $names, 'sorted by bytes');
+    }
+
+    #[DataProvider('targets')]
     public function testListsTablesAndViewsSortedByName(string $envVar): void
     {
         $tables = $this->introspector($envVar)->listTables();

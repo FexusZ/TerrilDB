@@ -54,6 +54,25 @@ final class ConnectionParametersTest extends TestCase
         $this->parameters()->withAddress('not-an-ip.example');
     }
 
+    public function testAnotherDatabaseKeepsTheRestOfTheParameters(): void
+    {
+        $other = $this->parameters()->withAddress('93.184.216.34')->withDatabase('reporting');
+
+        self::assertSame('reporting', $other->database);
+        self::assertSame('db.internal', $other->host);
+        self::assertSame(5432, $other->port);
+        self::assertSame('reader', $other->username);
+        self::assertSame('p@ss w0rd/é', $other->password());
+        self::assertSame('93.184.216.34', $other->address());
+    }
+
+    public function testTheOtherDatabaseMustBeAValidName(): void
+    {
+        $this->expectException(InvalidConnectionParametersException::class);
+
+        $this->parameters()->withDatabase('');
+    }
+
     public function testAnEmptyPasswordIsAllowed(): void
     {
         $parameters = new ConnectionParameters('localhost', 3306, 'shop', 'root', '');

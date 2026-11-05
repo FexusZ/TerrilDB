@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
+import DatabasePicker from '../components/DatabasePicker.vue'
 import KeyBrowser from '../components/KeyBrowser.vue'
 import SchemaTree from '../components/SchemaTree.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -67,7 +68,10 @@ watch(() => props.id, open)
           @search="workspace.searchKeys"
           @more="workspace.loadMoreKeys"
         />
-        <SchemaTree v-else :connection-id="id" :tables="workspace.tables" :current="currentTable" :error="workspace.tablesError" />
+        <template v-else>
+          <DatabasePicker />
+          <SchemaTree :connection-id="id" :tables="workspace.tables" :current="currentTable" :error="workspace.tablesError" />
+        </template>
       </aside>
       <div class="content"><RouterView /></div>
     </div>

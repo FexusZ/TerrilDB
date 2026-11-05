@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Connection;
 
 use App\Audit\AuditedTargetHosts;
+use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
@@ -28,12 +29,17 @@ final readonly class TargetOpener
     /**
      * @throws Exception\ConnectionNotFoundException
      * @throws Exception\ForbiddenTargetHostException
+     * @throws InvalidConnectionParametersException   nom de base invalide
      * @throws TargetConnectionFailedException
      */
-    public function open(User $owner, DerivedKey $key, Uuid $id): TargetConnection
+    public function open(User $owner, DerivedKey $key, Uuid $id, ?string $database = null): TargetConnection
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
+        if (null !== $database) {
+            // Une connexion reste une base (PostgreSQL ne change pas de base en route) : on ouvre une connexion sur celle-là.
+            $parameters = $parameters->withDatabase($database);
+        }
 
         return $this->drivers->for($engine)->connect($engine, $this->hosts->pinned($owner, $parameters));
     }

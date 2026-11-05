@@ -23,6 +23,11 @@ final class TargetConnectionTest extends TestCase
     private function introspector(): SchemaIntrospector
     {
         return new class implements SchemaIntrospector {
+            public function listDatabases(): array
+            {
+                return [];
+            }
+
             public function listTables(): array
             {
                 return [];

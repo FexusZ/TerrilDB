@@ -55,6 +55,11 @@ export interface ConnectionInput {
 
 export type TableKind = 'table' | 'view' | 'materialized_view'
 
+export interface DatabaseInfo {
+  name: string
+  system: boolean
+}
+
 export interface TableSummary {
   name: string
   kind: TableKind

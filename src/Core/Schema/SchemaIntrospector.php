@@ -14,6 +14,14 @@ use App\Core\Schema\Exception\TableNotFoundException;
 interface SchemaIntrospector
 {
     /**
+     * Les bases que le compte peut voir sur le serveur, triées à l'octet. Une autre base s'explore en ouvrant la
+     * connexion sur elle (voir TargetOpener) : une connexion reste une base, y compris sur PostgreSQL.
+     *
+     * @return list<DatabaseSummary>
+     */
+    public function listDatabases(): array;
+
+    /**
      * Tables et vues, triées par nom.
      *
      * @return list<TableSummary>

@@ -27,9 +27,9 @@ final readonly class TargetSession
      *
      * @return T
      */
-    public function with(User $user, DerivedKey $key, Uuid $connectionId, \Closure $action): mixed
+    public function with(User $user, DerivedKey $key, Uuid $connectionId, \Closure $action, ?string $database = null): mixed
     {
-        $target = $this->opener->open($user, $key, $connectionId);
+        $target = $this->opener->open($user, $key, $connectionId, $database);
 
         try {
             return $action($target);

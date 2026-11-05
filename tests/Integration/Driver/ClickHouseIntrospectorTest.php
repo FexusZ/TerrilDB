@@ -42,6 +42,18 @@ final class ClickHouseIntrospectorTest extends TestCase
         return array_map(static fn (IndexDefinition $i): string => $i->name, $indexes);
     }
 
+    public function testListsTheDatabasesWithTheSystemOnesFlagged(): void
+    {
+        $byName = [];
+        foreach ($this->introspector()->listDatabases() as $database) {
+            $byName[$database->name] = $database->system;
+        }
+
+        self::assertFalse($byName['shop'] ?? null);
+        self::assertTrue($byName['system'] ?? null);
+        self::assertTrue($byName['information_schema'] ?? null);
+    }
+
     public function testListsTablesAndViewsSortedByName(): void
     {
         $tables = $this->introspector()->listTables();

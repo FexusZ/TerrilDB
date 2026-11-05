@@ -40,6 +40,92 @@ describe('workspace store', () => {
     expect(store.activeTab.mode).toBe('read_only')
   })
 
+  it('lists the databases of the server on demand, without touching the tables', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+
+    await store.loadDatabases()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/databases')
+    expect(store.databases.map((database) => database.name)).toEqual(['shop', 'reporting'])
+    expect(store.database).toBeNull()
+    expect(store.tables).toEqual(tables)
+  })
+
+  it('keeps quiet when the engine has no database list', async () => {
+    const store = await opened()
+    mocked.mockRejectedValueOnce(new ApiError(501, 'unsupported_operation'))
+
+    await store.loadDatabases()
+
+    expect(store.databases).toEqual([])
+    expect(store.databasesError).toBeNull()
+  })
+
+  it('reports a database list that failed for another reason', async () => {
+    const store = await opened()
+    mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
+
+    await store.loadDatabases()
+
+    expect(store.databasesError).toContain('joindre')
+  })
+
+  it('switches database: reloads the tables there and forgets what it knew of the other one', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ table: detail })
+    await store.describe('orders')
+    const other: TableSummary[] = [{ name: 'events', kind: 'table', estimatedRows: 10 }]
+    mocked.mockResolvedValueOnce({ tables: other })
+
+    await store.selectDatabase('reporting')
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?database=reporting')
+    expect(store.database).toBe('reporting')
+    expect(store.tables).toEqual(other)
+    mocked.mockResolvedValueOnce({ table: detail })
+    await store.describe('orders')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables/orders?database=reporting')
+  })
+
+  it('runs the console in the chosen database, and in the default one otherwise', async () => {
+    const store = await opened()
+    store.setSql(store.activeTab.id, 'select 1')
+    mocked.mockResolvedValueOnce(result)
+    await store.run(store.activeTab.id)
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/query', { sql: 'select 1', mode: 'read_only', confirmed: false })
+
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await store.selectDatabase('reporting')
+    mocked.mockResolvedValueOnce(result)
+    await store.run(store.activeTab.id)
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/query', { sql: 'select 1', mode: 'read_only', confirmed: false, database: 'reporting' })
+  })
+
+  it('shows the tables error when the other database cannot be opened', async () => {
+    const store = await opened()
+    mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
+
+    await store.selectDatabase('nope')
+
+    expect(store.tablesError).toContain('joindre')
+    expect(store.tables).toEqual([])
+  })
+
+  it('goes back to the default database when another connection is opened', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await store.selectDatabase('reporting')
+    mocked.mockResolvedValueOnce({ tables })
+
+    await store.open('conn-2')
+
+    expect(store.database).toBeNull()
+    expect(store.databases).toEqual([])
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-2/tables')
+  })
+
   it('reports why the tables could not be loaded', async () => {
     mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
     const store = useWorkspaceStore()

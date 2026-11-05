@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\ClickHouse;
 
 use App\Core\Schema\ColumnDefinition;
+use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\SchemaIntrospector;
@@ -29,6 +30,20 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
 
     public function __construct(private ClickHouseHttp $http, private string $database)
     {
+    }
+
+    private const SYSTEM_DATABASES = ['system', 'information_schema'];
+
+    public function listDatabases(): array
+    {
+        $databases = [];
+        foreach ($this->http->query('SELECT name FROM system.databases ORDER BY name')->records() as $record) {
+            $name = (new RowReader($record))->string('name');
+            $databases[] = new DatabaseSummary($name, \in_array(strtolower($name), self::SYSTEM_DATABASES, true));
+        }
+        usort($databases, static fn (DatabaseSummary $a, DatabaseSummary $b): int => strcmp($a->name, $b->name));
+
+        return $databases;
     }
 
     public function listTables(): array

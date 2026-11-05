@@ -39,6 +39,18 @@ final class PostgreSqlIntrospectorTest extends TestCase
         return array_map(static fn (IndexDefinition $i): string => $i->name, $indexes);
     }
 
+    public function testListsTheConnectableDatabasesWithoutTheTemplates(): void
+    {
+        $names = array_map(static fn ($database): string => $database->name, $this->introspector()->listDatabases());
+
+        self::assertContains('shop', $names);
+        self::assertNotContains('template0', $names);
+        self::assertNotContains('template1', $names);
+        $sorted = $names;
+        usort($sorted, strcmp(...));
+        self::assertSame($sorted, $names, 'sorted by bytes');
+    }
+
     public function testListsTablesAndViewsSortedByName(): void
     {
         $tables = $this->introspector()->listTables();
