@@ -9,6 +9,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'phrase', label: 'Phrase de récupération' },
   { value: 'connection', label: 'Bases' },
   { value: 'token', label: 'Jetons' },
+  { value: 'target', label: 'Adresses refusées' },
   { value: 'invitation', label: 'Invitations' },
   { value: 'query', label: 'Requêtes' },
 ]
@@ -51,6 +52,8 @@ export function describeEvent(entry: AuditEntry): string {
       return `Jeton${quoted(details)} créé`
     case 'token.refreshed':
       return `Jeton${quoted(details)} actualisé`
+    case 'target.forbidden':
+      return typeof details.host === 'string' ? `Adresse réservée aux administrateurs refusée : ${details.host}` : 'Adresse réservée aux administrateurs refusée'
     case 'token.revoked':
       return 'Jeton révoqué'
     case 'phrase.created':

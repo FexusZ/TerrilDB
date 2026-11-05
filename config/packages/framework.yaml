@@ -33,6 +33,11 @@ framework:
             policy: sliding_window
             limit: 120
             interval: '1 minute'
+        # Créations de connexions par un jeton (tentatives refusées comprises) : 20 par heure et par jeton
+        api_connection_creation:
+            policy: sliding_window
+            limit: 20
+            interval: '1 hour'
 
     #esi: true
     #fragments: true

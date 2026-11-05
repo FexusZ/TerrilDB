@@ -35,6 +35,7 @@ enum AuditAction: string
     case QueryExecuted = 'query.executed';
     case QueryRefused = 'query.refused';
     case QueryFailed = 'query.failed';
+    case TargetForbidden = 'target.forbidden';
 
     public function category(): string
     {

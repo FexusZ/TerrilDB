@@ -86,7 +86,7 @@ connexion inexistante. `TargetHostPolicy` (+ `HostResolver`) : seul un administr
 127.x/::1, lien local 169.254.x/fe80::, 0.0.0.0, `localhost`, et la base interne repérée par l'hôte de `DATABASE_URL`, par nom OU par
 adresse) ; un membre garde les autres machines, réseaux privés compris. Contrôle à la création, à la modification, à l'essai et à
 l'OUVERTURE (`TargetOpener`, donc aussi pour une connexion enregistrée avant la règle), pour l'interface comme pour les jetons ;
-erreur 403 `forbidden_target` sans jamais dire ce que le nom a donné. Limite connue : un nom dont la réponse change entre le contrôle
+erreur 403 `forbidden_target` sans jamais dire ce que le nom a donné ; tout refus est journalisé (`AuditedTargetHosts`, action `target.forbidden`, adresse saisie et port seulement, porte et jeton attribués). Limite connue : un nom dont la réponse change entre le contrôle
 et la connexion du driver n'est pas couvert (pas d'épinglage de l'adresse). `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
 illisible bloque le changement.
 
@@ -148,7 +148,7 @@ sans aucun droit d'écriture, 403 `permission_denied`. Limite connue : seul le f
 (un SELECT d'une fonction qui écrit n'est pas retenu en lecture-écriture ; les droits du compte de la base cible restent le dernier rempart).
 `POST /api/v1/connections` (outil MCP `create_connection`, `TokenConnections`) enregistre une connexion chiffrée par la clé du jeton,
 sous la même règle d'adresses que l'interface web (`TargetHostPolicy`), l'ajoute à la liste du jeton et journalise `connection.created` (acteur api/mcp).
-Un jeton peut naître sans connexion s'il est « toutes » ou autorisé à en créer.
+Un jeton peut naître sans connexion s'il est « toutes » ou autorisé à en créer. Créations plafonnées à 20 par heure et par jeton (limiteur `api_connection_creation`), tentatives refusées comprises : 429 `too_many_attempts`.
 Un jeton peut être émis pour « toutes mes connexions » (`allConnections: true` à la création, colonne `all_connections`) : la
 liste est celle du compte à cet instant, puis ne bouge que par `POST /web/tokens/{id}/refresh` (`ApiTokenService::refresh`,
 session requise, texte du jeton inchangé, connexions supprimées retirées, pas de plafond de connexions, refusé 422
@@ -281,7 +281,7 @@ CI sur les serveurs GitHub (php, front, integration) puis, sur `push` vers `main
 (étiquette `terrildb`) lance `docker/prod/deploy.sh` : build de l'image (FrankenPHP, interface compilée, sans root),
 `pg_dump`, migrations, relance avec contrôle de santé et retour à l'image précédente si KO. Secrets et domaine hors dépôt
 (`~/.config/terrildb`, secret GitHub `TERRILDB_DOMAIN`) : ne jamais écrire le domaine ni un secret dans le dépôt, qui est
-public. L'application n'écoute que sur 127.0.0.1 (port 8090) derrière le nginx de la machine (`setup-host.sh`, une fois,
+public. La base interne est seule sur le réseau Docker `backend` (`internal`, partagé avec l'application, aucune sortie) ; les règles de sortie du pare-feu de l'hôte sont documentées dans `docs/deploy.md` mais jamais appliquées par le script (elles dépendent des bases cibles). L'application n'écoute que sur 127.0.0.1 (port 8090) derrière le nginx de la machine (`setup-host.sh`, une fois,
 sudo). Dépôt public + runner : les workflows de PR externes exigent une approbation, ne jamais approuver une PR qui touche
 `.github/` ou `docker/`.
 

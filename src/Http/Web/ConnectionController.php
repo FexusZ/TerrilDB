@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\Audit\AuditAction;
+use App\Audit\AuditedTargetHosts;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
-use App\Connection\TargetHostPolicy;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -23,7 +23,7 @@ final readonly class ConnectionController
     public function __construct(
         private ConnectionManager $connections,
         private TargetAccess $targets,
-        private TargetHostPolicy $hosts,
+        private AuditedTargetHosts $hosts,
         private WebSession $session,
         private AuditLog $audit,
     ) {
