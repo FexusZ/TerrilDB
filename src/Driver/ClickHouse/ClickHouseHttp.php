@@ -34,7 +34,7 @@ final readonly class ClickHouseHttp
      */
     public function query(string $sql, array $settings = [], array $params = [], float $timeoutSeconds = 30.0): ClickHouseResponse
     {
-        $query = ['default_format' => 'JSONCompact', 'database' => $this->parameters->database] + $settings;
+        $query = ['default_format' => 'JSONCompact', 'database' => '' !== $this->parameters->database ? $this->parameters->database : 'default'] + $settings;
         foreach ($params as $name => $value) {
             $query['param_'.$name] = $value;
         }

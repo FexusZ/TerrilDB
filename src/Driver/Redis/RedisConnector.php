@@ -20,7 +20,9 @@ final readonly class RedisConnector
 
     public function open(ConnectionParameters $parameters, float $readWriteTimeout = 30.0): Client
     {
-        if (1 !== preg_match('/^\d{1,3}$/D', $parameters->database) || (int) $parameters->database > self::MAX_DATABASE) {
+        // Sans numéro : la première base, comme le fait Redis lui-même.
+        $number = '' === $parameters->database ? '0' : $parameters->database;
+        if (1 !== preg_match('/^\d{1,3}$/D', $number) || (int) $number > self::MAX_DATABASE) {
             throw new \InvalidArgumentException('The Redis database must be a number between 0 and 255.');
         }
 
@@ -30,7 +32,7 @@ final readonly class RedisConnector
             'port' => $parameters->port,
             'username' => $parameters->username,
             'password' => $parameters->password(),
-            'database' => (int) $parameters->database,
+            'database' => (int) $number,
             'timeout' => self::CONNECT_TIMEOUT_SECONDS,
             'read_write_timeout' => $readWriteTimeout,
         ];

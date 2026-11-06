@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Driver\MySql;
 
+use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
@@ -47,6 +49,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         usort($databases, static fn (DatabaseSummary $a, DatabaseSummary $b): int => strcmp($a->name, $b->name));
 
         return $databases;
+    }
+
+    public function listSchemas(): array
+    {
+        throw UnsupportedOperationException::for(Engine::MySql, 'schemas');
     }
 
     public function listTables(): array

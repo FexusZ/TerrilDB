@@ -234,4 +234,11 @@ final class MySqlIntrospectorTest extends TestCase
             self::assertCount(7, $introspector->listTables());
         }
     }
+
+    public function testThereIsNoSchemaLevelBelowADatabase(): void
+    {
+        $this->expectException(\App\Core\Driver\Exception\UnsupportedOperationException::class);
+
+        $this->introspector('TARGET_MYSQL_URL')->listSchemas();
+    }
 }
