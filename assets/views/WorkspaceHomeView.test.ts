@@ -66,11 +66,11 @@ describe('WorkspaceHomeView', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
-  it('puts the connections bar on the left, before the content', async () => {
+  it('puts the connections bar on the right, after the content', async () => {
     const wrapper = await mountHome()
 
     const children = Array.from(wrapper.get('.body').element.children)
-    expect(children[0]?.matches('nav.workbench')).toBe(true)
-    expect(children[children.length - 1]?.matches('main.content')).toBe(true)
+    expect(children[0]?.matches('main.content')).toBe(true)
+    expect(children[children.length - 1]?.matches('nav.workbench')).toBe(true)
   })
 })

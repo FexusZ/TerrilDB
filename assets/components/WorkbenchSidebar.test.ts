@@ -85,12 +85,12 @@ describe('WorkbenchSidebar', () => {
     wrapper.unmount()
   })
 
-  it('folds towards the left edge: « to fold it, » to bring it back', async () => {
+  it('folds towards the right edge: » to fold it, « to bring it back', async () => {
     const wrapper = await mountSidebar()
 
-    expect(wrapper.get('button.fold').text()).toBe('«')
-    await wrapper.get('button.fold').trigger('click')
     expect(wrapper.get('button.fold').text()).toBe('»')
+    await wrapper.get('button.fold').trigger('click')
+    expect(wrapper.get('button.fold').text()).toBe('«')
     wrapper.unmount()
   })
 })

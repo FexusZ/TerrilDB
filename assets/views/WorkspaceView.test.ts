@@ -167,12 +167,12 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('.current').text()).toContain('Production')
   })
 
-  it('puts the connections bar and the tables panel on the left, before the content', async () => {
+  it('puts the tables panel on the left and the connections bar on the right', async () => {
     mocked.mockImplementation(answer())
 
     const { wrapper } = await mountView()
 
     const children = Array.from(wrapper.get('.body').element.children)
-    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['nav', 'aside', 'div.content'])
+    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['aside', 'div.content', 'nav'])
   })
 })
