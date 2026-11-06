@@ -31,13 +31,16 @@ const PAGE = 100
  * ce qui est déplié et ce qui a été lu reste en mémoire quand on replie, pour ne pas relire la base à chaque clic. Une
  * réponse qui arrive après qu'une connexion a été oubliée (suppression, déconnexion) est ignorée.
  *
- * Clés de nœud : `c:<connexion>` pour une connexion, `d:<connexion>:<base>` pour une base (base vide = celle de la connexion).
+ * Clés de nœud : `c:<connexion>` pour une connexion, `d:<connexion>:<base>` pour une base (base vide = celle de la connexion),
+ * `s:<connexion>:<base>:<schéma>` pour un schéma PostgreSQL (schéma vide = le schéma courant, sans niveau schéma).
  */
 export const useTreeStore = defineStore('tree', () => {
   const expanded = ref<string[]>([])
   const statuses = ref<Record<string, NodeStatus>>({})
   const errors = ref<Record<string, string | null>>({})
   const databases = ref<Record<string, DatabaseInfo[] | null>>({})
+  const schemas = ref<Record<string, DatabaseInfo[] | null>>({})
+  const defaults = ref<Record<string, string | null>>({})
   const flat = ref<Record<string, boolean>>({})
   const tables = ref<Record<string, TablesState>>({})
   const keys = ref<Record<string, KeysState>>({})
@@ -51,7 +54,14 @@ export const useTreeStore = defineStore('tree', () => {
   const isExpanded = (key: string): boolean => expanded.value.includes(key)
   const isFlat = (id: string): boolean => flat.value[id] === true
   const databasesOf = (id: string): DatabaseInfo[] | null => databases.value[id] ?? null
-  const tablesOf = (id: string, database: string): TablesState | null => tables.value[`${id}:${database}`] ?? null
+  const tablesOf = (id: string, database: string, schema = ''): TablesState | null => tables.value[`${id}:${database}:${schema}`] ?? null
+  const schemasOf = (id: string, database: string): DatabaseInfo[] | null => schemas.value[`${id}:${database}`] ?? null
+  /** Un niveau schéma n'existe que s'il y a de quoi choisir : un unique schéma « public » est celui qu'on voit déjà. */
+  const hasSchemaLevel = (id: string, database: string): boolean => {
+    const list = schemasOf(id, database)
+
+    return list !== null && (list.length > 1 || (list.length === 1 && list[0]?.name !== 'public'))
+  }
   const keysOf = (id: string): KeysState | null => keys.value[id] ?? null
 
   function expand(key: string): void {
@@ -89,14 +99,16 @@ export const useTreeStore = defineStore('tree', () => {
         }
         keys.value = { ...keys.value, [id]: { items: page.keys, next: page.nextCursor, total: page.total, loading: false, error: null } }
       } else {
-        const list = await fetchDatabases(id)
+        const { list, fallback } = await fetchDatabases(id)
         if (snapshot(id) !== stamp) {
           return
         }
         databases.value = { ...databases.value, [id]: list }
-        if (list.length <= 1) {
+        defaults.value = { ...defaults.value, [id]: fallback }
+        // Une connexion qui ne nomme aucune base n'a rien à montrer d'elle-même : on garde le niveau « base ».
+        if (list.length <= 1 && fallback !== null) {
           flat.value = { ...flat.value, [id]: true }
-          await loadTables(id, '', false)
+          await openScope(id, '')
         }
       }
     } catch (error) {
@@ -115,15 +127,50 @@ export const useTreeStore = defineStore('tree', () => {
     statuses.value = { ...statuses.value, [id]: 'open' }
   }
 
-  async function fetchDatabases(id: string): Promise<DatabaseInfo[]> {
+  async function fetchDatabases(id: string): Promise<{ list: DatabaseInfo[]; fallback: string | null }> {
     try {
-      return (await api<{ databases: DatabaseInfo[] }>('GET', `/web/connections/${id}/databases`)).databases
+      const result = await api<{ default?: string | null; databases: DatabaseInfo[] }>('GET', `/web/connections/${id}/databases`)
+
+      return { list: result.databases, fallback: result.default === undefined ? '' : result.default }
     } catch (error) {
       // Un moteur sans liste de bases se parcourt comme une base unique.
       if (error instanceof ApiError && error.code === 'unsupported_operation') {
-        return []
+        return { list: [], fallback: '' }
       }
       throw error
+    }
+  }
+
+  /**
+   * Ouvre une base : sur PostgreSQL on lit d'abord ses schémas, et les tables ne se chargent qu'à l'ouverture d'un schéma
+   * (sauf s'il n'y a pas de niveau schéma) ; ailleurs, directement ses tables.
+   */
+  async function openScope(id: string, database: string): Promise<void> {
+    if (useConnectionsStore().byId(id)?.engine === 'postgresql') {
+      await loadSchemas(id, database)
+      if (hasSchemaLevel(id, database)) {
+        return
+      }
+    }
+    await loadTables(id, database, '', false)
+  }
+
+  async function loadSchemas(id: string, database: string): Promise<void> {
+    const stamp = snapshot(id)
+    const params = new URLSearchParams()
+    if (database !== '') {
+      params.set('database', database)
+    }
+    try {
+      const result = await api<{ schemas: DatabaseInfo[] }>('GET', `/web/connections/${id}/schemas${params.size > 0 ? `?${params.toString()}` : ''}`)
+      if (snapshot(id) === stamp) {
+        schemas.value = { ...schemas.value, [`${id}:${database}`]: result.schemas }
+      }
+    } catch (error) {
+      if (snapshot(id) === stamp) {
+        const key = `${id}:${database}:`
+        tables.value = { ...tables.value, [key]: { items: [], next: null, total: null, loading: false, error: messageFor(error) } }
+      }
     }
   }
 
@@ -144,14 +191,27 @@ export const useTreeStore = defineStore('tree', () => {
       return
     }
     expand(key)
-    if (tablesOf(id, database) === null) {
-      await loadTables(id, database, false)
+    if (schemasOf(id, database) === null && tablesOf(id, database) === null) {
+      await openScope(id, database)
+    }
+  }
+
+  async function toggleSchema(id: string, database: string, schema: string): Promise<void> {
+    const key = `s:${id}:${database}:${schema}`
+    if (isExpanded(key)) {
+      collapse(key)
+
+      return
+    }
+    expand(key)
+    if (tablesOf(id, database, schema) === null) {
+      await loadTables(id, database, schema, false)
     }
   }
 
   /** Une page de tables d'une base : la première, ou la suivante qui s'ajoute. */
-  async function loadTables(id: string, database: string, append: boolean): Promise<void> {
-    const key = `${id}:${database}`
+  async function loadTables(id: string, database: string, schema: string, append: boolean): Promise<void> {
+    const key = `${id}:${database}:${schema}`
     const current = tables.value[key]
     if (append && (current === undefined || current.next === null || current.loading)) {
       return
@@ -163,6 +223,9 @@ export const useTreeStore = defineStore('tree', () => {
     const params = new URLSearchParams({ limit: String(PAGE) })
     if (database !== '') {
       params.set('database', database)
+    }
+    if (schema !== '') {
+      params.set('schema', schema)
     }
     if (append && base.next !== null) {
       params.set('cursor', base.next)
@@ -190,7 +253,7 @@ export const useTreeStore = defineStore('tree', () => {
     }
   }
 
-  const loadMoreTables = (id: string, database: string): Promise<void> => loadTables(id, database, true)
+  const loadMoreTables = (id: string, database: string, schema = ''): Promise<void> => loadTables(id, database, schema, true)
 
   async function loadMoreKeys(id: string): Promise<void> {
     const current = keys.value[id]
@@ -219,10 +282,12 @@ export const useTreeStore = defineStore('tree', () => {
   /** Oublie tout d'une connexion (supprimée) : nœuds repliés, données et réponses en vol écartées. */
   function forget(id: string): void {
     generations.set(id, (generations.get(id) ?? 0) + 1)
-    expanded.value = expanded.value.filter((key) => key !== `c:${id}` && !key.startsWith(`d:${id}:`))
+    expanded.value = expanded.value.filter((key) => key !== `c:${id}` && !key.startsWith(`d:${id}:`) && !key.startsWith(`s:${id}:`))
     statuses.value = drop(statuses.value, (key) => key === id)
     errors.value = drop(errors.value, (key) => key === id)
     databases.value = drop(databases.value, (key) => key === id)
+    schemas.value = drop(schemas.value, (key) => key.startsWith(`${id}:`))
+    defaults.value = drop(defaults.value, (key) => key === id)
     flat.value = drop(flat.value, (key) => key === id)
     tables.value = drop(tables.value, (key) => key.startsWith(`${id}:`))
     keys.value = drop(keys.value, (key) => key === id)
@@ -236,10 +301,12 @@ export const useTreeStore = defineStore('tree', () => {
     statuses.value = {}
     errors.value = {}
     databases.value = {}
+    schemas.value = {}
+    defaults.value = {}
     flat.value = {}
     tables.value = {}
     keys.value = {}
   }
 
-  return { statusOf, errorOf, isExpanded, isFlat, databasesOf, tablesOf, keysOf, toggleConnection, toggleDatabase, loadMoreTables, loadMoreKeys, forget, reset }
+  return { statusOf, errorOf, isExpanded, isFlat, databasesOf, schemasOf, hasSchemaLevel, tablesOf, keysOf, toggleConnection, toggleDatabase, toggleSchema, loadMoreTables, loadMoreKeys, forget, reset }
 })

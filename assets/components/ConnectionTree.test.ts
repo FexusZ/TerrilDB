@@ -11,7 +11,7 @@ import ConnectionTree from './ConnectionTree.vue'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const connection = (id: string, name: string, engine: ConnectionSummary['engine'] = 'postgresql'): ConnectionSummary => ({ id, name, engine, createdAt: '', updatedAt: '' })
+const connection = (id: string, name: string, engine: ConnectionSummary['engine'] = 'mysql'): ConnectionSummary => ({ id, name, engine, createdAt: '', updatedAt: '' })
 const twoDatabases = { databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] }
 const page = (names: string[], nextCursor: string | null = null, total: number | null = names.length) => ({ tables: names.map((name) => ({ name, kind: 'table', estimatedRows: 3 })), nextCursor, total })
 
@@ -279,6 +279,61 @@ describe('ConnectionTree', () => {
       expect(router.currentRoute.value.fullPath).toBe('/connections/c1/edit')
       await items(wrapper)[0]?.trigger('keydown', { key: 'Delete' })
       expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+      wrapper.unmount()
+    })
+  })
+
+  describe('PostgreSQL schemas', () => {
+    it('shows base > schema > tables, linking to the table in its schema', async () => {
+      const { wrapper } = await mountTree([connection('c1', 'Production', 'postgresql')])
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+      await items(wrapper)[0]?.get('.row').trigger('click')
+      await flushPromises()
+      mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] })
+      await items(wrapper)[2]?.get('.row').trigger('click')
+      await flushPromises()
+      mocked.mockResolvedValueOnce(page(['invoices']))
+
+      await items(wrapper)[4]?.get('.row').trigger('click')
+      await flushPromises()
+
+      expect(labels(wrapper)).toEqual(['Production', 'shop', 'reporting', 'public', 'sales', 'invoices'])
+      expect(items(wrapper)[3]?.attributes('aria-level')).toBe('3')
+      expect(items(wrapper)[5]?.attributes('aria-level')).toBe('4')
+      expect(items(wrapper)[5]?.get('a').attributes('href')).toBe('/connections/c1/tables/invoices?database=reporting&schema=sales')
+      wrapper.unmount()
+    })
+
+    it('puts the schemas straight under a connection that has one database', async () => {
+      const { wrapper } = await mountTree([connection('c1', 'Production', 'postgresql')])
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] })
+
+      await items(wrapper)[0]?.get('.row').trigger('click')
+      await flushPromises()
+
+      expect(labels(wrapper)).toEqual(['Production', 'public', 'sales'])
+      expect(items(wrapper)[1]?.attributes('aria-level')).toBe('2')
+      expect(items(wrapper)[1]?.attributes('aria-expanded')).toBe('false')
+      wrapper.unmount()
+    })
+
+    it('marks the table that is open in its schema only', async () => {
+      const { wrapper } = await mountTree([connection('c1', 'Production', 'postgresql')], '/connections/c1/tables/orders?schema=sales')
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] })
+      await items(wrapper)[0]?.get('.row').trigger('click')
+      await flushPromises()
+      mocked.mockResolvedValueOnce(page(['orders']))
+      await items(wrapper)[1]?.get('.row').trigger('click')
+      await flushPromises()
+      mocked.mockResolvedValueOnce(page(['orders']))
+      await items(wrapper)[3]?.get('.row').trigger('click')
+      await flushPromises()
+
+      const current = items(wrapper).filter((item) => item.attributes('aria-current') === 'page')
+      expect(current).toHaveLength(1)
+      expect(current[0]?.attributes('data-key')).toBe('t:c1::sales:orders')
       wrapper.unmount()
     })
   })

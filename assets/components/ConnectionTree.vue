@@ -10,7 +10,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 
 const emit = defineEmits<{ deleted: [id: string] }>()
 
-type Kind = 'connection' | 'database' | 'table' | 'key' | 'more' | 'message'
+type Kind = 'connection' | 'database' | 'schema' | 'table' | 'key' | 'more' | 'message'
 
 interface Row {
   key: string
@@ -20,6 +20,7 @@ interface Row {
   parentKey: string | null
   connection?: ConnectionSummary
   database?: string
+  schema?: string
   expandable: boolean
   expanded: boolean
   to?: RouteLocationRaw
@@ -44,23 +45,24 @@ const toDelete = ref<ConnectionSummary | null>(null)
 const deleting = ref(false)
 const deleteError = ref<string | null>(null)
 
-function tableRows(out: Row[], connection: ConnectionSummary, database: string, level: number, parentKey: string): void {
-  const state = tree.tablesOf(connection.id, database)
+function tableRows(out: Row[], connection: ConnectionSummary, database: string, schema: string, level: number, parentKey: string): void {
+  const state = tree.tablesOf(connection.id, database, schema)
   if (state === null) {
     return
   }
   for (const table of state.items) {
     out.push({
-      key: `t:${connection.id}:${database}:${table.name}`,
+      key: `t:${connection.id}:${database}:${schema}:${table.name}`,
       kind: 'table',
       level,
       label: table.name,
       parentKey,
       connection,
       database,
+      schema,
       expandable: false,
       expanded: false,
-      to: { name: 'table', params: { id: connection.id, name: table.name }, ...(database === '' ? {} : { query: { database } }) },
+      to: { name: 'table', params: { id: connection.id, name: table.name }, ...(database === '' && schema === '' ? {} : { query: { ...(database === '' ? {} : { database }), ...(schema === '' ? {} : { schema }) } }) },
       hint: table.kind === 'table' ? (table.estimatedRows === null ? undefined : formatEstimate(table.estimatedRows)) : 'vue',
       view: table.kind !== 'table',
       posinset: 0,
@@ -68,12 +70,44 @@ function tableRows(out: Row[], connection: ConnectionSummary, database: string, 
     })
   }
   if (state.error !== null) {
-    out.push({ key: `e:${connection.id}:${database}`, kind: 'message', level, label: state.error, parentKey, expandable: false, expanded: false, alert: true, posinset: 0, setsize: 0 })
+    out.push({ key: `e:${connection.id}:${database}:${schema}`, kind: 'message', level, label: state.error, parentKey, expandable: false, expanded: false, alert: true, posinset: 0, setsize: 0 })
   } else if (state.loading && state.items.length === 0) {
-    out.push({ key: `l:${connection.id}:${database}`, kind: 'message', level, label: 'Chargement…', parentKey, expandable: false, expanded: false, posinset: 0, setsize: 0 })
+    out.push({ key: `l:${connection.id}:${database}:${schema}`, kind: 'message', level, label: 'Chargement…', parentKey, expandable: false, expanded: false, posinset: 0, setsize: 0 })
   }
   if (state.next !== null) {
-    out.push({ key: `m:${connection.id}:${database}`, kind: 'more', level, label: state.loading ? 'Chargement…' : 'Charger les 100 suivantes', parentKey, connection, database, expandable: false, expanded: false, posinset: 0, setsize: 0 })
+    out.push({ key: `m:${connection.id}:${database}:${schema}`, kind: 'more', level, label: state.loading ? 'Chargement…' : 'Charger les 100 suivantes', parentKey, connection, database, schema, expandable: false, expanded: false, posinset: 0, setsize: 0 })
+  }
+}
+
+/** Le contenu d'une base : ses schémas (PostgreSQL, s'il y a de quoi choisir) avec leurs tables dessous, sinon ses tables. */
+function scopeRows(out: Row[], connection: ConnectionSummary, database: string, level: number, parentKey: string): void {
+  if (!tree.hasSchemaLevel(connection.id, database)) {
+    tableRows(out, connection, database, '', level, parentKey)
+
+    return
+  }
+  for (const schema of tree.schemasOf(connection.id, database) ?? []) {
+    const schemaKey = `s:${connection.id}:${database}:${schema.name}`
+    const schemaOpen = tree.isExpanded(schemaKey)
+    const state = tree.tablesOf(connection.id, database, schema.name)
+    out.push({
+      key: schemaKey,
+      kind: 'schema',
+      level,
+      label: schema.name,
+      parentKey,
+      connection,
+      database,
+      schema: schema.name,
+      expandable: true,
+      expanded: schemaOpen,
+      hint: schemaOpen && state?.total != null ? `${number.format(state.items.length)} / ${number.format(state.total)}` : undefined,
+      posinset: 0,
+      setsize: 0,
+    })
+    if (schemaOpen) {
+      tableRows(out, connection, database, schema.name, level + 1, schemaKey)
+    }
   }
 }
 
@@ -117,12 +151,12 @@ const rows = computed<Row[]>(() => {
         out.push({ key: `m:${connection.id}`, kind: 'more', level: 2, label: keys.loading ? 'Chargement…' : 'Charger la suite', parentKey: key, connection, expandable: false, expanded: false, posinset: 0, setsize: 0 })
       }
     } else if (tree.isFlat(connection.id)) {
-      tableRows(out, connection, '', 2, key)
+      scopeRows(out, connection, '', 2, key)
     } else {
       for (const database of tree.databasesOf(connection.id) ?? []) {
         const databaseKey = `d:${connection.id}:${database.name}`
         const databaseOpen = tree.isExpanded(databaseKey)
-        const state = tree.tablesOf(connection.id, database.name)
+        const state = tree.tablesOf(connection.id, database.name, '')
         out.push({
           key: databaseKey,
           kind: 'database',
@@ -138,7 +172,7 @@ const rows = computed<Row[]>(() => {
           setsize: 0,
         })
         if (databaseOpen) {
-          tableRows(out, connection, database.name, 3, databaseKey)
+          scopeRows(out, connection, database.name, 3, databaseKey)
         }
       }
     }
@@ -173,7 +207,12 @@ function isCurrent(row: Row): boolean {
     return false
   }
   if (row.kind === 'table') {
-    return route.name === 'table' && route.params.name === row.label && (typeof route.query.database === 'string' ? route.query.database : '') === row.database
+    return (
+      route.name === 'table' &&
+      route.params.name === row.label &&
+      (typeof route.query.database === 'string' ? route.query.database : '') === row.database &&
+      (typeof route.query.schema === 'string' ? route.query.schema : '') === row.schema
+    )
   }
 
   return row.kind === 'key' && route.name === 'key' && route.query.name === row.label
@@ -200,6 +239,11 @@ async function activate(row: Row): Promise<void> {
         await tree.toggleDatabase(connection.id, row.database)
       }
       break
+    case 'schema':
+      if (connection && row.database !== undefined && row.schema !== undefined) {
+        await tree.toggleSchema(connection.id, row.database, row.schema)
+      }
+      break
     case 'table':
     case 'key':
       if (row.to) {
@@ -208,7 +252,7 @@ async function activate(row: Row): Promise<void> {
       break
     case 'more':
       if (connection) {
-        await (connection.engine === 'redis' ? tree.loadMoreKeys(connection.id) : tree.loadMoreTables(connection.id, row.database ?? ''))
+        await (connection.engine === 'redis' ? tree.loadMoreKeys(connection.id) : tree.loadMoreTables(connection.id, row.database ?? '', row.schema ?? ''))
       }
       break
     default:
@@ -338,7 +382,7 @@ async function confirmDelete(): Promise<void> {
                 <button type="button" class="delete" tabindex="-1" :aria-label="`Supprimer ${row.label}`" title="Supprimer (Suppr)" @click.stop="toDelete = row.connection ?? null">✕</button>
               </span>
             </template>
-            <template v-else-if="row.kind === 'database'">
+            <template v-else-if="row.kind === 'database' || row.kind === 'schema'">
               <span class="caret" aria-hidden="true">{{ row.expanded ? '▾' : '▸' }}</span>
               <span class="label">{{ row.label }}</span>
               <small v-if="row.hint">{{ row.hint }}</small>

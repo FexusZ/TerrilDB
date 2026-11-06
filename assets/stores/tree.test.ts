@@ -8,7 +8,7 @@ import { useTreeStore } from './tree'
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
-const connection = (id: string, engine: ConnectionSummary['engine'] = 'postgresql'): ConnectionSummary => ({ id, name: `Base ${id}`, engine, createdAt: '', updatedAt: '' })
+const connection = (id: string, engine: ConnectionSummary['engine'] = 'mysql'): ConnectionSummary => ({ id, name: `Base ${id}`, engine, createdAt: '', updatedAt: '' })
 const orders: TableSummary = { name: 'orders', kind: 'table', estimatedRows: 10 }
 const items: TableSummary = { name: 'items', kind: 'table', estimatedRows: 5 }
 
@@ -197,5 +197,120 @@ describe('tree store', () => {
 
     expect(tree.databasesOf('c1')).toBeNull()
     expect(tree.statusOf('c1')).toBe('closed')
+  })
+
+  describe('server without a default database', () => {
+    it('keeps the database level even when the server has a single database, since the connection names none', async () => {
+      const tree = setup(connection('c1'))
+      mocked.mockResolvedValueOnce({ default: null, databases: [{ name: 'shop', system: false }] })
+
+      await tree.toggleConnection('c1')
+
+      expect(tree.isFlat('c1')).toBe(false)
+      expect(tree.databasesOf('c1')?.map((database) => database.name)).toEqual(['shop'])
+      expect(mocked).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('PostgreSQL schemas', () => {
+    const schemas = { schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] }
+
+    it('puts the schemas between a database and its tables, and loads the tables of a schema when it is opened', async () => {
+      const tree = setup(connection('c1', 'postgresql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+      await tree.toggleConnection('c1')
+      mocked.mockResolvedValueOnce(schemas)
+
+      await tree.toggleDatabase('c1', 'reporting')
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/schemas?database=reporting')
+      expect(tree.hasSchemaLevel('c1', 'reporting')).toBe(true)
+      expect(tree.schemasOf('c1', 'reporting')?.map((schema) => schema.name)).toEqual(['public', 'sales'])
+      expect(tree.tablesOf('c1', 'reporting', 'sales')).toBeNull()
+
+      mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: null, total: 1 })
+      await tree.toggleSchema('c1', 'reporting', 'sales')
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?limit=100&database=reporting&schema=sales')
+      expect(tree.isExpanded('s:c1:reporting:sales')).toBe(true)
+      expect(tree.tablesOf('c1', 'reporting', 'sales')?.items).toEqual([orders])
+    })
+
+    it('offers the schemas straight under a connection that has one database', async () => {
+      const tree = setup(connection('c1', 'postgresql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce(schemas)
+
+      await tree.toggleConnection('c1')
+
+      expect(tree.isFlat('c1')).toBe(true)
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/schemas')
+      expect(tree.hasSchemaLevel('c1', '')).toBe(true)
+      expect(mocked).toHaveBeenCalledTimes(2)
+    })
+
+    it('skips the schema level when the only schema is the public one, and shows the tables', async () => {
+      const tree = setup(connection('c1', 'postgresql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }] })
+      mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: null, total: 1 })
+
+      await tree.toggleConnection('c1')
+
+      expect(tree.hasSchemaLevel('c1', '')).toBe(false)
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?limit=100')
+      expect(tree.tablesOf('c1', '', '')?.items).toEqual([orders])
+    })
+
+    it('keeps the schema level for a single schema that is not the public one', async () => {
+      const tree = setup(connection('c1', 'postgresql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce({ schemas: [{ name: 'app', system: false }] })
+
+      await tree.toggleConnection('c1')
+
+      expect(tree.hasSchemaLevel('c1', '')).toBe(true)
+    })
+
+    it('loads the next hundred tables of a schema with its name', async () => {
+      const tree = setup(connection('c1', 'postgresql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce(schemas)
+      await tree.toggleConnection('c1')
+      mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: 'orders', total: 2 })
+      await tree.toggleSchema('c1', '', 'sales')
+      mocked.mockResolvedValueOnce({ tables: [items], nextCursor: null, total: 2 })
+
+      await tree.loadMoreTables('c1', '', 'sales')
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?limit=100&schema=sales&cursor=orders')
+      expect(tree.tablesOf('c1', '', 'sales')?.items).toEqual([orders, items])
+    })
+
+    it('never asks another engine for schemas', async () => {
+      const tree = setup(connection('c1', 'mysql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: null, total: 1 })
+
+      await tree.toggleConnection('c1')
+
+      expect(mocked).not.toHaveBeenCalledWith('GET', expect.stringContaining('/schemas'))
+      expect(tree.hasSchemaLevel('c1', '')).toBe(false)
+    })
+
+    it('forgets the schemas of a connection that was deleted', async () => {
+      const tree = setup(connection('c1', 'postgresql'))
+      mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+      mocked.mockResolvedValueOnce(schemas)
+      await tree.toggleConnection('c1')
+      mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: null, total: 1 })
+      await tree.toggleSchema('c1', '', 'sales')
+
+      tree.forget('c1')
+
+      expect(tree.schemasOf('c1', '')).toBeNull()
+      expect(tree.tablesOf('c1', '', 'sales')).toBeNull()
+      expect(tree.isExpanded('s:c1::sales')).toBe(false)
+    })
   })
 })
