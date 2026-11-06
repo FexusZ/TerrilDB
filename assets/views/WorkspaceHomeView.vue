@@ -24,7 +24,6 @@ onMounted(async () => {
   <div class="shell">
     <AppHeader />
     <div class="body">
-      <WorkbenchSidebar />
       <main class="content">
         <p v-if="error" class="error" role="alert">{{ error }}</p>
         <template v-else-if="connections.loaded && connections.items.length === 0">
@@ -34,9 +33,10 @@ onMounted(async () => {
         </template>
         <template v-else>
           <h1>Votre espace de travail</h1>
-          <p>Choisissez une connexion dans la barre de gauche : un clic l’ouvre, un second la referme. Ouvrez une base pour voir ses tables, puis une table pour lire sa structure.</p>
+          <p>Choisissez une connexion dans la barre de droite : un clic l’ouvre, un second la referme. Ouvrez une base pour voir ses tables, puis une table pour lire sa structure.</p>
         </template>
       </main>
+      <WorkbenchSidebar />
     </div>
   </div>
 </template>

@@ -79,7 +79,6 @@ watch(() => [route.query.database, route.query.schema], () => {
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div v-else class="body">
-      <WorkbenchSidebar @deleted="onDeleted" />
       <aside class="side">
         <KeyBrowser
           v-if="workspace.isKeyValue"
@@ -110,6 +109,7 @@ watch(() => [route.query.database, route.query.schema], () => {
         </template>
       </aside>
       <div class="content"><RouterView /></div>
+      <WorkbenchSidebar @deleted="onDeleted" />
     </div>
   </div>
 </template>

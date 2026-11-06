@@ -159,4 +159,13 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('joindre')
     expect(wrapper.get('.current').text()).toContain('Production')
   })
+
+  it('puts the connections bar on the right, after the tables and the content', async () => {
+    mocked.mockImplementation(answer())
+
+    const { wrapper } = await mountView()
+
+    const children = Array.from(wrapper.get('.body').element.children)
+    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['aside', 'div.content', 'nav'])
+  })
 })
