@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ENGINE_HAS_PLAN } from '../api/types'
 import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
@@ -19,7 +19,11 @@ const exportable = computed(() => tab.value.result !== null && tab.value.result.
 const readOnly = computed(() => tab.value.mode === 'read_only')
 const dialect = computed(() => connections.byId(workspace.connectionId ?? '')?.engine ?? 'postgresql')
 const hasPlan = computed(() => ENGINE_HAS_PLAN[dialect.value])
-const tableNames = computed(() => workspace.tables.map((table) => table.name))
+// Tout ce que le serveur connaît (lecture complète des noms), complété par ce que le panneau a déjà chargé en attendant.
+const tableNames = computed(() => [...new Set([...workspace.tables.map((table) => table.name), ...workspace.completionTables])])
+
+onMounted(() => void workspace.loadCompletion())
+watch(() => [workspace.connectionId, workspace.database, workspace.schema], () => void workspace.loadCompletion())
 
 const showHistory = ref(false)
 

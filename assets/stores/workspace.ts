@@ -45,6 +45,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** PostgreSQL : le schéma exploré (null : le schéma courant) et ceux de la base. */
   const schema = ref<string | null>(null)
   const schemas = ref<DatabaseInfo[]>([])
+  /** Les noms de TOUTES les tables de la base explorée, pour l'autocomplétion de l'éditeur (le panneau, lui, est paginé). */
+  const completionTables = ref<string[]>([])
+  let completionLoaded = ''
   // Une base clé-valeur (Redis) se parcourt par clés : même espace de travail, autre arborescence.
   const isKeyValue = ref(false)
   const keys = ref<KeyEntry[]>([])
@@ -105,6 +108,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     defaultDatabase.value = null
     schema.value = null
     schemas.value = []
+    completionTables.value = []
+    completionLoaded = ''
     keys.value = []
     keysCursor.value = null
     keysTotal.value = 0
@@ -268,6 +273,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     described.clear()
     tablesSearch.value = ''
     await loadTables(false)
+  }
+
+  /**
+   * Lit la liste COMPLÈTE des noms de tables (route sans pagination) pour l'autocomplétion : une fois par connexion, base
+   * et schéma. Un échec n'est pas une erreur pour l'utilisateur, la complétion se contente de ce que le panneau a chargé.
+   */
+  async function loadCompletion(): Promise<void> {
+    const id = connectionId.value
+    if (id === null || isKeyValue.value) {
+      return
+    }
+    const key = `${id}|${database.value ?? ''}|${schema.value ?? ''}`
+    if (key === completionLoaded) {
+      return
+    }
+    completionLoaded = key
+    const current = (): boolean => completionLoaded === key
+    try {
+      const result = await api<{ tables: TableSummary[] } | undefined>('GET', `/web/connections/${id}/tables${scopeQuery(database.value, schema.value)}`)
+      if (current()) {
+        completionTables.value = (result?.tables ?? []).map((table) => table.name)
+      }
+    } catch {
+      if (current()) {
+        completionLoaded = ''
+        completionTables.value = []
+      }
+    }
   }
 
   function scopeQuery(databaseName: string | null, schemaName: string | null): string {
@@ -540,5 +573,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, database, databases, databasesError, defaultDatabase, schema, schemas, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })

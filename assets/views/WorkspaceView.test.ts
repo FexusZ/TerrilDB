@@ -91,16 +91,23 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('a.node').text()).toContain('user:1')
   })
 
-  it('offers the database picker on a SQL connection, not on a key-value one', async () => {
-    mocked.mockResolvedValueOnce({ connections: [summary] })
-    mocked.mockResolvedValueOnce({ tables: [] })
-    mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
-    mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }] })
+  it('has no database or schema selector of its own: the connections bar is where one chooses', async () => {
+    mocked.mockImplementation(answer([{ name: 'shop', system: false }, { name: 'reporting', system: false }]))
 
     const { wrapper } = await mountView()
 
-    expect(wrapper.find('select.databases').exists()).toBe(true)
-    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/databases')
+    expect(wrapper.find('select.databases').exists()).toBe(false)
+    expect(wrapper.find('select.schemas').exists()).toBe(false)
+  })
+
+  it('opens the first database itself when the connection names none, so the console has somewhere to run', async () => {
+    mocked.mockImplementation((method?: string, url = ''): Promise<unknown> =>
+      Promise.resolve(url === '/web/connections' ? { connections: [summary] } : url.includes('/databases') ? { default: null, databases: [{ name: 'shop', system: false }] } : url.includes('/schemas') ? { schemas: [] } : { tables: [] }),
+    )
+
+    await mountView()
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100&database=shop')
   })
 
   it('keeps the connections sidebar on every page of the workspace', async () => {
@@ -160,12 +167,12 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('.current').text()).toContain('Production')
   })
 
-  it('puts the connections bar on the right, after the tables and the content', async () => {
+  it('puts the connections bar and the tables panel on the left, before the content', async () => {
     mocked.mockImplementation(answer())
 
     const { wrapper } = await mountView()
 
     const children = Array.from(wrapper.get('.body').element.children)
-    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['aside', 'div.content', 'nav'])
+    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['nav', 'aside', 'div.content'])
   })
 })

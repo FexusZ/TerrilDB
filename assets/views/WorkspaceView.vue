@@ -4,7 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
-import DatabasePicker from '../components/DatabasePicker.vue'
 import KeyBrowser from '../components/KeyBrowser.vue'
 import SchemaTree from '../components/SchemaTree.vue'
 import WorkbenchSidebar from '../components/WorkbenchSidebar.vue'
@@ -34,6 +33,8 @@ async function open(): Promise<void> {
     }
     await workspace.open(props.id)
     await applyRouteDatabase()
+    // Une connexion qui ne nomme aucune base : on ouvre la première, la console a besoin d'une base où s'exécuter.
+    await workspace.loadDatabases()
   } catch (failure) {
     error.value = messageFor(failure)
   }
@@ -79,6 +80,7 @@ watch(() => [route.query.database, route.query.schema], () => {
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div v-else class="body">
+      <WorkbenchSidebar @deleted="onDeleted" />
       <aside class="side">
         <KeyBrowser
           v-if="workspace.isKeyValue"
@@ -93,7 +95,6 @@ watch(() => [route.query.database, route.query.schema], () => {
           @more="workspace.loadMoreKeys"
         />
         <template v-else>
-          <DatabasePicker />
           <SchemaTree
             :connection-id="id"
             :tables="workspace.tables"
@@ -109,7 +110,6 @@ watch(() => [route.query.database, route.query.schema], () => {
         </template>
       </aside>
       <div class="content"><RouterView /></div>
-      <WorkbenchSidebar @deleted="onDeleted" />
     </div>
   </div>
 </template>

@@ -65,7 +65,8 @@ describe('QueryPane', () => {
     await wrapper.get('.stub').trigger('keydown', { key: 'Enter', ctrlKey: true })
     await flushPromises()
 
-    expect(mocked).toHaveBeenCalledTimes(2)
+    // Ouverture, lecture des noms pour la complétion, et l'exécution une seule fois.
+    expect(mocked.mock.calls.filter(([, url]) => String(url).endsWith('/query'))).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -143,7 +144,8 @@ describe('QueryPane', () => {
     await wrapper.get('button.cancel').trigger('click')
 
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-    expect(mocked).toHaveBeenCalledTimes(2)
+    // Ouverture, lecture des noms pour la complétion, et l'exécution une seule fois.
+    expect(mocked.mock.calls.filter(([, url]) => String(url).endsWith('/query'))).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -261,6 +263,21 @@ describe('QueryPane', () => {
     expect(wrapper.find('section.plan').exists()).toBe(true)
     expect(wrapper.get('li.node').text()).toContain('Parcours complet')
     expect(wrapper.find('li.finding').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('gives the editor every table name of the server, not only the ones the side panel has loaded', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConnectionsStore().items = [{ id: 'abc', name: 'Production', engine: 'postgresql', createdAt: '', updatedAt: '' }]
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'orders', kind: 'table', estimatedRows: 3 }] })
+    await useWorkspaceStore().open('abc')
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'orders', kind: 'table', estimatedRows: 3 }, { name: 'zebra', kind: 'table', estimatedRows: 1 }] })
+    const wrapper = mount(QueryPane, { global: { plugins: [pinia], stubs: { SqlEditor: EditorStub } }, attachTo: document.body })
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables')
+    expect(wrapper.getComponent(EditorStub).props('tables')).toEqual(['orders', 'zebra'])
     wrapper.unmount()
   })
 

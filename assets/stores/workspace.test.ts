@@ -639,6 +639,47 @@ describe('workspace store', () => {
     expect(mocked).not.toHaveBeenCalledWith('GET', expect.stringContaining('/schemas'))
     expect(store.schemas).toEqual([])
   })
+
+  it('reads every table name for the editor completion, beyond the first page of the side panel', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'orders', kind: 'table', estimatedRows: 1 }, { name: 'zebra', kind: 'table', estimatedRows: 1 }] })
+
+    await store.loadCompletion()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables')
+    expect(store.completionTables).toEqual(['orders', 'zebra'])
+  })
+
+  it('reads the names once per database and schema, and again when either changes', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'orders', kind: 'table', estimatedRows: 1 }] })
+    await store.loadCompletion()
+    const calls = mocked.mock.calls.length
+    await store.loadCompletion()
+    expect(mocked.mock.calls.length).toBe(calls)
+
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await store.selectDatabase('reporting')
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'events', kind: 'table', estimatedRows: 1 }] })
+    await store.loadCompletion()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?database=reporting')
+    expect(store.completionTables).toEqual(['events'])
+  })
+
+  it('forgets the names when another connection is opened, and ignores a failed read', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ tables: [{ name: 'orders', kind: 'table', estimatedRows: 1 }] })
+    await store.loadCompletion()
+    mocked.mockResolvedValueOnce({ tables })
+    await store.open('conn-2')
+    expect(store.completionTables).toEqual([])
+
+    mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
+    await store.loadCompletion()
+
+    expect(store.completionTables).toEqual([])
+  })
 })
 
 describe('workspace store on a key-value connection', () => {
