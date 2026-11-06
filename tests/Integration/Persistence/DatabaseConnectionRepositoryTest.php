@@ -85,12 +85,16 @@ final class DatabaseConnectionRepositoryTest extends DatabaseTestCase
         self::assertNull($this->repository->findOwned($this->user('alice'), Uuid::v7()));
     }
 
-    public function testListingIsScopedToTheOwnerAndSortedByName(): void
+    public function testListingIsScopedToTheOwnerAndFollowsTheirPositions(): void
     {
         $alice = $this->user('alice');
         $bob = $this->user('bob');
-        $this->repository->save($this->connection($alice, 'Staging'));
-        $this->repository->save($this->connection($alice, 'Analytics'));
+        $staging = $this->connection($alice, 'Staging');
+        $staging->moveTo(1);
+        $analytics = $this->connection($alice, 'Analytics');
+        $analytics->moveTo(0);
+        $this->repository->save($staging);
+        $this->repository->save($analytics);
         $this->repository->save($this->connection($bob, 'Bob only'));
         $this->entityManager->clear();
 

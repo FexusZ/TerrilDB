@@ -12,7 +12,7 @@ final class ConnectionPresenter
     /**
      * Ce qui est lisible sans la clé : jamais un paramètre de connexion.
      *
-     * @return array<string, string>
+     * @return array<string, string|null>
      */
     public static function summary(DatabaseConnection $connection): array
     {
@@ -20,6 +20,7 @@ final class ConnectionPresenter
             'id' => $connection->getId()->toRfc4122(),
             'name' => $connection->getName(),
             'engine' => $connection->getEngine()->value,
+            'color' => $connection->getColor()?->value,
             'createdAt' => $connection->getCreatedAt()->format(\DATE_ATOM),
             'updatedAt' => $connection->getUpdatedAt()->format(\DATE_ATOM),
         ];

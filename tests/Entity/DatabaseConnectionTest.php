@@ -170,4 +170,32 @@ final class DatabaseConnectionTest extends TestCase
 
         $this->connection()->rotateEncryptedParameters('{"password":"p"}');
     }
+
+    public function testStartsWithoutColorAtTheTopOfTheList(): void
+    {
+        $connection = $this->connection();
+
+        self::assertNull($connection->getColor());
+        self::assertSame(0, $connection->getPosition());
+    }
+
+    public function testTheColorAndThePositionCanChange(): void
+    {
+        $connection = $this->connection();
+
+        $connection->setColor(\App\Entity\ConnectionColor::Teal);
+        $connection->moveTo(4);
+        self::assertSame(\App\Entity\ConnectionColor::Teal, $connection->getColor());
+        self::assertSame(4, $connection->getPosition());
+
+        $connection->setColor(null);
+        self::assertNull($connection->getColor());
+    }
+
+    public function testAPositionCannotBeNegative(): void
+    {
+        $this->expectException(InvalidDatabaseConnectionException::class);
+
+        $this->connection()->moveTo(-1);
+    }
 }

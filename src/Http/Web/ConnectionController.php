@@ -8,6 +8,7 @@ use App\Audit\AuditAction;
 use App\Audit\AuditedTargetHosts;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
+use App\Connection\Exception\InvalidConnectionOrderException;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -43,12 +44,25 @@ final readonly class ConnectionController
     {
         $input = JsonInput::fromRequest($request);
         [$name, $engine, $parameters] = ConnectionInput::read($input, null);
+        $color = ConnectionInput::color($input);
         $this->hosts->assertAllowed($this->session->user(), $parameters);
 
-        $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters);
+        $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters, $color);
         $this->audit->record($this->session->auditContext(), AuditAction::ConnectionCreated, subject: $connection->getId(), details: ['name' => $connection->getName(), 'engine' => $engine->value]);
 
         return new JsonResponse(['connection' => ConnectionPresenter::summary($connection)], Response::HTTP_CREATED);
+    }
+
+    /**
+     * L'ordre choisi par le propriétaire : les identifiants cités passent en tête, les autres suivent.
+     */
+    #[Route('/web/connections/order', methods: ['PUT'])]
+    public function reorder(Request $request): Response
+    {
+        $ids = array_map(static fn (string $id): Uuid => Uuid::isValid($id) ? Uuid::fromString($id) : throw InvalidConnectionOrderException::create(), JsonInput::fromRequest($request)->stringList('ids'));
+        $this->connections->reorder($this->session->user(), $ids);
+
+        return new Response(status: Response::HTTP_NO_CONTENT);
     }
 
     #[Route('/web/connections/test', methods: ['POST'])]
@@ -77,10 +91,12 @@ final readonly class ConnectionController
         $user = $this->session->user();
         $key = $this->session->key();
         $current = $this->connections->reveal($user, $key, $uuid);
-        [$name, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), $current);
+        $input = JsonInput::fromRequest($request);
+        [$name, $engine, $parameters] = ConnectionInput::read($input, $current);
+        $color = ConnectionInput::color($input);
         $this->hosts->assertAllowed($user, $parameters);
 
-        $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters);
+        $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters, $color);
         $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionUpdated, subject: $uuid, details: ['name' => $connection->getName(), 'engine' => $engine->value]);
 
         return new JsonResponse(['connection' => ConnectionPresenter::summary($connection)]);

@@ -109,6 +109,30 @@ describe('ConnectionFormView', () => {
     expect(router.currentRoute.value.name).toBe('connections')
   })
 
+  it('colors a connection with one of the offered colors, and sends none when none is chosen', async () => {
+    const { wrapper } = await mountForm()
+    await fill(wrapper, { name: 'Production', host: 'h', database: 'd', username: 'u', password: 'p' })
+    expect(wrapper.findAll('input[name="color"]').map((radio) => (radio.element as HTMLInputElement).value)).toEqual(['', 'red', 'orange', 'yellow', 'green', 'teal', 'blue', 'violet', 'pink'])
+    mocked.mockResolvedValueOnce({ connection: summary })
+
+    await wrapper.get('input[name="color"][value="red"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('POST', '/web/connections', expect.objectContaining({ color: 'red' }))
+  })
+
+  it('does not send a color when none is chosen', async () => {
+    const { wrapper } = await mountForm()
+    await fill(wrapper, { name: 'Production', host: 'h', database: 'd', username: 'u', password: 'p' })
+    mocked.mockResolvedValueOnce({ connection: summary })
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked.mock.calls.at(-1)?.[2]).not.toHaveProperty('color')
+  })
+
   it('leaves the port to the server when it is empty', async () => {
     const { wrapper } = await mountForm()
     await fill(wrapper, { name: 'P', host: 'h', database: 'd', username: 'u', password: 'p' })
@@ -165,6 +189,19 @@ describe('ConnectionFormView', () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain('joindre')
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
+  it('shows the color of a saved connection and lets it be changed', async () => {
+    mocked.mockResolvedValueOnce({ connection: { ...summary, color: 'violet' }, parameters: { host: 'h', port: 5432, database: 'd', username: 'u', hasPassword: true } })
+    const { wrapper } = await mountForm('abc')
+    expect((wrapper.get('input[name="color"][value="violet"]').element as HTMLInputElement).checked).toBe(true)
+    mocked.mockResolvedValueOnce({ connection: summary })
+
+    await wrapper.get('input[name="color"][value=""]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked.mock.calls.at(-1)?.[2]).not.toHaveProperty('color')
   })
 
   it('loads a saved connection for editing, with the password left blank', async () => {

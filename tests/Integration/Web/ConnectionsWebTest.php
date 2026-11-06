@@ -64,7 +64,7 @@ final class ConnectionsWebTest extends WebApiTestCase
         self::assertIsArray($created['connection']);
         self::assertSame('Production', $created['connection']['name']);
         self::assertSame('postgresql', $created['connection']['engine']);
-        self::assertSame(['id', 'name', 'engine', 'createdAt', 'updatedAt'], array_keys($created['connection']));
+        self::assertSame(['id', 'name', 'engine', 'color', 'createdAt', 'updatedAt'], array_keys($created['connection']));
 
         $list = $this->call('GET', '/web/connections');
         self::assertSame(200, $this->statusCode());
@@ -288,5 +288,69 @@ final class ConnectionsWebTest extends WebApiTestCase
     public static function targets(): iterable
     {
         yield from TargetDatabase::all();
+    }
+
+    public function testAConnectionCanBeColoredAndTheColorChangedOrRemoved(): void
+    {
+        $this->seedAndLogin();
+
+        $created = $this->call('POST', '/web/connections', $this->body() + ['color' => 'green']);
+        self::assertSame(201, $this->statusCode());
+        $id = self::arrayOf($created['connection'])['id'];
+        self::assertIsString($id);
+        self::assertSame('green', self::arrayOf($created['connection'])['color']);
+
+        $updated = $this->call('PUT', '/web/connections/'.$id, $this->body() + ['color' => 'blue']);
+        self::assertSame('blue', self::arrayOf($updated['connection'])['color']);
+
+        $cleared = $this->call('PUT', '/web/connections/'.$id, $this->body() + ['color' => null]);
+        self::assertNull(self::arrayOf($cleared['connection'])['color']);
+    }
+
+    public function testAnUnknownColorIsRefused(): void
+    {
+        $this->seedAndLogin();
+
+        $this->call('POST', '/web/connections', $this->body() + ['color' => 'hotpink']);
+
+        self::assertSame(422, $this->statusCode());
+    }
+
+    public function testTheOwnerReordersTheirConnections(): void
+    {
+        $this->seedAndLogin();
+        $a = $this->create('A');
+        $b = $this->create('B');
+        $c = $this->create('C');
+
+        $this->call('PUT', '/web/connections/order', ['ids' => [$c, $a, $b]]);
+
+        self::assertSame(204, $this->statusCode());
+        $names = array_map(static fn ($row): mixed => self::arrayOf($row)['name'], self::arrayOf($this->call('GET', '/web/connections')['connections']));
+        self::assertSame(['C', 'A', 'B'], $names);
+    }
+
+    public function testReorderingRefusesAnotherAccountsConnectionWithoutSayingItExists(): void
+    {
+        $this->seedAndLogin('alice');
+        $theirs = $this->create('Theirs');
+        $this->call('POST', '/web/logout');
+        $this->seedUser('bob');
+        $this->login('bob');
+        $mine = $this->create('Mine');
+
+        $body = $this->call('PUT', '/web/connections/order', ['ids' => [$mine, $theirs]]);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+    }
+
+    public function testReorderingRequiresAListOfIdentifiers(): void
+    {
+        $this->seedAndLogin();
+
+        $this->call('PUT', '/web/connections/order', ['ids' => 'nope']);
+
+        self::assertSame(400, $this->statusCode());
     }
 }

@@ -183,7 +183,7 @@ final class ConnectionManagerTest extends DatabaseTestCase
         $this->manager->reveal($this->alice, $this->aliceKey, Uuid::v7());
     }
 
-    public function testListingShowsOnlyTheOwnersConnectionsByName(): void
+    public function testListingShowsOnlyTheOwnersConnectionsInTheirOrder(): void
     {
         $this->create('Staging');
         $this->create('Analytics');
@@ -192,7 +192,7 @@ final class ConnectionManagerTest extends DatabaseTestCase
 
         $names = array_map(static fn (DatabaseConnection $c): string => $c->getName(), $this->manager->list($this->alice));
 
-        self::assertSame(['Analytics', 'Staging'], $names);
+        self::assertSame(['Staging', 'Analytics'], $names);
     }
 
     public function testUpdateReplacesNameEngineAndParameters(): void
@@ -269,5 +269,65 @@ final class ConnectionManagerTest extends DatabaseTestCase
         } catch (InvalidDatabaseConnectionException) {
             self::assertSame([], $this->repository->findAllOwnedBy($this->alice));
         }
+    }
+
+    /**
+     * @param list<DatabaseConnection> $connections
+     *
+     * @return list<string>
+     */
+    private static function names(array $connections): array
+    {
+        return array_map(static fn (DatabaseConnection $connection): string => $connection->getName(), $connections);
+    }
+
+    public function testTheListFollowsTheOrderTheOwnerChoseAndNewConnectionsGoLast(): void
+    {
+        $this->create('Zeta');
+        $this->create('Alpha');
+
+        self::assertSame(['Zeta', 'Alpha'], self::names($this->manager->list($this->alice)));
+    }
+
+    public function testReorderingPutsTheGivenConnectionsFirstAndKeepsTheOthersAfterThem(): void
+    {
+        $a = $this->create('A');
+        $this->create('B');
+        $c = $this->create('C');
+        $this->create('D');
+
+        $this->manager->reorder($this->alice, [$c->getId(), $a->getId()]);
+        $this->entityManager->clear();
+
+        self::assertSame(['C', 'A', 'B', 'D'], self::names($this->manager->list($this->alice)));
+    }
+
+    public function testReorderingRefusesAnUnknownOrForeignOrRepeatedConnection(): void
+    {
+        $mine = $this->create('Mine');
+        $bob = $this->user('bob');
+        $theirs = $this->manager->create($bob, $this->key(), 'Theirs', Engine::PostgreSql, $this->parameters());
+
+        foreach ([[$mine->getId(), $theirs->getId()], [$mine->getId(), $mine->getId()], [Uuid::v7()]] as $ids) {
+            try {
+                $this->manager->reorder($this->alice, $ids);
+                self::fail('Expected a refusal.');
+            } catch (\App\Connection\Exception\InvalidConnectionOrderException) {
+                // attendu
+            }
+        }
+        self::assertSame(['Theirs'], self::names($this->manager->list($bob)));
+    }
+
+    public function testTheColorIsKeptAndCanBeCleared(): void
+    {
+        $connection = $this->manager->create($this->alice, $this->aliceKey, 'Colored', Engine::PostgreSql, $this->parameters(), \App\Entity\ConnectionColor::Violet);
+        $this->entityManager->clear();
+        self::assertSame(\App\Entity\ConnectionColor::Violet, $this->manager->get($this->alice, $connection->getId())->getColor());
+
+        $this->manager->update($this->alice, $this->aliceKey, $connection->getId(), 'Colored', Engine::PostgreSql, $this->parameters(), null);
+        $this->entityManager->clear();
+
+        self::assertNull($this->manager->get($this->alice, $connection->getId())->getColor());
     }
 }

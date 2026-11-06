@@ -6,12 +6,24 @@ namespace App\Http\Json;
 
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Entity\ConnectionColor;
+use App\Entity\Exception\InvalidDatabaseConnectionException;
 
 /**
  * Lit une définition de connexion dans un corps JSON, pour l'interface web comme pour l'API à jetons.
  */
 final class ConnectionInput
 {
+    /**
+     * La couleur de repère (facultative : absente, nulle ou vide = aucune).
+     */
+    public static function color(JsonInput $input): ?ConnectionColor
+    {
+        $value = $input->optionalString('color');
+
+        return null === $value || '' === $value ? null : (ConnectionColor::tryFrom($value) ?? throw new InvalidDatabaseConnectionException('The color is not valid.'));
+    }
+
     /**
      * @param ConnectionParameters|null $current les paramètres déjà enregistrés : un mot de passe absent les conserve
      *

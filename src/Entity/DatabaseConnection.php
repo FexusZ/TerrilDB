@@ -42,6 +42,13 @@ final class DatabaseConnection
     #[ORM\Column(length: 16, enumType: Engine::class)]
     private Engine $engine;
 
+    // Couleur de repère et rang dans la liste du propriétaire : de la mise en forme, rien de secret, donc en clair.
+    #[ORM\Column(length: 16, nullable: true, enumType: ConnectionColor::class)]
+    private ?ConnectionColor $color = null;
+
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 0])]
+    private int $position = 0;
+
     #[ORM\Column(type: Types::TEXT)]
     private string $encryptedParameters;
 
@@ -103,6 +110,29 @@ final class DatabaseConnection
     public function getEncryptedParameters(): string
     {
         return $this->encryptedParameters;
+    }
+
+    public function getColor(): ?ConnectionColor
+    {
+        return $this->color;
+    }
+
+    public function setColor(?ConnectionColor $color): void
+    {
+        $this->color = $color;
+    }
+
+    public function getPosition(): int
+    {
+        return $this->position;
+    }
+
+    public function moveTo(int $position): void
+    {
+        if ($position < 0) {
+            throw new InvalidDatabaseConnectionException('The position cannot be negative.');
+        }
+        $this->position = $position;
     }
 
     public function getCreatedAt(): \DateTimeImmutable

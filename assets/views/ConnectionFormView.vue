@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
-import { DEFAULT_PORTS, ENGINE_LABELS, type ConnectionInput, type Engine } from '../api/types'
+import { CONNECTION_COLORS, DEFAULT_PORTS, ENGINE_LABELS, type ConnectionColor, type ConnectionInput, type Engine } from '../api/types'
 import AppButton from '../components/AppButton.vue'
 import AppHeader from '../components/AppHeader.vue'
 import FormField from '../components/FormField.vue'
@@ -15,7 +15,7 @@ const store = useConnectionsStore()
 const router = useRouter()
 
 const editing = computed(() => props.id !== undefined)
-const form = reactive({ engine: 'postgresql' as Engine, name: '', host: '', port: '', database: '', username: '', password: '' })
+const form = reactive({ engine: 'postgresql' as Engine, name: '', host: '', port: '', database: '', username: '', password: '', color: '' as ConnectionColor | '' })
 const original = ref<string | null>(null)
 const error = ref<string | null>(null)
 const testOk = ref<string | null>(null)
@@ -43,6 +43,7 @@ onMounted(async () => {
     const { connection, parameters } = await store.fetch(props.id)
     form.engine = connection.engine
     form.name = connection.name
+    form.color = connection.color ?? ''
     form.host = parameters.host
     form.port = String(parameters.port)
     form.database = parameters.database
@@ -70,6 +71,9 @@ function toInput(): ConnectionInput | null {
     return null
   }
   const input: ConnectionInput = { name: form.name, engine: form.engine, host: form.host, database: form.database, username: form.username }
+  if (form.color !== '') {
+    input.color = form.color
+  }
   if (port !== undefined) {
     input.port = port
   }
@@ -148,6 +152,21 @@ async function test(): Promise<void> {
         </div>
       </fieldset>
 
+      <fieldset class="colors">
+        <legend>Couleur (facultative)</legend>
+        <div class="swatches">
+          <label class="color none" :class="{ selected: form.color === '' }">
+            <input v-model="form.color" type="radio" name="color" value="">
+            <span>Aucune</span>
+          </label>
+          <label v-for="color in CONNECTION_COLORS" :key="color.value" class="color" :class="{ selected: form.color === color.value }" :title="color.label">
+            <input v-model="form.color" type="radio" name="color" :value="color.value">
+            <span class="swatch" :data-color="color.value" aria-hidden="true" />
+            <span class="sr-only">{{ color.label }}</span>
+          </label>
+        </div>
+      </fieldset>
+
       <FormField id="name" v-model="form.name" label="Nom de la connexion" hint="Visible dans votre liste. Deux connexions ne peuvent pas porter le même nom." required />
       <div class="pair host">
         <FormField id="host" v-model="form.host" label="Hôte" mono required />
@@ -197,6 +216,21 @@ legend { font-size: 12px; font-weight: 500; color: var(--mut); letter-spacing: 0
 .engine { display: flex; align-items: center; gap: 10px; padding: 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s1); cursor: pointer; }
 .engine.selected { border-color: var(--acc); background: var(--acc-bg); }
 .engine input { accent-color: var(--acc); margin: 0; }
+.colors legend { margin-bottom: 8px; font-size: 13px; color: var(--mut); }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.color { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 8px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s1); color: var(--mut); font-size: 12px; cursor: pointer; }
+.color input { position: absolute; opacity: 0; pointer-events: none; }
+.color.selected { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); color: var(--fg); }
+.color:focus-within { outline: 2px solid var(--acc); outline-offset: 1px; }
+.swatch { width: 16px; height: 16px; border-radius: 4px; background: var(--mut); }
+.swatch[data-color='red'] { background: var(--conn-red); }
+.swatch[data-color='orange'] { background: var(--conn-orange); }
+.swatch[data-color='yellow'] { background: var(--conn-yellow); }
+.swatch[data-color='green'] { background: var(--conn-green); }
+.swatch[data-color='teal'] { background: var(--conn-teal); }
+.swatch[data-color='blue'] { background: var(--conn-blue); }
+.swatch[data-color='violet'] { background: var(--conn-violet); }
+.swatch[data-color='pink'] { background: var(--conn-pink); }
 .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .pair.host { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 @media (max-width: 520px) { .pair.host { grid-template-columns: 1fr; } }

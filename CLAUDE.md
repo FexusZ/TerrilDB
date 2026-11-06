@@ -92,6 +92,7 @@ ensuite n'a plus d'effet. L'hôte reste le nom pour l'identité : en-tête Host 
 PDO MySQL/PostgreSQL se connectent à l'adresse (aucune vérification de nom TLS n'y est configurée). Un nom à plusieurs adresses n'a pas de repli
 sur la suivante (la première est épinglée). `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
 illisible bloque le changement.
+Ordre et couleur (en clair, rien de secret) : colonnes `position` (rang dans la liste du propriétaire ; une connexion créée va à la fin, `ConnectionManager::reorder` met les identifiants cités en tête et garde les autres derrière, un identifiant inconnu, répété ou d'autrui = 422 `invalid_input` sans dire lequel) et `color` (`ConnectionColor`, huit noms, jamais une valeur CSS libre ; jetons `--conn-*` clairs et sombres). `PUT /web/connections/order` `{ids}` ; `color` dans la création et la modification (absente = aucune). Front : glisser-déposer ou Alt+flèche dans l'arbre (`connections.reorder|move|moveOnto`, affichage immédiat puis rechargement si le serveur refuse).
 
 ## Introspection (src/Core/Driver, src/Core/Schema, src/Driver)
 

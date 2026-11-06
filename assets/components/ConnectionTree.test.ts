@@ -337,4 +337,60 @@ describe('ConnectionTree', () => {
       wrapper.unmount()
     })
   })
+
+  describe('colors and order', () => {
+    const colored = (id: string, name: string, color: ConnectionSummary['color']): ConnectionSummary => ({ ...connection(id, name), color })
+    const order = () => useConnectionsStore().items.map((item) => item.id)
+    const drag = (event: string) => ({ dataTransfer: { setData: () => undefined, effectAllowed: '', dropEffect: '' }, type: event })
+
+    it('marks a colored connection with its color, and leaves the others plain', async () => {
+      const { wrapper } = await mountTree([colored('c1', 'Production', 'red'), connection('c2', 'Recette')])
+
+      expect(items(wrapper)[0]?.find('.swatch').attributes('data-color')).toBe('red')
+      expect(items(wrapper)[1]?.find('.swatch').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('moves a connection with Alt and the up or down arrow, keeping the focus on it', async () => {
+      mocked.mockResolvedValue(undefined)
+      const { wrapper } = await mountTree([connection('c1', 'A'), connection('c2', 'B'), connection('c3', 'C')])
+
+      await items(wrapper)[0]?.trigger('keydown', { key: 'ArrowDown', altKey: true })
+      await flushPromises()
+
+      expect(order()).toEqual(['c2', 'c1', 'c3'])
+      expect(mocked).toHaveBeenCalledWith('PUT', '/web/connections/order', { ids: ['c2', 'c1', 'c3'] })
+      expect(document.activeElement?.getAttribute('data-key')).toBe('c:c1')
+      await items(wrapper)[1]?.trigger('keydown', { key: 'ArrowUp', altKey: true })
+      await flushPromises()
+      expect(order()).toEqual(['c1', 'c2', 'c3'])
+      wrapper.unmount()
+    })
+
+    it('has the connections draggable, and drops one onto the place of another', async () => {
+      mocked.mockResolvedValue(undefined)
+      const { wrapper } = await mountTree([connection('c1', 'A'), connection('c2', 'B'), connection('c3', 'C')])
+      expect(items(wrapper)[0]?.get('.row').attributes('draggable')).toBe('true')
+
+      await items(wrapper)[0]?.get('.row').trigger('dragstart', drag('dragstart'))
+      await items(wrapper)[2]?.get('.row').trigger('dragover', drag('dragover'))
+      await items(wrapper)[2]?.get('.row').trigger('drop', drag('drop'))
+      await flushPromises()
+
+      expect(order()).toEqual(['c2', 'c3', 'c1'])
+      expect(mocked).toHaveBeenCalledWith('PUT', '/web/connections/order', { ids: ['c2', 'c3', 'c1'] })
+      wrapper.unmount()
+    })
+
+    it('ignores a drop that did not start from a connection', async () => {
+      const { wrapper } = await mountTree([connection('c1', 'A'), connection('c2', 'B')])
+
+      await items(wrapper)[1]?.get('.row').trigger('drop', drag('drop'))
+      await flushPromises()
+
+      expect(order()).toEqual(['c1', 'c2'])
+      expect(mocked).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+  })
 })

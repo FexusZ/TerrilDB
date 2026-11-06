@@ -39,6 +39,15 @@
   --code-function: #e3a857;
   --code-comment: #6f827c;
   --code-operator: #9aaba6;
+  /* Couleurs de repère des connexions */
+  --conn-red: #f07178;
+  --conn-orange: #f2a65a;
+  --conn-yellow: #e6cf5a;
+  --conn-green: #7bd39a;
+  --conn-teal: #5cc8be;
+  --conn-blue: #6cb2f0;
+  --conn-violet: #b79cf2;
+  --conn-pink: #f08bc4;
 }
 
 /* Thème clair : mêmes rôles (teal = action, ambre = secret), contrastes revus pour un fond blanc. */
@@ -79,4 +88,13 @@
   --code-function: #9a5b00;
   --code-comment: #6c7f79;
   --code-operator: #50625d;
+  /* Couleurs de repère des connexions */
+  --conn-red: #c8323c;
+  --conn-orange: #c8651b;
+  --conn-yellow: #9a7d0a;
+  --conn-green: #1f8a4c;
+  --conn-teal: #0b7a70;
+  --conn-blue: #1b66b8;
+  --conn-violet: #6b45c2;
+  --conn-pink: #bd3a85;
 }

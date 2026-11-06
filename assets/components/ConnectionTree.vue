@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { useRouter, useRoute, type RouteLocationRaw } from 'vue-router'
 import { messageFor } from '../api/errors'
-import { ENGINE_BADGES, ENGINE_LABELS, type ConnectionSummary } from '../api/types'
+import { CONNECTION_COLORS, ENGINE_BADGES, ENGINE_LABELS, type ConnectionColor, type ConnectionSummary } from '../api/types'
 import { useConnectionsStore } from '../stores/connections'
 import { useTreeStore, type NodeStatus } from '../stores/tree'
 import { formatEstimate } from '../utils/format'
@@ -38,12 +38,16 @@ const route = useRoute()
 
 const STATUS_LABELS: Record<NodeStatus, string> = { closed: 'fermée', open: 'ouverte', unreachable: 'injoignable' }
 const number = new Intl.NumberFormat('fr-FR')
+const colorLabel = (color: ConnectionColor): string => CONNECTION_COLORS.find((candidate) => candidate.value === color)?.label ?? color
 
 const root = ref<HTMLElement | null>(null)
 const focusKey = ref<string | null>(null)
 const toDelete = ref<ConnectionSummary | null>(null)
 const deleting = ref(false)
 const deleteError = ref<string | null>(null)
+// Le glisser-déposer garde la connexion saisie ici : le navigateur ne montre pas toujours ce que `dataTransfer` contient pendant le survol.
+const dragging = ref<string | null>(null)
+const dropTarget = ref<string | null>(null)
 
 function tableRows(out: Row[], connection: ConnectionSummary, database: string, schema: string, level: number, parentKey: string): void {
   const state = tree.tablesOf(connection.id, database, schema)
@@ -218,6 +222,39 @@ function isCurrent(row: Row): boolean {
   return row.kind === 'key' && route.name === 'key' && route.query.name === row.label
 }
 
+function dragStart(event: DragEvent, row: Row): void {
+  if (row.kind !== 'connection' || row.connection === undefined) {
+    return
+  }
+  dragging.value = row.connection.id
+  if (event.dataTransfer !== null) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', row.connection.id)
+  }
+}
+
+function dragOver(event: DragEvent, row: Row): void {
+  if (dragging.value === null || row.kind !== 'connection' || row.connection === undefined) {
+    return
+  }
+  event.preventDefault()
+  dropTarget.value = row.connection.id
+}
+
+async function drop(row: Row): Promise<void> {
+  const moved = dragging.value
+  dragging.value = null
+  dropTarget.value = null
+  if (moved !== null && row.kind === 'connection' && row.connection !== undefined) {
+    await connections.moveOnto(moved, row.connection.id)
+  }
+}
+
+function dragEnd(): void {
+  dragging.value = null
+  dropTarget.value = null
+}
+
 async function focus(key: string): Promise<void> {
   focusKey.value = key
   await nextTick()
@@ -266,6 +303,15 @@ async function onKeydown(event: KeyboardEvent, row: Row): Promise<void> {
   }
   const list = focusable.value
   const index = list.findIndex((candidate) => candidate.key === row.key)
+
+  // Alt + flèche haut/bas : décale la connexion dans la liste (l'équivalent clavier du glisser-déposer).
+  if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && row.kind === 'connection' && row.connection) {
+    event.preventDefault()
+    await connections.move(row.connection.id, event.key === 'ArrowUp' ? -1 : 1)
+    await focus(row.key)
+
+    return
+  }
 
   switch (event.key) {
     case 'ArrowDown':
@@ -369,9 +415,20 @@ async function confirmDelete(): Promise<void> {
           :class="{ current: isCurrent(row) }"
           @keydown="onKeydown($event, row)"
         >
-          <div class="row" :style="{ paddingLeft: `${(row.level - 1) * 14 + 6}px` }" @click="activate(row)">
+          <div
+            class="row"
+            :class="{ dragging: row.kind === 'connection' && row.connection?.id === dragging, over: row.kind === 'connection' && row.connection?.id === dropTarget && dragging !== dropTarget }"
+            :draggable="row.kind === 'connection'"
+            :style="{ paddingLeft: `${(row.level - 1) * 14 + 6}px` }"
+            @click="activate(row)"
+            @dragstart="dragStart($event, row)"
+            @dragover="dragOver($event, row)"
+            @drop.prevent="drop(row)"
+            @dragend="dragEnd"
+          >
             <template v-if="row.kind === 'connection' && row.connection">
               <span class="caret" aria-hidden="true">{{ row.expanded ? '▾' : '▸' }}</span>
+              <span v-if="row.connection.color" class="swatch" :data-color="row.connection.color" role="img" :aria-label="`Couleur : ${colorLabel(row.connection.color)}`" />
               <span class="badge" aria-hidden="true">{{ ENGINE_BADGES[row.connection.engine] }}</span>
               <span class="label">{{ row.label }}</span>
               <span class="sr-only">{{ ENGINE_LABELS[row.connection.engine] }}</span>
@@ -425,6 +482,17 @@ li.current > .row { background: var(--acc-bg); color: var(--acc); }
 .badge { font: 500 10px var(--font-mono); color: var(--acc); }
 .label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .label.more { color: var(--acc); }
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; background: var(--mut); }
+.swatch[data-color='red'] { background: var(--conn-red); }
+.swatch[data-color='orange'] { background: var(--conn-orange); }
+.swatch[data-color='yellow'] { background: var(--conn-yellow); }
+.swatch[data-color='green'] { background: var(--conn-green); }
+.swatch[data-color='teal'] { background: var(--conn-teal); }
+.swatch[data-color='blue'] { background: var(--conn-blue); }
+.swatch[data-color='violet'] { background: var(--conn-violet); }
+.swatch[data-color='pink'] { background: var(--conn-pink); }
+.row.dragging { opacity: 0.5; }
+.row.over { box-shadow: inset 0 2px 0 var(--acc); }
 .dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--mut); flex: none; }
 .dot.open { background: var(--acc); border-color: var(--acc); }
 .dot.unreachable { background: var(--bad); border-color: var(--bad); }

@@ -69,7 +69,7 @@ watch(() => [route.query.database, route.query.schema], () => {
   <div class="shell">
     <AppHeader>
       <template #left>
-        <RouterLink v-if="connection" :to="{ name: 'workspace', params: { id } }" class="current">
+        <RouterLink v-if="connection" :to="{ name: 'workspace', params: { id } }" class="current" :data-color="connection.color ?? undefined">
           <span class="engine" aria-hidden="true">{{ ENGINE_BADGES[connection.engine] }}</span>
           <span class="name">{{ connection.name }}</span>
           <span class="sr-only">{{ ENGINE_LABELS[connection.engine] }}</span>
@@ -117,6 +117,15 @@ watch(() => [route.query.database, route.query.schema], () => {
 <style scoped>
 .shell { display: flex; flex-direction: column; min-height: 100vh; }
 .current { display: inline-flex; align-items: center; gap: 10px; padding: 0 12px; height: 34px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s2); color: var(--fg); text-decoration: none; font-weight: 500; }
+.current[data-color] { border-left-width: 4px; }
+.current[data-color='red'] { border-left-color: var(--conn-red); }
+.current[data-color='orange'] { border-left-color: var(--conn-orange); }
+.current[data-color='yellow'] { border-left-color: var(--conn-yellow); }
+.current[data-color='green'] { border-left-color: var(--conn-green); }
+.current[data-color='teal'] { border-left-color: var(--conn-teal); }
+.current[data-color='blue'] { border-left-color: var(--conn-blue); }
+.current[data-color='violet'] { border-left-color: var(--conn-violet); }
+.current[data-color='pink'] { border-left-color: var(--conn-pink); }
 .engine { font: 500 11px var(--font-mono); color: var(--acc); }
 .switch { color: var(--mut); font-size: 13px; }
 .body { display: flex; flex-wrap: wrap; flex: 1; min-height: 0; }

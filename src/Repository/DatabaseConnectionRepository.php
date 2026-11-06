@@ -30,6 +30,11 @@ final class DatabaseConnectionRepository extends ServiceEntityRepository
         $entityManager->flush();
     }
 
+    public function flush(): void
+    {
+        $this->getEntityManager()->flush();
+    }
+
     public function remove(DatabaseConnection $connection): void
     {
         $entityManager = $this->getEntityManager();
@@ -47,6 +52,16 @@ final class DatabaseConnectionRepository extends ServiceEntityRepository
      */
     public function findAllOwnedBy(User $owner): array
     {
-        return $this->findBy(['owner' => $owner], ['name' => 'ASC']);
+        return $this->findBy(['owner' => $owner], ['position' => 'ASC', 'createdAt' => 'ASC']);
+    }
+
+    /**
+     * Le rang libre à la fin de la liste du propriétaire.
+     */
+    public function nextPosition(User $owner): int
+    {
+        $max = $this->createQueryBuilder('c')->select('MAX(c.position)')->where('c.owner = :owner')->setParameter('owner', $owner->getId(), 'uuid')->getQuery()->getSingleScalarResult();
+
+        return null === $max ? 0 : (int) $max + 1;
     }
 }

@@ -10,6 +10,7 @@ use App\ApiToken\Exception\InvalidApiTokenException;
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Connection\Exception\ForbiddenTargetHostException;
+use App\Connection\Exception\InvalidConnectionOrderException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -68,6 +69,7 @@ final class ErrorMapper
             $error instanceof InvalidInvitationException,
             $error instanceof InvalidApiTokenDefinitionException,
             $error instanceof InvalidDatabaseConnectionException,
+            $error instanceof InvalidConnectionOrderException,
             $error instanceof InvalidConnectionParametersException,
             $error instanceof InvalidKeyException,
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),

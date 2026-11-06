@@ -25,10 +25,25 @@ export interface User {
   createdAt: string
 }
 
+/** Couleur de repère d'une connexion : un nom, que l'interface traduit en jeton de design (thème clair et sombre). */
+export type ConnectionColor = 'red' | 'orange' | 'yellow' | 'green' | 'teal' | 'blue' | 'violet' | 'pink'
+
+export const CONNECTION_COLORS: { value: ConnectionColor; label: string }[] = [
+  { value: 'red', label: 'Rouge' },
+  { value: 'orange', label: 'Orange' },
+  { value: 'yellow', label: 'Jaune' },
+  { value: 'green', label: 'Vert' },
+  { value: 'teal', label: 'Turquoise' },
+  { value: 'blue', label: 'Bleu' },
+  { value: 'violet', label: 'Violet' },
+  { value: 'pink', label: 'Rose' },
+]
+
 export interface ConnectionSummary {
   id: string
   name: string
   engine: Engine
+  color?: ConnectionColor | null
   createdAt: string
   updatedAt: string
 }
@@ -49,6 +64,8 @@ export interface ConnectionInput {
   port?: number
   database: string
   username: string
+  /** Absente : aucune couleur (à la modification, la couleur est retirée). */
+  color?: ConnectionColor
   /** Absent à la modification : le mot de passe enregistré est conservé. */
   password?: string
 }

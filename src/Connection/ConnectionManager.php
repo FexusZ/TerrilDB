@@ -6,10 +6,12 @@ namespace App\Connection;
 
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Connection\Exception\InvalidConnectionOrderException;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Crypto\DerivedKey;
 use App\Crypto\SecretCipher;
+use App\Entity\ConnectionColor;
 use App\Entity\DatabaseConnection;
 use App\Entity\User;
 use App\Repository\DatabaseConnectionRepository;
@@ -33,7 +35,7 @@ final readonly class ConnectionManager
     ) {
     }
 
-    public function create(User $owner, DerivedKey $key, string $name, Engine $engine, ConnectionParameters $parameters): DatabaseConnection
+    public function create(User $owner, DerivedKey $key, string $name, Engine $engine, ConnectionParameters $parameters, ?ConnectionColor $color = null): DatabaseConnection
     {
         $id = Uuid::v7();
         $connection = new DatabaseConnection(
@@ -44,13 +46,16 @@ final readonly class ConnectionManager
             $this->encrypt($parameters, $key, ConnectionSecretContext::forId($id)),
             \DateTimeImmutable::createFromInterface($this->clock->now()),
         );
+        $connection->setColor($color);
+        // Une nouvelle connexion se met à la fin de la liste choisie par son propriétaire.
+        $connection->moveTo($this->connections->nextPosition($owner));
 
         $this->save($connection);
 
         return $connection;
     }
 
-    public function update(User $owner, DerivedKey $key, Uuid $id, string $name, Engine $engine, ConnectionParameters $parameters): DatabaseConnection
+    public function update(User $owner, DerivedKey $key, Uuid $id, string $name, Engine $engine, ConnectionParameters $parameters, ?ConnectionColor $color = null): DatabaseConnection
     {
         $connection = $this->owned($owner, $id);
         $connection->update(
@@ -59,10 +64,42 @@ final readonly class ConnectionManager
             $this->encrypt($parameters, $key, ConnectionSecretContext::forConnection($connection)),
             \DateTimeImmutable::createFromInterface($this->clock->now()),
         );
+        $connection->setColor($color);
 
         $this->save($connection);
 
         return $connection;
+    }
+
+    /**
+     * Les connexions citées passent en tête, dans l'ordre donné ; les autres suivent, dans leur ordre actuel (une connexion
+     * créée entre-temps ailleurs ne se perd pas).
+     *
+     * @param list<Uuid> $ids
+     *
+     * @throws InvalidConnectionOrderException une connexion inconnue, répétée ou d'un autre compte
+     */
+    public function reorder(User $owner, array $ids): void
+    {
+        $owned = [];
+        foreach ($this->connections->findAllOwnedBy($owner) as $connection) {
+            $owned[$connection->getId()->toRfc4122()] = $connection;
+        }
+
+        $ordered = [];
+        foreach ($ids as $id) {
+            $key = $id->toRfc4122();
+            if (!isset($owned[$key]) || isset($ordered[$key])) {
+                throw InvalidConnectionOrderException::create();
+            }
+            $ordered[$key] = $owned[$key];
+        }
+
+        $position = 0;
+        foreach ($ordered + $owned as $connection) {
+            $connection->moveTo($position++);
+        }
+        $this->connections->flush();
     }
 
     public function get(User $owner, Uuid $id): DatabaseConnection
