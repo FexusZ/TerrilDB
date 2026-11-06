@@ -48,7 +48,7 @@ async function mountView(path = '/connections/abc') {
 /** Réponses du serveur par adresse. Vitest rappelle le mock sans argument comme crochet de nettoyage : l'adresse peut manquer. */
 function answer(databases: { name: string; system: boolean }[] = []) {
   return (method?: string, url = ''): Promise<unknown> =>
-    Promise.resolve(method === 'DELETE' ? undefined : url === '/web/connections' ? { connections: [summary] } : url.includes('/databases') ? { databases } : { tables: [] })
+    Promise.resolve(method === 'DELETE' ? undefined : url === '/web/connections' ? { connections: [summary] } : url.includes('/databases') ? { databases } : url.includes('/schemas') ? { schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] } : { tables: [] })
 }
 
 describe('WorkspaceView', () => {
@@ -132,6 +132,14 @@ describe('WorkspaceView', () => {
     await mountView('/connections/abc/tables/events?database=reporting')
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100&database=reporting')
+  })
+
+  it('explores the schema named in the address, so a table of another schema opens there', async () => {
+    mocked.mockImplementation(answer([{ name: 'shop', system: false }]))
+
+    await mountView('/connections/abc/tables/invoices?schema=sales')
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100&schema=sales')
   })
 
   it('says so when the connection does not exist', async () => {

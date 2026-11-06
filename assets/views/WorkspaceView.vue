@@ -39,10 +39,12 @@ async function open(): Promise<void> {
   }
 }
 
-// Une table de l'arbre d'une autre base s'ouvre avec `?database=` : l'espace de travail explore alors cette base-là.
+// Une table de l'arbre d'une autre base s'ouvre avec `?database=` (et un schéma PostgreSQL avec `?schema=`) : l'espace de travail explore alors cette base-là.
 async function applyRouteDatabase(): Promise<void> {
   const requested = route.query.database
   await workspace.selectDatabase(typeof requested === 'string' && requested !== '' ? requested : null)
+  const schema = route.query.schema
+  await workspace.selectSchema(typeof schema === 'string' && schema !== '' ? schema : null)
 }
 
 // Supprimer depuis la barre la connexion qu'on regarde : il n'y a plus rien à afficher ici.
@@ -55,7 +57,7 @@ async function onDeleted(deleted: string): Promise<void> {
 
 onMounted(open)
 watch(() => props.id, open)
-watch(() => route.query.database, () => {
+watch(() => [route.query.database, route.query.schema], () => {
   if (workspace.connectionId === props.id) {
     void applyRouteDatabase()
   }

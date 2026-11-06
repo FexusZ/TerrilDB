@@ -162,9 +162,9 @@ export const useTreeStore = defineStore('tree', () => {
       params.set('database', database)
     }
     try {
-      const result = await api<{ schemas: DatabaseInfo[] }>('GET', `/web/connections/${id}/schemas${params.size > 0 ? `?${params.toString()}` : ''}`)
+      const result = await api<{ schemas?: DatabaseInfo[] }>('GET', `/web/connections/${id}/schemas${params.size > 0 ? `?${params.toString()}` : ''}`)
       if (snapshot(id) === stamp) {
-        schemas.value = { ...schemas.value, [`${id}:${database}`]: result.schemas }
+        schemas.value = { ...schemas.value, [`${id}:${database}`]: result.schemas ?? [] }
       }
     } catch (error) {
       if (snapshot(id) === stamp) {
