@@ -204,4 +204,22 @@ final class PostgreSqlIntrospectorTest extends TestCase
 
         $this->introspector()->describeTable('ORDERS');
     }
+
+    public function testListsTheSchemasWithTheEngineOnesFlagged(): void
+    {
+        $schemas = $this->introspector()->listSchemas();
+
+        $byName = [];
+        foreach ($schemas as $schema) {
+            $byName[$schema->name] = $schema->system;
+        }
+        self::assertFalse($byName['public']);
+        self::assertTrue($byName['information_schema']);
+        self::assertTrue($byName['pg_catalog']);
+        self::assertArrayNotHasKey('pg_toast', $byName, 'toast schemas are never shown');
+        $names = array_keys($byName);
+        $sorted = $names;
+        usort($sorted, strcmp(...));
+        self::assertSame($sorted, $names, 'sorted by bytes');
+    }
 }

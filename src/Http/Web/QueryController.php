@@ -43,6 +43,7 @@ final readonly class QueryController
             $uuid,
             fn (TargetConnection $target) => $this->queries->execute($this->session->auditContext(), $uuid, $target, $sql, $options, $confirmed),
             $input->optionalString('database'),
+            $input->optionalString('schema'),
         );
 
         return new JsonResponse(ResultPresenter::present($result));

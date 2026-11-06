@@ -147,4 +147,11 @@ final class ClickHouseIntrospectorTest extends TestCase
 
         $this->introspector()->describeTable("orders' OR 1=1 --");
     }
+
+    public function testThereIsNoSchemaLevelBelowADatabase(): void
+    {
+        $this->expectException(\App\Core\Driver\Exception\UnsupportedOperationException::class);
+
+        $this->introspector()->listSchemas();
+    }
 }

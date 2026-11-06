@@ -573,4 +573,70 @@ describe('workspace store on a key-value connection', () => {
 
     expect(store.keys.map((key) => key.name)).toEqual(['fast:1'])
   })
+
+  it('picks the first database itself when the connection names none', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ default: null, databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+    mocked.mockResolvedValueOnce({ tables: [] })
+
+    await store.loadDatabases()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?database=shop')
+    expect(store.database).toBe('shop')
+    expect(store.defaultDatabase).toBeNull()
+  })
+
+  it('lists the schemas of a PostgreSQL database and explores one, in the tree, the structure and the console', async () => {
+    useConnectionsStore().items = [{ id: 'conn-1', name: 'pg', engine: 'postgresql', createdAt: '', updatedAt: '' }]
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+    mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] })
+
+    await store.loadDatabases()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/schemas')
+    expect(store.schemas.map((schema) => schema.name)).toEqual(['public', 'sales'])
+    const other: TableSummary[] = [{ name: 'invoices', kind: 'table', estimatedRows: 5 }]
+    mocked.mockResolvedValueOnce({ tables: other })
+    await store.selectSchema('sales')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables?schema=sales')
+    expect(store.tables).toEqual(other)
+    mocked.mockResolvedValueOnce({ table: detail })
+    await store.describe('invoices')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/tables/invoices?schema=sales')
+    store.setSql(store.activeTab.id, 'select 1')
+    mocked.mockResolvedValueOnce(result)
+    await store.run(store.activeTab.id)
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/query', { sql: 'select 1', mode: 'read_only', confirmed: false, schema: 'sales' })
+  })
+
+  it('forgets the schema and lists the new database\'s schemas when the database changes', async () => {
+    useConnectionsStore().items = [{ id: 'conn-1', name: 'pg', engine: 'postgresql', createdAt: '', updatedAt: '' }]
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+    mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] })
+    await store.loadDatabases()
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await store.selectSchema('sales')
+
+    mocked.mockResolvedValueOnce({ tables: [] })
+    mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'audit', system: false }] })
+    await store.selectDatabase('reporting')
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/conn-1/tables?database=reporting')
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/schemas?database=reporting')
+    expect(store.schema).toBeNull()
+    expect(store.schemas.map((schema) => schema.name)).toEqual(['public', 'audit'])
+  })
+
+  it('does not ask an engine without schemas for them', async () => {
+    useConnectionsStore().items = [{ id: 'conn-1', name: 'my', engine: 'mysql', createdAt: '', updatedAt: '' }]
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+
+    await store.loadDatabases()
+
+    expect(mocked).not.toHaveBeenCalledWith('GET', expect.stringContaining('/schemas'))
+    expect(store.schemas).toEqual([])
+  })
 })

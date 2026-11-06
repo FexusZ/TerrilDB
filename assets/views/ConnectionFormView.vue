@@ -26,7 +26,7 @@ const loadFailed = ref(false)
 const engines = Object.keys(ENGINE_LABELS) as Engine[]
 const portPlaceholder = computed(() => String(DEFAULT_PORTS[form.engine]))
 // Redis n'a ni base nommée ni schéma : la « base » est un numéro, l'identifiant un utilisateur ACL (« default » sans ACL).
-const databaseLabel = computed(() => (form.engine === 'redis' ? 'Numéro de base' : 'Base de données'))
+const databaseLabel = computed(() => (form.engine === 'redis' ? 'Numéro de base (facultatif)' : 'Base de données (facultatif)'))
 const databasePlaceholder = computed(() => (form.engine === 'redis' ? '0' : undefined))
 const usernamePlaceholder = computed(() => (form.engine === 'redis' ? 'default' : undefined))
 
@@ -154,7 +154,7 @@ async function test(): Promise<void> {
         <FormField id="port" v-model="form.port" label="Port" mono inputmode="numeric" :placeholder="portPlaceholder" />
       </div>
       <div class="pair">
-        <FormField id="database" v-model="form.database" :label="databaseLabel" :placeholder="databasePlaceholder" mono required />
+        <FormField id="database" v-model="form.database" :label="databaseLabel" :placeholder="databasePlaceholder" mono />
         <FormField id="username" v-model="form.username" label="Identifiant" :placeholder="usernamePlaceholder" mono autocomplete="off" required />
       </div>
       <FormField

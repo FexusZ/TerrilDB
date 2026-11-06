@@ -28,6 +28,11 @@ final class TargetConnectionTest extends TestCase
                 return [];
             }
 
+            public function listSchemas(): array
+            {
+                return [];
+            }
+
             public function listTables(): array
             {
                 return [];

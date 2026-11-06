@@ -85,7 +85,8 @@ describe('WorkspaceView', () => {
   it('offers the database picker on a SQL connection, not on a key-value one', async () => {
     mocked.mockResolvedValueOnce({ connections: [summary] })
     mocked.mockResolvedValueOnce({ tables: [] })
-    mocked.mockResolvedValueOnce({ databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+    mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+    mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }] })
 
     const { wrapper } = await mountView()
 

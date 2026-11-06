@@ -11,19 +11,33 @@ function change(event: Event): void {
   const value = (event.target as HTMLSelectElement).value
   void workspace.selectDatabase(value === '' ? null : value)
 }
+
+function changeSchema(event: Event): void {
+  const value = (event.target as HTMLSelectElement).value
+  void workspace.selectSchema(value === '' ? null : value)
+}
 </script>
 
 <template>
   <div v-if="workspace.databasesError" class="picker">
     <p class="error" role="alert">{{ workspace.databasesError }}</p>
   </div>
-  <div v-else-if="workspace.databases.length > 1" class="picker">
-    <label for="database">Base</label>
-    <select id="database" class="databases" :value="workspace.database ?? ''" @change="change">
-      <option value="">Base par défaut</option>
-      <option v-for="database in workspace.databases" :key="database.name" :value="database.name">{{ database.name }}</option>
-    </select>
-  </div>
+  <template v-else>
+    <div v-if="workspace.databases.length > 1" class="picker">
+      <label for="database">Base</label>
+      <select id="database" class="databases" :value="workspace.database ?? ''" @change="change">
+        <option v-if="workspace.defaultDatabase !== null" value="">Base par défaut</option>
+        <option v-for="database in workspace.databases" :key="database.name" :value="database.name">{{ database.name }}</option>
+      </select>
+    </div>
+    <div v-if="workspace.schemas.length > 1" class="picker">
+      <label for="schema">Schéma</label>
+      <select id="schema" class="schemas" :value="workspace.schema ?? ''" @change="changeSchema">
+        <option value="">Schéma par défaut</option>
+        <option v-for="schema in workspace.schemas" :key="schema.name" :value="schema.name">{{ schema.name }}</option>
+      </select>
+    </div>
+  </template>
 </template>
 
 <style scoped>

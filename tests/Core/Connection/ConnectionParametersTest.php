@@ -70,7 +70,7 @@ final class ConnectionParametersTest extends TestCase
     {
         $this->expectException(InvalidConnectionParametersException::class);
 
-        $this->parameters()->withDatabase('');
+        $this->parameters()->withDatabase("bad\x00name");
     }
 
     public function testAnEmptyPasswordIsAllowed(): void
@@ -131,7 +131,6 @@ final class ConnectionParametersTest extends TestCase
         yield 'host too long' => [str_repeat('a', 256), 5432, 'shop', 'reader', 'x'];
         yield 'port zero' => ['db', 0, 'shop', 'reader', 'x'];
         yield 'port too high' => ['db', 65536, 'shop', 'reader', 'x'];
-        yield 'empty database' => ['db', 5432, '', 'reader', 'x'];
         yield 'database too long' => ['db', 5432, str_repeat('a', 129), 'reader', 'x'];
         yield 'empty username' => ['db', 5432, 'shop', '', 'x'];
         yield 'username too long' => ['db', 5432, 'shop', str_repeat('a', 129), 'x'];
@@ -177,5 +176,33 @@ final class ConnectionParametersTest extends TestCase
         $this->expectException(InvalidConnectionParametersException::class);
 
         ConnectionParameters::fromJson($json);
+    }
+
+    public function testTheDatabaseIsOptional(): void
+    {
+        $parameters = new ConnectionParameters('db', 5432, '', 'reader', 'x');
+
+        self::assertSame('', $parameters->database);
+        self::assertSame('', ConnectionParameters::fromJson($parameters->toJson())->database);
+    }
+
+    public function testASchemaIsKeptForTheOpeningOnlyAndNeverEncrypted(): void
+    {
+        $parameters = (new ConnectionParameters('db', 5432, 'shop', 'reader', 'x'))->withSchema('sales');
+
+        self::assertSame('sales', $parameters->schema);
+        self::assertSame('sales', $parameters->withDatabase('other')->schema);
+        self::assertSame('sales', $parameters->withAddress('203.0.113.9')->schema);
+        self::assertSame('sales', $parameters->withPassword('y')->schema);
+        self::assertStringNotContainsString('sales', $parameters->toJson());
+        self::assertNull(ConnectionParameters::fromJson($parameters->toJson())->schema);
+        self::assertNull($parameters->withSchema(null)->schema);
+    }
+
+    public function testAnInvalidSchemaNameIsRefused(): void
+    {
+        $this->expectException(InvalidConnectionParametersException::class);
+
+        (new ConnectionParameters('db', 5432, 'shop', 'reader', 'x'))->withSchema("bad\x00name");
     }
 }
