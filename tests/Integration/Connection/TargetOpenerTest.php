@@ -208,4 +208,26 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         (new TargetOpener($this->manager, new DriverRegistry([]), $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId());
     }
+
+    public function testOpensAnotherSchemaOfAPostgreSqlDatabase(): void
+    {
+        $saved = $this->manager->create($this->alice, $this->key, 'Target', TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        $target = (new TargetOpener($this->manager, $this->drivers, $this->hostPolicy()))->open($this->alice, $this->key, $saved->getId(), null, 'information_schema');
+
+        $names = array_map(static fn ($table): string => $table->name, $target->introspector()->listTables());
+        self::assertContains('columns', $names);
+        self::assertNotContains('categories', $names);
+        $target->close();
+    }
+
+    public function testTheDefaultDatabaseIsNullWhenTheConnectionNamesNone(): void
+    {
+        $withDatabase = $this->manager->create($this->alice, $this->key, 'A', TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+        $without = $this->manager->create($this->alice, $this->key, 'B', TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL')->withDatabase(''));
+        $opener = new TargetOpener($this->manager, $this->drivers, $this->hostPolicy());
+
+        self::assertSame('shop', $opener->defaultDatabase($this->alice, $this->key, $withDatabase->getId()));
+        self::assertNull($opener->defaultDatabase($this->alice, $this->key, $without->getId()));
+    }
 }

@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api } from '../api/client'
+import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
 import DatabasePicker from './DatabasePicker.vue'
 
@@ -17,7 +18,7 @@ async function mountPicker(databases: { name: string; system: boolean }[] | ApiE
   if (databases instanceof ApiError) {
     mocked.mockRejectedValueOnce(databases)
   } else {
-    mocked.mockResolvedValueOnce({ databases })
+    mocked.mockResolvedValueOnce({ default: 'shop', databases })
   }
   const wrapper = mount(DatabasePicker, { global: { plugins: [pinia] } })
   await flushPromises()
@@ -77,5 +78,39 @@ describe('DatabasePicker', () => {
     const wrapper = await mountPicker(new ApiError(502, 'target_unreachable'))
 
     expect(wrapper.get('[role="alert"]').text()).toContain('joindre')
+  })
+
+  it('offers no "default" entry when the connection names no database', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await useWorkspaceStore().open('c1')
+    mocked.mockResolvedValueOnce({ default: null, databases: [{ name: 'shop', system: false }, { name: 'reporting', system: false }] })
+    mocked.mockResolvedValueOnce({ tables: [] })
+    const wrapper = mount(DatabasePicker, { global: { plugins: [pinia] } })
+    await flushPromises()
+
+    expect(wrapper.findAll('#database option').map((option) => option.text())).toEqual(['shop', 'reporting'])
+    expect((wrapper.get('#database').element as HTMLSelectElement).value).toBe('shop')
+  })
+
+  it('offers the schemas of a PostgreSQL database next to the databases', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConnectionsStore().items = [{ id: 'c1', name: 'pg', engine: 'postgresql', createdAt: '', updatedAt: '' }]
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await useWorkspaceStore().open('c1')
+    mocked.mockResolvedValueOnce({ default: 'shop', databases: [{ name: 'shop', system: false }] })
+    mocked.mockResolvedValueOnce({ schemas: [{ name: 'public', system: false }, { name: 'sales', system: false }] })
+    const wrapper = mount(DatabasePicker, { global: { plugins: [pinia] } })
+    await flushPromises()
+    mocked.mockResolvedValueOnce({ tables: [] })
+
+    expect(wrapper.findAll('#schema option').map((option) => option.text())).toEqual(['Schéma par défaut', 'public', 'sales'])
+    await wrapper.get('#schema').setValue('sales')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/c1/tables?limit=100&schema=sales')
+    expect(useWorkspaceStore().schema).toBe('sales')
   })
 })

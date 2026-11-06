@@ -45,7 +45,7 @@ final readonly class SchemaDiagramController
             }
 
             return [$definitions, $truncated];
-        }, DatabaseParam::fromQuery($request));
+        }, DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         $relations = [];
         foreach ($definitions as $definition) {

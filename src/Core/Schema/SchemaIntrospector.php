@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Schema;
 
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Schema\Exception\TableNotFoundException;
 
 /**
@@ -20,6 +21,16 @@ interface SchemaIntrospector
      * @return list<DatabaseSummary>
      */
     public function listDatabases(): array;
+
+    /**
+     * Les schémas de la base ouverte, triés à l'octet (PostgreSQL seulement : MySQL, MariaDB et ClickHouse n'ont pas de niveau
+     * entre la base et les tables). Un schéma s'explore en ouvrant la connexion avec lui (voir TargetOpener).
+     *
+     * @return list<SchemaSummary>
+     *
+     * @throws UnsupportedOperationException
+     */
+    public function listSchemas(): array;
 
     /**
      * Tables et vues, triées par nom.

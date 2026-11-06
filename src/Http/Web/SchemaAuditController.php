@@ -46,7 +46,7 @@ final readonly class SchemaAuditController
             }
 
             return [$this->auditor->audit($target->engine, $definitions), \count($definitions), $truncated];
-        }, DatabaseParam::fromQuery($request));
+        }, DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse([
             'tablesAudited' => $audited,

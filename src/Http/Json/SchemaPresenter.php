@@ -8,6 +8,7 @@ use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\SchemaSummary;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableSummary;
 
@@ -19,6 +20,14 @@ final class SchemaPresenter
     public static function database(DatabaseSummary $database): array
     {
         return ['name' => $database->name, 'system' => $database->system];
+    }
+
+    /**
+     * @return array<string, bool|string>
+     */
+    public static function schema(SchemaSummary $schema): array
+    {
+        return ['name' => $schema->name, 'system' => $schema->system];
     }
 
     /**

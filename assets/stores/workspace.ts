@@ -40,6 +40,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const databases = ref<DatabaseInfo[]>([])
   const databasesError = ref<string | null>(null)
   const tablesHasMore = computed(() => tablesNext.value !== null)
+  /** La base que la connexion nomme elle-même ; null quand elle n'en nomme aucune. */
+  const defaultDatabase = ref<string | null>(null)
+  /** PostgreSQL : le schéma exploré (null : le schéma courant) et ceux de la base. */
+  const schema = ref<string | null>(null)
+  const schemas = ref<DatabaseInfo[]>([])
   // Une base clé-valeur (Redis) se parcourt par clés : même espace de travail, autre arborescence.
   const isKeyValue = ref(false)
   const keys = ref<KeyEntry[]>([])
@@ -97,6 +102,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     database.value = null
     databases.value = []
     databasesError.value = null
+    defaultDatabase.value = null
+    schema.value = null
+    schemas.value = []
     keys.value = []
     keysCursor.value = null
     keysTotal.value = 0
@@ -117,6 +125,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const params = new URLSearchParams({ limit: '100' })
     if (database.value !== null) {
       params.set('database', database.value)
+    }
+    if (schema.value !== null) {
+      params.set('schema', schema.value)
     }
     if (cursor !== null) {
       params.set('cursor', cursor)
@@ -185,9 +196,18 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const id = connectionId.value
     databasesError.value = null
     try {
-      const result = await api<{ databases: DatabaseInfo[] } | undefined>('GET', `/web/connections/${id}/databases`)
-      if (connectionId.value === id) {
-        databases.value = result?.databases ?? []
+      const result = await api<{ default?: string | null; databases: DatabaseInfo[] } | undefined>('GET', `/web/connections/${id}/databases`)
+      if (connectionId.value !== id) {
+        return
+      }
+      databases.value = result?.databases ?? []
+      defaultDatabase.value = result?.default ?? null
+      const first = databases.value[0]
+      // Une connexion sans base nommée ne montre rien d'elle-même : on ouvre la première base de la liste.
+      if (result?.default === null && first !== undefined && database.value === null) {
+        await selectDatabase(first.name)
+      } else {
+        await loadSchemas()
       }
     } catch (error) {
       if (connectionId.value !== id) {
@@ -200,19 +220,71 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
   }
 
-  /** Explore une autre base du même serveur (null : celle de la connexion) : tables rechargées, descriptions oubliées. */
+  /** Les schémas de la base explorée : PostgreSQL seulement, les autres moteurs n'ont pas ce niveau. */
+  async function loadSchemas(): Promise<void> {
+    const id = connectionId.value
+    if (id === null || useConnectionsStore().byId(id)?.engine !== 'postgresql') {
+      return
+    }
+    const name = database.value
+    try {
+      const result = await api<{ schemas: DatabaseInfo[] } | undefined>('GET', `/web/connections/${id}/schemas${scopeQuery(name, null)}`)
+      if (connectionId.value === id && database.value === name) {
+        schemas.value = result?.schemas ?? []
+      }
+    } catch (error) {
+      if (connectionId.value === id && database.value === name) {
+        schemas.value = []
+        if (!(error instanceof ApiError && error.code === 'unsupported_operation')) {
+          databasesError.value = messageFor(error)
+        }
+      }
+    }
+  }
+
+  /** Explore une autre base du même serveur (null : celle de la connexion) : schéma oublié, tables rechargées, descriptions oubliées. */
   async function selectDatabase(name: string | null): Promise<void> {
     if (connectionId.value === null || name === database.value) {
       return
     }
     database.value = name
+    schema.value = null
+    schemas.value = []
+    await reloadTables()
+    await loadSchemas()
+  }
+
+  /** Explore un autre schéma de la base (null : le schéma courant). */
+  async function selectSchema(name: string | null): Promise<void> {
+    if (connectionId.value === null || name === schema.value) {
+      return
+    }
+    schema.value = name
+    await reloadTables()
+  }
+
+  /** Après un changement de base ou de schéma : descriptions et recherche oubliées, première page relue. */
+  async function reloadTables(): Promise<void> {
     described.clear()
     tablesSearch.value = ''
     await loadTables(false)
   }
 
+  function scopeQuery(databaseName: string | null, schemaName: string | null): string {
+    const params = new URLSearchParams()
+    if (databaseName !== null) {
+      params.set('database', databaseName)
+    }
+    if (schemaName !== null) {
+      params.set('schema', schemaName)
+    }
+    const text = params.toString()
+
+    return text === '' ? '' : `?${text}`
+  }
+
   function databaseQuery(): string {
-    return database.value === null ? '' : `?database=${encodeURIComponent(database.value)}`
+    return scopeQuery(database.value, schema.value)
   }
 
   /** Charge une page de clés : la première (remplace la liste) ou la suivante (s'y ajoute). */
@@ -334,7 +406,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     target.view = 'result'
 
     try {
-      const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: target.sql, mode: target.mode, confirmed, ...(database.value === null ? {} : { database: database.value }) })
+      const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: target.sql, mode: target.mode, confirmed, ...(database.value === null ? {} : { database: database.value }), ...(schema.value === null ? {} : { schema: schema.value }) })
       if (latestRun.get(id) === run) {
         target.result = result
       }
@@ -468,5 +540,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   const historyHasMore = computed(() => historyNext.value !== null)
 
-  return { connectionId, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, database, databases, databasesError, loadDatabases, selectDatabase, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, database, databases, databasesError, defaultDatabase, schema, schemas, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })

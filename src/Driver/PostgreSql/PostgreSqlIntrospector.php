@@ -12,6 +12,7 @@ use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
+use App\Core\Schema\SchemaSummary;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 use App\Core\Schema\TablePage;
@@ -47,6 +48,21 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
         }
 
         return $databases;
+    }
+
+    public function listSchemas(): array
+    {
+        // Les schémas techniques de TOAST et des tables temporaires ne sont jamais utiles à l'utilisateur.
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT nspname FROM pg_namespace WHERE nspname !~ '^pg_(toast|temp)' AND has_schema_privilege(nspname, 'USAGE') ORDER BY nspname COLLATE \"C\"",
+        );
+        $schemas = [];
+        foreach ($names as $name) {
+            $name = (new RowReader(['name' => $name]))->string('name');
+            $schemas[] = new SchemaSummary($name, 'information_schema' === $name || str_starts_with($name, 'pg_'));
+        }
+
+        return $schemas;
     }
 
     public function listTables(): array

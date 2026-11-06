@@ -95,6 +95,20 @@ describe('ConnectionFormView', () => {
     expect(router.currentRoute.value.name).toBe('connections')
   })
 
+  it('does not require a database: the server alone is enough, its databases are browsed afterwards', async () => {
+    const { wrapper, router } = await mountForm()
+    await fill(wrapper, { name: 'Serveur', host: 'db.exemple.test', username: 'lecteur', password: 'secret-value' })
+    mocked.mockResolvedValueOnce({ connection: summary })
+
+    expect(wrapper.get('#database').attributes('required')).toBeUndefined()
+    expect(wrapper.get('label[for="database"]').text()).toContain('facultatif')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('POST', '/web/connections', expect.objectContaining({ database: '' }))
+    expect(router.currentRoute.value.name).toBe('connections')
+  })
+
   it('leaves the port to the server when it is empty', async () => {
     const { wrapper } = await mountForm()
     await fill(wrapper, { name: 'P', host: 'h', database: 'd', username: 'u', password: 'p' })

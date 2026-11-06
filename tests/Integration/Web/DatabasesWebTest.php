@@ -179,4 +179,83 @@ final class DatabasesWebTest extends WebApiTestCase
 
         self::assertSame(401, $this->statusCode());
     }
+
+    public function testPostgreSqlSchemasAreListedWithoutTheEngineOnes(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->save('TARGET_POSTGRES_URL');
+
+        $listed = $this->call('GET', '/web/connections/'.$id.'/schemas');
+
+        self::assertSame(200, $this->statusCode());
+        $names = self::names(self::arrayOf($listed['schemas']));
+        self::assertContains('public', $names);
+        self::assertNotContains('information_schema', $names);
+        self::assertNotContains('pg_catalog', $names);
+        $all = self::names(self::arrayOf($this->call('GET', '/web/connections/'.$id.'/schemas?system=1')['schemas']));
+        self::assertContains('information_schema', $all);
+    }
+
+    public function testOtherEnginesHaveNoSchemaLevel(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->save('TARGET_MYSQL_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/schemas');
+
+        self::assertSame(501, $this->statusCode());
+    }
+
+    public function testTablesAndTheConsoleFollowTheAskedSchema(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->save('TARGET_POSTGRES_URL');
+
+        $own = self::names(self::arrayOf($this->call('GET', '/web/connections/'.$id.'/tables')['tables']));
+        $other = self::names(self::arrayOf($this->call('GET', '/web/connections/'.$id.'/tables?schema=information_schema')['tables']));
+        $this->call('GET', '/web/connections/'.$id.'/tables/columns?schema=information_schema');
+        $described = $this->statusCode();
+        $result = $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 'select current_schema()', 'schema' => 'information_schema']);
+
+        self::assertContains('categories', $own);
+        self::assertContains('columns', $other);
+        self::assertSame(200, $described);
+        self::assertSame('information_schema', self::arrayOf(self::arrayOf($result['rows'])[0])[0]);
+    }
+
+    public function testAnInvalidSchemaNameIsRefused(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->save('TARGET_POSTGRES_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/tables?schema=%00');
+
+        self::assertSame(422, $this->statusCode());
+    }
+
+    public function testTheDatabaseListSaysWhichOneIsTheDefault(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->save('TARGET_POSTGRES_URL');
+
+        self::assertSame('shop', $this->call('GET', '/web/connections/'.$id.'/databases')['default']);
+    }
+
+    public function testAConnectionWithoutADatabaseCanBeSavedAndBrowsed(): void
+    {
+        $this->seedAndLogin();
+        $parameters = TargetDatabase::parameters('TARGET_MYSQL_URL');
+        $body = ['name' => 'Server', 'engine' => 'mysql', 'host' => $parameters->host, 'port' => $parameters->port, 'username' => $parameters->username, 'password' => $parameters->password()];
+        $id = self::arrayOf($this->call('POST', '/web/connections', $body)['connection'])['id'];
+        self::assertSame(201, $this->statusCode());
+        self::assertIsString($id);
+
+        $listed = $this->call('GET', '/web/connections/'.$id.'/databases');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertNull($listed['default']);
+        self::assertContains('shop', self::names(self::arrayOf($listed['databases'])));
+        self::assertSame([], self::arrayOf($this->call('GET', '/web/connections/'.$id.'/tables')['tables']));
+        self::assertContains('categories', self::names(self::arrayOf($this->call('GET', '/web/connections/'.$id.'/tables?database=shop')['tables'])));
+    }
 }

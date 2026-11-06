@@ -27,14 +27,19 @@ final readonly class TargetSession
      *
      * @return T
      */
-    public function with(User $user, DerivedKey $key, Uuid $connectionId, \Closure $action, ?string $database = null): mixed
+    public function with(User $user, DerivedKey $key, Uuid $connectionId, \Closure $action, ?string $database = null, ?string $schema = null): mixed
     {
-        $target = $this->opener->open($user, $key, $connectionId, $database);
+        $target = $this->opener->open($user, $key, $connectionId, $database, $schema);
 
         try {
             return $action($target);
         } finally {
             $target->close();
         }
+    }
+
+    public function defaultDatabase(User $user, DerivedKey $key, Uuid $connectionId): ?string
+    {
+        return $this->opener->defaultDatabase($user, $key, $connectionId);
     }
 }
