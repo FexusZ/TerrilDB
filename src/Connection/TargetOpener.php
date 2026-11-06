@@ -29,10 +29,10 @@ final readonly class TargetOpener
     /**
      * @throws Exception\ConnectionNotFoundException
      * @throws Exception\ForbiddenTargetHostException
-     * @throws InvalidConnectionParametersException   nom de base invalide
+     * @throws InvalidConnectionParametersException   nom de base ou de schéma invalide
      * @throws TargetConnectionFailedException
      */
-    public function open(User $owner, DerivedKey $key, Uuid $id, ?string $database = null): TargetConnection
+    public function open(User $owner, DerivedKey $key, Uuid $id, ?string $database = null, ?string $schema = null): TargetConnection
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
@@ -40,7 +40,23 @@ final readonly class TargetOpener
             // Une connexion reste une base (PostgreSQL ne change pas de base en route) : on ouvre une connexion sur celle-là.
             $parameters = $parameters->withDatabase($database);
         }
+        if (null !== $schema) {
+            // Un schéma PostgreSQL se choisit à l'ouverture (search_path) : l'introspection et la console le suivent sans rien changer.
+            $parameters = $parameters->withSchema($schema);
+        }
 
         return $this->drivers->for($engine)->connect($engine, $this->hosts->pinned($owner, $parameters));
+    }
+
+    /**
+     * La base que la connexion nomme elle-même, ou null si elle n'en nomme aucune (on joint alors le serveur seul).
+     *
+     * @throws Exception\ConnectionNotFoundException
+     */
+    public function defaultDatabase(User $owner, DerivedKey $key, Uuid $id): ?string
+    {
+        $database = $this->connections->reveal($owner, $key, $id)->database;
+
+        return '' === $database ? null : $database;
     }
 }

@@ -19,6 +19,8 @@ use Doctrine\DBAL\Exception as DbalException;
 final readonly class DbalConnector
 {
     private const CONNECT_TIMEOUT_SECONDS = 5;
+    // Sans base nommée, PostgreSQL chercherait une base du nom de l'utilisateur : on prend celle que tout serveur possède.
+    private const POSTGRES_MAINTENANCE_DATABASE = 'postgres';
 
     public function connect(Engine $engine, ConnectionParameters $parameters): Connection
     {
@@ -30,11 +32,15 @@ final readonly class DbalConnector
             },
             'host' => $parameters->address(),
             'port' => $parameters->port,
-            'dbname' => $parameters->database,
             'user' => $parameters->username,
             'password' => $parameters->password(),
             'driverOptions' => [\PDO::ATTR_TIMEOUT => self::CONNECT_TIMEOUT_SECONDS],
         ];
+        if ('' !== $parameters->database) {
+            $options['dbname'] = $parameters->database;
+        } elseif (Engine::PostgreSql === $engine) {
+            $options['dbname'] = self::POSTGRES_MAINTENANCE_DATABASE;
+        }
         if (Engine::PostgreSql !== $engine) {
             $options['charset'] = 'utf8mb4';
             // Lecture non tamponnée : une requête qui ramène des millions de lignes n'est pas chargée en mémoire.
@@ -46,6 +52,10 @@ final readonly class DbalConnector
         try {
             $connection = DriverManager::getConnection($options);
             $connection->executeQuery('SELECT 1');
+            if (Engine::PostgreSql === $engine && null !== $parameters->schema) {
+                // quote_ident : le nom est une donnée, jamais du SQL.
+                $connection->executeQuery("SELECT set_config('search_path', quote_ident(?), false)", [$parameters->schema]);
+            }
 
             return $connection;
         } catch (DbalException $e) {

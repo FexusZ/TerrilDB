@@ -28,7 +28,7 @@ final class ConnectionInput
             new ConnectionParameters(
                 $input->string('host'),
                 $input->optionalInt('port') ?? $engine->defaultPort(),
-                $input->string('database'),
+                $input->optionalString('database') ?? '',
                 $input->string('username'),
                 $password,
             ),

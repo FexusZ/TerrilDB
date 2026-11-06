@@ -43,6 +43,11 @@ final class QueryServiceTest extends TestCase
                 return new \App\Core\Schema\TablePage([], null, 0);
             }
 
+            public function listSchemas(): array
+            {
+                return [];
+            }
+
             public function listTables(): array
             {
                 return [];

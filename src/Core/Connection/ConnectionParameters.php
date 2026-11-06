@@ -27,6 +27,7 @@ final readonly class ConnectionParameters
         public string $username,
         #[\SensitiveParameter] private string $password,
         private ?string $pinnedAddress = null,
+        public ?string $schema = null,
     ) {
         if ('' === $host || \strlen($host) > self::HOST_MAX_LENGTH || 1 !== preg_match('/^[^\s\p{Cc}]+$/uD', $host)) {
             throw new InvalidConnectionParametersException('The host is not valid.');
@@ -34,7 +35,13 @@ final readonly class ConnectionParameters
         if ($port < 1 || $port > 65535) {
             throw new InvalidConnectionParametersException('The port must be between 1 and 65535.');
         }
-        self::assertName($database, 'database');
+        // La base est facultative : sans elle on joint le serveur, puis on choisit parmi ses bases.
+        if ('' !== $database) {
+            self::assertName($database, 'database');
+        }
+        if (null !== $schema) {
+            self::assertName($schema, 'schema');
+        }
         self::assertName($username, 'username');
         if (\strlen($password) > self::PASSWORD_MAX_LENGTH || !mb_check_encoding($password, 'UTF-8')) {
             throw new InvalidConnectionParametersException('The password is not valid.');
@@ -51,7 +58,7 @@ final readonly class ConnectionParameters
 
     public function withPassword(#[\SensitiveParameter] string $password): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress);
+        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema);
     }
 
     /**
@@ -69,7 +76,7 @@ final readonly class ConnectionParameters
      */
     public function withAddress(string $address): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema);
     }
 
     /**
@@ -77,7 +84,16 @@ final readonly class ConnectionParameters
      */
     public function withDatabase(string $database): self
     {
-        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress);
+        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema);
+    }
+
+    /**
+     * Le schéma à explorer (PostgreSQL : un niveau sous la base). Comme l'adresse épinglée, il ne vit que le temps de
+     * l'ouverture et n'entre jamais dans le JSON chiffré.
+     */
+    public function withSchema(?string $schema): self
+    {
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema);
     }
 
     public function toJson(): string
