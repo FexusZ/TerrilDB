@@ -20,7 +20,7 @@ final class ColumnTypeTest extends TestCase
         yield 'length' => ['character varying(20)', 'character varying(20)'];
         yield 'precision' => ['numeric(10, 2)', 'numeric(10, 2)'];
         yield 'unsigned' => ['int unsigned', 'int unsigned'];
-        yield 'extra spaces are collapsed' => ["  varchar(  20 )  ", 'varchar(20)'];
+        yield 'extra spaces are collapsed' => ['  varchar(  20 )  ', 'varchar(20)'];
         yield 'time zone' => ['timestamp without time zone', 'timestamp without time zone'];
         yield 'array' => ['text[]', 'text[]'];
         yield 'enum values' => ["enum('a','b c','it''s')", "enum('a', 'b c', 'it''s')"];
