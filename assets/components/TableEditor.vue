@@ -244,8 +244,8 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
         </li>
       </ul>
       <p v-else-if="preview" class="hint" role="status">Ces modifications ne changent rien dans la base.</p>
-      <p v-if="stale" class="alert" role="alert">La table a changé depuis son chargement. <button type="button" class="link" @click="emit('reload')">Recharger la table</button></p>
-      <p v-if="problem && !stale" class="alert" role="alert">{{ problem }}</p>
+      <p v-if="stale && !failure" class="alert" role="alert">La table a changé depuis son chargement. <button type="button" class="link" @click="emit('reload')">Recharger la table</button></p>
+      <p v-if="problem && !(stale && !failure)" class="alert" role="alert">{{ problem }}</p>
       <div v-if="failure" class="alert" role="alert">
         <p>{{ failure.message }}</p>
         <template v-if="failure.applied.length > 0">
@@ -257,7 +257,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       </div>
       <div class="buttons">
         <AppButton variant="ghost" small :disabled="applying" @click="cancel">Annuler</AppButton>
-        <AppButton small :busy="applying" :disabled="preview === null || preview.statements.length === 0 || stale" @click="validate">Valider les changements</AppButton>
+        <AppButton variant="primary" small :busy="applying" :disabled="preview === null || preview.statements.length === 0 || stale" @click="validate">Valider les changements</AppButton>
       </div>
     </aside>
     <p v-else-if="problem" class="alert" role="alert">{{ problem }}</p>
@@ -292,7 +292,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
           </tbody>
         </table>
       </div>
-      <div><AppButton variant="ghost" small @click="addColumn(draft)">+ Ajouter une colonne</AppButton></div>
+      <div><AppButton variant="ghost" small @click="addColumn(draft, !features.skipIndex)">+ Ajouter une colonne</AppButton></div>
       <datalist :id="typeListId"><option v-for="type in COLUMN_TYPES[engine]" :key="type" :value="type" /></datalist>
     </section>
 

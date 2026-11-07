@@ -70,6 +70,15 @@ describe('draftFromDetail', () => {
   })
 })
 
+describe('addColumn', () => {
+  it('starts nullable, unless the engine says otherwise', () => {
+    const draft = draftFromDetail(detail())
+
+    expect(addColumn(draft).nullable).toBe(true)
+    expect(addColumn(draft, false).nullable).toBe(false)
+  })
+})
+
 describe('marks', () => {
   it('says what changed in a column, and only that', () => {
     const draft = draftFromDetail(detail())

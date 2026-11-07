@@ -121,8 +121,8 @@ export function draftFromDetail(detail: TableDetail, clickhouse = false): Draft 
   }
 }
 
-export function addColumn(draft: Draft): DraftColumn {
-  const column: DraftColumn = { uid: nextUid(), originalName: null, name: '', type: '', nullable: true, default: '', autoIncrement: false, removed: false }
+export function addColumn(draft: Draft, nullable = true): DraftColumn {
+  const column: DraftColumn = { uid: nextUid(), originalName: null, name: '', type: '', nullable, default: '', autoIncrement: false, removed: false }
   draft.columns.push(column)
 
   return column

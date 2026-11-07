@@ -327,6 +327,21 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('adds new columns as non-nullable on ClickHouse, where Nullable is the exception', async () => {
+    const clickhouse: TableDetail = { ...detail(), columns: [{ name: 'id', type: 'UInt64', nullable: false, default: null, autoIncrement: false, comment: null }], indexes: [], foreignKeys: [] }
+    const wrapper = mountEditor('clickhouse', clickhouse)
+
+    await wrapper.findAll('button').find((button) => button.text().includes('Ajouter une colonne'))?.trigger('click')
+
+    expect((wrapper.findAll('input[aria-label="Accepte NULL"]')[1]?.element as HTMLInputElement).checked).toBe(false)
+    wrapper.unmount()
+
+    const other = mountEditor('postgresql')
+    await other.findAll('button').find((button) => button.text().includes('Ajouter une colonne'))?.trigger('click')
+    expect((other.findAll('input[aria-label="Accepte NULL"]')[3]?.element as HTMLInputElement).checked).toBe(true)
+    other.unmount()
+  })
+
   it('starts again from the new table when the parent gives it back', async () => {
     mocked.mockResolvedValue(preview())
     const wrapper = mountEditor()
