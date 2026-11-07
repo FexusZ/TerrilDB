@@ -17,6 +17,17 @@ describe('layoutDiagram', () => {
     expect(tables[0]).toMatchObject({ name: 'users', width: BOX_WIDTH, height: HEADER_HEIGHT + 3 * ROW_HEIGHT })
   })
 
+  it('widens every box so that no column name runs into its type', () => {
+    const long: DiagramTable = { name: 'customers', columns: [{ name: 'email', type: 'character varying(190)', nullable: false, primary: false }, { name: 'created_at', type: 'timestamp without time zone', nullable: false, primary: false }] }
+    const { tables } = layoutDiagram([long, table('users')], [])
+
+    const widest = Math.max(...long.columns.map((column) => column.name.length + column.type.length))
+    expect(tables.every((box) => box.width === tables[0]?.width)).toBe(true)
+    expect(tables[0]?.width).toBeGreaterThan(BOX_WIDTH)
+    // Au moins l'encombrement d'un caractère de police à chasse fixe (7 px) par signe, plus les marges.
+    expect(tables[0]?.width).toBeGreaterThanOrEqual(widest * 7 + 28 + 12 + 16)
+  })
+
   it('never overlaps two boxes', () => {
     const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
     const { tables } = layoutDiagram(names.map((name) => table(name, ['id', 'x', 'y'])), [])

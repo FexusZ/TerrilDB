@@ -7,6 +7,7 @@ const GAP_X = 90
 const GAP_Y = 48
 const PADDING = 24
 const LOOP = 40
+const CHAR_WIDTH = 7
 
 export interface PlacedTable extends DiagramTable {
   x: number
@@ -43,6 +44,7 @@ export function layoutDiagram(input: DiagramTable[], relations: DiagramRelation[
   const drawn = relations.filter((relation) => known.has(relation.table) && known.has(relation.referencedTable))
   const ordered = orderTables(input, drawn)
 
+  const boxWidth = widthFor(input)
   const columns = Math.max(1, Math.ceil(Math.sqrt(ordered.length)))
   const placed: PlacedTable[] = []
   let y = PADDING
@@ -51,9 +53,9 @@ export function layoutDiagram(input: DiagramTable[], relations: DiagramRelation[
     const row = ordered.slice(start, start + columns)
     const rowHeight = Math.max(...row.map(boxHeight))
     row.forEach((table, column) => {
-      placed.push({ ...table, x: PADDING + column * (BOX_WIDTH + GAP_X), y, width: BOX_WIDTH, height: boxHeight(table) })
+      placed.push({ ...table, x: PADDING + column * (boxWidth + GAP_X), y, width: boxWidth, height: boxHeight(table) })
     })
-    width = Math.max(width, PADDING * 2 + row.length * BOX_WIDTH + (row.length - 1) * GAP_X)
+    width = Math.max(width, PADDING * 2 + row.length * boxWidth + (row.length - 1) * GAP_X)
     y += rowHeight + GAP_Y
   }
 
@@ -61,6 +63,13 @@ export function layoutDiagram(input: DiagramTable[], relations: DiagramRelation[
   const edges = drawn.map((relation) => placeRelation(relation, byName))
 
   return { tables: placed, relations: edges, width, height: placed.length === 0 ? PADDING * 2 : y - GAP_Y + PADDING }
+}
+
+/** Une largeur commune : celle de la ligne « nom + type » la plus longue (police à chasse fixe, environ 7 px par signe), au moins BOX_WIDTH. */
+function widthFor(tables: DiagramTable[]): number {
+  const longest = Math.max(0, ...tables.flatMap((table) => table.columns.map((column) => column.name.length + column.type.length)))
+
+  return Math.max(BOX_WIDTH, longest * CHAR_WIDTH + 28 + 12 + 16)
 }
 
 function boxHeight(table: DiagramTable): number {

@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { api } from '../api/client'
 import { messageFor } from '../api/errors'
 import type { SchemaDiagram } from '../api/types'
-import { BOX_WIDTH, HEADER_HEIGHT, ROW_HEIGHT, layoutDiagram } from '../utils/erLayout'
+import { HEADER_HEIGHT, ROW_HEIGHT, layoutDiagram } from '../utils/erLayout'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -54,13 +54,13 @@ function open(name: string): void {
             <title>{{ edge.label }}</title>
           </path>
           <g v-for="table in layout.tables" :key="table.name" class="table" :transform="`translate(${table.x} ${table.y})`">
-            <rect class="box" :width="BOX_WIDTH" :height="table.height" rx="6" />
-            <rect class="header" :width="BOX_WIDTH" :height="HEADER_HEIGHT" rx="6" />
+            <rect class="box" :width="table.width" :height="table.height" rx="6" />
+            <rect class="header" :width="table.width" :height="HEADER_HEIGHT" rx="6" />
             <text class="name" x="12" :y="HEADER_HEIGHT / 2 + 5" role="link" tabindex="0" @click="open(table.name)" @keydown.enter="open(table.name)">{{ table.name }}</text>
             <g v-for="(column, index) in table.columns" :key="column.name" class="column" :transform="`translate(0 ${HEADER_HEIGHT + index * ROW_HEIGHT})`">
               <text v-if="column.primary" class="key" x="12" :y="ROW_HEIGHT / 2 + 4">⚷</text>
               <text class="col" x="28" :y="ROW_HEIGHT / 2 + 4">{{ column.name }}</text>
-              <text class="type" :x="BOX_WIDTH - 12" :y="ROW_HEIGHT / 2 + 4" text-anchor="end">{{ column.type }}</text>
+              <text class="type" :x="table.width - 12" :y="ROW_HEIGHT / 2 + 4" text-anchor="end">{{ column.type }}</text>
             </g>
           </g>
         </svg>
