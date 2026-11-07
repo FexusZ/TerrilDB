@@ -20,7 +20,7 @@ const infos = computed(() => audit.value?.findings.filter((finding) => finding.s
 
 onMounted(async () => {
   try {
-    audit.value = await api<SchemaAudit>('GET', `/web/connections/${props.id}/audit`)
+    audit.value = await api<SchemaAudit>('GET', `/web/connections/${props.id}/audit${workspace.scopeSuffix()}`)
   } catch (failure) {
     error.value = messageFor(failure)
   }

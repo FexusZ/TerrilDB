@@ -1,15 +1,57 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, useTemplateRef } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '../api/client'
 import { messageFor } from '../api/errors'
 import type { SchemaDiagram } from '../api/types'
 import { HEADER_HEIGHT, ROW_HEIGHT, layoutDiagram } from '../utils/erLayout'
 
+import { useWorkspaceStore } from '../stores/workspace'
+
 const props = defineProps<{ id: string }>()
+const workspace = useWorkspaceStore()
 const router = useRouter()
 
 const diagram = ref<SchemaDiagram | null>(null)
+
+// Paliers de zoom (en %) ; « Ajuster » peut tomber entre deux paliers, le bouton suivant reprend alors au palier voisin.
+const STEPS = [25, 33, 50, 67, 80, 100, 125, 150, 200, 250, 300]
+const MIN_ZOOM = STEPS[0] ?? 25
+const MAX_ZOOM = STEPS[STEPS.length - 1] ?? 300
+const zoom = ref(100)
+const canvas = useTemplateRef<HTMLElement>('canvas')
+const canZoomIn = computed(() => zoom.value < MAX_ZOOM)
+const canZoomOut = computed(() => zoom.value > MIN_ZOOM)
+
+function zoomIn(): void {
+  zoom.value = STEPS.find((step) => step > zoom.value) ?? MAX_ZOOM
+}
+
+function zoomOut(): void {
+  zoom.value = [...STEPS].reverse().find((step) => step < zoom.value) ?? MIN_ZOOM
+}
+
+function fit(): void {
+  const available = canvas.value?.clientWidth ?? 0
+  if (layout.value === null || available <= 0) {
+    return
+  }
+  // Jamais agrandi au-delà de la taille réelle : ajuster sert à faire tenir, pas à grossir.
+  zoom.value = Math.min(100, Math.max(MIN_ZOOM, (available / layout.value.width) * 100))
+}
+
+// Ctrl + molette zoome ; la molette seule continue de faire défiler.
+function onWheel(event: WheelEvent): void {
+  if (!event.ctrlKey) {
+    return
+  }
+  event.preventDefault()
+  if (event.deltaY < 0) {
+    zoomIn()
+  } else if (event.deltaY > 0) {
+    zoomOut()
+  }
+}
 const error = ref<string | null>(null)
 
 const layout = computed(() => (diagram.value === null ? null : layoutDiagram(diagram.value.tables, diagram.value.relations)))
@@ -25,7 +67,7 @@ const relations = computed(() => {
 
 onMounted(async () => {
   try {
-    diagram.value = await api<SchemaDiagram>('GET', `/web/connections/${props.id}/diagram`)
+    diagram.value = await api<SchemaDiagram>('GET', `/web/connections/${props.id}/diagram${workspace.scopeSuffix()}`)
   } catch (failure) {
     error.value = messageFor(failure)
   }
@@ -48,8 +90,15 @@ function open(name: string): void {
     <template v-else>
       <p v-if="diagram.truncated" class="truncated" role="status">Le diagramme s’est arrêté aux 300 premières tables.</p>
       <p v-if="diagram.tables.length === 0" class="meta">Aucune table à dessiner.</p>
-      <div v-else class="canvas">
-        <svg :width="layout.width" :height="layout.height" :viewBox="`0 0 ${layout.width} ${layout.height}`" role="img" aria-label="Diagramme entité-relation du schéma">
+      <div v-else class="zoom" role="group" aria-label="Zoom">
+        <button type="button" aria-label="Zoom arrière" :disabled="!canZoomOut" @click="zoomOut">−</button>
+        <span data-testid="zoom-level" class="level" aria-live="polite">{{ Math.round(zoom) }} %</span>
+        <button type="button" aria-label="Zoom avant" :disabled="!canZoomIn" @click="zoomIn">+</button>
+        <button type="button" aria-label="Taille réelle" :disabled="zoom === 100" @click="zoom = 100">100 %</button>
+        <button type="button" aria-label="Ajuster à la largeur" @click="fit">Ajuster</button>
+      </div>
+      <div v-if="diagram.tables.length > 0" ref="canvas" class="canvas" @wheel="onWheel">
+        <svg :width="Math.floor(layout.width * zoom / 100)" :height="Math.floor(layout.height * zoom / 100)" :viewBox="`0 0 ${layout.width} ${layout.height}`" role="img" aria-label="Diagramme entité-relation du schéma">
           <path v-for="edge in relations" :key="edge.name + edge.from" class="relation" :d="edge.path" fill="none">
             <title>{{ edge.label }}</title>
           </path>
@@ -74,6 +123,11 @@ function open(name: string): void {
 h1 { font-size: 22px; font-weight: 700; }
 .head { display: flex; flex-direction: column; gap: 4px; }
 .meta { color: var(--mut); font-size: 13px; }
+.zoom { display: flex; align-items: center; gap: 6px; }
+.zoom button { height: 30px; min-width: 30px; padding: 0 10px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s1); color: var(--fg); font: 500 13px var(--font-ui); cursor: pointer; }
+.zoom button:hover:not(:disabled) { border-color: var(--acc-line); color: var(--acc); }
+.zoom button:disabled { opacity: 0.45; cursor: default; }
+.level { min-width: 52px; text-align: center; color: var(--mut); font: 400 12px var(--font-mono); }
 .canvas { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--s1); }
 svg { display: block; font: 400 12.5px var(--font-mono); }
 .box { fill: var(--s2); stroke: var(--line-strong); }

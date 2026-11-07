@@ -18,6 +18,9 @@ const error = ref<string | null>(null)
 const ready = ref(false)
 
 const connection = computed(() => connections.byId(props.id))
+// Diagramme et audit lisent le schéma : pas de sens sur un moteur clé-valeur. On garde la base et le schéma explorés d'une vue à l'autre.
+const hasSchemaViews = computed(() => connection.value !== undefined && connection.value.engine !== 'redis')
+const scope = computed(() => ({ ...(workspace.database === null ? {} : { database: workspace.database }), ...(workspace.schema === null ? {} : { schema: workspace.schema }) }))
 
 async function open(): Promise<void> {
   error.value = null
@@ -78,6 +81,12 @@ watch(() => [route.query.database, route.query.schema], () => {
       </template>
     </AppHeader>
 
+    <nav v-if="hasSchemaViews && !error" class="views" aria-label="Vues de la connexion">
+      <RouterLink :to="{ name: 'workspace', params: { id }, query: scope }" exact-active-class="on">Console</RouterLink>
+      <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
+      <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
+    </nav>
+
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div v-else class="body">
       <div class="content">
@@ -103,6 +112,10 @@ watch(() => [route.query.database, route.query.schema], () => {
 .current[data-color='pink'] { border-left-color: var(--conn-pink); }
 .engine { font: 500 11px var(--font-mono); color: var(--acc); }
 .switch { color: var(--mut); font-size: 13px; }
+.views { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--s1); }
+.views a { padding: 9px 12px; color: var(--mut); font-size: 13px; text-decoration: none; border-bottom: 2px solid transparent; }
+.views a:hover { color: var(--fg); }
+.views a.on { color: var(--acc); border-bottom-color: var(--acc); }
 .body { display: flex; flex-wrap: wrap; flex: 1; min-height: 0; }
 .content { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; }
 .error { margin: 24px; padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }

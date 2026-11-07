@@ -21,12 +21,16 @@ const audit: SchemaAudit = {
   ],
 }
 
-async function mountPane(result: SchemaAudit | ApiError = audit) {
+async function mountPane(result: SchemaAudit | ApiError = audit, scope: { database: string; schema: string } | null = null) {
   const pinia = createPinia()
   setActivePinia(pinia)
   useConnectionsStore().items = [{ id: 'abc', name: 'Production', engine: 'postgresql', createdAt: '', updatedAt: '' }]
   mocked.mockResolvedValueOnce({ tables: [] })
   await useWorkspaceStore().open('abc')
+  if (scope !== null) {
+    useWorkspaceStore().database = scope.database
+    useWorkspaceStore().schema = scope.schema
+  }
   if (result instanceof ApiError) {
     mocked.mockRejectedValueOnce(result)
   } else {
@@ -53,6 +57,12 @@ describe('AuditPane', () => {
     await mountPane()
 
     expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/abc/audit')
+  })
+
+  it('audits the database and schema being explored, not only the connection default', async () => {
+    await mountPane(audit, { database: 'reporting', schema: 'sales' })
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/abc/audit?database=reporting&schema=sales')
   })
 
   it('groups the findings by severity, warnings first, with their explanation', async () => {

@@ -179,6 +179,25 @@ describe('WorkspaceView', () => {
     expect(wrapper.find('.child').exists()).toBe(true)
   })
 
+  it('links to the console, the diagram and the schema audit of a SQL connection', async () => {
+    mocked.mockImplementation(answer())
+
+    const { wrapper } = await mountView()
+
+    const links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma'])
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit'])
+  })
+
+  it('offers no diagram or audit on a key-value connection, which has no schema to draw', async () => {
+    mocked.mockResolvedValueOnce({ connections: [{ ...summary, engine: 'redis' }] })
+    mocked.mockResolvedValueOnce({ keys: [], nextCursor: null, total: 0 })
+
+    const { wrapper } = await mountView()
+
+    expect(wrapper.find('nav[aria-label="Vues de la connexion"]').exists()).toBe(false)
+  })
+
   it('has no tables panel: the content comes first and the connections bar sits on the right', async () => {
     mocked.mockImplementation(answer())
 
