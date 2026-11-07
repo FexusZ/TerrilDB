@@ -279,20 +279,67 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('lists the primary key first among the indexes, in step with the column boxes', async () => {
+    mocked.mockResolvedValue(preview())
+    const wrapper = mountEditor()
+    const cards = wrapper.findAll('.indexes .card')
+
+    expect(cards[0]?.attributes('data-kind')).toBe('primary')
+    expect(cards[0]?.text()).toContain('clé primaire')
+    expect(cards[0]?.attributes('data-status')).toBe('same')
+    expect(cards[0]?.findAll('.chip').filter((chip) => chip.classes().includes('on')).map((chip) => chip.text())).toEqual(['id'])
+    expect(cards[1]?.attributes('data-kind')).not.toBe('primary')
+
+    await cards[0]?.findAll('.chip').find((chip) => chip.text().startsWith('status'))?.trigger('click')
+    await settle()
+
+    expect((wrapper.findAll('input[aria-label="Dans la clé primaire"]')[1]?.element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.findAll('.indexes .card')[0]?.attributes('data-status')).toBe('changed')
+    expect(structureCalls('preview')[0]?.[2]).toMatchObject({ draft: { indexes: expect.arrayContaining([expect.objectContaining({ primary: true, columns: ['id', 'status'] })]) } })
+    wrapper.unmount()
+  })
+
+  it('removes and restores the primary key from its line in the index list', async () => {
+    mocked.mockResolvedValue(preview())
+    const wrapper = mountEditor()
+
+    await wrapper.get('.indexes .card[data-kind="primary"] button[aria-label="Retirer la clé primaire"]').trigger('click')
+    await settle()
+    expect(wrapper.get('.indexes .card[data-kind="primary"]').attributes('data-status')).toBe('removed')
+    expect((wrapper.findAll('input[aria-label="Dans la clé primaire"]')[0]?.element as HTMLInputElement).checked).toBe(false)
+
+    await wrapper.get('.indexes .card[data-kind="primary"]').findAll('button').find((button) => button.text() === 'Restaurer')?.trigger('click')
+    await settle()
+    expect(wrapper.get('.indexes .card[data-kind="primary"]').attributes('data-status')).toBe('same')
+    expect(wrapper.find('[aria-label="Modifications en attente"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows an empty primary key line on a table that has none, so one can be defined from the indexes too', async () => {
+    const without: TableDetail = { ...detail(), indexes: [], foreignKeys: [] }
+    const wrapper = mountEditor('postgresql', without)
+
+    const card = wrapper.get('.indexes .card[data-kind="primary"]')
+    expect(card.text()).toContain('Aucune')
+    await card.findAll('.chip')[0]?.trigger('click')
+    expect(wrapper.get('.indexes .card[data-kind="primary"]').attributes('data-status')).toBe('new')
+    wrapper.unmount()
+  })
+
   it('edits an index: choose its columns, make it unique, remove it', async () => {
     mocked.mockResolvedValue(preview())
     const wrapper = mountEditor()
-    const index = wrapper.get('.indexes .card')
+    const index = wrapper.get('.indexes .card:not([data-kind="primary"])')
 
     await index.findAll('.chip').find((chip) => chip.text() === 'note')?.trigger('click')
     await index.get('input[type="checkbox"]').setValue(true)
     await settle()
 
-    expect(wrapper.get('.indexes .card').attributes('data-status')).toBe('changed')
+    expect(wrapper.get('.indexes .card:not([data-kind="primary"])').attributes('data-status')).toBe('changed')
     expect(structureCalls('preview').at(-1)?.[2]).toMatchObject({ draft: { indexes: expect.arrayContaining([expect.objectContaining({ name: 'idx_status', columns: ['status', 'note'], unique: true })]) } })
 
     await index.get('button[aria-label^="Retirer l’index"]').trigger('click')
-    expect(wrapper.get('.indexes .card').attributes('data-status')).toBe('removed')
+    expect(wrapper.get('.indexes .card:not([data-kind="primary"])').attributes('data-status')).toBe('removed')
     wrapper.unmount()
   })
 
@@ -324,6 +371,7 @@ describe('TableEditor', () => {
     expect(wrapper.find('.foreign-keys').exists()).toBe(false)
     expect(wrapper.get('.indexes .card').text()).toContain('lecture seule')
     expect(wrapper.find('.indexes .card input').exists()).toBe(false)
+    expect(wrapper.find('.indexes .card[data-kind="primary"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

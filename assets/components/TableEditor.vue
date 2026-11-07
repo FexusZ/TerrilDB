@@ -15,9 +15,12 @@ import {
   foreignKeyState,
   indexState,
   isDirty,
+  primaryState,
   removeColumn,
   removeForeignKey,
   removeIndex,
+  removePrimary,
+  restorePrimary,
   togglePrimary,
   toPayload,
   type Draft,
@@ -53,6 +56,7 @@ const SKIP_KINDS = ['minmax', 'bloom_filter', 'set(100)']
 
 const markOf = (column: DraftColumn): Mark => columnState(draft.value, props.table, column)
 const markOfIndex = (index: DraftIndex): Mark => indexState(draft.value, props.table, index)
+const primaryMark = computed<Mark>(() => primaryState(draft.value, props.table))
 const markOfKey = (key: DraftForeignKey): Mark => foreignKeyState(draft.value, props.table, key)
 const edited = (mark: Mark, field: string): boolean => mark.status === 'changed' && mark.fields.has(field)
 
@@ -298,8 +302,18 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
 
     <section class="indexes">
       <h2>Index</h2>
-      <p v-if="draft.indexes.length === 0" class="none">Aucun index.</p>
+      <p v-if="draft.indexes.length === 0 && !features.primaryKey" class="none">Aucun index.</p>
       <ul v-else class="cards">
+        <li v-if="features.primaryKey" class="card" data-kind="primary" :data-status="primaryMark.status">
+          <span class="tag pk">clé primaire</span>
+          <span v-if="draft.primaryOriginalName" class="mono dim">{{ draft.primaryOriginalName }}</span>
+          <span v-if="draft.primary.length === 0" class="dim">Aucune clé primaire : choisissez des colonnes.</span>
+          <div class="chips" role="group" aria-label="Colonnes de la clé primaire">
+            <button v-for="column in liveColumns" :key="column.uid" type="button" class="chip" :class="{ on: isPrimary(column), edited: primaryMark.status === 'changed' && isPrimary(column) }" :aria-pressed="isPrimary(column)" @click="togglePrimary(draft, column)">{{ column.name || '…' }}<sup v-if="isPrimary(column) && draft.primary.length > 1"> {{ draft.primary.indexOf(column.uid) + 1 }}</sup></button>
+          </div>
+          <AppButton v-if="primaryMark.status === 'removed'" variant="ghost" small @click="restorePrimary(draft)">Restaurer</AppButton>
+          <button v-else-if="draft.primary.length > 0" type="button" class="x" aria-label="Retirer la clé primaire" @click="removePrimary(draft)">✕</button>
+        </li>
         <li v-for="index in draft.indexes" :key="index.uid" class="card" :data-status="markOfIndex(index).status">
           <template v-if="index.locked">
             <span class="mono">{{ index.name }}</span>
@@ -426,6 +440,7 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .chip.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-bg); }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mut); }
 .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 4px; font: 500 11px var(--font-mono); border: 1px solid var(--line); color: var(--mut); }
+.tag.pk { color: var(--sec); border-color: var(--sec-line); background: var(--sec-bg); }
 .tag.danger { color: var(--bad); border-color: var(--bad-line); background: var(--bad-bg); }
 .danger-zone { padding-top: 6px; border-top: 1px solid var(--line); }
 .lost { margin: 0; padding-left: 18px; color: var(--fg); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }

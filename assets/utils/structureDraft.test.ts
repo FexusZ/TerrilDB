@@ -10,7 +10,10 @@ import {
   foreignKeyState,
   indexState,
   isDirty,
+  primaryState,
   removeColumn,
+  removePrimary,
+  restorePrimary,
   removeIndex,
   togglePrimary,
   toPayload,
@@ -155,6 +158,46 @@ describe('marks', () => {
     draft.name = 'sales'
 
     expect(isDirty(draft, detail())).toBe(true)
+  })
+})
+
+describe('primary key as an index', () => {
+  it('is the same until its columns change', () => {
+    const draft = draftFromDetail(detail())
+
+    expect(primaryState(draft, detail()).status).toBe('same')
+    togglePrimary(draft, col(draft, 'customer_id'))
+    expect(primaryState(draft, detail()).status).toBe('changed')
+  })
+
+  it('is removed when emptied, and comes back as it was when restored', () => {
+    const draft = draftFromDetail(detail())
+
+    removePrimary(draft)
+    expect(draft.primary).toEqual([])
+    expect(primaryState(draft, detail()).status).toBe('removed')
+    expect(toPayload(draft).indexes.some((i) => i.primary)).toBe(false)
+
+    restorePrimary(draft)
+    expect(primaryState(draft, detail()).status).toBe('same')
+    expect(isDirty(draft, detail())).toBe(false)
+  })
+
+  it('is removed too when all its columns are removed from the table', () => {
+    const draft = draftFromDetail(detail())
+    removeColumn(draft, col(draft, 'id'))
+
+    expect(primaryState(draft, detail()).status).toBe('removed')
+  })
+
+  it('is new when a table without one gets one', () => {
+    const d = detail()
+    d.indexes = d.indexes.filter((index) => !index.primary)
+    const draft = draftFromDetail(d)
+
+    expect(primaryState(draft, d).status).toBe('same')
+    togglePrimary(draft, col(draft, 'id'))
+    expect(primaryState(draft, d).status).toBe('new')
   })
 })
 

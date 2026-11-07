@@ -53,6 +53,8 @@ export interface Draft {
   primary: string[]
   /** Nom de la clé primaire réelle (PostgreSQL le réclame pour la retirer) ; nul si la table n'en a pas. */
   primaryOriginalName: string | null
+  /** La clé primaire de la table réelle, pour pouvoir la restaurer après l'avoir retirée. */
+  originalPrimary: string[]
 }
 
 export type MarkStatus = 'same' | 'new' | 'changed' | 'removed'
@@ -118,6 +120,7 @@ export function draftFromDetail(detail: TableDetail, clickhouse = false): Draft 
     })),
     primary: primaryIndex === null ? [] : primaryIndex.columns.map(uidOf),
     primaryOriginalName: primaryIndex?.name ?? null,
+    originalPrimary: primaryIndex === null ? [] : primaryIndex.columns.map(uidOf),
   }
 }
 
@@ -259,6 +262,28 @@ export function foreignKeyState(draft: Draft, detail: TableDetail, key: DraftFor
   }
 
   return { status: fields.size === 0 ? 'same' : 'changed', fields }
+}
+
+/** La clé primaire, vue comme un index parmi les autres : nouvelle, modifiée, retirée ou inchangée. */
+export function primaryState(draft: Draft, detail: TableDetail): Mark {
+  const original = detail.indexes.find((index) => index.primary)
+  const live = draft.primary.filter((uid) => draft.columns.some((column) => column.uid === uid && !column.removed))
+  if (original === undefined) {
+    return { status: live.length > 0 ? 'new' : 'same', fields: new Set() }
+  }
+  if (live.length === 0) {
+    return { status: 'removed', fields: new Set() }
+  }
+
+  return sameList(originalNames(draft, live), original.columns) ? { status: 'same', fields: new Set() } : { status: 'changed', fields: new Set(['columns']) }
+}
+
+export function removePrimary(draft: Draft): void {
+  draft.primary = []
+}
+
+export function restorePrimary(draft: Draft): void {
+  draft.primary = [...draft.originalPrimary]
 }
 
 export function isDirty(draft: Draft, detail: TableDetail): boolean {
