@@ -9,6 +9,7 @@ use App\Core\Connection\Engine;
 use App\Core\Driver\Driver;
 use App\Core\Driver\TargetConnection;
 use App\Driver\DbalConnector;
+use App\Driver\DbalDdlExecutor;
 
 final readonly class PostgreSqlDriver implements Driver
 {
@@ -29,6 +30,6 @@ final readonly class PostgreSqlDriver implements Driver
 
         $connection = $this->connector->connect($engine, $parameters);
 
-        return new TargetConnection($engine, new PostgreSqlIntrospector($connection), new PostgreSqlQueryRunner($connection), $connection->close(...));
+        return new TargetConnection($engine, new PostgreSqlIntrospector($connection), new PostgreSqlQueryRunner($connection), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine));
     }
 }

@@ -8,6 +8,7 @@ use App\Core\Connection\Engine;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\KeyValueStore;
 use App\Core\Query\QueryRunner;
+use App\Core\Schema\Change\DdlExecutor;
 use App\Core\Schema\SchemaIntrospector;
 
 /**
@@ -29,6 +30,7 @@ final class TargetConnection
         private readonly QueryRunner $runner,
         \Closure $release,
         private readonly ?KeyValueStore $keys = null,
+        private readonly ?DdlExecutor $ddl = null,
     ) {
         $this->release = $release;
     }
@@ -47,6 +49,14 @@ final class TargetConnection
     public function keys(): KeyValueStore
     {
         return $this->keys ?? throw UnsupportedOperationException::for($this->engine, 'keys');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function ddl(): DdlExecutor
+    {
+        return $this->ddl ?? throw UnsupportedOperationException::for($this->engine, 'structure');
     }
 
     public function runner(): QueryRunner
