@@ -6,6 +6,7 @@ import TableStructure from './TableStructure.vue'
 
 const table: TableDetail = {
   name: 'order_items',
+  fingerprint: 'f'.repeat(64),
   kind: 'table',
   estimatedRows: 11420,
   viewDefinition: null,

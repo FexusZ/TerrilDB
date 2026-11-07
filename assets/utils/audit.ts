@@ -12,8 +12,10 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'target', label: 'Adresses refusées' },
   { value: 'invitation', label: 'Invitations' },
   { value: 'query', label: 'Requêtes' },
+  { value: 'schema', label: 'Structure des tables' },
 ]
 
+const tableOf = (details: Record<string, unknown>): string => (typeof details.table === 'string' ? details.table : '?')
 const quoted = (details: Record<string, unknown>): string => (typeof details.name === 'string' ? ` « ${details.name} »` : '')
 
 export function describeEvent(entry: AuditEntry): string {
@@ -74,6 +76,18 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Requête refusée'
     case 'query.failed':
       return details.reason === 'timeout' ? 'Requête arrêtée : délai dépassé' : 'Requête en erreur'
+    case 'schema.changed': {
+      const count = typeof details.statements === 'number' ? details.statements : 0
+
+      return `Structure de « ${tableOf(details)} » modifiée (${String(count)} ${count > 1 ? 'instructions' : 'instruction'})`
+    }
+    case 'schema.failed': {
+      const applied = typeof details.applied === 'number' ? details.applied : 0
+
+      return applied > 0
+        ? `Modification de la structure de « ${tableOf(details)} » interrompue : ${String(applied)} ${applied > 1 ? 'instructions déjà appliquées' : 'instruction déjà appliquée'}`
+        : `Modification de la structure de « ${tableOf(details)} » refusée par la base`
+    }
     default:
       return entry.action
   }

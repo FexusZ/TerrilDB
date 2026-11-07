@@ -6,13 +6,15 @@ import { ApiError, api } from '../api/client'
 import type { TableDetail } from '../api/types'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
+import TableEditor from '../components/TableEditor.vue'
+import TableStructure from '../components/TableStructure.vue'
 import TablePane from './TablePane.vue'
 
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
 
 const mocked = vi.mocked(api)
 const detail: TableDetail = {
-  name: 'orders', kind: 'table', estimatedRows: 3800, viewDefinition: null,
+  name: 'orders', fingerprint: 'f'.repeat(64), kind: 'table', estimatedRows: 3800, viewDefinition: null,
   columns: [{ name: 'id', type: 'integer', nullable: false, default: null, autoIncrement: true, comment: null }],
   indexes: [], foreignKeys: [],
 }
@@ -48,7 +50,67 @@ describe('TablePane', () => {
     expect(wrapper.get('h1').text()).toBe('orders')
     expect(wrapper.text()).toContain('table')
     expect(wrapper.text()).toMatch(/~\s?3\s?800 lignes/)
-    expect(wrapper.get('section.columns').text()).toContain('integer')
+    expect((wrapper.get('section.columns input[aria-label="Type de la colonne"]').element as HTMLInputElement).value).toBe('integer')
+  })
+
+  it('makes a table editable, but leaves a view read-only', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: detail })
+    const table = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(table.findComponent(TableEditor).exists()).toBe(true)
+    expect(table.findComponent(TableStructure).exists()).toBe(false)
+
+    mocked.mockResolvedValueOnce({ table: { ...detail, name: 'v_totals', kind: 'view', viewDefinition: 'SELECT 1' } })
+    const view = mount(TablePane, { props: { id: 'abc', name: 'v_totals' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    expect(view.findComponent(TableEditor).exists()).toBe(false)
+    expect(view.findComponent(TableStructure).exists()).toBe(true)
+  })
+
+  it('follows a renamed table, and refreshes the lists of tables', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: detail })
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    mocked.mockReset()
+    mocked.mockResolvedValue({ tables: [] })
+
+    wrapper.findComponent(TableEditor).vm.$emit('applied', { ...detail, name: 'sales', fingerprint: 'a'.repeat(64) }, 'orders')
+    await flushPromises()
+
+    expect(router.currentRoute.value.params.name).toBe('sales')
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100')
+  })
+
+  it('goes back to the console once the table is dropped', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: detail })
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    mocked.mockReset()
+    mocked.mockResolvedValue({ tables: [] })
+
+    wrapper.findComponent(TableEditor).vm.$emit('applied', null, 'orders')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('workspace')
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100')
+  })
+
+  it('reads the table again when the editor asks for a reload', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: detail })
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+    mocked.mockReset()
+    mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.includes('/tables/orders') ? { table: { ...detail, fingerprint: 'c'.repeat(64) } } : { tables: [] }))
+
+    wrapper.findComponent(TableEditor).vm.$emit('reload')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables/orders')
+    expect(wrapper.findComponent(TableEditor).props('table').fingerprint).toBe('c'.repeat(64))
   })
 
   it('opens a preview of the data in the editor and runs it', async () => {

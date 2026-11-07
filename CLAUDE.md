@@ -261,7 +261,7 @@ ClickHouse instruction par instruction (un échec laisse les précédentes appli
 remis à celui de la table), colonne AUTO_INCREMENT nouvelle et sa clé dans un seul ALTER ; ClickHouse : nullabilité dans le type,
 clé de tri en lecture seule, ni clé primaire ni clé étrangère ni auto-incrément ni renommage d'index, index de saut matérialisés ;
 passer de Nullable à non-Nullable y exige une valeur par défaut. Seules les tables sont éditables (pas les vues), pas Redis.
-Tests : `tests/Core/Schema/Change` (générateurs), `tests/Integration/Driver/SchemaChangeTest` (rejoués contre les vrais moteurs),
+Front : `TableEditor` (colonnes, index, clés étrangères modifiables sur place ; brouillon `utils/structureDraft` où colonnes, clé primaire, index et clés étrangères se réfèrent par identifiant donc un renommage les suit ; lignes nouvelle / modifiée / retirée surlignées ; barre collante en haut avec le SQL calculé par `preview`, boutons Valider / Annuler, confirmation qui liste ce qui sera perdu ; « Supprimer la table » avec le SQL montré), seulement pour les tables (une vue reste en lecture seule), `TablePane` rafraîchit les listes de tables et l'arbre après application. Tests : `tests/Core/Schema/Change` (générateurs), `tests/Integration/Driver/SchemaChangeTest` (rejoués contre les vrais moteurs),
 `tests/Integration/Web/TableStructureWebTest`.
 
 ## Export (src/Core/Export, ExportController)

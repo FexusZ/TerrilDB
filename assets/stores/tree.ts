@@ -293,8 +293,12 @@ export const useTreeStore = defineStore('tree', () => {
         return
       }
       // Une base qu'on vient d'ouvrir et qui ne contient rien (sans niveau schéma) : on s'en souvient pour la masquer ensuite.
-      if (!append && schema === '' && database !== '' && page.tables.length === 0 && !hasSchemaLevel(id, database)) {
-        markEmpty(id, database)
+      if (!append && schema === '' && database !== '' && !hasSchemaLevel(id, database)) {
+        if (page.tables.length === 0) {
+          markEmpty(id, database)
+        } else if (isEmptyDatabase(id, database)) {
+          emptyDatabases.value = drop(emptyDatabases.value, (candidate) => candidate === `${id}:${database}`)
+        }
       }
       tables.value = {
         ...tables.value,
@@ -315,6 +319,15 @@ export const useTreeStore = defineStore('tree', () => {
   }
 
   const loadMoreTables = (id: string, database: string, schema = ''): Promise<void> => loadTables(id, database, schema, true)
+
+  /** Après une modification de structure (table créée, renommée, supprimée) : relit la première page de chaque base déjà lue. */
+  async function refreshTables(id: string): Promise<void> {
+    for (const key of Object.keys(tables.value).filter((candidate) => candidate.startsWith(`${id}:`))) {
+      const rest = key.slice(id.length + 1)
+      const cut = rest.lastIndexOf(':')
+      await loadTables(id, rest.slice(0, cut), rest.slice(cut + 1), false)
+    }
+  }
 
   async function loadMoreKeys(id: string): Promise<void> {
     const current = keys.value[id]
@@ -373,5 +386,5 @@ export const useTreeStore = defineStore('tree', () => {
     emptiesShown.value = {}
   }
 
-  return { statusOf, errorOf, isExpanded, isFlat, databasesOf, visibleDatabasesOf, emptyCount, showsEmpties, toggleEmpties, schemasOf, hasSchemaLevel, tablesOf, keysOf, toggleConnection, toggleDatabase, toggleSchema, loadMoreTables, loadMoreKeys, forget, reset }
+  return { statusOf, errorOf, isExpanded, isFlat, databasesOf, visibleDatabasesOf, emptyCount, showsEmpties, toggleEmpties, schemasOf, hasSchemaLevel, tablesOf, keysOf, toggleConnection, toggleDatabase, toggleSchema, loadMoreTables, refreshTables, loadMoreKeys, forget, reset }
 })

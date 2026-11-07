@@ -316,4 +316,34 @@ describe('tree store', () => {
       expect(tree.isExpanded('s:c1::sales')).toBe(false)
     })
   })
+
+  it('reloads the first page of every scope it already read, after the structure of a table changed', async () => {
+    const tree = setup(connection('c1'))
+    mocked.mockResolvedValueOnce({ databases: [{ name: 'shop', system: false }, { name: 'other', system: false }] })
+    await tree.toggleConnection('c1')
+    mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: null, total: 1 })
+    await tree.toggleDatabase('c1', 'shop')
+    mocked.mockClear()
+    mocked.mockResolvedValueOnce({ tables: [orders, { name: 'invoices', kind: 'table', estimatedRows: 0 }], nextCursor: null, total: 2 })
+
+    await tree.refreshTables('c1')
+
+    expect(mocked).toHaveBeenCalledTimes(1)
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/c1/tables?limit=100&database=shop')
+    expect(tree.tablesOf('c1', 'shop')?.items.map((table) => table.name)).toEqual(['orders', 'invoices'])
+  })
+
+  it('shows again a database that was empty once a table has been created in it', async () => {
+    const tree = setup(connection('c1'))
+    mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/databases') ? { databases: [{ name: 'a', system: false }, { name: 'b', system: false }] } : { tables: url.includes('database=b') ? [] : [orders], nextCursor: null, total: url.includes('database=b') ? 0 : 1 }))
+    await tree.toggleConnection('c1')
+    await vi.waitFor(() => expect(tree.emptyCount('c1')).toBe(1))
+    await tree.toggleDatabase('c1', 'b')
+    tree.toggleEmpties('c1')
+    mocked.mockImplementation(() => Promise.resolve({ tables: [orders], nextCursor: null, total: 1 }))
+
+    await tree.refreshTables('c1')
+
+    expect(tree.emptyCount('c1')).toBe(0)
+  })
 })

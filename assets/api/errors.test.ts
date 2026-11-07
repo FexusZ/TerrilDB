@@ -51,4 +51,12 @@ describe('error messages', () => {
   it('never shows an unknown refusal reason raw', () => {
     expect(reasonText('brand_new_reason')).toBe('Cette instruction n’est pas autorisée.')
   })
+
+  it('explains the refusals of the structure editor', () => {
+    expect(messageFor(new ApiError(422, 'invalid_schema_change', { detail: 'A column needs a type.' }))).toContain('invalide')
+    expect(messageFor(new ApiError(409, 'schema_changed'))).toContain('modifiée')
+    expect(messageFor(new ApiError(409, 'schema_change_failed', { message: 'column "x" does not exist' }))).toBe('column "x" does not exist')
+    expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
+    expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
+  })
 })

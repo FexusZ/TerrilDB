@@ -110,6 +110,8 @@ export interface ForeignKeyInfo {
 
 export interface TableDetail {
   name: string
+  /** Empreinte de la structure : renvoyée à l’API pour refuser un brouillon bâti sur une table qui a changé. */
+  fingerprint: string
   kind: TableKind
   estimatedRows: number | null
   viewDefinition: string | null
@@ -285,4 +287,63 @@ export interface InvitationInfo {
   expiresAt: string
   usedAt: string | null
   usedBy: string | null
+}
+
+/** Une instruction de structure que le serveur a générée, avec ce qu’elle fait et si elle détruit quelque chose. */
+export interface StructureStatement {
+  sql: string
+  operation: string
+  subject: string
+  destructive: boolean
+}
+
+export interface StructurePlan {
+  statements: StructureStatement[]
+  /** Tout ou rien (une transaction) ; sinon chaque instruction est validée seule. */
+  transactional: boolean
+  destructive: boolean
+}
+
+export interface StructurePreview extends StructurePlan {
+  fingerprint: string
+  /** La table a changé depuis qu’on l’a chargée. */
+  stale: boolean
+}
+
+export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'
+
+/** Ce que l’API de structure reçoit : la table telle qu’on la veut, jamais du SQL. */
+export interface StructurePayload {
+  name: string
+  columns: { originalName: string | null; name: string; type: string; nullable: boolean; default: string | null; autoIncrement: boolean }[]
+  indexes: { originalName: string | null; name: string; columns: string[]; unique: boolean; primary: boolean; kind: string | null; granularity: number | null }[]
+  foreignKeys: { originalName: string | null; name: string; columns: string[]; referencedTable: string; referencedColumns: string[]; onUpdate: ReferentialActionName; onDelete: ReferentialActionName }[]
+}
+
+/** Ce que l’éditeur de structure sait faire selon le moteur (le serveur refuse le reste). */
+export interface StructureFeatures {
+  primaryKey: boolean
+  foreignKeys: boolean
+  autoIncrement: boolean
+  uniqueIndex: boolean
+  /** Index de saut (minmax, bloom_filter, set) au lieu d’index classiques. */
+  skipIndex: boolean
+  renameIndex: boolean
+}
+
+export const ENGINE_STRUCTURE: Record<Engine, StructureFeatures> = {
+  mysql: { primaryKey: true, foreignKeys: true, autoIncrement: true, uniqueIndex: true, skipIndex: false, renameIndex: true },
+  mariadb: { primaryKey: true, foreignKeys: true, autoIncrement: true, uniqueIndex: true, skipIndex: false, renameIndex: true },
+  postgresql: { primaryKey: true, foreignKeys: true, autoIncrement: true, uniqueIndex: true, skipIndex: false, renameIndex: true },
+  clickhouse: { primaryKey: false, foreignKeys: false, autoIncrement: false, uniqueIndex: false, skipIndex: true, renameIndex: false },
+  redis: { primaryKey: false, foreignKeys: false, autoIncrement: false, uniqueIndex: false, skipIndex: false, renameIndex: false },
+}
+
+/** Types proposés en suggestion ; la saisie reste libre (le serveur n’en vérifie que la forme). */
+export const COLUMN_TYPES: Record<Engine, string[]> = {
+  mysql: ['int', 'bigint', 'smallint', 'tinyint(1)', 'decimal(10,2)', 'float', 'double', 'varchar(255)', 'char(36)', 'text', 'longtext', 'json', 'date', 'datetime', 'timestamp', 'blob'],
+  mariadb: ['int', 'bigint', 'smallint', 'tinyint(1)', 'decimal(10,2)', 'float', 'double', 'varchar(255)', 'char(36)', 'text', 'longtext', 'json', 'date', 'datetime', 'timestamp', 'blob'],
+  postgresql: ['integer', 'bigint', 'smallint', 'numeric(10,2)', 'real', 'double precision', 'boolean', 'character varying(255)', 'text', 'uuid', 'jsonb', 'date', 'timestamp without time zone', 'timestamp with time zone', 'bytea'],
+  clickhouse: ['UInt8', 'UInt32', 'UInt64', 'Int32', 'Int64', 'Float64', 'Decimal(18, 4)', 'String', 'UUID', 'Date', 'DateTime', 'DateTime64(3)', 'Bool', 'Array(String)', 'LowCardinality(String)'],
+  redis: [],
 }

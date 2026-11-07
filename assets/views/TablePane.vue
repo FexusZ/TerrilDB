@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import type { TableDetail } from '../api/types'
 import AppButton from '../components/AppButton.vue'
+import TableEditor from '../components/TableEditor.vue'
 import TableStructure from '../components/TableStructure.vue'
 import { useConnectionsStore } from '../stores/connections'
+import { useTreeStore } from '../stores/tree'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatEstimate } from '../utils/format'
 import { previewQuery } from '../utils/sql'
@@ -14,6 +16,7 @@ const props = defineProps<{ id: string; name: string }>()
 const workspace = useWorkspaceStore()
 const connections = useConnectionsStore()
 const router = useRouter()
+const tree = useTreeStore()
 
 const table = ref<TableDetail | null>(null)
 const error = ref<string | null>(null)
@@ -35,6 +38,33 @@ watch(
   { immediate: true },
 )
 
+const engine = computed(() => connections.byId(props.id)?.engine ?? 'postgresql')
+const scope = computed(() => ({ database: workspace.database, schema: workspace.schema }))
+
+// Une modification de structure a été appliquée : les listes de tables (panneau, autocomplétion, arbre) et la table elle-même sont à relire.
+async function onApplied(next: TableDetail | null, previousName: string): Promise<void> {
+  await Promise.all([workspace.reloadTables(), tree.refreshTables(props.id)])
+  if (next === null) {
+    await router.push({ name: 'workspace', params: { id: props.id } })
+
+    return
+  }
+  table.value = next
+  if (next.name !== previousName) {
+    await router.replace({ name: 'table', params: { id: props.id, name: next.name }, query: router.currentRoute.value.query })
+  }
+}
+
+async function reload(): Promise<void> {
+  await workspace.reloadTables()
+  error.value = null
+  try {
+    table.value = await workspace.describe(props.name)
+  } catch (failure) {
+    error.value = messageFor(failure)
+  }
+}
+
 async function preview(): Promise<void> {
   const engine = connections.byId(props.id)?.engine ?? 'postgresql'
   const tab = workspace.addTab(previewQuery(engine, props.name))
@@ -55,7 +85,10 @@ async function preview(): Promise<void> {
         </div>
         <AppButton class="preview" small @click="preview">Voir les données</AppButton>
       </div>
-      <div class="body"><TableStructure :connection-id="id" :table="table" /></div>
+      <div class="body">
+        <TableEditor v-if="table.kind === 'table'" :connection-id="id" :engine="engine" :table="table" :scope="scope" @applied="onApplied" @reload="reload" />
+        <TableStructure v-else :connection-id="id" :table="table" />
+      </div>
     </template>
     <p v-else class="loading" role="status">Chargement…</p>
   </section>

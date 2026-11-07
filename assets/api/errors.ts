@@ -10,6 +10,7 @@ const REASONS: Record<string, string> = {
   unsupported_statement: 'Cette instruction n’est pas prise en charge (transaction, session, verrou…).',
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
+  destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
 const GENERIC = 'Une erreur est survenue. Réessayez.'
@@ -74,6 +75,12 @@ export function messageFor(error: unknown): string {
       return reasonText(error.details.reason)
     case 'query_failed':
       return typeof error.details.message === 'string' ? error.details.message : GENERIC
+    case 'invalid_schema_change':
+      return 'Cette modification de la structure est invalide.'
+    case 'schema_changed':
+      return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
+    case 'schema_change_failed':
+      return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification de la structure.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':

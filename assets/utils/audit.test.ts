@@ -40,6 +40,14 @@ describe('audit labels', () => {
     expect(describeEvent(entry('query.failed', { reason: 'engine_error' }, { outcome: 'failed' }))).toContain('erreur')
   })
 
+  it('describes a change of structure, and what went wrong', () => {
+    expect(describeEvent(entry('schema.changed', { table: 'orders', statements: 2 }))).toBe('Structure de « orders » modifiée (2 instructions)')
+    expect(describeEvent(entry('schema.changed', { table: 'orders', statements: 1 }))).toBe('Structure de « orders » modifiée (1 instruction)')
+    expect(describeEvent(entry('schema.failed', { table: 'orders', applied: 0 }, { outcome: 'failed' }))).toBe('Modification de la structure de « orders » refusée par la base')
+    expect(describeEvent(entry('schema.failed', { table: 'orders', applied: 2 }, { outcome: 'failed' }))).toBe('Modification de la structure de « orders » interrompue : 2 instructions déjà appliquées')
+    expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('schema')
+  })
+
   it('does not break on an action it does not know', () => {
     expect(describeEvent(entry('something.new'))).toBe('something.new')
   })
@@ -52,6 +60,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query', 'schema'])
   })
 })

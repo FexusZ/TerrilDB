@@ -12,7 +12,7 @@ vi.mock('../utils/download', () => ({ saveFile: vi.fn() }))
 const mocked = vi.mocked(api)
 const tables: TableSummary[] = [{ name: 'orders', kind: 'table', estimatedRows: 3800 }]
 const result: QueryResult = { columns: ['a'], rows: [[1]], rowCount: 1, truncated: false, affectedRows: null, durationMs: 4 }
-const detail: TableDetail = { name: 'orders', kind: 'table', estimatedRows: 3800, viewDefinition: null, columns: [], indexes: [], foreignKeys: [] }
+const detail: TableDetail = { name: 'orders', fingerprint: 'f'.repeat(64), kind: 'table', estimatedRows: 3800, viewDefinition: null, columns: [], indexes: [], foreignKeys: [] }
 
 const entry = (id: string, sql: string): HistoryEntry => ({ id, occurredAt: '2026-11-01T10:00:00+00:00', actor: 'web', outcome: 'success', sql, mode: 'read_only', rowCount: 1, durationMs: 3, reason: null })
 
