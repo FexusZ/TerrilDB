@@ -4,8 +4,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
-import KeyBrowser from '../components/KeyBrowser.vue'
-import SchemaTree from '../components/SchemaTree.vue'
 import WorkbenchSidebar from '../components/WorkbenchSidebar.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -18,8 +16,6 @@ const workspace = useWorkspaceStore()
 const error = ref<string | null>(null)
 
 const connection = computed(() => connections.byId(props.id))
-const currentTable = computed(() => (typeof route.params.name === 'string' ? route.params.name : undefined))
-const currentKey = computed(() => (typeof route.query.name === 'string' ? route.query.name : undefined))
 
 async function open(): Promise<void> {
   error.value = null
@@ -80,35 +76,10 @@ watch(() => [route.query.database, route.query.schema], () => {
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div v-else class="body">
-      <aside class="side">
-        <KeyBrowser
-          v-if="workspace.isKeyValue"
-          :connection-id="id"
-          :keys="workspace.keys"
-          :total="workspace.keysTotal"
-          :has-more="workspace.keysCursor !== null"
-          :loading="workspace.keysLoading"
-          :current="currentKey"
-          :error="workspace.keysError"
-          @search="workspace.searchKeys"
-          @more="workspace.loadMoreKeys"
-        />
-        <template v-else>
-          <SchemaTree
-            :connection-id="id"
-            :tables="workspace.tables"
-            :total="workspace.tablesTotal"
-            :has-more="workspace.tablesHasMore"
-            :loading="workspace.tablesLoading"
-            :search="workspace.tablesSearch"
-            :current="currentTable"
-            :error="workspace.tablesError"
-            @search="workspace.searchTables"
-            @more="workspace.loadMoreTables"
-          />
-        </template>
-      </aside>
-      <div class="content"><RouterView /></div>
+      <div class="content">
+        <p v-if="workspace.tablesError" class="error" role="alert">{{ workspace.tablesError }}</p>
+        <RouterView />
+      </div>
       <WorkbenchSidebar @deleted="onDeleted" />
     </div>
   </div>
@@ -129,8 +100,6 @@ watch(() => [route.query.database, route.query.schema], () => {
 .engine { font: 500 11px var(--font-mono); color: var(--acc); }
 .switch { color: var(--mut); font-size: 13px; }
 .body { display: flex; flex-wrap: wrap; flex: 1; min-height: 0; }
-.side { flex: 1 1 280px; max-width: 300px; background: var(--s1); border-right: 1px solid var(--line); }
 .content { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; }
 .error { margin: 24px; padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
-@media (max-width: 760px) { .side { max-width: none; border-right: 0; border-bottom: 1px solid var(--line); } }
 </style>

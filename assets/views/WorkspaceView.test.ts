@@ -61,22 +61,11 @@ describe('WorkspaceView', () => {
     const { wrapper } = await mountView()
 
     expect(wrapper.get('.current').text()).toContain('Production')
-    expect(wrapper.get('a.node').text()).toContain('orders')
     expect(wrapper.get('.child').text()).toBe('éditeur')
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100')
   })
 
-  it('highlights the table that is open', async () => {
-    mocked.mockResolvedValueOnce({ connections: [summary] })
-    mocked.mockResolvedValueOnce({ tables: [{ name: 'orders', kind: 'table', estimatedRows: 1 }] })
-
-    const { wrapper } = await mountView('/connections/abc/tables/orders')
-
-    expect(wrapper.get('a.node').classes()).toContain('cur')
-    expect(wrapper.get('.child').text()).toBe('table')
-  })
-
-  it('browses keys, not tables, on a Redis connection', async () => {
+  it('reads keys, not tables, on a Redis connection, and shows no panel of its own', async () => {
     mocked.mockResolvedValueOnce({ connections: [{ ...summary, engine: 'redis' }] })
     mocked.mockResolvedValueOnce({ keys: [{ name: 'user:1', type: 'string', ttl: null }], nextCursor: null, total: 1 })
 
@@ -84,11 +73,10 @@ describe('WorkspaceView', () => {
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/keys?pattern=*&count=100')
     expect(mocked).not.toHaveBeenCalledWith('GET', '/web/connections/abc/tables?limit=100')
-    expect(wrapper.find('nav[aria-label="Clés"]').exists()).toBe(true)
-    expect(wrapper.find('nav[aria-label="Schéma"]').exists()).toBe(false)
+    expect(wrapper.find('aside').exists()).toBe(false)
+    expect(wrapper.find('nav[aria-label="Clés"]').exists()).toBe(false)
     expect(wrapper.find('select.databases').exists()).toBe(false)
     expect(mocked).not.toHaveBeenCalledWith('GET', '/web/connections/abc/databases')
-    expect(wrapper.get('a.node').text()).toContain('user:1')
   })
 
   it('has no database or schema selector of its own: the connections bar is where one chooses', async () => {
@@ -157,7 +145,7 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('introuvable')
   })
 
-  it('reports an unreachable target in the sidebar instead of breaking the page', async () => {
+  it('reports an unreachable target above the content instead of breaking the page', async () => {
     mocked.mockResolvedValueOnce({ connections: [summary] })
     mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
 
@@ -167,12 +155,12 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('.current').text()).toContain('Production')
   })
 
-  it('puts the tables panel on the left and the connections bar on the right', async () => {
+  it('has no tables panel: the content comes first and the connections bar sits on the right', async () => {
     mocked.mockImplementation(answer())
 
     const { wrapper } = await mountView()
 
     const children = Array.from(wrapper.get('.body').element.children)
-    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['aside', 'div.content', 'nav'])
+    expect(children.map((child) => child.tagName.toLowerCase() + (child.classList.contains('content') ? '.content' : ''))).toEqual(['div.content', 'nav'])
   })
 })
