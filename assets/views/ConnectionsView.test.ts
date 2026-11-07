@@ -53,6 +53,16 @@ describe('ConnectionsView', () => {
     wrapper.unmount()
   })
 
+  it('shows the colour of a connection next to its name, and nothing for one without colour', async () => {
+    const { wrapper } = await mountView([{ ...connections[0]!, color: 'blue' }, { ...connections[1]!, color: null }])
+
+    const cards = wrapper.findAll('article')
+    expect(cards[0]?.get('.swatch').attributes('data-color')).toBe('blue')
+    expect(cards[0]?.get('.swatch').attributes('aria-label')).toBe('Couleur : Bleu')
+    expect(cards[1]?.find('.swatch').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('opens a connection in the workspace and edits it', async () => {
     const { wrapper } = await mountView()
     const card = wrapper.findAll('article')[0]

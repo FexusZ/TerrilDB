@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { messageFor } from '../api/errors'
-import { ENGINE_BADGES, ENGINE_LABELS, type ConnectionSummary, type Engine } from '../api/types'
+import { CONNECTION_COLORS, ENGINE_BADGES, ENGINE_LABELS, type ConnectionColor, type ConnectionSummary, type Engine } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -22,6 +22,8 @@ const filters: { value: Engine | 'all'; label: string }[] = [
   { value: 'clickhouse', label: ENGINE_LABELS.clickhouse },
   { value: 'redis', label: ENGINE_LABELS.redis },
 ]
+
+const colorLabel = (color: ConnectionColor): string => CONNECTION_COLORS.find((candidate) => candidate.value === color)?.label ?? color
 
 function normalize(text: string): string {
   return text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
@@ -100,7 +102,10 @@ async function confirmDelete(): Promise<void> {
         <div class="who">
           <span class="badge" aria-hidden="true">{{ ENGINE_BADGES[connection.engine] }}</span>
           <div>
-            <h3>{{ connection.name }}</h3>
+            <h3>
+              <span v-if="connection.color" class="swatch" :data-color="connection.color" role="img" :aria-label="`Couleur : ${colorLabel(connection.color)}`" />
+              {{ connection.name }}
+            </h3>
             <p class="meta">{{ ENGINE_LABELS[connection.engine] }}</p>
           </div>
         </div>
@@ -148,7 +153,16 @@ h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
 .card:hover { border-color: var(--line-strong); }
 .who { display: flex; gap: 14px; align-items: center; }
 .badge { flex: none; width: 40px; height: 40px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s3); display: flex; align-items: center; justify-content: center; font: 500 13px var(--font-mono); color: var(--acc); }
-h3 { font-size: 16px; font-weight: 600; }
+h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; }
+.swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; background: var(--mut); }
+.swatch[data-color='red'] { background: var(--conn-red); }
+.swatch[data-color='orange'] { background: var(--conn-orange); }
+.swatch[data-color='yellow'] { background: var(--conn-yellow); }
+.swatch[data-color='green'] { background: var(--conn-green); }
+.swatch[data-color='teal'] { background: var(--conn-teal); }
+.swatch[data-color='blue'] { background: var(--conn-blue); }
+.swatch[data-color='violet'] { background: var(--conn-violet); }
+.swatch[data-color='pink'] { background: var(--conn-pink); }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .actions a, .actions button { display: inline-flex; align-items: center; height: 34px; padding: 0 14px; border-radius: var(--radius); font: 500 13px var(--font-ui); text-decoration: none; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--fg); }
