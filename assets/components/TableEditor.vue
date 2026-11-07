@@ -15,6 +15,7 @@ import {
   foreignKeyState,
   indexState,
   isDirty,
+  moveItem,
   primaryState,
   removeColumn,
   removeForeignKey,
@@ -57,6 +58,88 @@ const SKIP_KINDS = ['minmax', 'bloom_filter', 'set(100)']
 const markOf = (column: DraftColumn): Mark => columnState(draft.value, props.table, column)
 const markOfIndex = (index: DraftIndex): Mark => indexState(draft.value, props.table, index)
 const primaryMark = computed<Mark>(() => primaryState(draft.value, props.table))
+
+/** Une ligne du tableau des index : la clé primaire (comptée comme un index), un index, ou la clé de tri de ClickHouse (lecture seule). */
+interface IndexRow {
+  id: string
+  kind: 'primary' | 'index' | 'locked'
+  item: DraftIndex | null
+  mark: Mark
+  name: string
+  unique: boolean
+  /** Identifiants des colonnes encore présentes dans la table, dans l'ordre de l'index. */
+  visible: string[]
+  /** Noms bruts (index verrouillé). */
+  locked: string[]
+}
+
+const isLive = (uid: string): boolean => draft.value.columns.some((column) => column.uid === uid && !column.removed)
+const columnName = (uid: string): string => draft.value.columns.find((column) => column.uid === uid)?.name ?? uid
+
+const indexRows = computed<IndexRow[]>(() => {
+  const rows: IndexRow[] = []
+  if (features.value.primaryKey) {
+    rows.push({ id: 'primary', kind: 'primary', item: null, mark: primaryMark.value, name: 'clé primaire', unique: true, visible: draft.value.primary.filter(isLive), locked: [] })
+  }
+  for (const item of draft.value.indexes) {
+    rows.push({
+      id: item.uid,
+      kind: item.locked ? 'locked' : 'index',
+      item,
+      mark: markOfIndex(item),
+      name: item.name,
+      unique: item.unique,
+      visible: item.locked ? [] : item.columns.filter(isLive),
+      locked: item.locked ? item.columns : [],
+    })
+  }
+
+  return rows
+})
+
+/** La liste d'identifiants que la ligne modifie : la clé primaire a la sienne, un index porte ses colonnes. */
+const listOf = (row: IndexRow): string[] => (row.kind === 'primary' ? draft.value.primary : (row.item?.columns ?? []))
+
+function writeList(row: IndexRow, visible: string[]): void {
+  // Les colonnes retirées de la table restent en fin de liste, pour qu'une restauration les retrouve.
+  const hidden = listOf(row).filter((uid) => !isLive(uid))
+  if (row.kind === 'primary') {
+    draft.value.primary = [...visible, ...hidden]
+  } else if (row.item !== null) {
+    row.item.columns = [...visible, ...hidden]
+  }
+}
+
+/** Les colonnes qu'on peut mettre à cette place : celles de la table qui ne sont pas déjà dans l'index (plus celle d'origine). */
+const choices = (row: IndexRow, keep: string | null): DraftColumn[] => liveColumns.value.filter((column) => column.uid === keep || !row.visible.includes(column.uid))
+
+function replaceColumn(row: IndexRow, from: string, to: string): void {
+  writeList(row, row.visible.map((uid) => (uid === from ? to : uid)))
+}
+
+function moveColumn(row: IndexRow, position: number, delta: -1 | 1): void {
+  writeList(row, moveItem(row.visible, position, delta))
+}
+
+function dropColumn(row: IndexRow, uid: string): void {
+  writeList(row, row.visible.filter((candidate) => candidate !== uid))
+}
+
+function addColumnTo(row: IndexRow, event: Event): void {
+  const select = event.target as HTMLSelectElement
+  if (select.value !== '') {
+    writeList(row, [...row.visible, select.value])
+  }
+  select.value = ''
+}
+
+function restoreRow(row: IndexRow): void {
+  if (row.kind === 'primary') {
+    restorePrimary(draft.value)
+  } else if (row.item !== null) {
+    restore(row.item)
+  }
+}
 const markOfKey = (key: DraftForeignKey): Mark => foreignKeyState(draft.value, props.table, key)
 const edited = (mark: Mark, field: string): boolean => mark.status === 'changed' && mark.fields.has(field)
 
@@ -302,39 +385,82 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
 
     <section class="indexes">
       <h2>Index</h2>
-      <p v-if="draft.indexes.length === 0 && !features.primaryKey" class="none">Aucun index.</p>
-      <ul v-else class="cards">
-        <li v-if="features.primaryKey" class="card" data-kind="primary" :data-status="primaryMark.status">
-          <span class="tag pk">clé primaire</span>
-          <span v-if="draft.primaryOriginalName" class="mono dim">{{ draft.primaryOriginalName }}</span>
-          <span v-if="draft.primary.length === 0" class="dim">Aucune clé primaire : choisissez des colonnes.</span>
-          <div class="chips" role="group" aria-label="Colonnes de la clé primaire">
-            <button v-for="column in liveColumns" :key="column.uid" type="button" class="chip" :class="{ on: isPrimary(column), edited: primaryMark.status === 'changed' && isPrimary(column) }" :aria-pressed="isPrimary(column)" @click="togglePrimary(draft, column)">{{ column.name || '…' }}<sup v-if="isPrimary(column) && draft.primary.length > 1"> {{ draft.primary.indexOf(column.uid) + 1 }}</sup></button>
-          </div>
-          <AppButton v-if="primaryMark.status === 'removed'" variant="ghost" small @click="restorePrimary(draft)">Restaurer</AppButton>
-          <button v-else-if="draft.primary.length > 0" type="button" class="x" aria-label="Retirer la clé primaire" @click="removePrimary(draft)">✕</button>
-        </li>
-        <li v-for="index in draft.indexes" :key="index.uid" class="card" :data-status="markOfIndex(index).status">
-          <template v-if="index.locked">
-            <span class="mono">{{ index.name }}</span>
-            <span class="mono dim">{{ index.columns.join(', ') }}</span>
-            <span class="tag">clé de tri : lecture seule</span>
-          </template>
-          <template v-else>
-            <input v-model="index.name" class="field mono" :class="{ edited: edited(markOfIndex(index), 'name') }" :disabled="index.removed || (!features.renameIndex && index.originalName !== null)" aria-label="Nom de l’index" spellcheck="false" autocomplete="off">
-            <div class="chips" role="group" :aria-label="`Colonnes de l’index ${index.name}`">
-              <button v-for="column in liveColumns" :key="column.uid" type="button" class="chip" :class="{ on: index.columns.includes(column.uid), edited: edited(markOfIndex(index), 'columns') }" :aria-pressed="index.columns.includes(column.uid)" :disabled="index.removed" @click="toggleIn(index.columns, column.uid)">{{ column.name || '…' }}</button>
-            </div>
-            <label v-if="features.uniqueIndex" class="check"><input v-model="index.unique" type="checkbox" :class="{ edited: edited(markOfIndex(index), 'unique') }" :disabled="index.removed"> unique</label>
-            <template v-if="features.skipIndex && index.originalName === null">
-              <select v-model="index.kind" class="field" aria-label="Type d’index de saut"><option :value="null">minmax</option><option v-for="kind in SKIP_KINDS.slice(1)" :key="kind" :value="kind">{{ kind }}</option></select>
-              <input v-model.number="index.granularity" class="field narrow" type="number" min="1" placeholder="1" aria-label="Granularité">
+      <p v-if="indexRows.length === 0" class="none">Aucun index.</p>
+      <div v-else class="box">
+        <table class="index-table">
+          <thead>
+            <tr><th>Nom</th><th>Type</th><th v-if="features.uniqueIndex">Unique</th><th>Colonnes</th><th><span class="sr-only">Actions</span></th></tr>
+          </thead>
+          <tbody v-for="row in indexRows" :key="row.id" :data-kind="row.kind" :data-status="row.mark.status">
+            <template v-if="row.kind === 'locked'">
+              <tr class="col-row">
+                <td class="mono">{{ row.name }}</td>
+                <td class="type"><span class="tag">clé de tri : lecture seule</span></td>
+                <td v-if="features.uniqueIndex" />
+                <td class="mono dim">{{ row.locked.join(', ') }}</td>
+                <td />
+              </tr>
             </template>
-            <AppButton v-if="index.removed" variant="ghost" small @click="restore(index)">Restaurer</AppButton>
-            <button v-else type="button" class="x" :aria-label="`Retirer l’index ${index.name}`" @click="removeIndex(draft, index)">✕</button>
-          </template>
-        </li>
-      </ul>
+            <template v-else>
+              <tr v-for="(colUid, position) in row.visible" :key="colUid" class="col-row">
+                <template v-if="position === 0">
+                  <td class="name-cell" :rowspan="row.visible.length + 1">
+                    <span v-if="row.kind === 'primary'" class="mono">{{ draft.primaryOriginalName ?? 'PRIMARY' }}</span>
+                    <input v-else v-model="row.item!.name" class="field mono" :class="{ edited: edited(row.mark, 'name') }" :disabled="row.mark.status === 'removed' || (!features.renameIndex && row.item!.originalName !== null)" aria-label="Nom de l’index" spellcheck="false" autocomplete="off">
+                  </td>
+                  <td class="type" :rowspan="row.visible.length + 1">
+                    <span class="tag" :class="{ pk: row.kind === 'primary' }">{{ row.kind === 'primary' ? 'clé primaire' : row.unique ? 'unique' : 'index' }}</span>
+                    <template v-if="features.skipIndex && row.item !== null && row.item.originalName === null">
+                      <select v-model="row.item.kind" class="field" aria-label="Type d’index de saut"><option :value="null">minmax</option><option v-for="kind in SKIP_KINDS.slice(1)" :key="kind" :value="kind">{{ kind }}</option></select>
+                      <input v-model.number="row.item.granularity" class="field narrow" type="number" min="1" placeholder="1" aria-label="Granularité">
+                    </template>
+                  </td>
+                  <td v-if="features.uniqueIndex" class="unique-cell" :rowspan="row.visible.length + 1">
+                    <input v-if="row.kind === 'primary'" type="checkbox" checked disabled aria-label="Unique">
+                    <input v-else v-model="row.item!.unique" type="checkbox" :class="{ edited: edited(row.mark, 'unique') }" :disabled="row.mark.status === 'removed'" aria-label="Unique">
+                  </td>
+                </template>
+                <td class="cols" :class="{ edited: edited(row.mark, 'columns') || (row.kind === 'primary' && row.mark.status === 'changed') }">
+                  <span class="rank">{{ position + 1 }}</span>
+                  <select class="field" :disabled="row.mark.status === 'removed'" :aria-label="`Colonne ${String(position + 1)} de l’index ${row.name}`" @change="replaceColumn(row, colUid, ($event.target as HTMLSelectElement).value)">
+                    <option v-for="column in choices(row, colUid)" :key="column.uid" :value="column.uid" :selected="column.uid === colUid">{{ column.name }}</option>
+                  </select>
+                  <button type="button" class="step" :disabled="position === 0 || row.mark.status === 'removed'" :aria-label="`Monter ${columnName(colUid)} dans l’index ${row.name}`" @click="moveColumn(row, position, -1)">↑</button>
+                  <button type="button" class="step" :disabled="position === row.visible.length - 1 || row.mark.status === 'removed'" :aria-label="`Descendre ${columnName(colUid)} dans l’index ${row.name}`" @click="moveColumn(row, position, 1)">↓</button>
+                  <button type="button" class="x" :disabled="row.mark.status === 'removed'" :aria-label="`Ôter ${columnName(colUid)} de l’index ${row.name}`" @click="dropColumn(row, colUid)">✕</button>
+                </td>
+                <td v-if="position === 0" class="act" :rowspan="row.visible.length + 1">
+                  <AppButton v-if="row.mark.status === 'removed'" variant="ghost" small @click="restoreRow(row)">Restaurer</AppButton>
+                  <button v-else-if="row.kind === 'index'" type="button" class="x" :aria-label="`Retirer l’index ${row.name}`" @click="removeIndex(draft, row.item!)">✕</button>
+                  <button v-else-if="row.visible.length > 0" type="button" class="x" aria-label="Retirer la clé primaire" @click="removePrimary(draft)">✕</button>
+                </td>
+              </tr>
+              <tr class="add-row">
+                <td v-if="row.visible.length === 0" class="name-cell">
+                  <span v-if="row.kind === 'primary'" class="mono">{{ draft.primaryOriginalName ?? 'PRIMARY' }}</span>
+                  <input v-else v-model="row.item!.name" class="field mono" aria-label="Nom de l’index" spellcheck="false" autocomplete="off">
+                </td>
+                <td v-if="row.visible.length === 0" class="type"><span class="tag" :class="{ pk: row.kind === 'primary' }">{{ row.kind === 'primary' ? 'clé primaire' : 'index' }}</span></td>
+                <td v-if="row.visible.length === 0 && features.uniqueIndex" class="unique-cell">
+                  <input v-if="row.kind === 'primary'" type="checkbox" checked disabled aria-label="Unique">
+                  <input v-else v-model="row.item!.unique" type="checkbox" aria-label="Unique">
+                </td>
+                <td class="cols">
+                  <span v-if="row.kind === 'primary' && row.visible.length === 0" class="dim">Aucune clé primaire.&nbsp;</span>
+                  <select class="field" :disabled="row.mark.status === 'removed' || choices(row, null).length === 0" :aria-label="`Ajouter une colonne à l’index ${row.name}`" @change="addColumnTo(row, $event)">
+                    <option value="">+ Ajouter une colonne…</option>
+                    <option v-for="column in choices(row, null)" :key="column.uid" :value="column.uid">{{ column.name }}</option>
+                  </select>
+                </td>
+                <td v-if="row.visible.length === 0" class="act">
+                  <AppButton v-if="row.mark.status === 'removed'" variant="ghost" small @click="restoreRow(row)">Restaurer</AppButton>
+                  <button v-else-if="row.kind === 'index'" type="button" class="x" :aria-label="`Retirer l’index ${row.name}`" @click="removeIndex(draft, row.item!)">✕</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
       <div><AppButton variant="ghost" small @click="addIndex(draft)">+ Ajouter un index</AppButton></div>
     </section>
 
@@ -435,6 +561,23 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--s1); }
 .card .field { width: auto; min-width: 130px; flex: 0 1 180px; }
+.index-table tbody { border-top: 2px solid var(--line); }
+.index-table tbody:first-of-type { border-top: 0; }
+.index-table td { vertical-align: middle; }
+.index-table .name-cell, .index-table .type, .index-table .unique-cell, .index-table .act { vertical-align: top; padding-top: 8px; border-right: 1px solid var(--line-soft); }
+.index-table .type { white-space: nowrap; }
+.index-table .type .field { width: auto; margin-top: 6px; display: block; }
+.index-table td.cols { display: flex; align-items: center; gap: 6px; border-bottom: 0; }
+.index-table td.cols.edited { background: var(--sec-bg); }
+.index-table .col-row td.cols .field, .index-table .add-row td.cols .field { width: auto; min-width: 160px; border-color: var(--line); }
+.index-table .rank { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; border-radius: 10px; background: var(--s3); color: var(--mut); font: 500 11px var(--font-mono); }
+.step { width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--mut); cursor: pointer; }
+.step:hover:not(:disabled) { color: var(--acc); border-color: var(--acc-line); }
+.step:disabled { opacity: 0.35; cursor: default; }
+.index-table tbody[data-status='new'] { background: var(--ok-bg); box-shadow: inset 3px 0 0 var(--ok); }
+.index-table tbody[data-status='changed'] { box-shadow: inset 3px 0 0 var(--sec); }
+.index-table tbody[data-status='removed'] { background: var(--bad-bg); box-shadow: inset 3px 0 0 var(--bad); }
+.index-table tbody[data-status='removed'] .field { text-decoration: line-through; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--mut); font: 400 12px var(--font-mono); cursor: pointer; }
 .chip.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-bg); }

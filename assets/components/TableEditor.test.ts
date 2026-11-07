@@ -43,6 +43,22 @@ function mountEditor(engine: Engine = 'postgresql', table: TableDetail = detail(
   return mount(TableEditor, { props: { connectionId: 'abc', engine, table, scope: { database: null, schema: null } }, global: { plugins: [pinia] }, attachTo: document.body })
 }
 
+/** Choisit une option d'une liste par son libellé (les valeurs sont des identifiants internes). */
+async function pick(select: ReturnType<VueWrapper['get']>, label: string): Promise<void> {
+  const option = select.findAll('option').find((candidate) => candidate.text() === label)
+  if (option === undefined) {
+    throw new Error(`no option ${label}`)
+  }
+  await select.setValue((option.element as HTMLOptionElement).value)
+}
+
+/** Le libellé de l'option choisie dans une liste. */
+function selected(select: ReturnType<VueWrapper['get']>): string | undefined {
+  const element = select.element as HTMLSelectElement
+
+  return element.options[element.selectedIndex]?.text
+}
+
 async function typeInto(wrapper: VueWrapper, selector: string, value: string): Promise<void> {
   await wrapper.get(selector).setValue(value)
 }
@@ -65,7 +81,7 @@ describe('TableEditor', () => {
   it('shows the table as editable fields, and no change bar until something changes', async () => {
     const wrapper = mountEditor()
 
-    expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+    expect(wrapper.findAll('.columns tbody tr')).toHaveLength(3)
     expect((wrapper.findAll('input[aria-label="Nom de la colonne"]')[1]?.element as HTMLInputElement).value).toBe('status')
     expect(wrapper.find('[aria-label="Modifications en attente"]').exists()).toBe(false)
     expect(structureCalls('preview')).toHaveLength(0)
@@ -81,9 +97,9 @@ describe('TableEditor', () => {
 
     expect(wrapper.find('[aria-label="Modifications en attente"]').exists()).toBe(true)
     expect(wrapper.get('[aria-label="SQL qui sera exécuté"]').text()).toContain('ALTER TABLE "orders" ALTER COLUMN "note" TYPE varchar(80)')
-    expect(wrapper.findAll('tbody tr')[2]?.attributes('data-status')).toBe('changed')
+    expect(wrapper.findAll('.columns tbody tr')[2]?.attributes('data-status')).toBe('changed')
     expect(wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.classes()).toContain('edited')
-    expect(wrapper.findAll('tbody tr')[0]?.attributes('data-status')).toBe('same')
+    expect(wrapper.findAll('.columns tbody tr')[0]?.attributes('data-status')).toBe('same')
     expect(structureCalls('apply')).toHaveLength(0)
     const [, , body] = structureCalls('preview')[0] ?? []
     expect(body).toMatchObject({ fingerprint: 'f'.repeat(64), draft: { name: 'orders' } })
@@ -110,7 +126,7 @@ describe('TableEditor', () => {
 
     expect(wrapper.text()).toContain('Complétez les lignes nouvelles')
     expect(structureCalls('preview')).toHaveLength(0)
-    expect(wrapper.findAll('tbody tr')[3]?.attributes('data-status')).toBe('new')
+    expect(wrapper.findAll('.columns tbody tr')[3]?.attributes('data-status')).toBe('new')
 
     await wrapper.findAll('input[aria-label="Nom de la colonne"]')[3]?.setValue('qty')
     await wrapper.findAll('input[aria-label="Type de la colonne"]')[3]?.setValue('integer')
@@ -142,7 +158,7 @@ describe('TableEditor', () => {
     const wrapper = mountEditor()
     await wrapper.findAll('button[aria-label^="Retirer la colonne"]')[2]?.trigger('click')
     await settle()
-    expect(wrapper.findAll('tbody tr')[2]?.attributes('data-status')).toBe('removed')
+    expect(wrapper.findAll('.columns tbody tr')[2]?.attributes('data-status')).toBe('removed')
     expect(wrapper.get('[aria-label="SQL qui sera exécuté"]').text()).toContain('détruit')
 
     await wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.trigger('click')
@@ -181,7 +197,7 @@ describe('TableEditor', () => {
     await wrapper.findAll('button').find((button) => button.text() === 'Restaurer')?.trigger('click')
     await settle()
 
-    expect(wrapper.findAll('tbody tr')[2]?.attributes('data-status')).toBe('same')
+    expect(wrapper.findAll('.columns tbody tr')[2]?.attributes('data-status')).toBe('same')
     expect(wrapper.find('[aria-label="Modifications en attente"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -279,67 +295,101 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('lays the indexes out like phpMyAdmin: one row per column, with its rank, under the name, type and uniqueness of the index', async () => {
+    const composite: TableDetail = { ...detail(), indexes: [{ name: 'orders_pkey', columns: ['id'], unique: true, primary: true }, { name: 'idx_two', columns: ['status', 'note'], unique: true, primary: false }] }
+    const wrapper = mountEditor('postgresql', composite)
+
+    expect(wrapper.findAll('.index-table thead th').map((th) => th.text()).filter((text) => text !== '' && text !== 'Actions')).toEqual(['Nom', 'Type', 'Unique', 'Colonnes'])
+    const groups = wrapper.findAll('.index-table tbody')
+    expect(groups.map((group) => group.attributes('data-kind'))).toEqual(['primary', 'index'])
+    expect(groups[0]?.text()).toContain('clé primaire')
+    expect(groups[0]?.text()).toContain('orders_pkey')
+    const rows = groups[1]?.findAll('tr.col-row') ?? []
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.get('.rank').text())).toEqual(['1', '2'])
+    expect(rows.map((row) => selected(row.get('select')))).toEqual(['status', 'note'])
+    expect((groups[1]?.get('input[aria-label="Unique"]').element as HTMLInputElement).checked).toBe(true)
+    expect(groups[1]?.get('.type').text()).toContain('unique')
+    wrapper.unmount()
+  })
+
   it('lists the primary key first among the indexes, in step with the column boxes', async () => {
     mocked.mockResolvedValue(preview())
     const wrapper = mountEditor()
-    const cards = wrapper.findAll('.indexes .card')
+    const groups = wrapper.findAll('.index-table tbody')
 
-    expect(cards[0]?.attributes('data-kind')).toBe('primary')
-    expect(cards[0]?.text()).toContain('clé primaire')
-    expect(cards[0]?.attributes('data-status')).toBe('same')
-    expect(cards[0]?.findAll('.chip').filter((chip) => chip.classes().includes('on')).map((chip) => chip.text())).toEqual(['id'])
-    expect(cards[1]?.attributes('data-kind')).not.toBe('primary')
+    expect(groups[0]?.attributes('data-kind')).toBe('primary')
+    expect(groups[0]?.attributes('data-status')).toBe('same')
+    expect(groups[1]?.attributes('data-kind')).toBe('index')
 
-    await cards[0]?.findAll('.chip').find((chip) => chip.text().startsWith('status'))?.trigger('click')
+    await pick(groups[0]!.get('select[aria-label^="Ajouter une colonne"]'), 'status')
     await settle()
 
     expect((wrapper.findAll('input[aria-label="Dans la clé primaire"]')[1]?.element as HTMLInputElement).checked).toBe(true)
-    expect(wrapper.findAll('.indexes .card')[0]?.attributes('data-status')).toBe('changed')
+    expect(wrapper.findAll('.index-table tbody')[0]?.attributes('data-status')).toBe('changed')
+    expect(wrapper.findAll('.index-table tbody')[0]?.findAll('.rank').map((rank) => rank.text())).toEqual(['1', '2'])
     expect(structureCalls('preview')[0]?.[2]).toMatchObject({ draft: { indexes: expect.arrayContaining([expect.objectContaining({ primary: true, columns: ['id', 'status'] })]) } })
     wrapper.unmount()
   })
 
-  it('removes and restores the primary key from its line in the index list', async () => {
+  it('removes and restores the primary key from its row in the index table', async () => {
     mocked.mockResolvedValue(preview())
     const wrapper = mountEditor()
 
-    await wrapper.get('.indexes .card[data-kind="primary"] button[aria-label="Retirer la clé primaire"]').trigger('click')
+    await wrapper.get('.index-table tbody[data-kind="primary"] button[aria-label="Retirer la clé primaire"]').trigger('click')
     await settle()
-    expect(wrapper.get('.indexes .card[data-kind="primary"]').attributes('data-status')).toBe('removed')
+    expect(wrapper.get('.index-table tbody[data-kind="primary"]').attributes('data-status')).toBe('removed')
     expect((wrapper.findAll('input[aria-label="Dans la clé primaire"]')[0]?.element as HTMLInputElement).checked).toBe(false)
 
-    await wrapper.get('.indexes .card[data-kind="primary"]').findAll('button').find((button) => button.text() === 'Restaurer')?.trigger('click')
+    await wrapper.get('.index-table tbody[data-kind="primary"]').findAll('button').find((button) => button.text() === 'Restaurer')?.trigger('click')
     await settle()
-    expect(wrapper.get('.indexes .card[data-kind="primary"]').attributes('data-status')).toBe('same')
+    expect(wrapper.get('.index-table tbody[data-kind="primary"]').attributes('data-status')).toBe('same')
     expect(wrapper.find('[aria-label="Modifications en attente"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('shows an empty primary key line on a table that has none, so one can be defined from the indexes too', async () => {
+  it('shows an empty primary key row on a table that has none, so one can be defined from the indexes too', async () => {
     const without: TableDetail = { ...detail(), indexes: [], foreignKeys: [] }
     const wrapper = mountEditor('postgresql', without)
 
-    const card = wrapper.get('.indexes .card[data-kind="primary"]')
-    expect(card.text()).toContain('Aucune')
-    await card.findAll('.chip')[0]?.trigger('click')
-    expect(wrapper.get('.indexes .card[data-kind="primary"]').attributes('data-status')).toBe('new')
+    const group = wrapper.get('.index-table tbody[data-kind="primary"]')
+    expect(group.text()).toContain('Aucune')
+    await pick(group.get('select[aria-label^="Ajouter une colonne"]'), 'id')
+    expect(wrapper.get('.index-table tbody[data-kind="primary"]').attributes('data-status')).toBe('new')
     wrapper.unmount()
   })
 
-  it('edits an index: choose its columns, make it unique, remove it', async () => {
+  it('edits an index: add a column, reorder them, make it unique, remove it', async () => {
     mocked.mockResolvedValue(preview())
     const wrapper = mountEditor()
-    const index = wrapper.get('.indexes .card:not([data-kind="primary"])')
+    const group = (): ReturnType<typeof wrapper.get> => wrapper.get('.index-table tbody[data-kind="index"]')
 
-    await index.findAll('.chip').find((chip) => chip.text() === 'note')?.trigger('click')
-    await index.get('input[type="checkbox"]').setValue(true)
+    await pick(group().get('select[aria-label^="Ajouter une colonne"]'), 'note')
+    await group().get('input[aria-label="Unique"]').setValue(true)
+    await group().findAll('button').find((button) => button.attributes('aria-label')?.startsWith('Monter note'))?.trigger('click')
     await settle()
 
-    expect(wrapper.get('.indexes .card:not([data-kind="primary"])').attributes('data-status')).toBe('changed')
-    expect(structureCalls('preview').at(-1)?.[2]).toMatchObject({ draft: { indexes: expect.arrayContaining([expect.objectContaining({ name: 'idx_status', columns: ['status', 'note'], unique: true })]) } })
+    expect(group().attributes('data-status')).toBe('changed')
+    expect(group().findAll('tr.col-row select').map((select) => selected(select))).toEqual(['note', 'status'])
+    expect(structureCalls('preview').at(-1)?.[2]).toMatchObject({ draft: { indexes: expect.arrayContaining([expect.objectContaining({ name: 'idx_status', columns: ['note', 'status'], unique: true })]) } })
 
-    await index.get('button[aria-label^="Retirer l’index"]').trigger('click')
-    expect(wrapper.get('.indexes .card:not([data-kind="primary"])').attributes('data-status')).toBe('removed')
+    await group().findAll('button').find((button) => button.attributes('aria-label')?.startsWith('Ôter note'))?.trigger('click')
+    expect(group().findAll('tr.col-row')).toHaveLength(1)
+
+    await group().get('button[aria-label^="Retirer l’index"]').trigger('click')
+    expect(group().attributes('data-status')).toBe('removed')
+    wrapper.unmount()
+  })
+
+  it('does not offer a column already in the index, nor one that is removed from the table', async () => {
+    const wrapper = mountEditor()
+    await wrapper.findAll('button[aria-label^="Retirer la colonne"]')[2]?.trigger('click')
+
+    const options = wrapper.get('.index-table tbody[data-kind="index"] select[aria-label^="Ajouter une colonne"]').findAll('option').map((option) => option.text())
+
+    expect(options).not.toContain('status')
+    expect(options).not.toContain('note')
+    expect(options).toContain('id')
     wrapper.unmount()
   })
 
@@ -369,9 +419,10 @@ describe('TableEditor', () => {
     expect(wrapper.find('input[aria-label="Auto-incrément"]').exists()).toBe(false)
     expect(wrapper.find('input[aria-label="Dans la clé primaire"]').exists()).toBe(false)
     expect(wrapper.find('.foreign-keys').exists()).toBe(false)
-    expect(wrapper.get('.indexes .card').text()).toContain('lecture seule')
-    expect(wrapper.find('.indexes .card input').exists()).toBe(false)
-    expect(wrapper.find('.indexes .card[data-kind="primary"]').exists()).toBe(false)
+    expect(wrapper.get('.index-table tbody').attributes('data-kind')).toBe('locked')
+    expect(wrapper.get('.index-table tbody').text()).toContain('lecture seule')
+    expect(wrapper.find('.index-table tbody input').exists()).toBe(false)
+    expect(wrapper.find('.index-table tbody[data-kind="primary"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

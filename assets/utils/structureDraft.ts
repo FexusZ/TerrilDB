@@ -286,6 +286,18 @@ export function restorePrimary(draft: Draft): void {
   draft.primary = [...draft.originalPrimary]
 }
 
+/** Décale un élément d'une place (l'ordre des colonnes d'un index compte) ; en bout de liste, rien ne bouge. */
+export function moveItem(list: string[], index: number, delta: -1 | 1): string[] {
+  const target = index + delta
+  if (index < 0 || index >= list.length || target < 0 || target >= list.length) {
+    return [...list]
+  }
+  const next = [...list]
+  ;[next[index], next[target]] = [next[target] as string, next[index] as string]
+
+  return next
+}
+
 export function isDirty(draft: Draft, detail: TableDetail): boolean {
   if (draft.name !== detail.name) {
     return true

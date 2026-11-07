@@ -10,6 +10,7 @@ import {
   foreignKeyState,
   indexState,
   isDirty,
+  moveItem,
   primaryState,
   removeColumn,
   removePrimary,
@@ -158,6 +159,21 @@ describe('marks', () => {
     draft.name = 'sales'
 
     expect(isDirty(draft, detail())).toBe(true)
+  })
+})
+
+describe('moveItem', () => {
+  it('moves an item one place up or down without touching the original list', () => {
+    const list = ['a', 'b', 'c']
+
+    expect(moveItem(list, 1, -1)).toEqual(['b', 'a', 'c'])
+    expect(moveItem(list, 1, 1)).toEqual(['a', 'c', 'b'])
+    expect(list).toEqual(['a', 'b', 'c'])
+  })
+
+  it('leaves the list as it is at either end', () => {
+    expect(moveItem(['a', 'b'], 0, -1)).toEqual(['a', 'b'])
+    expect(moveItem(['a', 'b'], 1, 1)).toEqual(['a', 'b'])
   })
 })
 
