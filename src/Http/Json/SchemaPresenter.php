@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\Core\Schema\Change\SchemaChangePlanner;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\ForeignKeyDefinition;
@@ -45,6 +46,7 @@ final class SchemaPresenter
     {
         return [
             'name' => $table->name,
+            'fingerprint' => SchemaChangePlanner::fingerprint($table),
             'kind' => $table->kind->value,
             'estimatedRows' => $table->estimatedRows,
             'viewDefinition' => $table->viewDefinition,

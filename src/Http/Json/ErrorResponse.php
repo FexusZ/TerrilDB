@@ -10,8 +10,8 @@ namespace App\Http\Json;
 final readonly class ErrorResponse
 {
     /**
-     * @param array<string, bool|int|string> $extra
-     * @param array<string, string>          $headers
+     * @param array<string, mixed>  $extra
+     * @param array<string, string> $headers
      */
     public function __construct(
         public int $status,

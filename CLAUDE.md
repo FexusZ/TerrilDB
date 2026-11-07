@@ -240,6 +240,30 @@ sont renseignés (avec `MAILER_DSN`) ; le lien vient de l'adresse publique confi
 conservée nulle part (ni base, ni audit, ni journal) ; un échec de transport garde l'invitation (`emailSent: false`, le lien
 reste à transmettre à la main) ; envoi non configuré = 409 `mail_disabled`. `GET /web/invitations` dit `emailEnabled`.
 
+## Édition de structure (src/Core/Schema/Change, TableStructureController)
+
+Modifier colonnes, index, clé primaire, clés étrangères, nom ou suppression d'une table SQL. Le client n'envoie JAMAIS de SQL : il envoie
+la table telle qu'on la veut (`TableDraft` : chaque colonne, index ou clé étrangère garde son `originalName`, ce qui reconnaît un
+renommage) ; le serveur relit la table réelle, `SchemaDiffer` déduit les opérations, un `DdlDialect` par moteur (PostgreSQL, MySQL +
+MariaDB, ClickHouse) les écrit, `SchemaChangePlanner` rend le `ChangePlan` (instructions ordonnées : on retire d'abord clés
+étrangères, index, clé primaire puis colonnes, on remet ensuite clé primaire, index, clés étrangères, le renommage de la table vient
+en dernier). Le texte libre est borné : `ColumnType::validated` n'accepte que la FORME d'un type (mots, nombres, chaînes fermées,
+parenthèses équilibrées, aucun mot de contrainte), `DefaultValue::parse` lit NULL, un nombre, une chaîne ou une courte liste
+d'expressions (now(), uuid(), true…) et traite tout le reste comme une CHAÎNE échappée, jamais comme du SQL ; les noms passent par
+`NameRule` puis sont échappés par le dialecte. Deux routes : `POST /web/connections/{id}/tables/{name}/structure/preview` (n'écrit rien :
+instructions, `transactional`, `destructive`, `stale`) et `.../apply` (`fingerprint` obligatoire : empreinte de la structure rendue par la
+lecture de la table, 409 `schema_changed` si la table a bougé entre-temps ; 409 `confirmation_required` + liste tant que `confirmed` manque
+pour ce qui détruit : retirer colonne, index, clé, changer un type, supprimer la table ; 409 `schema_change_failed` avec `applied` et
+`failed` ; 422 `invalid_schema_change`). `drop: true` à la place de `draft` supprime la table. Exécution par `TargetConnection::ddl()`
+(`DbalDdlExecutor`, `ClickHouseDdlExecutor`) : PostgreSQL en UNE transaction (tout ou rien, `lock_timeout` 10 s), MySQL/MariaDB et
+ClickHouse instruction par instruction (un échec laisse les précédentes appliquées, rapportées dans `applied`). Audit `schema.changed` /
+`schema.failed` avec le SQL exact. Particularités : MySQL `MODIFY COLUMN` redit la définition (commentaire gardé, jeu de caractères
+remis à celui de la table), colonne AUTO_INCREMENT nouvelle et sa clé dans un seul ALTER ; ClickHouse : nullabilité dans le type,
+clé de tri en lecture seule, ni clé primaire ni clé étrangère ni auto-incrément ni renommage d'index, index de saut matérialisés ;
+passer de Nullable à non-Nullable y exige une valeur par défaut. Seules les tables sont éditables (pas les vues), pas Redis.
+Tests : `tests/Core/Schema/Change` (générateurs), `tests/Integration/Driver/SchemaChangeTest` (rejoués contre les vrais moteurs),
+`tests/Integration/Web/TableStructureWebTest`.
+
 ## Export (src/Core/Export, ExportController)
 
 `CsvExporter` (RFC 4180, CRLF, UTF-8, BOM optionnel) et `JsonExporter` (tableau d'objets, colonnes dupliquées suffixées).

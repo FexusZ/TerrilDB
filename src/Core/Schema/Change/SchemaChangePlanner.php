@@ -51,7 +51,7 @@ final class SchemaChangePlanner
      * Empreinte de la structure (colonnes, index, clés étrangères), SANS l'estimation du nombre de lignes qui bouge seule. Le
      * client la renvoie à l'application : si elle a changé entre-temps, quelqu'un d'autre a modifié la table, on refuse.
      */
-    public function fingerprint(TableDefinition $table): string
+    public static function fingerprint(TableDefinition $table): string
     {
         return hash('sha256', json_encode([
             $table->name,

@@ -82,6 +82,49 @@ final readonly class JsonInput
         return $strings;
     }
 
+    public function object(string $field): self
+    {
+        $value = $this->data[$field] ?? null;
+        if (!\is_array($value) || ([] !== $value && array_is_list($value))) {
+            throw new BadRequestException(\sprintf('The field "%s" must be an object.', $field));
+        }
+        $typed = [];
+        foreach ($value as $key => $item) {
+            $typed[(string) $key] = $item;
+        }
+
+        return new self($typed);
+    }
+
+    public function has(string $field): bool
+    {
+        return null !== ($this->data[$field] ?? null);
+    }
+
+    /**
+     * @return list<self>
+     */
+    public function objects(string $field): array
+    {
+        $value = $this->data[$field] ?? [];
+        if (!\is_array($value) || ([] !== $value && !array_is_list($value))) {
+            throw new BadRequestException(\sprintf('The field "%s" must be a list of objects.', $field));
+        }
+        $objects = [];
+        foreach ($value as $item) {
+            if (!\is_array($item) || ([] !== $item && array_is_list($item))) {
+                throw new BadRequestException(\sprintf('The field "%s" must be a list of objects.', $field));
+            }
+            $typed = [];
+            foreach ($item as $key => $inner) {
+                $typed[(string) $key] = $inner;
+            }
+            $objects[] = new self($typed);
+        }
+
+        return $objects;
+    }
+
     public function int(string $field): int
     {
         $value = $this->data[$field] ?? null;

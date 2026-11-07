@@ -24,6 +24,10 @@ use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
+use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
+use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
+use App\Core\Schema\Change\Exception\StaleSchemaException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\CryptoException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
@@ -84,6 +88,14 @@ final class ErrorMapper
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
+            $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
+            $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
+            $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
+            $error instanceof SchemaChangeFailedException => new ErrorResponse(409, 'schema_change_failed', [
+                'message' => $error->getMessage(),
+                'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
+                'failed' => ChangePlanPresenter::statement($error->failed),
+            ]),
             $error instanceof UnsupportedOperationException => new ErrorResponse(501, 'unsupported_operation'),
             $error instanceof PlanNotAvailableException => new ErrorResponse(501, 'plan_unavailable'),
             $error instanceof UnreadablePlanException => new ErrorResponse(502, 'unreadable_plan'),
