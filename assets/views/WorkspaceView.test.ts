@@ -155,6 +155,30 @@ describe('WorkspaceView', () => {
     expect(wrapper.get('.current').text()).toContain('Production')
   })
 
+  it('shows the page only once the workspace is open on this connection and its database, so a table never loads against nothing', async () => {
+    const pending: ((value: unknown) => void)[] = []
+    mocked.mockImplementation((method?: string, url = ''): Promise<unknown> => {
+      if (url === '/web/connections') {
+        return Promise.resolve({ connections: [summary] })
+      }
+      if (url.includes('/tables?')) {
+        return new Promise((resolve) => { pending.push(resolve) })
+      }
+
+      return Promise.resolve(url.includes('/schemas') ? { schemas: [] } : { databases: [], default: 'shop', tables: [] })
+    })
+
+    const { wrapper } = await mountView('/connections/abc/tables/orders?database=shop')
+    expect(wrapper.find('.child').exists()).toBe(false)
+
+    // Les lectures de tables se suivent (ouverture, puis changement de base) : on les libère au fur et à mesure.
+    for (let round = 0; round < 3; round++) {
+      pending.splice(0).forEach((release) => release({ tables: [] }))
+      await flushPromises()
+    }
+    expect(wrapper.find('.child').exists()).toBe(true)
+  })
+
   it('has no tables panel: the content comes first and the connections bar sits on the right', async () => {
     mocked.mockImplementation(answer())
 

@@ -14,11 +14,14 @@ const router = useRouter()
 const connections = useConnectionsStore()
 const workspace = useWorkspaceStore()
 const error = ref<string | null>(null)
+// La page enfant (table, clé, console…) lit l'espace de travail : elle ne se monte qu'une fois la connexion et la base de l'adresse ouvertes.
+const ready = ref(false)
 
 const connection = computed(() => connections.byId(props.id))
 
 async function open(): Promise<void> {
   error.value = null
+  ready.value = false
   try {
     if (!connections.loaded) {
       await connections.load()
@@ -29,6 +32,7 @@ async function open(): Promise<void> {
     }
     await workspace.open(props.id)
     await applyRouteDatabase()
+    ready.value = true
     // Une connexion qui ne nomme aucune base : on ouvre la première, la console a besoin d'une base où s'exécuter.
     await workspace.loadDatabases()
   } catch (failure) {
@@ -78,7 +82,7 @@ watch(() => [route.query.database, route.query.schema], () => {
     <div v-else class="body">
       <div class="content">
         <p v-if="workspace.tablesError" class="error" role="alert">{{ workspace.tablesError }}</p>
-        <RouterView />
+        <RouterView v-if="ready" />
       </div>
       <WorkbenchSidebar @deleted="onDeleted" />
     </div>
