@@ -25,6 +25,8 @@ export interface KeysState {
 }
 
 const PAGE = 100
+// Au plus ce nombre de bases sondées par connexion (une connexion à la base cible chacune) : au-delà, elles restent visibles.
+const PROBE_LIMIT = 25
 
 /**
  * L'arbre permanent « connexion > bases > tables » (ou « connexion > clés » pour Redis). Il vit le temps de la session :
@@ -44,6 +46,8 @@ export const useTreeStore = defineStore('tree', () => {
   const flat = ref<Record<string, boolean>>({})
   const tables = ref<Record<string, TablesState>>({})
   const keys = ref<Record<string, KeysState>>({})
+  const emptyDatabases = ref<Record<string, true>>({})
+  const emptiesShown = ref<Record<string, boolean>>({})
 
   let epoch = 0
   const generations = new Map<string, number>()
@@ -63,6 +67,55 @@ export const useTreeStore = defineStore('tree', () => {
     return list !== null && (list.length > 1 || (list.length === 1 && list[0]?.name !== 'public'))
   }
   const keysOf = (id: string): KeysState | null => keys.value[id] ?? null
+
+  const isEmptyDatabase = (id: string, database: string): boolean => emptyDatabases.value[`${id}:${database}`] === true
+  const showsEmpties = (id: string): boolean => emptiesShown.value[id] === true
+  /** Bases connues pour être vides : masquées par défaut, sauf si on demande à les voir ou si on est dedans. */
+  const emptyCount = (id: string): number => (databasesOf(id) ?? []).filter((database) => isEmptyDatabase(id, database.name)).length
+  const visibleDatabasesOf = (id: string): DatabaseInfo[] =>
+    (databasesOf(id) ?? []).filter((database) => showsEmpties(id) || !isEmptyDatabase(id, database.name) || isExpanded(`d:${id}:${database.name}`))
+
+  function toggleEmpties(id: string): void {
+    emptiesShown.value = { ...emptiesShown.value, [id]: !showsEmpties(id) }
+  }
+
+  function markEmpty(id: string, database: string): void {
+    emptyDatabases.value = { ...emptyDatabases.value, [`${id}:${database}`]: true }
+  }
+
+  /**
+   * Cherche les bases vides d'une connexion, une à la fois et sans rien écrire d'autre que « vide » : une seule table demandée
+   * (ou la liste des schémas sur PostgreSQL, où plusieurs schémas ou un schéma autre que public comptent comme du contenu).
+   * Une sonde qui échoue ne dit rien : la base reste visible.
+   */
+  async function probeDatabases(id: string, list: DatabaseInfo[], stamp: string): Promise<void> {
+    const postgres = useConnectionsStore().byId(id)?.engine === 'postgresql'
+    for (const database of list.filter((candidate) => !candidate.system).slice(0, PROBE_LIMIT)) {
+      if (snapshot(id) !== stamp) {
+        return
+      }
+      if (tablesOf(id, database.name) !== null || schemasOf(id, database.name) !== null) {
+        continue
+      }
+      try {
+        const params = new URLSearchParams({ database: database.name })
+        if (postgres) {
+          const result = await api<{ schemas?: DatabaseInfo[] } | undefined>('GET', `/web/connections/${id}/schemas?${params.toString()}`)
+          const found = result?.schemas
+          if (!Array.isArray(found) || found.length > 1 || (found.length === 1 && found[0]?.name !== 'public')) {
+            continue
+          }
+        }
+        params.set('limit', '1')
+        const result = await api<{ tables?: TableSummary[] } | undefined>('GET', `/web/connections/${id}/tables?${params.toString()}`)
+        if (snapshot(id) === stamp && Array.isArray(result?.tables) && result.tables.length === 0) {
+          markEmpty(id, database.name)
+        }
+      } catch {
+        // Inconnue : on ne cache rien.
+      }
+    }
+  }
 
   function expand(key: string): void {
     if (!expanded.value.includes(key)) {
@@ -125,6 +178,10 @@ export const useTreeStore = defineStore('tree', () => {
     }
     expand(`c:${id}`)
     statuses.value = { ...statuses.value, [id]: 'open' }
+    const listed = databases.value[id]
+    if (listed != null && !isFlat(id) && listed.length > 1) {
+      void probeDatabases(id, listed, stamp)
+    }
   }
 
   async function fetchDatabases(id: string): Promise<{ list: DatabaseInfo[]; fallback: string | null }> {
@@ -235,6 +292,10 @@ export const useTreeStore = defineStore('tree', () => {
       if (snapshot(id) !== stamp) {
         return
       }
+      // Une base qu'on vient d'ouvrir et qui ne contient rien (sans niveau schéma) : on s'en souvient pour la masquer ensuite.
+      if (!append && schema === '' && database !== '' && page.tables.length === 0 && !hasSchemaLevel(id, database)) {
+        markEmpty(id, database)
+      }
       tables.value = {
         ...tables.value,
         [key]: {
@@ -291,6 +352,8 @@ export const useTreeStore = defineStore('tree', () => {
     flat.value = drop(flat.value, (key) => key === id)
     tables.value = drop(tables.value, (key) => key.startsWith(`${id}:`))
     keys.value = drop(keys.value, (key) => key === id)
+    emptyDatabases.value = drop(emptyDatabases.value, (key) => key.startsWith(`${id}:`))
+    emptiesShown.value = drop(emptiesShown.value, (key) => key === id)
   }
 
   /** À la déconnexion : plus rien ne doit survivre à la session. */
@@ -306,7 +369,9 @@ export const useTreeStore = defineStore('tree', () => {
     flat.value = {}
     tables.value = {}
     keys.value = {}
+    emptyDatabases.value = {}
+    emptiesShown.value = {}
   }
 
-  return { statusOf, errorOf, isExpanded, isFlat, databasesOf, schemasOf, hasSchemaLevel, tablesOf, keysOf, toggleConnection, toggleDatabase, toggleSchema, loadMoreTables, loadMoreKeys, forget, reset }
+  return { statusOf, errorOf, isExpanded, isFlat, databasesOf, visibleDatabasesOf, emptyCount, showsEmpties, toggleEmpties, schemasOf, hasSchemaLevel, tablesOf, keysOf, toggleConnection, toggleDatabase, toggleSchema, loadMoreTables, loadMoreKeys, forget, reset }
 })

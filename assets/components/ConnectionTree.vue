@@ -10,7 +10,7 @@ import ConfirmDialog from './ConfirmDialog.vue'
 
 const emit = defineEmits<{ deleted: [id: string] }>()
 
-type Kind = 'connection' | 'database' | 'schema' | 'table' | 'key' | 'more' | 'message'
+type Kind = 'connection' | 'database' | 'schema' | 'table' | 'key' | 'more' | 'empties' | 'message'
 
 interface Row {
   key: string
@@ -157,7 +157,7 @@ const rows = computed<Row[]>(() => {
     } else if (tree.isFlat(connection.id)) {
       scopeRows(out, connection, '', 2, key)
     } else {
-      for (const database of tree.databasesOf(connection.id) ?? []) {
+      for (const database of tree.visibleDatabasesOf(connection.id)) {
         const databaseKey = `d:${connection.id}:${database.name}`
         const databaseOpen = tree.isExpanded(databaseKey)
         const state = tree.tablesOf(connection.id, database.name, '')
@@ -178,6 +178,22 @@ const rows = computed<Row[]>(() => {
         if (databaseOpen) {
           scopeRows(out, connection, database.name, 3, databaseKey)
         }
+      }
+      const empties = tree.emptyCount(connection.id)
+      if (empties > 0) {
+        const shown = tree.showsEmpties(connection.id)
+        out.push({
+          key: `x:${connection.id}`,
+          kind: 'empties',
+          level: 2,
+          label: shown ? 'Masquer les bases vides' : `Afficher ${String(empties)} ${empties > 1 ? 'bases vides' : 'base vide'}`,
+          parentKey: key,
+          connection,
+          expandable: false,
+          expanded: false,
+          posinset: 0,
+          setsize: 0,
+        })
       }
     }
   }
@@ -290,6 +306,11 @@ async function activate(row: Row): Promise<void> {
     case 'more':
       if (connection) {
         await (connection.engine === 'redis' ? tree.loadMoreKeys(connection.id) : tree.loadMoreTables(connection.id, row.database ?? '', row.schema ?? ''))
+      }
+      break
+    case 'empties':
+      if (connection) {
+        tree.toggleEmpties(connection.id)
       }
       break
     default:
@@ -445,7 +466,7 @@ async function confirmDelete(): Promise<void> {
               <span class="label">{{ row.label }}</span>
               <small v-if="row.hint">{{ row.hint }}</small>
             </template>
-            <template v-else-if="row.kind === 'more'">
+            <template v-else-if="row.kind === 'more' || row.kind === 'empties'">
               <span class="label more">{{ row.label }}</span>
             </template>
             <RouterLink v-else-if="row.to" class="node" tabindex="-1" :to="row.to" @click.stop>

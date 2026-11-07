@@ -67,7 +67,9 @@ describe('tree store', () => {
     await tree.toggleConnection('c1')
     expect(tree.isExpanded('c:c1')).toBe(true)
     expect(tree.statusOf('c1')).toBe('open')
-    expect(mocked).toHaveBeenCalledTimes(1)
+    // Les bases ne sont pas relues (les sondes de bases vides, elles, ne se refont pas non plus au redéploiement).
+    expect(mocked.mock.calls.filter(([, url]) => String(url).endsWith('/databases'))).toHaveLength(1)
+    expect(mocked.mock.calls.filter(([, url]) => String(url).includes('limit=1'))).toHaveLength(2)
   })
 
   it('opens a database: loads its first hundred tables with the database named', async () => {
@@ -109,10 +111,11 @@ describe('tree store', () => {
     await tree.toggleConnection('c1')
     mocked.mockResolvedValueOnce({ tables: [orders], nextCursor: null, total: 1 })
     await tree.toggleDatabase('c1', 'a')
+    const before = mocked.mock.calls.length
 
     await tree.loadMoreTables('c1', 'a')
 
-    expect(mocked).toHaveBeenCalledTimes(2)
+    expect(mocked).toHaveBeenCalledTimes(before)
   })
 
   it('marks a connection unreachable with a generic message, and retries on the next click', async () => {

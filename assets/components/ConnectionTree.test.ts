@@ -407,4 +407,108 @@ describe('ConnectionTree', () => {
       wrapper.unmount()
     })
   })
+
+  describe('empty databases', () => {
+    const named = (...names: string[]) => ({ databases: names.map((name) => ({ name, system: name === 'information_schema' })) })
+    /** Les bases listées dans `empty` n'ont aucune table ; les autres en ont une. */
+    function server(databases: string[], empty: string[], extra: (url: string) => unknown = () => undefined) {
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
+        const custom = extra(url)
+        if (custom !== undefined) {
+          return custom instanceof Error ? Promise.reject(custom) : Promise.resolve(custom)
+        }
+        if (url.endsWith('/databases')) {
+          return Promise.resolve(named(...databases))
+        }
+        const database = new URL(url, 'http://x').searchParams.get('database') ?? ''
+
+        return Promise.resolve(url.includes('/tables') ? page(empty.includes(database) ? [] : ['orders']) : undefined)
+      })
+    }
+    const open = async (wrapper: Awaited<ReturnType<typeof mountTree>>['wrapper']) => {
+      await items(wrapper)[0]?.get('.row').trigger('click')
+      await flushPromises()
+    }
+
+    it('hides the databases found empty and says how many are hidden', async () => {
+      server(['shop', 'archive', 'tmp'], ['archive', 'tmp'])
+      const { wrapper } = await mountTree()
+
+      await open(wrapper)
+
+      expect(labels(wrapper)).toEqual(['Production', 'shop', 'Afficher 2 bases vides', 'Recette'])
+      wrapper.unmount()
+    })
+
+    it('shows them on demand and hides them again', async () => {
+      server(['shop', 'archive'], ['archive'])
+      const { wrapper } = await mountTree()
+      await open(wrapper)
+
+      await items(wrapper).find((item) => item.text().includes('Afficher'))?.get('.row').trigger('click')
+      await flushPromises()
+      expect(labels(wrapper)).toEqual(['Production', 'shop', 'archive', 'Masquer les bases vides', 'Recette'])
+
+      await items(wrapper).find((item) => item.text().includes('Masquer'))?.get('.row').trigger('click')
+      await flushPromises()
+      expect(labels(wrapper)).toEqual(['Production', 'shop', 'Afficher 1 base vide', 'Recette'])
+      wrapper.unmount()
+    })
+
+    it('keeps a database whose probe fails, since nothing says it is empty', async () => {
+      server(['shop', 'locked'], [], (url) => (url.includes('database=locked') ? new ApiError(502, 'target_unreachable') : undefined))
+      const { wrapper } = await mountTree()
+
+      await open(wrapper)
+
+      expect(labels(wrapper)).toEqual(['Production', 'shop', 'locked', 'Recette'])
+      wrapper.unmount()
+    })
+
+    it('keeps a database that is open even when it turns out to be empty', async () => {
+      server(['shop', 'archive'], ['archive'])
+      const { wrapper } = await mountTree()
+      await open(wrapper)
+      await items(wrapper).find((item) => item.text().includes('Afficher'))?.get('.row').trigger('click')
+      await flushPromises()
+      await items(wrapper).find((item) => item.text().includes('archive'))?.get('.row').trigger('click')
+      await flushPromises()
+
+      await items(wrapper).find((item) => item.text().includes('Masquer'))?.get('.row').trigger('click')
+      await flushPromises()
+
+      expect(labels(wrapper)).toContain('archive')
+      wrapper.unmount()
+    })
+
+    it('never probes the system databases, and no more than 25 databases', async () => {
+      const many = Array.from({ length: 30 }, (_, index) => `db${String(index)}`)
+      server([...many, 'information_schema'], many)
+      const { wrapper } = await mountTree()
+
+      await open(wrapper)
+
+      const probes = mocked.mock.calls.filter(([, url]) => String(url).includes('limit=1&') || String(url).endsWith('limit=1'))
+      expect(probes).toHaveLength(25)
+      expect(mocked.mock.calls.some(([, url]) => String(url).includes('database=information_schema'))).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('does not hide a PostgreSQL database that has schemas to choose from, and probes the others by their tables', async () => {
+      server(['app', 'postgres'], ['postgres'], (url) => {
+        if (url.includes('/schemas')) {
+          return { schemas: url.includes('database=app') ? [{ name: 'public', system: false }, { name: 'sales', system: false }] : [{ name: 'public', system: false }] }
+        }
+
+        return undefined
+      })
+      const { wrapper } = await mountTree([connection('c1', 'Production', 'postgresql'), connection('c2', 'Recette')])
+
+      await open(wrapper)
+
+      expect(labels(wrapper)).toEqual(['Production', 'app', 'Afficher 1 base vide', 'Recette'])
+      expect(mocked.mock.calls.some(([, url]) => String(url).includes('/tables') && String(url).includes('database=app'))).toBe(false)
+      wrapper.unmount()
+    })
+  })
 })
