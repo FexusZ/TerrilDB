@@ -22,6 +22,29 @@ const connection = computed(() => connections.byId(props.id))
 const hasSchemaViews = computed(() => connection.value !== undefined && connection.value.engine !== 'redis')
 const scope = computed(() => ({ ...(workspace.database === null ? {} : { database: workspace.database }), ...(workspace.schema === null ? {} : { schema: workspace.schema }) }))
 
+// La dernière table ouverte : le menu garde un accès à sa structure quand on part vers la console, le diagramme ou l'audit.
+const lastTable = ref<{ name: string; query: Record<string, string> } | null>(null)
+watch(
+  () => [route.name, route.params.id, route.params.name, route.query.database, route.query.schema],
+  () => {
+    if (route.name !== 'table' || route.params.id !== props.id || typeof route.params.name !== 'string') {
+      return
+    }
+    const query: Record<string, string> = {}
+    for (const key of ['database', 'schema'] as const) {
+      const value = route.query[key]
+      if (typeof value === 'string' && value !== '') {
+        query[key] = value
+      }
+    }
+    lastTable.value = { name: route.params.name, query }
+  },
+  { immediate: true },
+)
+watch(() => props.id, () => {
+  lastTable.value = null
+})
+
 async function open(): Promise<void> {
   error.value = null
   ready.value = false
@@ -83,6 +106,7 @@ watch(() => [route.query.database, route.query.schema], () => {
 
     <nav v-if="hasSchemaViews && !error" class="views" :data-color="connection?.color ?? undefined" aria-label="Vues de la connexion">
       <RouterLink :to="{ name: 'workspace', params: { id }, query: scope }" exact-active-class="on">Console</RouterLink>
+      <RouterLink v-if="lastTable" :to="{ name: 'table', params: { id, name: lastTable.name }, query: lastTable.query }" active-class="on">Structure</RouterLink>
       <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
       <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
     </nav>

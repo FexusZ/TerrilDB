@@ -189,6 +189,43 @@ describe('WorkspaceView', () => {
     expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit'])
   })
 
+  it('offers the structure of the table you are on, and keeps it one click away after you leave for the console or the diagram', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc/tables/orders?database=shop')
+
+    let links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Diagramme', 'Audit du schéma'])
+    expect(links[1]?.classes()).toContain('on')
+    expect(links[1]?.attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
+
+    await router.push('/connections/abc/diagram?database=shop')
+    await flushPromises()
+
+    links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Diagramme', 'Audit du schéma'])
+    expect(links[1]?.classes()).not.toContain('on')
+    expect(links[1]?.attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
+    expect(links[2]?.classes()).toContain('on')
+  })
+
+  it('shows no structure entry before any table has been opened', async () => {
+    mocked.mockImplementation(answer())
+
+    const { wrapper } = await mountView('/connections/abc/diagram')
+
+    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).not.toContain('Structure')
+  })
+
+  it('follows the table when another one is opened', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc/tables/orders')
+
+    await router.push('/connections/abc/tables/invoices')
+    await flushPromises()
+
+    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a')[1]?.attributes('href')).toBe('/connections/abc/tables/invoices')
+  })
+
   it('tints the views menu with the colour of the open connection, and not at all when it has none', async () => {
     mocked.mockImplementation((method?: string, url = ''): Promise<unknown> => Promise.resolve(url === '/web/connections' ? { connections: [{ ...summary, color: 'violet' }] } : url.includes('/schemas') ? { schemas: [] } : { databases: [], default: 'shop', tables: [] }))
     const colored = await mountView()
