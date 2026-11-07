@@ -351,6 +351,20 @@ describe('ConnectionTree', () => {
       wrapper.unmount()
     })
 
+    it('tints the whole row of a colored connection, and the rows below it once it is open, but never another connection', async () => {
+      const { wrapper } = await mountTree([colored('c1', 'Production', 'blue'), colored('c2', 'Recette', 'green'), connection('c3', 'Autre')])
+      mocked.mockResolvedValueOnce(twoDatabases)
+
+      await items(wrapper)[0]?.get('.row').trigger('click')
+      await flushPromises()
+
+      // Production, shop, reporting, Recette, Autre
+      expect(items(wrapper).map((item) => item.attributes('data-tint'))).toEqual(['blue', 'blue', 'blue', 'green', undefined])
+      expect(items(wrapper)[0]?.attributes('data-kind')).toBe('connection')
+      expect(items(wrapper)[1]?.attributes('data-kind')).toBe('database')
+      wrapper.unmount()
+    })
+
     it('moves a connection with Alt and the up or down arrow, keeping the focus on it', async () => {
       mocked.mockResolvedValue(undefined)
       const { wrapper } = await mountTree([connection('c1', 'A'), connection('c2', 'B'), connection('c3', 'C')])

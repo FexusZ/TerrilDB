@@ -81,7 +81,7 @@ watch(() => [route.query.database, route.query.schema], () => {
       </template>
     </AppHeader>
 
-    <nav v-if="hasSchemaViews && !error" class="views" aria-label="Vues de la connexion">
+    <nav v-if="hasSchemaViews && !error" class="views" :data-color="connection?.color ?? undefined" aria-label="Vues de la connexion">
       <RouterLink :to="{ name: 'workspace', params: { id }, query: scope }" exact-active-class="on">Console</RouterLink>
       <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
       <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
@@ -113,6 +113,15 @@ watch(() => [route.query.database, route.query.schema], () => {
 .engine { font: 500 11px var(--font-mono); color: var(--acc); }
 .switch { color: var(--mut); font-size: 13px; }
 .views { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--s1); }
+.views[data-color='red'] { --tint: var(--conn-red); }
+.views[data-color='orange'] { --tint: var(--conn-orange); }
+.views[data-color='yellow'] { --tint: var(--conn-yellow); }
+.views[data-color='green'] { --tint: var(--conn-green); }
+.views[data-color='teal'] { --tint: var(--conn-teal); }
+.views[data-color='blue'] { --tint: var(--conn-blue); }
+.views[data-color='violet'] { --tint: var(--conn-violet); }
+.views[data-color='pink'] { --tint: var(--conn-pink); }
+.views[data-color] { background: color-mix(in srgb, var(--tint) 14%, var(--s1)); border-bottom-color: color-mix(in srgb, var(--tint) 45%, var(--line)); }
 .views a { padding: 9px 12px; color: var(--mut); font-size: 13px; text-decoration: none; border-bottom: 2px solid transparent; }
 .views a:hover { color: var(--fg); }
 .views a.on { color: var(--acc); border-bottom-color: var(--acc); }

@@ -406,6 +406,7 @@ async function confirmDelete(): Promise<void> {
           role="treeitem"
           :data-key="row.key"
           :data-kind="row.kind"
+          :data-tint="row.connection?.color ?? undefined"
           :aria-level="row.level"
           :aria-posinset="row.posinset"
           :aria-setsize="row.setsize"
@@ -477,6 +478,19 @@ li[role='treeitem'] { outline: none; }
 li[role='treeitem']:focus-visible > .row { outline: 2px solid var(--acc); outline-offset: -2px; }
 .row { display: flex; align-items: center; gap: 6px; min-height: 28px; padding-right: 8px; border-radius: 5px; color: var(--fg); cursor: pointer; }
 .row:hover { background: var(--s2); }
+li[data-tint='red'] { --tint: var(--conn-red); }
+li[data-tint='orange'] { --tint: var(--conn-orange); }
+li[data-tint='yellow'] { --tint: var(--conn-yellow); }
+li[data-tint='green'] { --tint: var(--conn-green); }
+li[data-tint='teal'] { --tint: var(--conn-teal); }
+li[data-tint='blue'] { --tint: var(--conn-blue); }
+li[data-tint='violet'] { --tint: var(--conn-violet); }
+li[data-tint='pink'] { --tint: var(--conn-pink); }
+/* La ligne d'une connexion colorée l'est en entier ; ce qui s'ouvre dessous reprend la même couleur, en plus pâle. */
+li[data-tint][data-kind='connection'] > .row { background: color-mix(in srgb, var(--tint) 38%, var(--s1)); }
+li[data-tint]:not([data-kind='connection']) > .row { background: color-mix(in srgb, var(--tint) 11%, var(--s1)); }
+li[data-tint][data-kind='connection'] > .row:hover { background: color-mix(in srgb, var(--tint) 48%, var(--s1)); }
+li[data-tint]:not([data-kind='connection']) > .row:hover { background: color-mix(in srgb, var(--tint) 20%, var(--s1)); }
 li.current > .row { background: var(--acc-bg); color: var(--acc); }
 .caret { width: 12px; color: var(--mut); font-size: 11px; }
 .badge { font: 500 10px var(--font-mono); color: var(--acc); }

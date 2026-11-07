@@ -189,6 +189,16 @@ describe('WorkspaceView', () => {
     expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit'])
   })
 
+  it('tints the views menu with the colour of the open connection, and not at all when it has none', async () => {
+    mocked.mockImplementation((method?: string, url = ''): Promise<unknown> => Promise.resolve(url === '/web/connections' ? { connections: [{ ...summary, color: 'violet' }] } : url.includes('/schemas') ? { schemas: [] } : { databases: [], default: 'shop', tables: [] }))
+    const colored = await mountView()
+    expect(colored.wrapper.get('nav.views').attributes('data-color')).toBe('violet')
+
+    mocked.mockImplementation(answer())
+    const plain = await mountView()
+    expect(plain.wrapper.get('nav.views').attributes('data-color')).toBeUndefined()
+  })
+
   it('offers no diagram or audit on a key-value connection, which has no schema to draw', async () => {
     mocked.mockResolvedValueOnce({ connections: [{ ...summary, engine: 'redis' }] })
     mocked.mockResolvedValueOnce({ keys: [], nextCursor: null, total: 0 })
