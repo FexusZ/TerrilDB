@@ -44,7 +44,8 @@ onMounted(async () => {
 <style scoped>
 .shell { display: flex; flex-direction: column; min-height: 100vh; }
 .body { display: flex; flex-wrap: wrap; flex: 1; min-height: 0; }
-.content { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 36px 32px; max-width: 720px; }
+.content { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 36px 32px; }
+.content > * { max-width: 680px; }
 h1 { font-size: 24px; font-weight: 700; }
 p { color: var(--mut); }
 .add-first { align-self: flex-start; padding: 8px 14px; border-radius: var(--radius); background: var(--acc); color: var(--on-acc, #fff); text-decoration: none; }
