@@ -49,7 +49,7 @@ final class DataChangeTest extends TestCase
             $this->raw(\sprintf('DROP TABLE IF EXISTS %s', $this->q($this->table)));
         } catch (\Throwable) {
         }
-        $this->target->close();
+        $this->target?->close();
     }
 
     private function connect(): TargetConnection

@@ -295,6 +295,24 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('shows the size of each index when the engine gives it', () => {
+    const sized: TableDetail = { ...detail(), indexes: [{ name: 'orders_pkey', columns: ['id'], unique: true, primary: true, sizeBytes: 16384 }, { name: 'idx_two', columns: ['status'], unique: false, primary: false, sizeBytes: 5 * 1024 * 1024 }] }
+    const wrapper = mountEditor('postgresql', sized)
+
+    expect(wrapper.findAll('.index-table thead th').map((th) => th.text())).toContain('Taille')
+    const groups = wrapper.findAll('.index-table tbody')
+    expect(groups[0]?.get('td.size-cell').text()).toBe('16 Ko')
+    expect(groups[1]?.get('td.size-cell').text()).toBe('5 Mo')
+    wrapper.unmount()
+  })
+
+  it('has no size column when the engine gives no size', () => {
+    const wrapper = mountEditor('postgresql', detail())
+
+    expect(wrapper.findAll('.index-table thead th').map((th) => th.text())).not.toContain('Taille')
+    wrapper.unmount()
+  })
+
   it('lays the indexes out like phpMyAdmin: one row per column, with its rank, under the name, type and uniqueness of the index', async () => {
     const composite: TableDetail = { ...detail(), indexes: [{ name: 'orders_pkey', columns: ['id'], unique: true, primary: true }, { name: 'idx_two', columns: ['status', 'note'], unique: true, primary: false }] }
     const wrapper = mountEditor('postgresql', composite)

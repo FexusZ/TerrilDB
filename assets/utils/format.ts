@@ -40,3 +40,21 @@ export function formatTtl(seconds: number | null): string {
 
   return `${String(Math.round(seconds / 86400))} j`
 }
+
+const BYTE_UNITS = ['o', 'Ko', 'Mo', 'Go', 'To']
+const SIZE = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 })
+
+/** Une taille en octets, dans la plus grande unité qui la garde sous 1 024 ; « — » quand le moteur ne la donne pas. */
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null) {
+    return '—'
+  }
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
+    value /= 1024
+    unit++
+  }
+
+  return `${SIZE.format(value)} ${BYTE_UNITS[unit] ?? 'o'}`
+}

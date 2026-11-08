@@ -114,6 +114,28 @@ describe('TablePane', () => {
     expect(wrapper.findComponent(TableEditor).props('table').fingerprint).toBe('c'.repeat(64))
   })
 
+  it('shows how much room the data, the indexes and both together take', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: { ...detail, dataBytes: 3 * 1024 * 1024, indexBytes: 1024 * 1024 } })
+
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    expect(wrapper.get('.sizes').text()).toContain('Données 3 Mo')
+    expect(wrapper.get('.sizes').text()).toContain('Index 1 Mo')
+    expect(wrapper.get('.sizes').text()).toContain('Total 4 Mo')
+  })
+
+  it('shows no sizes when the engine gives none', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: detail })
+
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    expect(wrapper.find('.sizes').exists()).toBe(false)
+  })
+
   it('goes to the data view of the table', async () => {
     const { router, pinia } = await mountPane()
     mocked.mockResolvedValueOnce({ table: detail })

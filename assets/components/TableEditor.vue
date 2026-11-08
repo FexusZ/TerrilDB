@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { ApiError } from '../api/client'
 import { messageFor } from '../api/errors'
+import { formatBytes } from '../utils/format'
 import { applyStructure, previewStructure, type StructureScope } from '../api/structure'
 import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructurePreview, type TableDetail } from '../api/types'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -71,6 +72,16 @@ interface IndexRow {
   visible: string[]
   /** Noms bruts (index verrouillé). */
   locked: string[]
+}
+
+const showSize = computed(() => props.table.indexes.some((index) => (index.sizeBytes ?? null) !== null))
+
+/** La taille connue d'un index déjà en base (un index nouveau n'en a pas encore). */
+function sizeOf(row: IndexRow): string {
+  const original = row.kind === 'primary' ? draft.value.primaryOriginalName : (row.item?.originalName ?? null)
+  const known = original === null ? undefined : props.table.indexes.find((index) => index.name === original)
+
+  return formatBytes(known?.sizeBytes ?? null)
 }
 
 const isLive = (uid: string): boolean => draft.value.columns.some((column) => column.uid === uid && !column.removed)
@@ -414,7 +425,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       <div v-else class="box">
         <table class="rows-table index-table">
           <thead>
-            <tr><th>Nom</th><th>Type</th><th v-if="features.uniqueIndex">Unique</th><th class="rank-h">#</th><th>Colonne</th><th>Ordre</th><th><span class="sr-only">Actions</span></th></tr>
+            <tr><th>Nom</th><th>Type</th><th v-if="features.uniqueIndex">Unique</th><th v-if="showSize">Taille</th><th class="rank-h">#</th><th>Colonne</th><th>Ordre</th><th><span class="sr-only">Actions</span></th></tr>
           </thead>
           <tbody v-for="row in indexRows" :key="row.id" :data-kind="row.kind" :data-status="row.mark.status">
             <template v-if="row.kind === 'locked'">
@@ -422,6 +433,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                 <td class="mono">{{ row.name }}</td>
                 <td class="type"><span class="tag">clé de tri : lecture seule</span></td>
                 <td v-if="features.uniqueIndex" />
+                <td v-if="showSize" class="size-cell">{{ sizeOf(row) }}</td>
                 <td colspan="3" class="mono dim">{{ row.locked.join(', ') }}</td>
                 <td />
               </tr>
@@ -444,6 +456,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                     <input v-if="row.kind === 'primary'" type="checkbox" checked disabled aria-label="Unique">
                     <input v-else v-model="row.item!.unique" type="checkbox" :class="{ edited: edited(row.mark, 'unique') }" :disabled="row.mark.status === 'removed'" aria-label="Unique">
                   </td>
+                  <td v-if="showSize" class="size-cell" :rowspan="row.visible.length + 1">{{ sizeOf(row) }}</td>
                 </template>
                 <td class="rank-cell" :class="{ edited: edited(row.mark, 'columns') || (row.kind === 'primary' && row.mark.status === 'changed') }"><span class="rank">{{ position + 1 }}</span></td>
                 <td class="cols" :class="{ edited: edited(row.mark, 'columns') || (row.kind === 'primary' && row.mark.status === 'changed') }">
@@ -472,6 +485,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                   <input v-if="row.kind === 'primary'" type="checkbox" checked disabled aria-label="Unique">
                   <input v-else v-model="row.item!.unique" type="checkbox" aria-label="Unique">
                 </td>
+                <td v-if="row.visible.length === 0 && showSize" class="size-cell">{{ sizeOf(row) }}</td>
                 <td class="rank-cell" />
                 <td class="cols">
                   <span v-if="row.kind === 'primary' && row.visible.length === 0" class="dim">Aucune clé primaire.&nbsp;</span>
@@ -645,6 +659,7 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .rows-table .type .field { width: auto; margin-top: 6px; display: block; }
 .rows-table td.cols, .rows-table td.rank-cell, .rows-table td.moves { border-bottom: 0; }
 .rows-table td.rank-cell { width: 34px; text-align: center; }
+.rows-table td.size-cell { white-space: nowrap; color: var(--mut); font: 400 12px var(--font-mono); text-align: right; }
 .rows-table th.rank-h { text-align: center; }
 .rows-table td.moves { white-space: nowrap; }
 .rows-table td.moves > * { margin-right: 4px; }

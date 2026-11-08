@@ -97,6 +97,8 @@ export interface IndexInfo {
   columns: string[]
   unique: boolean
   primary: boolean
+  /** Place sur disque de l’index, quand le moteur la donne. */
+  sizeBytes?: number | null
 }
 
 export interface ForeignKeyInfo {
@@ -115,6 +117,9 @@ export interface TableDetail {
   kind: TableKind
   estimatedRows: number | null
   viewDefinition: string | null
+  /** Place sur disque des données et de tous les index, quand le moteur la donne. */
+  dataBytes?: number | null
+  indexBytes?: number | null
   columns: ColumnInfo[]
   indexes: IndexInfo[]
   foreignKeys: ForeignKeyInfo[]
