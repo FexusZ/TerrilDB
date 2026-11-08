@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Driver;
 
 use App\Core\Connection\Engine;
+use App\Core\Data\DataExecutor;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\KeyValueStore;
 use App\Core\Query\QueryRunner;
@@ -31,6 +32,7 @@ final class TargetConnection
         \Closure $release,
         private readonly ?KeyValueStore $keys = null,
         private readonly ?DdlExecutor $ddl = null,
+        private readonly ?DataExecutor $data = null,
     ) {
         $this->release = $release;
     }
@@ -57,6 +59,14 @@ final class TargetConnection
     public function ddl(): DdlExecutor
     {
         return $this->ddl ?? throw UnsupportedOperationException::for($this->engine, 'structure');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function data(): DataExecutor
+    {
+        return $this->data ?? throw UnsupportedOperationException::for($this->engine, 'data');
     }
 
     public function runner(): QueryRunner

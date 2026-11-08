@@ -38,6 +38,8 @@ enum AuditAction: string
     case TargetForbidden = 'target.forbidden';
     case SchemaChanged = 'schema.changed';
     case SchemaChangeFailed = 'schema.failed';
+    case DataChanged = 'data.changed';
+    case DataChangeFailed = 'data.failed';
 
     public function category(): string
     {

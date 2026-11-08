@@ -96,4 +96,19 @@ final class JsonInputTest extends TestCase
             }
         }
     }
+
+    public function testReadsAMapOfScalars(): void
+    {
+        $input = $this->input('{"row":{"id":1,"name":"a","ok":true,"ratio":0.5,"gone":null}}');
+
+        self::assertSame(['id' => 1, 'name' => 'a', 'ok' => true, 'ratio' => 0.5, 'gone' => null], $input->scalars('row'));
+        self::assertSame([], $input->scalars('missing'));
+    }
+
+    public function testAMapOfScalarsRefusesNestedValues(): void
+    {
+        $this->expectException(BadRequestException::class);
+
+        $this->input('{"row":{"id":[1]}}')->scalars('row');
+    }
 }

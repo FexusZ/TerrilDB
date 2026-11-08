@@ -9,6 +9,7 @@ use App\Core\Connection\Engine;
 use App\Core\Driver\Driver;
 use App\Core\Driver\TargetConnection;
 use App\Driver\DbalConnector;
+use App\Driver\DbalDataExecutor;
 use App\Driver\DbalDdlExecutor;
 
 /**
@@ -33,6 +34,6 @@ final readonly class MySqlDriver implements Driver
 
         $connection = $this->connector->connect($engine, $parameters);
 
-        return new TargetConnection($engine, new MySqlIntrospector($connection), new MySqlQueryRunner($connection, $engine), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine));
+        return new TargetConnection($engine, new MySqlIntrospector($connection), new MySqlQueryRunner($connection, $engine), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection));
     }
 }

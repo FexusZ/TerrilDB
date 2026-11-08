@@ -96,6 +96,28 @@ final readonly class JsonInput
         return new self($typed);
     }
 
+    /**
+     * Un objet dont chaque valeur est un scalaire ou nul (la valeur d'une cellule) ; absent, il est vide.
+     *
+     * @return array<string, bool|float|int|string|null>
+     */
+    public function scalars(string $field): array
+    {
+        $value = $this->data[$field] ?? [];
+        if (!\is_array($value) || ([] !== $value && array_is_list($value))) {
+            throw new BadRequestException(\sprintf('The field "%s" must be an object.', $field));
+        }
+        $scalars = [];
+        foreach ($value as $key => $item) {
+            if (null !== $item && !\is_scalar($item)) {
+                throw new BadRequestException(\sprintf('The field "%s" must only hold plain values.', $field));
+            }
+            $scalars[(string) $key] = $item;
+        }
+
+        return $scalars;
+    }
+
     public function has(string $field): bool
     {
         return null !== ($this->data[$field] ?? null);
