@@ -1,0 +1,42 @@
+name: Bilan des dépendances
+
+# Dependabot ne crée que des PR : ce bilan les rassemble chaque semaine dans une
+# issue unique (la précédente est refermée), après le passage de Dependabot.
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Publier le bilan
+        run: |
+          set -euo pipefail
+          label="bilan-dependances"
+          gh label create "$label" --color 0E8A16 --description "Bilan hebdomadaire des mises à jour" --force
+
+          lines=$(gh pr list --state open --author "app/dependabot" --limit 100 \
+            --json number,title,url --jq '.[] | "- [ ] #\(.number) \(.title) — \(.url)"')
+
+          # La semaine précédente est remplacée, qu'il reste des mises à jour ou non.
+          for n in $(gh issue list --label "$label" --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Remplacée par le bilan de la semaine."
+          done
+
+          if [ -z "$lines" ]; then
+            echo "Aucune mise à jour en attente."
+            exit 0
+          fi
+
+          printf 'Mises à jour proposées par Dependabot, à relire et fusionner :\n\n%s\n' "$lines" > body.md
+          gh issue create --label "$label" --title "Mises à jour à faire — semaine du $(date +%F)" --body-file body.md
