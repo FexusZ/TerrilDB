@@ -43,16 +43,16 @@ describe('router guard', () => {
 
     await router.push('/login')
 
-    expect(router.currentRoute.value.name).toBe('workspace-home')
+    expect(router.currentRoute.value.name).toBe('connections')
   })
 
-  it('opens the workspace, with its permanent sidebar, at the root', async () => {
+  it('opens the connections page at the root: it is the home page', async () => {
     const router = routerFor(alice)
 
     await router.push('/')
 
-    expect(router.currentRoute.value.name).toBe('workspace-home')
-    expect(router.currentRoute.value.path).toBe('/workspace')
+    expect(router.currentRoute.value.name).toBe('connections')
+    expect(router.currentRoute.value.path).toBe('/connections')
   })
 
   it('keeps the connections list as the place to manage connections', async () => {
@@ -102,6 +102,6 @@ describe('router guard', () => {
 
     await router.push('/nothing/here')
 
-    expect(router.currentRoute.value.name).toBe('workspace-home')
+    expect(router.currentRoute.value.name).toBe('connections')
   })
 })

@@ -12,11 +12,12 @@ export function createAppRouter(history: RouterHistory): Router {
   const router = createRouter({
     history,
     routes: [
-      { path: '/', redirect: { name: 'workspace-home' } },
+      { path: '/', redirect: { name: 'connections' } },
       { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true } },
       { path: '/register', name: 'register', component: () => import('./views/RegisterView.vue'), meta: { public: true } },
       { path: '/recover', name: 'recover', component: () => import('./views/RecoverView.vue'), meta: { public: true } },
-      { path: '/workspace', name: 'workspace-home', component: () => import('./views/WorkspaceHomeView.vue') },
+      // L'accueil est la liste des connexions ; l'ancien nom reste valable pour ne pas casser les liens existants.
+      { path: '/workspace', name: 'workspace-home', redirect: { name: 'connections' } },
       { path: '/connections', name: 'connections', component: () => import('./views/ConnectionsView.vue') },
       { path: '/connections/new', name: 'connection-new', component: () => import('./views/ConnectionFormView.vue') },
       { path: '/connections/:id/edit', name: 'connection-edit', component: () => import('./views/ConnectionFormView.vue'), props: true },
@@ -37,7 +38,7 @@ export function createAppRouter(history: RouterHistory): Router {
       { path: '/security/activity', name: 'activity', component: () => import('./views/ActivityView.vue') },
       { path: '/security/invitations', name: 'invitations', component: () => import('./views/InvitationsView.vue') },
       { path: '/security/tokens', name: 'tokens', component: () => import('./views/TokensView.vue') },
-      { path: '/:pathMatch(.*)*', redirect: { name: 'workspace-home' } },
+      { path: '/:pathMatch(.*)*', redirect: { name: 'connections' } },
     ],
   })
 
@@ -49,7 +50,7 @@ export function createAppRouter(history: RouterHistory): Router {
       return { name: 'login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
     }
     if (session.user !== null && to.meta.public === true) {
-      return { name: 'workspace-home' }
+      return { name: 'connections' }
     }
 
     return true
