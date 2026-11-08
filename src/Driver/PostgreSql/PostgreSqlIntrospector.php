@@ -133,7 +133,9 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
     public function describeTable(string $name): TableDefinition
     {
         $header = $this->connection->fetchAssociative(
-            'SELECT c.oid::bigint AS oid, c.relkind AS kind, c.reltuples::bigint AS estimate
+            'SELECT c.oid::bigint AS oid, c.relkind AS kind, c.reltuples::bigint AS estimate,
+                    CASE WHEN c.relkind IN (\'r\', \'m\', \'p\') THEN pg_table_size(c.oid) END AS data_bytes,
+                    CASE WHEN c.relkind IN (\'r\', \'m\', \'p\') THEN pg_indexes_size(c.oid) END AS index_bytes
                FROM pg_class c
                JOIN pg_namespace n ON n.oid = c.relnamespace
               WHERE '.self::RELATIONS.' AND c.relname = ?',
@@ -155,6 +157,8 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
             $this->foreignKeys($oid),
             TableKind::Table === $kind ? null : $this->viewDefinition($oid),
             self::estimate($kind, $header),
+            $header->nullableInt('data_bytes'),
+            $header->nullableInt('index_bytes'),
         );
     }
 
@@ -224,7 +228,7 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
         // indnkeyatts exclut les colonnes INCLUDE ; pg_get_indexdef(…, n, true) rend la colonne ou le texte de l'expression.
         $rows = $this->connection->fetchAllAssociative(
             'SELECT ic.relname AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
-                    pg_get_indexdef(i.indexrelid, k.n, true) AS col
+                    pg_get_indexdef(i.indexrelid, k.n, true) AS col, pg_relation_size(i.indexrelid) AS size
                FROM pg_index i
                JOIN pg_class ic ON ic.oid = i.indexrelid
               CROSS JOIN LATERAL generate_series(1, i.indnkeyatts) AS k(n)
@@ -233,18 +237,18 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
             [$oid],
         );
 
-        /** @var array<string, array{unique: bool, primary: bool, columns: list<string>}> $grouped */
+        /** @var array<string, array{unique: bool, primary: bool, columns: list<string>, size: ?int}> $grouped */
         $grouped = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $name = $row->string('name');
-            $grouped[$name] ??= ['unique' => $row->bool('is_unique'), 'primary' => $row->bool('is_primary'), 'columns' => []];
+            $grouped[$name] ??= ['unique' => $row->bool('is_unique'), 'primary' => $row->bool('is_primary'), 'columns' => [], 'size' => $row->nullableInt('size')];
             $grouped[$name]['columns'][] = $row->string('col');
         }
 
         $indexes = [];
         foreach ($grouped as $name => $index) {
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], $index['primary']);
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], $index['primary'], $index['size']);
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 

@@ -107,6 +107,18 @@ final class PostgreSqlIntrospectorTest extends TestCase
         self::assertNull($parent->default);
     }
 
+    public function testReportsTheSizeOfEachIndexAndOfTheTable(): void
+    {
+        $items = $this->introspector()->describeTable('order_items');
+
+        foreach ($items->indexes as $index) {
+            self::assertGreaterThan(0, $index->sizeBytes, $index->name);
+        }
+        self::assertGreaterThan(0, $items->dataBytes);
+        self::assertGreaterThan(0, $items->indexBytes);
+        self::assertGreaterThanOrEqual(array_sum(array_map(static fn (IndexDefinition $i): int => $i->sizeBytes ?? 0, $items->indexes)), $items->indexBytes);
+    }
+
     public function testDescribesIndexesPrimaryFirstThenByName(): void
     {
         $orders = $this->introspector()->describeTable('orders');

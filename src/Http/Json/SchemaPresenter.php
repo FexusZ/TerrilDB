@@ -49,6 +49,8 @@ final class SchemaPresenter
             'fingerprint' => SchemaChangePlanner::fingerprint($table),
             'kind' => $table->kind->value,
             'estimatedRows' => $table->estimatedRows,
+            'dataBytes' => $table->dataBytes,
+            'indexBytes' => $table->indexBytes,
             'viewDefinition' => $table->viewDefinition,
             'columns' => array_map(static fn (ColumnDefinition $c): array => [
                 'name' => $c->name,
@@ -63,6 +65,7 @@ final class SchemaPresenter
                 'columns' => $i->columns,
                 'unique' => $i->unique,
                 'primary' => $i->primary,
+                'sizeBytes' => $i->sizeBytes,
             ], $table->indexes),
             'foreignKeys' => array_map(static fn (ForeignKeyDefinition $f): array => [
                 'name' => $f->name,

@@ -98,6 +98,15 @@ final class ClickHouseIntrospectorTest extends TestCase
         self::assertTrue($parent->nullable);
     }
 
+    public function testReportsTheSizeOnDiskOfTheTableAndOfItsKey(): void
+    {
+        $items = $this->introspector()->describeTable('order_items');
+
+        self::assertGreaterThan(0, $items->dataBytes);
+        self::assertGreaterThan(0, $items->indexBytes);
+        self::assertGreaterThan(0, $items->indexes[0]->sizeBytes);
+    }
+
     public function testTheSortingKeyIsListedAsANonUniqueIndex(): void
     {
         $orders = $this->introspector()->describeTable('orders');

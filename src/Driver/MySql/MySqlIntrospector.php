@@ -130,7 +130,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     public function describeTable(string $name): TableDefinition
     {
         $header = $this->connection->fetchAssociative(
-            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate
+            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate, DATA_LENGTH AS data_bytes, INDEX_LENGTH AS index_bytes
                FROM information_schema.TABLES
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
             [$name],
@@ -152,6 +152,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             $this->foreignKeys($name),
             TableKind::View === $kind ? $this->viewDefinition($name) : null,
             TableKind::View === $kind ? null : $header->nullableInt('estimate'),
+            TableKind::View === $kind ? null : $header->nullableInt('data_bytes'),
+            TableKind::View === $kind ? null : $header->nullableInt('index_bytes'),
         );
     }
 
@@ -194,6 +196,37 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     }
 
     /**
+     * La place de chaque index secondaire, d'après les statistiques persistantes d'InnoDB. Lecture facultative : sans droit sur
+     * `mysql.innodb_index_stats` (ou avec un autre moteur de stockage), les tailles restent inconnues.
+     *
+     * @return array<string, int>
+     */
+    private function indexSizes(string $table): array
+    {
+        try {
+            $rows = $this->connection->fetchAllAssociative(
+                "SELECT index_name AS name, stat_value * @@innodb_page_size AS size
+                   FROM mysql.innodb_index_stats
+                  WHERE database_name = DATABASE() AND table_name = ? AND stat_name = 'size'",
+                [$table],
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $sizes = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $size = $row->nullableInt('size');
+            if (null !== $size) {
+                $sizes[$row->string('name')] = $size;
+            }
+        }
+
+        return $sizes;
+    }
+
+    /**
      * @return list<IndexDefinition>
      */
     private function indexes(string $table): array
@@ -218,12 +251,14 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             }
         }
 
+        $sizes = $this->indexSizes($table);
         $indexes = [];
         foreach ($grouped as $name => $index) {
             if ([] === $index['columns']) {
                 continue;
             }
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name);
+            // La clé primaire InnoDB est la table elle-même : sa place est déjà dans les données.
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null));
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 

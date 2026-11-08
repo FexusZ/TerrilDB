@@ -34,29 +34,41 @@ final class DataChangeTest extends TestCase
 {
     private ?TargetConnection $target = null;
     private Engine $engine;
+    private string $env = '';
     private string $table;
 
     protected function tearDown(): void
     {
-        if (null !== $this->target) {
-            try {
-                $this->raw(\sprintf('DROP TABLE IF EXISTS %s', $this->q($this->table)));
-            } catch (\Throwable) {
-            }
+        if (null === $this->target) {
+            return;
         }
-        $this->target?->close();
+        // Une lecture non tamponnée (MySQL) peut rester ouverte sur la connexion du test : le nettoyage passe par une neuve.
+        $this->target->close();
+        $this->target = $this->connect();
+        try {
+            $this->raw(\sprintf('DROP TABLE IF EXISTS %s', $this->q($this->table)));
+        } catch (\Throwable) {
+        }
+        $this->target->close();
+    }
+
+    private function connect(): TargetConnection
+    {
+        $parameters = TargetDatabase::parameters($this->env);
+
+        return match ($this->engine) {
+            Engine::PostgreSql => (new PostgreSqlDriver(new DbalConnector()))->connect($this->engine, $parameters),
+            Engine::ClickHouse => (new ClickHouseDriver(HttpClient::create()))->connect($this->engine, $parameters),
+            default => (new MySqlDriver(new DbalConnector()))->connect($this->engine, $parameters),
+        };
     }
 
     private function open(string $env): void
     {
+        $this->env = $env;
         $this->engine = TargetDatabase::engine($env);
-        $parameters = TargetDatabase::parameters($env);
         try {
-            $this->target = match ($this->engine) {
-                Engine::PostgreSql => (new PostgreSqlDriver(new DbalConnector()))->connect($this->engine, $parameters),
-                Engine::ClickHouse => (new ClickHouseDriver(HttpClient::create()))->connect($this->engine, $parameters),
-                default => (new MySqlDriver(new DbalConnector()))->connect($this->engine, $parameters),
-            };
+            $this->target = $this->connect();
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped('The target is unreachable (docker compose --profile targets up -d --wait).');
         }

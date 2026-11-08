@@ -137,6 +137,23 @@ final class MySqlIntrospectorTest extends TestCase
     }
 
     #[DataProvider('targets')]
+    public function testReportsTheSizeOfSecondaryIndexesAndOfTheTable(string $envVar): void
+    {
+        $items = $this->introspector($envVar)->describeTable('order_items');
+
+        self::assertGreaterThan(0, $items->dataBytes);
+        self::assertGreaterThan(0, $items->indexBytes);
+        foreach ($items->indexes as $index) {
+            // La clé primaire InnoDB EST la table : sa taille est celle des données, pas un index à part.
+            if ($index->primary) {
+                self::assertNull($index->sizeBytes);
+            } else {
+                self::assertGreaterThan(0, $index->sizeBytes, $index->name);
+            }
+        }
+    }
+
+    #[DataProvider('targets')]
     public function testDescribesIndexesPrimaryFirstThenByName(string $envVar): void
     {
         $orders = $this->introspector($envVar)->describeTable('orders');

@@ -120,6 +120,7 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
         )->records()[0] ?? throw TableNotFoundException::named($name);
         $header = new RowReader($header);
         $kind = self::kind($header->string('engine'));
+        [$dataBytes, $indexBytes, $keyBytes, $skipBytes] = TableKind::Table === $kind ? $this->sizes($params) : [null, null, null, []];
 
         $columns = [];
         foreach ($this->http->query(
@@ -145,25 +146,62 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
             $name,
             $kind,
             $columns,
-            TableKind::Table === $kind ? $this->indexes($header, $params) : [],
+            TableKind::Table === $kind ? $this->indexes($header, $params, $keyBytes, $skipBytes) : [],
             [],
             TableKind::Table === $kind ? null : $header->nullableString('as_select'),
             TableKind::Table === $kind ? $header->nullableInt('total_rows') : null,
+            $dataBytes,
+            $indexBytes,
         );
     }
 
     /**
+     * Place sur disque (octets compressés) des parties actives : au total, pour la clé de tri, et pour chaque index de saut. Les
+     * index = clé de tri + index de saut ; les données = le reste.
+     *
      * @param array<string, string> $params
+     *
+     * @return array{?int, ?int, ?int, array<string, int>}
+     */
+    private function sizes(array $params): array
+    {
+        $parts = $this->http->query(
+            'SELECT sum(bytes_on_disk) AS disk, sum(primary_key_size) AS pk FROM system.parts
+              WHERE database = {db:String} AND table = {name:String} AND active',
+            params: $params,
+        )->records()[0] ?? null;
+        $skips = [];
+        foreach ($this->http->query(
+            'SELECT name, data_compressed_bytes AS size FROM system.data_skipping_indices WHERE database = {db:String} AND table = {name:String}',
+            params: $params,
+        )->records() as $record) {
+            $row = new RowReader($record);
+            $skips[$row->string('name')] = $row->int('size');
+        }
+        if (null === $parts) {
+            return [null, null, null, $skips];
+        }
+        $parts = new RowReader($parts);
+        $disk = $parts->nullableInt('disk');
+        $key = $parts->nullableInt('pk');
+        $indexes = ($key ?? 0) + array_sum($skips);
+
+        return [null === $disk ? null : max(0, $disk - $indexes), null === $disk ? null : $indexes, $key, $skips];
+    }
+
+    /**
+     * @param array<string, string> $params
+     * @param array<string, int>    $skipBytes
      *
      * @return list<IndexDefinition>
      */
-    private function indexes(RowReader $header, array $params): array
+    private function indexes(RowReader $header, array $params, ?int $keyBytes, array $skipBytes): array
     {
         $indexes = [];
         $sorting = KeyExpression::split($header->string('sorting_key'));
         $primary = KeyExpression::split($header->string('primary_key'));
         if ([] !== $sorting) {
-            $indexes[] = new IndexDefinition(self::SORTING_KEY_INDEX, $sorting, false, false);
+            $indexes[] = new IndexDefinition(self::SORTING_KEY_INDEX, $sorting, false, false, $keyBytes);
         }
         if ([] !== $primary && $primary !== $sorting) {
             $indexes[] = new IndexDefinition(self::PRIMARY_KEY_INDEX, $primary, false, false);
@@ -176,7 +214,7 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
             $row = new RowReader($record);
             $columns = KeyExpression::split($row->string('expr'));
             if ([] !== $columns) {
-                $indexes[] = new IndexDefinition($row->string('name'), $columns, false, false);
+                $indexes[] = new IndexDefinition($row->string('name'), $columns, false, false, $skipBytes[$row->string('name')] ?? null);
             }
         }
 
