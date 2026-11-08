@@ -81,6 +81,12 @@ export function messageFor(error: unknown): string {
       return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
     case 'schema_change_failed':
       return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification de la structure.'
+    case 'data_changed':
+      return 'Une des lignes a été modifiée ou supprimée par ailleurs, ou ne se distingue pas d’une autre. Rechargez les données avant de continuer.'
+    case 'data_change_failed':
+      return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification des données.'
+    case 'invalid_data_change':
+      return 'Cette modification de données est invalide.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':
