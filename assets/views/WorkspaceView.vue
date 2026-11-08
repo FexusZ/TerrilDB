@@ -6,7 +6,7 @@ import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
 import WorkbenchSidebar from '../components/WorkbenchSidebar.vue'
 import { useConnectionsStore } from '../stores/connections'
-import { useWorkspaceStore } from '../stores/workspace'
+import { useWorkspaceStore, type TableTab } from '../stores/workspace'
 
 const props = defineProps<{ id: string }>()
 const route = useRoute()
@@ -22,28 +22,39 @@ const connection = computed(() => connections.byId(props.id))
 const hasSchemaViews = computed(() => connection.value !== undefined && connection.value.engine !== 'redis')
 const scope = computed(() => ({ ...(workspace.database === null ? {} : { database: workspace.database }), ...(workspace.schema === null ? {} : { schema: workspace.schema }) }))
 
-// La dernière table ouverte : le menu garde un accès à sa structure quand on part vers la console, le diagramme ou l'audit.
-const lastTable = ref<{ name: string; query: Record<string, string> } | null>(null)
-watch(
-  () => [route.name, route.params.id, route.params.name, route.query.database, route.query.schema],
-  () => {
-    if ((route.name !== 'table' && route.name !== 'table-data') || route.params.id !== props.id || typeof route.params.name !== 'string') {
-      return
+// Les tables ouvertes forment des onglets : on y revient à la vue où on les a laissées, et ils restent quand on part vers la console,
+// le diagramme ou l'audit.
+function trackRouteTable(): void {
+  if ((route.name !== 'table' && route.name !== 'table-data') || route.params.id !== props.id || typeof route.params.name !== 'string' || !ready.value) {
+    return
+  }
+  const query: Record<string, string> = {}
+  for (const key of ['database', 'schema'] as const) {
+    const value = route.query[key]
+    if (typeof value === 'string' && value !== '') {
+      query[key] = value
     }
-    const query: Record<string, string> = {}
-    for (const key of ['database', 'schema'] as const) {
-      const value = route.query[key]
-      if (typeof value === 'string' && value !== '') {
-        query[key] = value
-      }
-    }
-    lastTable.value = { name: route.params.name, query }
-  },
-  { immediate: true },
-)
-watch(() => props.id, () => {
-  lastTable.value = null
-})
+  }
+  workspace.openTableTab(route.params.name, query, route.name === 'table-data' ? 'data' : 'structure')
+}
+watch(() => [route.name, route.params.id, route.params.name, route.query.database, route.query.schema, ready.value], trackRouteTable, { immediate: true })
+
+const tableTabs = computed(() => workspace.tableTabs)
+const tabTarget = (tab: TableTab, view: TableTab['view'] = tab.view) => ({ name: view === 'data' ? 'table-data' : 'table', params: { id: props.id, name: tab.name }, query: tab.query })
+const isActive = (tab: TableTab): boolean =>
+  (route.name === 'table' || route.name === 'table-data') && route.params.id === props.id && route.params.name === tab.name && (route.query.database ?? '') === (tab.query.database ?? '') && (route.query.schema ?? '') === (tab.query.schema ?? '')
+const activeTab = computed(() => tableTabs.value.find(isActive) ?? null)
+
+async function closeTab(tab: TableTab): Promise<void> {
+  const wasActive = isActive(tab)
+  const index = tableTabs.value.indexOf(tab)
+  const remaining = workspace.closeTableTab(tab.key)
+  if (!wasActive) {
+    return
+  }
+  const next = remaining[Math.min(index, remaining.length - 1)]
+  await router.push(next === undefined ? { name: 'workspace', params: { id: props.id }, query: scope.value } : tabTarget(next))
+}
 
 async function open(): Promise<void> {
   error.value = null
@@ -59,6 +70,7 @@ async function open(): Promise<void> {
     await workspace.open(props.id)
     await applyRouteDatabase()
     ready.value = true
+    trackRouteTable()
     // Une connexion qui ne nomme aucune base : on ouvre la première, la console a besoin d'une base où s'exécuter.
     await workspace.loadDatabases()
   } catch (failure) {
@@ -106,10 +118,19 @@ watch(() => [route.query.database, route.query.schema], () => {
 
     <nav v-if="hasSchemaViews && !error" class="views" :data-color="connection?.color ?? undefined" aria-label="Vues de la connexion">
       <RouterLink :to="{ name: 'workspace', params: { id }, query: scope }" exact-active-class="on">Console</RouterLink>
-      <RouterLink v-if="lastTable" :to="{ name: 'table', params: { id, name: lastTable.name }, query: lastTable.query }" active-class="on">Structure</RouterLink>
-      <RouterLink v-if="lastTable" :to="{ name: 'table-data', params: { id, name: lastTable.name }, query: lastTable.query }" active-class="on">Données</RouterLink>
       <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
       <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
+    </nav>
+
+    <div v-if="hasSchemaViews && !error && tableTabs.length > 0" class="tabs" :data-color="connection?.color ?? undefined" role="tablist" aria-label="Tables ouvertes">
+      <div v-for="tab in tableTabs" :key="tab.key" class="tab" :class="{ on: isActive(tab) }">
+        <RouterLink class="label" role="tab" :aria-selected="isActive(tab)" :to="tabTarget(tab)" :title="tab.name">{{ tab.name }}</RouterLink>
+        <button type="button" class="close" :aria-label="`Fermer ${tab.name}`" @click="closeTab(tab)">×</button>
+      </div>
+    </div>
+    <nav v-if="activeTab && !error" class="subviews" :aria-label="`Vues de la table ${activeTab.name}`">
+      <RouterLink :to="tabTarget(activeTab, 'structure')" :class="{ on: route.name === 'table' }">Structure</RouterLink>
+      <RouterLink :to="tabTarget(activeTab, 'data')" :class="{ on: route.name === 'table-data' }">Données</RouterLink>
     </nav>
 
     <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -150,6 +171,17 @@ watch(() => [route.query.database, route.query.schema], () => {
 .views a { padding: 9px 12px; color: var(--mut); font-size: 13px; text-decoration: none; border-bottom: 2px solid transparent; }
 .views a:hover { color: var(--fg); }
 .views a.on { color: var(--acc); border-bottom-color: var(--acc); }
+.tabs { display: flex; align-items: flex-end; gap: 4px; padding: 8px 16px 0; background: var(--s2); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { display: flex; align-items: center; max-width: 220px; border-radius: 10px 10px 0 0; border: 1px solid transparent; border-bottom: 0; color: var(--mut); }
+.tab:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.tab.on { background: var(--bg); border-color: var(--line); color: var(--fg); margin-bottom: -1px; padding-bottom: 1px; }
+.tab .label { padding: 8px 4px 8px 14px; color: inherit; text-decoration: none; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab .close { width: 22px; height: 22px; margin-right: 6px; border: 0; border-radius: 11px; background: none; color: var(--mut); cursor: pointer; font-size: 15px; line-height: 1; }
+.tab .close:hover { background: var(--s3, var(--line)); color: var(--fg); }
+.subviews { display: flex; gap: 4px; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.subviews a { padding: 9px 12px; color: var(--mut); font-size: 13px; text-decoration: none; border-bottom: 2px solid transparent; }
+.subviews a:hover { color: var(--fg); }
+.subviews a.on { color: var(--acc); border-bottom-color: var(--acc); }
 .body { display: flex; flex-wrap: wrap; flex: 1; min-height: 0; }
 .content { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; }
 .error { margin: 24px; padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }

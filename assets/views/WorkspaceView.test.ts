@@ -190,42 +190,99 @@ describe('WorkspaceView', () => {
     expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit'])
   })
 
-  it('offers the structure of the table you are on, and keeps it one click away after you leave for the console or the diagram', async () => {
+  it('puts the connection views on one line and the open tables, like browser tabs, on the next', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper } = await mountView('/connections/abc/tables/orders?database=shop')
+
+    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma'])
+    const tabs = wrapper.findAll('[role="tablist"][aria-label="Tables ouvertes"] .tab')
+    expect(tabs.map((tab) => tab.get('a.label').text())).toEqual(['orders'])
+    expect(tabs[0]?.classes()).toContain('on')
+    expect(tabs[0]?.get('a.label').attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
+  })
+
+  it('gives the active table its own line of views, Structure and Données', async () => {
     mocked.mockImplementation(answer())
     const { wrapper, router } = await mountView('/connections/abc/tables/orders?database=shop')
 
-    let links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Données', 'Diagramme', 'Audit du schéma'])
-    expect(links[1]?.classes()).toContain('on')
-    expect(links[1]?.attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
-    expect(links[2]?.attributes('href')).toBe('/connections/abc/data/orders?database=shop')
+    let links = wrapper.findAll('nav[aria-label="Vues de la table orders"] a')
+    expect(links.map((link) => link.text())).toEqual(['Structure', 'Données'])
+    expect(links[0]?.classes()).toContain('on')
+    expect(links[1]?.attributes('href')).toBe('/connections/abc/data/orders?database=shop')
 
-    await router.push('/connections/abc/diagram?database=shop')
+    await links[1]?.trigger('click')
     await flushPromises()
 
-    links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Données', 'Diagramme', 'Audit du schéma'])
-    expect(links[1]?.classes()).not.toContain('on')
-    expect(links[1]?.attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
-    expect(links[3]?.classes()).toContain('on')
+    expect(router.currentRoute.value.name).toBe('table-data')
+    links = wrapper.findAll('nav[aria-label="Vues de la table orders"] a')
+    expect(links[1]?.classes()).toContain('on')
+    // L'onglet rouvre la table là où on l'a laissée.
+    expect(wrapper.get('.tab a.label').attributes('href')).toBe('/connections/abc/data/orders?database=shop')
   })
 
-  it('shows no structure entry before any table has been opened', async () => {
-    mocked.mockImplementation(answer())
-
-    const { wrapper } = await mountView('/connections/abc/diagram')
-
-    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).not.toContain('Structure')
-  })
-
-  it('follows the table when another one is opened', async () => {
+  it('keeps several tables open at once and keeps them when you leave for the console or the diagram', async () => {
     mocked.mockImplementation(answer())
     const { wrapper, router } = await mountView('/connections/abc/tables/orders')
 
     await router.push('/connections/abc/tables/invoices')
     await flushPromises()
+    await router.push('/connections/abc/diagram')
+    await flushPromises()
 
-    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a')[1]?.attributes('href')).toBe('/connections/abc/tables/invoices')
+    const tabs = wrapper.findAll('[aria-label="Tables ouvertes"] .tab')
+    expect(tabs.map((tab) => tab.get('a.label').text())).toEqual(['orders', 'invoices'])
+    expect(tabs.map((tab) => tab.classes().includes('on'))).toEqual([false, false])
+    expect(wrapper.find('nav[aria-label^="Vues de la table"]').exists()).toBe(false)
+  })
+
+  it('does not open a table twice', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc/tables/orders')
+
+    await router.push('/connections/abc/data/orders')
+    await router.push('/connections/abc/tables/orders')
+    await flushPromises()
+
+    expect(wrapper.findAll('[aria-label="Tables ouvertes"] .tab')).toHaveLength(1)
+  })
+
+  it('closes a tab and lands on the one next to it, then on the console when none is left', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc/tables/orders')
+    await router.push('/connections/abc/tables/invoices')
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Fermer invoices"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.params.name).toBe('orders')
+    expect(wrapper.findAll('[aria-label="Tables ouvertes"] .tab')).toHaveLength(1)
+
+    await wrapper.get('button[aria-label="Fermer orders"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('workspace')
+    expect(wrapper.find('[aria-label="Tables ouvertes"]').exists()).toBe(false)
+  })
+
+  it('closing a tab you are not on leaves you where you are', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc/tables/orders')
+    await router.push('/connections/abc/tables/invoices')
+    await flushPromises()
+
+    await wrapper.get('button[aria-label="Fermer orders"]').trigger('click')
+    await flushPromises()
+
+    expect(router.currentRoute.value.params.name).toBe('invoices')
+  })
+
+  it('shows no table tabs before any table has been opened', async () => {
+    mocked.mockImplementation(answer())
+
+    const { wrapper } = await mountView('/connections/abc/diagram')
+
+    expect(wrapper.find('[aria-label="Tables ouvertes"]').exists()).toBe(false)
   })
 
   it('tints the views menu with the colour of the open connection, and not at all when it has none', async () => {

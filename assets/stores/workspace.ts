@@ -27,6 +27,15 @@ export interface QueryTab {
   table: string | null
 }
 
+/** Une table ouverte dans un onglet de la barre des tables, avec la vue où on l'a laissée. */
+export interface TableTab {
+  key: string
+  name: string
+  /** Base et schéma explorés au moment de l'ouverture (adresse `?database=&schema=`). */
+  query: Record<string, string>
+  view: 'structure' | 'data'
+}
+
 export const useWorkspaceStore = defineStore('workspace', () => {
   const connectionId = ref<string | null>(null)
   const tables = ref<TableSummary[]>([])
@@ -61,6 +70,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let keysRequest = 0
   const tabs = ref<QueryTab[]>([])
   const activeId = ref(0)
+  const tableTabs = ref<TableTab[]>([])
   const history = ref<HistoryEntry[]>([])
   const historyNext = ref<string | null>(null)
   const historyLoaded = ref(false)
@@ -118,6 +128,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     keysPattern.value = '*'
     keysError.value = null
     isKeyValue.value = useConnectionsStore().byId(id)?.engine === 'redis'
+    tableTabs.value = []
     reset()
 
     if (isKeyValue.value) {
@@ -377,6 +388,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     keys.value = []
     isKeyValue.value = false
     tabs.value = []
+    tableTabs.value = []
   }
 
   function addTab(sql = ''): number {
@@ -405,6 +417,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
 
     return { id, created: true }
+  }
+
+  /** Ouvre (ou remet au premier plan) l'onglet d'une table, en retenant la vue montrée. */
+  function openTableTab(name: string, query: Record<string, string>, view: TableTab['view']): void {
+    const key = [query.database ?? '', query.schema ?? '', name].join('\u0000')
+    const existing = tableTabs.value.find((candidate) => candidate.key === key)
+    if (existing === undefined) {
+      tableTabs.value = [...tableTabs.value, { key, name, query, view }]
+    } else {
+      existing.view = view
+    }
+  }
+
+  /** Ferme l'onglet d'une table, avec l'onglet de ses données ; rend les onglets restants. */
+  function closeTableTab(key: string): TableTab[] {
+    const closing = tableTabs.value.find((candidate) => candidate.key === key)
+    tableTabs.value = tableTabs.value.filter((candidate) => candidate.key !== key)
+    if (closing !== undefined) {
+      const remaining = tabs.value.filter((candidate) => candidate.table !== closing.name)
+      if (remaining.length !== tabs.value.length && remaining.length > 0) {
+        tabs.value = remaining
+        if (!remaining.some((candidate) => candidate.id === activeId.value)) {
+          activeId.value = remaining[0]?.id ?? 0
+        }
+      }
+    }
+
+    return tableTabs.value
   }
 
   function closeTab(id: number): void {
@@ -596,5 +636,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })
