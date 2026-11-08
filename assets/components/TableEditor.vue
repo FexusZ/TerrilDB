@@ -614,10 +614,15 @@ h2 { font-size: 15px; font-weight: 600; }
 .link { background: none; border: 0; padding: 0; color: var(--acc); text-decoration: underline; cursor: pointer; font: inherit; }
 .name { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 10px; }
 .name label { font-size: 13px; color: var(--mut); }
-.field { height: 30px; padding: 0 8px; border-radius: 5px; border: 1px solid transparent; background: transparent; color: var(--fg); font: inherit; min-width: 0; width: 100%; }
-.field:hover { border-color: var(--line); }
-.field:focus { border-color: var(--acc); background: var(--s1); outline: none; }
+.field { height: 30px; padding: 0 8px; border-radius: 5px; border: 1px solid var(--line); background: var(--s2); color: var(--fg); font: inherit; min-width: 0; width: 100%; cursor: text; transition: border-color 0.12s, background 0.12s; }
+select.field { cursor: pointer; }
+.field:hover:not(:disabled) { border-color: var(--acc-line); }
+.field:focus { border-color: var(--acc); background: var(--s1); outline: 2px solid var(--acc-bg); outline-offset: 0; }
 .field.edited, input.edited { border-color: var(--sec-line); background: var(--sec-bg); }
+input[type='checkbox'] { cursor: pointer; }
+tbody tr:hover:not([data-status='removed']) > td { background: color-mix(in srgb, var(--acc) 5%, transparent); }
+.step, .x { opacity: 0.75; }
+tr:hover .step:not(:disabled), tr:hover .x:not(:disabled), .step:focus-visible, .x:focus-visible { opacity: 1; }
 .field:disabled { opacity: 0.6; }
 .narrow { width: 80px; }
 .box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--s1); }
@@ -644,7 +649,7 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .rows-table td.moves { white-space: nowrap; }
 .rows-table td.moves > * { margin-right: 4px; }
 .rows-table td.cols.edited, .rows-table td.rank-cell.edited { background: var(--sec-bg); }
-.rows-table .col-row td.cols .field, .rows-table .add-row td.cols .field { width: 100%; min-width: 160px; border-color: var(--line); }
+.rows-table .col-row td.cols .field, .rows-table .add-row td.cols .field { width: 100%; min-width: 160px; }
 .fk-table .name-cell { min-width: 230px; }
 .rows-table .rank { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; border-radius: 10px; background: var(--s3); color: var(--mut); font: 500 11px var(--font-mono); }
 .step { width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--mut); cursor: pointer; }
