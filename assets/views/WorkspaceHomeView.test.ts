@@ -47,6 +47,17 @@ describe('WorkspaceHomeView', () => {
     expect(wrapper.get('main, .content').text()).toContain('Choisissez une connexion')
   })
 
+  it('lists every connection as a card on the page, with a way into its console', async () => {
+    const wrapper = await mountHome([connection, { ...connection, id: 'c2', name: 'Cache', engine: 'redis', color: 'green' }])
+
+    const cards = wrapper.findAll('.content .card')
+    expect(cards.map((card) => card.get('h2').text())).toEqual(['Production', 'Cache'])
+    expect(cards[0]?.text()).toContain('PostgreSQL')
+    expect(cards[0]?.get('a.open').attributes('href')).toBe('/workspace/c1')
+    expect(cards[1]?.attributes('data-color')).toBe('green')
+    expect(wrapper.get('.content a.new-connection').attributes('href')).toBe('/connection-new')
+  })
+
   it('does not reload connections that are already known', async () => {
     await mountHome(null)
 
