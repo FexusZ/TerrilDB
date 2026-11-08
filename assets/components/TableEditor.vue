@@ -148,17 +148,42 @@ const liveColumns = computed(() => draft.value.columns.filter((column) => !colum
 const isPrimary = (column: DraftColumn): boolean => draft.value.primary.includes(column.uid)
 const tableNames = computed(() => workspace.tables.map((table) => table.name))
 
-function toggleIn(list: string[], value: string): void {
-  const at = list.indexOf(value)
-  if (at === -1) {
-    list.push(value)
-  } else {
-    list.splice(at, 1)
-  }
+/** Une clé étrangère associe ses colonnes à celles de la table référencée, position par position : une ligne par paire. */
+const pairsOf = (key: DraftForeignKey): number[] => key.columns.flatMap((uid, at) => (isLive(uid) ? [at] : []))
+const keyChoices = (key: DraftForeignKey, keep: string | null): DraftColumn[] => liveColumns.value.filter((column) => column.uid === keep || !key.columns.includes(column.uid))
+
+function setPairedReference(key: DraftForeignKey, at: number, text: string): void {
+  const next = key.columns.map((_, index) => key.referencedColumns[index] ?? '')
+  next[at] = text.trim()
+  key.referencedColumns = next
 }
 
-function setReferencedColumns(key: DraftForeignKey, text: string): void {
-  key.referencedColumns = text.split(',').map((part) => part.trim()).filter((part) => part !== '')
+function movePair(key: DraftForeignKey, at: number, delta: -1 | 1): void {
+  const live = pairsOf(key)
+  const target = live[live.indexOf(at) + delta]
+  if (target === undefined) {
+    return
+  }
+  const columns = [...key.columns]
+  const references = key.columns.map((_, index) => key.referencedColumns[index] ?? '')
+  ;[columns[at], columns[target]] = [columns[target] as string, columns[at] as string]
+  ;[references[at], references[target]] = [references[target] as string, references[at] as string]
+  key.columns = columns
+  key.referencedColumns = references
+}
+
+function dropPair(key: DraftForeignKey, at: number): void {
+  key.referencedColumns = key.columns.map((_, index) => key.referencedColumns[index] ?? '').filter((_, index) => index !== at)
+  key.columns = key.columns.filter((_, index) => index !== at)
+}
+
+function addPair(key: DraftForeignKey, event: Event): void {
+  const select = event.target as HTMLSelectElement
+  if (select.value !== '') {
+    key.referencedColumns = [...key.columns.map((_, index) => key.referencedColumns[index] ?? ''), '']
+    key.columns = [...key.columns, select.value]
+  }
+  select.value = ''
 }
 
 function restore(item: { removed: boolean }): void {
@@ -174,7 +199,7 @@ const incomplete = computed(() => {
     nameless(d.name) ||
     d.columns.some((column) => !column.removed && (nameless(column.name) || nameless(column.type))) ||
     d.indexes.some((index) => !index.removed && !index.locked && (nameless(index.name) || index.columns.length === 0)) ||
-    d.foreignKeys.some((key) => !key.removed && (nameless(key.name) || key.columns.length === 0 || nameless(key.referencedTable) || key.referencedColumns.length !== key.columns.length))
+    d.foreignKeys.some((key) => !key.removed && (nameless(key.name) || key.columns.length === 0 || nameless(key.referencedTable) || key.referencedColumns.length !== key.columns.length || key.referencedColumns.some(nameless)))
   )
 })
 
@@ -387,7 +412,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       <h2>Index</h2>
       <p v-if="indexRows.length === 0" class="none">Aucun index.</p>
       <div v-else class="box">
-        <table class="index-table">
+        <table class="rows-table index-table">
           <thead>
             <tr><th>Nom</th><th>Type</th><th v-if="features.uniqueIndex">Unique</th><th class="rank-h">#</th><th>Colonne</th><th>Ordre</th><th><span class="sr-only">Actions</span></th></tr>
           </thead>
@@ -471,21 +496,66 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
     <section v-if="features.foreignKeys" class="foreign-keys">
       <h2>Clés étrangères</h2>
       <p v-if="draft.foreignKeys.length === 0" class="none">Aucune clé étrangère.</p>
-      <ul v-else class="cards">
-        <li v-for="key in draft.foreignKeys" :key="key.uid" class="card" :data-status="markOfKey(key).status">
-          <input v-model="key.name" class="field mono" :class="{ edited: edited(markOfKey(key), 'name') }" :disabled="key.removed" aria-label="Nom de la clé étrangère" spellcheck="false" autocomplete="off">
-          <div class="chips" role="group" :aria-label="`Colonnes de la clé ${key.name}`">
-            <button v-for="column in liveColumns" :key="column.uid" type="button" class="chip" :class="{ on: key.columns.includes(column.uid), edited: edited(markOfKey(key), 'columns') }" :aria-pressed="key.columns.includes(column.uid)" :disabled="key.removed" @click="toggleIn(key.columns, column.uid)">{{ column.name || '…' }}</button>
-          </div>
-          <span class="dim">→</span>
-          <input v-model="key.referencedTable" class="field mono" :class="{ edited: edited(markOfKey(key), 'reference') }" :list="tableListId" :disabled="key.removed" placeholder="table référencée" aria-label="Table référencée" spellcheck="false" autocomplete="off">
-          <input class="field mono" :class="{ edited: edited(markOfKey(key), 'reference') }" :value="key.referencedColumns.join(', ')" :disabled="key.removed" placeholder="colonnes, séparées par des virgules" aria-label="Colonnes référencées" spellcheck="false" autocomplete="off" @input="setReferencedColumns(key, ($event.target as HTMLInputElement).value)">
-          <label class="check">suppression <select v-model="key.onDelete" class="field" :class="{ edited: edited(markOfKey(key), 'onDelete') }" :disabled="key.removed" aria-label="À la suppression"><option v-for="action in ACTIONS" :key="action.value" :value="action.value">{{ action.label }}</option></select></label>
-          <label class="check">mise à jour <select v-model="key.onUpdate" class="field" :class="{ edited: edited(markOfKey(key), 'onUpdate') }" :disabled="key.removed" aria-label="À la mise à jour"><option v-for="action in ACTIONS" :key="action.value" :value="action.value">{{ action.label }}</option></select></label>
-          <AppButton v-if="key.removed" variant="ghost" small @click="restore(key)">Restaurer</AppButton>
-          <button v-else type="button" class="x" :aria-label="`Retirer la clé étrangère ${key.name}`" @click="removeForeignKey(draft, key)">✕</button>
-        </li>
-      </ul>
+      <div v-else class="box">
+        <table class="rows-table fk-table">
+          <thead>
+            <tr><th>Nom</th><th>#</th><th>Colonne</th><th>Colonne référencée</th><th>Ordre</th><th>Table référencée</th><th>À la suppression</th><th>À la mise à jour</th><th><span class="sr-only">Actions</span></th></tr>
+          </thead>
+          <tbody v-for="key in draft.foreignKeys" :key="key.uid" :data-status="markOfKey(key).status">
+            <tr v-for="(at, position) in pairsOf(key)" :key="key.columns[at]" class="col-row">
+              <template v-if="position === 0">
+                <td class="name-cell" :rowspan="pairsOf(key).length + 1"><input v-model="key.name" class="field mono" :class="{ edited: edited(markOfKey(key), 'name') }" :disabled="key.removed" aria-label="Nom de la clé étrangère" spellcheck="false" autocomplete="off"></td>
+              </template>
+              <td class="rank-cell" :class="{ edited: edited(markOfKey(key), 'columns') }"><span class="rank">{{ position + 1 }}</span></td>
+              <td class="cols" :class="{ edited: edited(markOfKey(key), 'columns') }">
+                <select class="field" :disabled="key.removed" :aria-label="`Colonne ${String(position + 1)} de la clé ${key.name}`" @change="key.columns[at] = ($event.target as HTMLSelectElement).value">
+                  <option v-for="column in keyChoices(key, key.columns[at] ?? null)" :key="column.uid" :value="column.uid" :selected="column.uid === key.columns[at]">{{ column.name }}</option>
+                </select>
+              </td>
+              <td class="cols">
+                <input class="field mono" :class="{ edited: edited(markOfKey(key), 'reference') }" :value="key.referencedColumns[at] ?? ''" :disabled="key.removed" placeholder="colonne référencée" :aria-label="`Colonne référencée ${String(position + 1)} de la clé ${key.name}`" spellcheck="false" autocomplete="off" @input="setPairedReference(key, at, ($event.target as HTMLInputElement).value)">
+              </td>
+              <td class="moves">
+                <button type="button" class="step" :disabled="position === 0 || key.removed" :aria-label="`Monter ${columnName(key.columns[at] ?? '')} dans la clé ${key.name}`" @click="movePair(key, at, -1)">↑</button>
+                <button type="button" class="step" :disabled="position === pairsOf(key).length - 1 || key.removed" :aria-label="`Descendre ${columnName(key.columns[at] ?? '')} dans la clé ${key.name}`" @click="movePair(key, at, 1)">↓</button>
+                <button type="button" class="x" :disabled="key.removed" :aria-label="`Ôter ${columnName(key.columns[at] ?? '')} de la clé ${key.name}`" @click="dropPair(key, at)">✕</button>
+              </td>
+              <template v-if="position === 0">
+                <td class="unique-cell" :rowspan="pairsOf(key).length + 1"><input v-model="key.referencedTable" class="field mono" :class="{ edited: edited(markOfKey(key), 'reference') }" :list="tableListId" :disabled="key.removed" placeholder="table référencée" aria-label="Table référencée" spellcheck="false" autocomplete="off"></td>
+                <td class="unique-cell" :rowspan="pairsOf(key).length + 1"><select v-model="key.onDelete" class="field" :class="{ edited: edited(markOfKey(key), 'onDelete') }" :disabled="key.removed" aria-label="À la suppression"><option v-for="action in ACTIONS" :key="action.value" :value="action.value">{{ action.label }}</option></select></td>
+                <td class="unique-cell" :rowspan="pairsOf(key).length + 1"><select v-model="key.onUpdate" class="field" :class="{ edited: edited(markOfKey(key), 'onUpdate') }" :disabled="key.removed" aria-label="À la mise à jour"><option v-for="action in ACTIONS" :key="action.value" :value="action.value">{{ action.label }}</option></select></td>
+                <td class="act" :rowspan="pairsOf(key).length + 1">
+                  <AppButton v-if="key.removed" variant="ghost" small @click="restore(key)">Restaurer</AppButton>
+                  <button v-else type="button" class="x" :aria-label="`Retirer la clé étrangère ${key.name}`" @click="removeForeignKey(draft, key)">✕</button>
+                </td>
+              </template>
+            </tr>
+            <tr class="add-row">
+              <template v-if="pairsOf(key).length === 0">
+                <td class="name-cell"><input v-model="key.name" class="field mono" aria-label="Nom de la clé étrangère" spellcheck="false" autocomplete="off"></td>
+              </template>
+              <td class="rank-cell" />
+              <td class="cols">
+                <select class="field" :disabled="key.removed || keyChoices(key, null).length === 0" :aria-label="`Ajouter une colonne à la clé ${key.name}`" @change="addPair(key, $event)">
+                  <option value="">+ Ajouter une colonne…</option>
+                  <option v-for="column in keyChoices(key, null)" :key="column.uid" :value="column.uid">{{ column.name }}</option>
+                </select>
+              </td>
+              <td class="cols" />
+              <td class="moves" />
+              <template v-if="pairsOf(key).length === 0">
+                <td class="unique-cell"><input v-model="key.referencedTable" class="field mono" :list="tableListId" placeholder="table référencée" aria-label="Table référencée" spellcheck="false" autocomplete="off"></td>
+                <td class="unique-cell"><select v-model="key.onDelete" class="field" aria-label="À la suppression"><option v-for="action in ACTIONS" :key="action.value" :value="action.value">{{ action.label }}</option></select></td>
+                <td class="unique-cell"><select v-model="key.onUpdate" class="field" aria-label="À la mise à jour"><option v-for="action in ACTIONS" :key="action.value" :value="action.value">{{ action.label }}</option></select></td>
+                <td class="act">
+                  <AppButton v-if="key.removed" variant="ghost" small @click="restore(key)">Restaurer</AppButton>
+                  <button v-else type="button" class="x" :aria-label="`Retirer la clé étrangère ${key.name}`" @click="removeForeignKey(draft, key)">✕</button>
+                </td>
+              </template>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div><AppButton variant="ghost" small @click="addForeignKey(draft)">+ Ajouter une clé étrangère</AppButton></div>
       <datalist :id="tableListId"><option v-for="name in tableNames" :key="name" :value="name" /></datalist>
     </section>
@@ -547,7 +617,7 @@ h2 { font-size: 15px; font-weight: 600; }
 .field { height: 30px; padding: 0 8px; border-radius: 5px; border: 1px solid transparent; background: transparent; color: var(--fg); font: inherit; min-width: 0; width: 100%; }
 .field:hover { border-color: var(--line); }
 .field:focus { border-color: var(--acc); background: var(--s1); outline: none; }
-.field.edited, input.edited, .chip.edited { border-color: var(--sec-line); background: var(--sec-bg); }
+.field.edited, input.edited { border-color: var(--sec-line); background: var(--sec-bg); }
 .field:disabled { opacity: 0.6; }
 .narrow { width: 80px; }
 .box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--s1); }
@@ -562,33 +632,28 @@ tr[data-status='removed'], li[data-status='removed'] { background: var(--bad-bg)
 tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decoration: line-through; }
 .x { width: 26px; height: 26px; border-radius: 5px; border: 1px solid transparent; background: transparent; color: var(--mut); cursor: pointer; }
 .x:hover { color: var(--bad); border-color: var(--bad-line); }
-.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.card { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--s1); }
-.card .field { width: auto; min-width: 130px; flex: 0 1 180px; }
-.index-table tbody { border-top: 2px solid var(--line); }
-.index-table tbody:first-of-type { border-top: 0; }
-.index-table td { vertical-align: middle; }
-.index-table .name-cell, .index-table .type, .index-table .unique-cell, .index-table .act { vertical-align: top; padding-top: 8px; border-right: 1px solid var(--line-soft); }
-.index-table .type { white-space: nowrap; }
-.index-table .type .field { width: auto; margin-top: 6px; display: block; }
-.index-table td.cols, .index-table td.rank-cell, .index-table td.moves { border-bottom: 0; }
-.index-table td.rank-cell { width: 34px; text-align: center; }
-.index-table th.rank-h { text-align: center; }
-.index-table td.moves { white-space: nowrap; }
-.index-table td.moves > * { margin-right: 4px; }
-.index-table td.cols.edited, .index-table td.rank-cell.edited { background: var(--sec-bg); }
-.index-table .col-row td.cols .field, .index-table .add-row td.cols .field { width: 100%; min-width: 160px; border-color: var(--line); }
-.index-table .rank { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; border-radius: 10px; background: var(--s3); color: var(--mut); font: 500 11px var(--font-mono); }
+.rows-table tbody { border-top: 2px solid var(--line); }
+.rows-table tbody:first-of-type { border-top: 0; }
+.rows-table td { vertical-align: middle; }
+.rows-table .name-cell, .rows-table .type, .rows-table .unique-cell, .rows-table .act { vertical-align: top; padding-top: 8px; border-right: 1px solid var(--line-soft); }
+.rows-table .type { white-space: nowrap; }
+.rows-table .type .field { width: auto; margin-top: 6px; display: block; }
+.rows-table td.cols, .rows-table td.rank-cell, .rows-table td.moves { border-bottom: 0; }
+.rows-table td.rank-cell { width: 34px; text-align: center; }
+.rows-table th.rank-h { text-align: center; }
+.rows-table td.moves { white-space: nowrap; }
+.rows-table td.moves > * { margin-right: 4px; }
+.rows-table td.cols.edited, .rows-table td.rank-cell.edited { background: var(--sec-bg); }
+.rows-table .col-row td.cols .field, .rows-table .add-row td.cols .field { width: 100%; min-width: 160px; border-color: var(--line); }
+.fk-table .name-cell { min-width: 230px; }
+.rows-table .rank { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; border-radius: 10px; background: var(--s3); color: var(--mut); font: 500 11px var(--font-mono); }
 .step { width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--mut); cursor: pointer; }
 .step:hover:not(:disabled) { color: var(--acc); border-color: var(--acc-line); }
 .step:disabled { opacity: 0.35; cursor: default; }
-.index-table tbody[data-status='new'] { background: var(--ok-bg); box-shadow: inset 3px 0 0 var(--ok); }
-.index-table tbody[data-status='changed'] { box-shadow: inset 3px 0 0 var(--sec); }
-.index-table tbody[data-status='removed'] { background: var(--bad-bg); box-shadow: inset 3px 0 0 var(--bad); }
-.index-table tbody[data-status='removed'] .field { text-decoration: line-through; }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--mut); font: 400 12px var(--font-mono); cursor: pointer; }
-.chip.on { color: var(--acc); border-color: var(--acc-line); background: var(--acc-bg); }
+.rows-table tbody[data-status='new'] { background: var(--ok-bg); box-shadow: inset 3px 0 0 var(--ok); }
+.rows-table tbody[data-status='changed'] { box-shadow: inset 3px 0 0 var(--sec); }
+.rows-table tbody[data-status='removed'] { background: var(--bad-bg); box-shadow: inset 3px 0 0 var(--bad); }
+.rows-table tbody[data-status='removed'] .field { text-decoration: line-through; }
 .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--mut); }
 .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 4px; font: 500 11px var(--font-mono); border: 1px solid var(--line); color: var(--mut); }
 .tag.pk { color: var(--sec); border-color: var(--sec-line); background: var(--sec-bg); }

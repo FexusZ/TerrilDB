@@ -399,11 +399,39 @@ describe('TableEditor', () => {
 
     await wrapper.get('.foreign-keys select[aria-label="À la suppression"]').setValue('restrict')
     await settle()
-    expect(wrapper.get('.foreign-keys .card').attributes('data-status')).toBe('changed')
+    expect(wrapper.get('.foreign-keys tbody').attributes('data-status')).toBe('changed')
 
     await wrapper.findAll('button').find((button) => button.text().includes('Ajouter une clé étrangère'))?.trigger('click')
-    expect(wrapper.findAll('.foreign-keys .card')).toHaveLength(2)
-    expect(wrapper.findAll('.foreign-keys .card')[1]?.attributes('data-status')).toBe('new')
+    expect(wrapper.findAll('.foreign-keys tbody')).toHaveLength(2)
+    expect(wrapper.findAll('.foreign-keys tbody')[1]?.attributes('data-status')).toBe('new')
+    wrapper.unmount()
+  })
+
+  it('lays a composite foreign key out as one row per column pair, and keeps the pairs together when moved', async () => {
+    mocked.mockResolvedValue(preview())
+    const wrapper = mountEditor()
+    const group = (): ReturnType<VueWrapper['get']> => wrapper.get('.foreign-keys tbody')
+
+    await pick(group().get('select[aria-label^="Ajouter une colonne"]'), 'note')
+    expect(group().findAll('tr.col-row')).toHaveLength(2)
+    await group().get('input[aria-label="Colonne référencée 2 de la clé fk_customer"]').setValue('memo')
+    await group().get('button[aria-label^="Monter note"]').trigger('click')
+
+    expect(group().findAll('tr.col-row td.cols select').map((select) => selected(select))).toEqual(['note', 'status'])
+    expect(group().findAll('tr.col-row td.cols input').map((input) => (input.element as HTMLInputElement).value)).toEqual(['memo', 'code'])
+    wrapper.unmount()
+  })
+
+  it('does not send a foreign key whose new column has no referenced column yet', async () => {
+    mocked.mockResolvedValue(preview())
+    const wrapper = mountEditor()
+    await settle()
+    mocked.mockClear()
+
+    await pick(wrapper.get('.foreign-keys select[aria-label^="Ajouter une colonne"]'), 'note')
+    await settle()
+
+    expect(mocked).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
