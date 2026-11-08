@@ -46,7 +46,7 @@ onMounted(async () => {
 .body { display: flex; flex-wrap: wrap; flex: 1; min-height: 0; }
 .content { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 36px 32px; }
 .content > * { max-width: 680px; }
-h1 { font-size: 24px; font-weight: 700; }
+h1 { font-size: 30px; line-height: 1.1; font-weight: 600; }
 p { color: var(--mut); }
 .add-first { align-self: flex-start; padding: 8px 14px; border-radius: var(--radius); background: var(--acc); color: var(--on-acc, #fff); text-decoration: none; }
 .error { padding: 10px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }

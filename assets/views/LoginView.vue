@@ -103,7 +103,7 @@ function back(): void {
 <style scoped>
 form { display: flex; flex-direction: column; gap: 20px; }
 .title { display: flex; flex-direction: column; gap: 6px; }
-h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 34px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
 .title p, .once { color: var(--mut); }
 .once { font-size: 13px; }
 .ok { padding: 10px 12px; border-radius: var(--radius); background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok); font-size: 13px; }

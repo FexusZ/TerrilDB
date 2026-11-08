@@ -259,11 +259,11 @@ async function removePhrase(): Promise<void> {
 .page { max-width: 760px; margin: 0 auto; padding: 36px 24px 64px; display: flex; flex-direction: column; gap: 24px; }
 .crumbs { color: var(--mut); font-size: 13px; }
 .title { display: flex; flex-direction: column; gap: 6px; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
 .title p, .lede { color: var(--mut); }
 .lede { max-width: 60ch; }
 .panel { display: flex; flex-direction: column; gap: 18px; padding: 26px; border-radius: 8px; border: 1px solid var(--line); background: var(--s1); }
-h2 { font-size: 18px; font-weight: 600; }
+h2 { font-size: 24px; font-weight: 600; }
 .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
 .chip { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); font-size: 12px; color: var(--mut); }
 .chip.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }

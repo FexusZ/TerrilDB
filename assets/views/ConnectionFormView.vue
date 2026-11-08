@@ -207,7 +207,7 @@ async function test(): Promise<void> {
 .page { max-width: 720px; margin: 0 auto; padding: 36px 24px 64px; display: flex; flex-direction: column; gap: 24px; }
 .crumbs { color: var(--mut); font-size: 13px; }
 .title { display: flex; flex-direction: column; gap: 6px; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
 .title p { color: var(--mut); }
 form { display: flex; flex-direction: column; gap: 22px; padding: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--s1); }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }

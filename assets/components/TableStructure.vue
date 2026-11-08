@@ -89,7 +89,7 @@ const target = (key: ForeignKeyInfo): string => `${key.referencedTable} (${key.r
 <style scoped>
 .structure { display: flex; flex-direction: column; gap: 28px; min-width: 0; }
 section { display: flex; flex-direction: column; gap: 10px; }
-h2 { font-size: 15px; font-weight: 600; }
+h2 { font-size: 22px; font-weight: 600; }
 .box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--s1); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th { text-align: left; font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mut); padding: 9px 16px; background: var(--s2); border-bottom: 1px solid var(--line); white-space: nowrap; }

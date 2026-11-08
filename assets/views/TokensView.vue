@@ -227,9 +227,9 @@ async function revoke(): Promise<void> {
 .page { max-width: 760px; margin: 0 auto; padding: 36px 24px 64px; display: flex; flex-direction: column; gap: 24px; }
 .crumbs { color: var(--mut); font-size: 13px; }
 .title { display: flex; flex-direction: column; gap: 6px; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
 .title p { color: var(--mut); max-width: 62ch; }
-h2 { font-size: 18px; font-weight: 600; }
+h2 { font-size: 24px; font-weight: 600; }
 .panel, .fresh { display: flex; flex-direction: column; gap: 16px; padding: 26px; border-radius: 8px; border: 1px solid var(--line); background: var(--s1); }
 .fresh { border-color: var(--sec-line); background: var(--sec-bg); }
 .fresh p { color: var(--sec-ink); }

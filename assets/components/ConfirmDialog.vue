@@ -32,7 +32,7 @@ onMounted(() => cancelButton.value?.$el.focus())
 <style scoped>
 .backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(5, 8, 10, 0.72); }
 .dialog { width: 100%; max-width: 460px; display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--s1); }
-h2 { font-size: 18px; font-weight: 600; }
+h2 { font-size: 24px; font-weight: 600; }
 p { color: var(--mut); }
 .actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 </style>

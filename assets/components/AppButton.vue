@@ -12,7 +12,7 @@ withDefaults(defineProps<{ variant?: 'primary' | 'secondary' | 'ghost' | 'danger
 </template>
 
 <style scoped>
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--s2); color: var(--fg); font: 500 14px var(--font-ui); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--radius-pill); border: 1px solid var(--line); background: var(--s2); color: var(--fg); font: 500 14px var(--font-ui); cursor: pointer; text-decoration: none; white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: var(--line-strong); }
 .btn:disabled { opacity: 0.6; cursor: progress; }
 .small { height: 34px; padding: 0 14px; font-size: 13px; }

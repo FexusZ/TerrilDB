@@ -66,7 +66,7 @@ const sqlOf = (entry: AuditEntry): string | null => (typeof entry.details.sql ==
 .page { max-width: 760px; margin: 0 auto; padding: 36px 24px 64px; display: flex; flex-direction: column; gap: 22px; }
 .crumbs { color: var(--mut); font-size: 13px; }
 .title { display: flex; flex-direction: column; gap: 6px; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
 .title p { color: var(--mut); max-width: 62ch; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px; border: 1px solid var(--line); background: transparent; color: var(--mut); font: 400 12px var(--font-ui); cursor: pointer; }

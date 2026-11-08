@@ -70,7 +70,7 @@ async function open(finding: SchemaFinding): Promise<void> {
 
 <style scoped>
 .pane { flex: 1; min-width: 0; overflow: auto; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 18px; }
-h1 { font-size: 22px; font-weight: 700; }
+h1 { font-size: 30px; line-height: 1.1; font-weight: 600; }
 h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 .head { display: flex; flex-direction: column; gap: 4px; }
 .meta, .help { color: var(--mut); font-size: 13px; }

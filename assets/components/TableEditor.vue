@@ -597,12 +597,12 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
 <style scoped>
 .editor { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
 section { display: flex; flex-direction: column; gap: 10px; }
-h2 { font-size: 15px; font-weight: 600; }
+h2 { font-size: 22px; font-weight: 600; }
 .dim, .none { color: var(--mut); }
 .mono { font-family: var(--font-mono); font-size: 12.5px; }
-.changes { position: sticky; top: 0; z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--sec-line); background: var(--sec-bg); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
-.changes .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; color: var(--sec-ink); }
-.mode, .hint { font-size: 12px; color: var(--sec-ink); }
+.changes { position: sticky; top: 0; z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 8px; border: 1px solid var(--acc-line); background: var(--acc-bg); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+.changes .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; color: var(--fg); }
+.mode, .hint { font-size: 12px; color: var(--mut); }
 .sql { list-style: none; margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--s1); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
 .sql li { display: flex; align-items: baseline; gap: 10px; }
 .sql code { font: 400 12.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -625,7 +625,7 @@ tbody tr:hover:not([data-status='removed']) > td { background: color-mix(in srgb
 tr:hover .step:not(:disabled), tr:hover .x:not(:disabled), .step:focus-visible, .x:focus-visible { opacity: 1; }
 .field:disabled { opacity: 0.6; }
 .narrow { width: 80px; }
-.box { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--s1); }
+.box { border: 1px solid var(--line); border-radius: var(--radius-lg); overflow-x: auto; background: var(--s1); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 th { text-align: left; font: 500 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mut); padding: 9px 10px; background: var(--s2); border-bottom: 1px solid var(--line); white-space: nowrap; }
 td { padding: 5px 6px; border-bottom: 1px solid var(--line-soft); }

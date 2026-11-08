@@ -138,7 +138,7 @@ async function confirmDelete(): Promise<void> {
 .page { max-width: 1200px; margin: 0 auto; padding: 40px 32px 64px; display: flex; flex-direction: column; gap: 28px; }
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
 .title { display: flex; flex-direction: column; gap: 4px; }
-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; }
+h1 { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.02em; }
 .title p, .meta { color: var(--mut); }
 .meta { font-size: 12px; }
 .new { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: var(--radius); background: var(--acc); color: var(--acc-ink); font-weight: 600; text-decoration: none; }

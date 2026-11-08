@@ -98,7 +98,7 @@ async function preview(): Promise<void> {
 .pane { min-width: 0; overflow: auto; flex: 1; }
 .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 28px 14px; border-bottom: 1px solid var(--line); }
 .id { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-h1 { font: 600 22px var(--font-mono); letter-spacing: -0.01em; }
+h1 { font: 600 36px/1.1 var(--font-display); letter-spacing: -0.02em; }
 .chip { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--line); font-size: 12px; color: var(--mut); }
 .body { padding: 24px 28px 48px; }
 .loading { padding: 24px 28px; color: var(--mut); }

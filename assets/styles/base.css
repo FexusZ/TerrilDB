@@ -7,6 +7,7 @@ body {
   font: 400 14px/1.5 var(--font-ui);
 }
 h1, h2, h3, p { margin: 0; }
+h1, h2 { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; }
 a { color: var(--acc); }
 :focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 .mono { font-family: var(--font-mono); }
