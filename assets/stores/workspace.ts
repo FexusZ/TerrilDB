@@ -23,6 +23,8 @@ export interface QueryTab {
   planning: boolean
   /** Précision à montrer après un export (fichier coupé à la limite de lignes). */
   exportNotice: string | null
+  /** Table dont cet onglet montre les données (vue « Données »), nul pour un onglet de console. */
+  table: string | null
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -73,7 +75,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -387,6 +389,24 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return created.id
   }
 
+  /** L'onglet des données d'une table : créé à la première visite (avec `sql`), retrouvé ensuite tel que l'utilisateur l'a laissé. */
+  function openTableData(name: string, sql: string): { id: number; created: boolean } {
+    const existing = tabs.value.find((candidate) => candidate.table === name)
+    if (existing !== undefined) {
+      activeId.value = existing.id
+
+      return { id: existing.id, created: false }
+    }
+    const id = addTab(sql)
+    const created = tab(id)
+    if (created) {
+      created.table = name
+      created.title = `Données · ${name}`
+    }
+
+    return { id, created: true }
+  }
+
   function closeTab(id: number): void {
     const remaining = tabs.value.filter((candidate) => candidate.id !== id)
     if (remaining.length === 0) {
@@ -576,5 +596,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
 })

@@ -33,6 +33,7 @@ async function mountView(path = '/connections/abc') {
           { path: 'audit', name: 'audit', component: { template: '<p class="child">audit</p>' } },
           { path: 'key', name: 'key', component: { template: '<p class="child">clé</p>' } },
           { path: 'diagram', name: 'diagram', component: { template: '<p class="child">diagramme</p>' } },
+          { path: 'data/:name(.+)', name: 'table-data', component: { template: '<p class="child">data</p>' } },
           { path: 'tables/:name(.+)', name: 'table', component: { template: '<p class="child">table</p>' } },
         ],
       },
@@ -194,18 +195,19 @@ describe('WorkspaceView', () => {
     const { wrapper, router } = await mountView('/connections/abc/tables/orders?database=shop')
 
     let links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Diagramme', 'Audit du schéma'])
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Données', 'Diagramme', 'Audit du schéma'])
     expect(links[1]?.classes()).toContain('on')
     expect(links[1]?.attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
+    expect(links[2]?.attributes('href')).toBe('/connections/abc/data/orders?database=shop')
 
     await router.push('/connections/abc/diagram?database=shop')
     await flushPromises()
 
     links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Diagramme', 'Audit du schéma'])
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Structure', 'Données', 'Diagramme', 'Audit du schéma'])
     expect(links[1]?.classes()).not.toContain('on')
     expect(links[1]?.attributes('href')).toBe('/connections/abc/tables/orders?database=shop')
-    expect(links[2]?.classes()).toContain('on')
+    expect(links[3]?.classes()).toContain('on')
   })
 
   it('shows no structure entry before any table has been opened', async () => {

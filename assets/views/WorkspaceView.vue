@@ -27,7 +27,7 @@ const lastTable = ref<{ name: string; query: Record<string, string> } | null>(nu
 watch(
   () => [route.name, route.params.id, route.params.name, route.query.database, route.query.schema],
   () => {
-    if (route.name !== 'table' || route.params.id !== props.id || typeof route.params.name !== 'string') {
+    if ((route.name !== 'table' && route.name !== 'table-data') || route.params.id !== props.id || typeof route.params.name !== 'string') {
       return
     }
     const query: Record<string, string> = {}
@@ -107,6 +107,7 @@ watch(() => [route.query.database, route.query.schema], () => {
     <nav v-if="hasSchemaViews && !error" class="views" :data-color="connection?.color ?? undefined" aria-label="Vues de la connexion">
       <RouterLink :to="{ name: 'workspace', params: { id }, query: scope }" exact-active-class="on">Console</RouterLink>
       <RouterLink v-if="lastTable" :to="{ name: 'table', params: { id, name: lastTable.name }, query: lastTable.query }" active-class="on">Structure</RouterLink>
+      <RouterLink v-if="lastTable" :to="{ name: 'table-data', params: { id, name: lastTable.name }, query: lastTable.query }" active-class="on">Données</RouterLink>
       <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
       <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
     </nav>

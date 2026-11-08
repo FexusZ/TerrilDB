@@ -30,6 +30,7 @@ async function mountPane(name = 'orders') {
     routes: [
       { path: '/connections/:id', name: 'workspace', component: { template: '<p />' } },
       { path: '/connections/:id/tables/:name(.+)', name: 'table', component: { template: '<p />' } },
+      { path: '/connections/:id/data/:name(.+)', name: 'table-data', component: { template: '<p />' } },
     ],
   })
   await router.push(`/connections/abc/tables/${name}`)
@@ -113,19 +114,17 @@ describe('TablePane', () => {
     expect(wrapper.findComponent(TableEditor).props('table').fingerprint).toBe('c'.repeat(64))
   })
 
-  it('opens a preview of the data in the editor and runs it', async () => {
+  it('goes to the data view of the table', async () => {
     const { router, pinia } = await mountPane()
     mocked.mockResolvedValueOnce({ table: detail })
     const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
     await flushPromises()
-    mocked.mockResolvedValueOnce({ columns: ['id'], rows: [[1]], rowCount: 1, truncated: false, affectedRows: null, durationMs: 3 })
 
     await wrapper.get('button.preview').trigger('click')
     await flushPromises()
 
-    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/abc/query', { sql: 'SELECT *\n  FROM "orders"\n LIMIT 100;', mode: 'read_only', confirmed: false })
-    expect(router.currentRoute.value.name).toBe('workspace')
-    expect(useWorkspaceStore().tabs).toHaveLength(2)
+    expect(router.currentRoute.value.name).toBe('table-data')
+    expect(router.currentRoute.value.params.name).toBe('orders')
   })
 
   it('says when the table does not exist any more', async () => {

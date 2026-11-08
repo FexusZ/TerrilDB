@@ -10,7 +10,6 @@ import { useConnectionsStore } from '../stores/connections'
 import { useTreeStore } from '../stores/tree'
 import { useWorkspaceStore } from '../stores/workspace'
 import { formatEstimate } from '../utils/format'
-import { previewQuery } from '../utils/sql'
 
 const props = defineProps<{ id: string; name: string }>()
 const workspace = useWorkspaceStore()
@@ -66,10 +65,7 @@ async function reload(): Promise<void> {
 }
 
 async function preview(): Promise<void> {
-  const engine = connections.byId(props.id)?.engine ?? 'postgresql'
-  const tab = workspace.addTab(previewQuery(engine, props.name))
-  await router.push({ name: 'workspace', params: { id: props.id } })
-  await workspace.run(tab)
+  await router.push({ name: 'table-data', params: { id: props.id, name: props.name }, query: router.currentRoute.value.query })
 }
 </script>
 
