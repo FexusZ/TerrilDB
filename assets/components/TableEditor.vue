@@ -448,13 +448,14 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                   <input v-else v-model="row.item!.unique" type="checkbox" aria-label="Unique">
                 </td>
                 <td class="rank-cell" />
-                <td class="cols" colspan="2">
+                <td class="cols">
                   <span v-if="row.kind === 'primary' && row.visible.length === 0" class="dim">Aucune clé primaire.&nbsp;</span>
                   <select class="field" :disabled="row.mark.status === 'removed' || choices(row, null).length === 0" :aria-label="`Ajouter une colonne à l’index ${row.name}`" @change="addColumnTo(row, $event)">
                     <option value="">+ Ajouter une colonne…</option>
                     <option v-for="column in choices(row, null)" :key="column.uid" :value="column.uid">{{ column.name }}</option>
                   </select>
                 </td>
+                <td class="moves" />
                 <td v-if="row.visible.length === 0" class="act">
                   <AppButton v-if="row.mark.status === 'removed'" variant="ghost" small @click="restoreRow(row)">Restaurer</AppButton>
                   <button v-else-if="row.kind === 'index'" type="button" class="x" :aria-label="`Retirer l’index ${row.name}`" @click="removeIndex(draft, row.item!)">✕</button>
