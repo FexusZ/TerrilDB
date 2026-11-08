@@ -659,7 +659,7 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .rows-table .type .field { width: auto; margin-top: 6px; display: block; }
 .rows-table td.cols, .rows-table td.rank-cell, .rows-table td.moves { border-bottom: 0; }
 .rows-table td.rank-cell { width: 34px; text-align: center; }
-.rows-table td.size-cell { white-space: nowrap; color: var(--mut); font: 400 12px var(--font-mono); text-align: right; }
+.rows-table td.size-cell { vertical-align: top; padding-top: 16px; white-space: nowrap; color: var(--mut); font: 400 12px var(--font-mono); text-align: right; }
 .rows-table th.rank-h { text-align: center; }
 .rows-table td.moves { white-space: nowrap; }
 .rows-table td.moves > * { margin-right: 4px; }
