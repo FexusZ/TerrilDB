@@ -389,7 +389,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       <div v-else class="box">
         <table class="index-table">
           <thead>
-            <tr><th>Nom</th><th>Type</th><th v-if="features.uniqueIndex">Unique</th><th>Colonnes</th><th><span class="sr-only">Actions</span></th></tr>
+            <tr><th>Nom</th><th>Type</th><th v-if="features.uniqueIndex">Unique</th><th class="rank-h">#</th><th>Colonne</th><th>Ordre</th><th><span class="sr-only">Actions</span></th></tr>
           </thead>
           <tbody v-for="row in indexRows" :key="row.id" :data-kind="row.kind" :data-status="row.mark.status">
             <template v-if="row.kind === 'locked'">
@@ -397,7 +397,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                 <td class="mono">{{ row.name }}</td>
                 <td class="type"><span class="tag">clé de tri : lecture seule</span></td>
                 <td v-if="features.uniqueIndex" />
-                <td class="mono dim">{{ row.locked.join(', ') }}</td>
+                <td colspan="3" class="mono dim">{{ row.locked.join(', ') }}</td>
                 <td />
               </tr>
             </template>
@@ -420,11 +420,13 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                     <input v-else v-model="row.item!.unique" type="checkbox" :class="{ edited: edited(row.mark, 'unique') }" :disabled="row.mark.status === 'removed'" aria-label="Unique">
                   </td>
                 </template>
+                <td class="rank-cell" :class="{ edited: edited(row.mark, 'columns') || (row.kind === 'primary' && row.mark.status === 'changed') }"><span class="rank">{{ position + 1 }}</span></td>
                 <td class="cols" :class="{ edited: edited(row.mark, 'columns') || (row.kind === 'primary' && row.mark.status === 'changed') }">
-                  <span class="rank">{{ position + 1 }}</span>
                   <select class="field" :disabled="row.mark.status === 'removed'" :aria-label="`Colonne ${String(position + 1)} de l’index ${row.name}`" @change="replaceColumn(row, colUid, ($event.target as HTMLSelectElement).value)">
                     <option v-for="column in choices(row, colUid)" :key="column.uid" :value="column.uid" :selected="column.uid === colUid">{{ column.name }}</option>
                   </select>
+                </td>
+                <td class="moves">
                   <button type="button" class="step" :disabled="position === 0 || row.mark.status === 'removed'" :aria-label="`Monter ${columnName(colUid)} dans l’index ${row.name}`" @click="moveColumn(row, position, -1)">↑</button>
                   <button type="button" class="step" :disabled="position === row.visible.length - 1 || row.mark.status === 'removed'" :aria-label="`Descendre ${columnName(colUid)} dans l’index ${row.name}`" @click="moveColumn(row, position, 1)">↓</button>
                   <button type="button" class="x" :disabled="row.mark.status === 'removed'" :aria-label="`Ôter ${columnName(colUid)} de l’index ${row.name}`" @click="dropColumn(row, colUid)">✕</button>
@@ -445,7 +447,8 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
                   <input v-if="row.kind === 'primary'" type="checkbox" checked disabled aria-label="Unique">
                   <input v-else v-model="row.item!.unique" type="checkbox" aria-label="Unique">
                 </td>
-                <td class="cols">
+                <td class="rank-cell" />
+                <td class="cols" colspan="2">
                   <span v-if="row.kind === 'primary' && row.visible.length === 0" class="dim">Aucune clé primaire.&nbsp;</span>
                   <select class="field" :disabled="row.mark.status === 'removed' || choices(row, null).length === 0" :aria-label="`Ajouter une colonne à l’index ${row.name}`" @change="addColumnTo(row, $event)">
                     <option value="">+ Ajouter une colonne…</option>
@@ -567,9 +570,13 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .index-table .name-cell, .index-table .type, .index-table .unique-cell, .index-table .act { vertical-align: top; padding-top: 8px; border-right: 1px solid var(--line-soft); }
 .index-table .type { white-space: nowrap; }
 .index-table .type .field { width: auto; margin-top: 6px; display: block; }
-.index-table td.cols { display: flex; align-items: center; gap: 6px; border-bottom: 0; }
-.index-table td.cols.edited { background: var(--sec-bg); }
-.index-table .col-row td.cols .field, .index-table .add-row td.cols .field { width: auto; min-width: 160px; border-color: var(--line); }
+.index-table td.cols, .index-table td.rank-cell, .index-table td.moves { border-bottom: 0; }
+.index-table td.rank-cell { width: 34px; text-align: center; }
+.index-table th.rank-h { text-align: center; }
+.index-table td.moves { white-space: nowrap; }
+.index-table td.moves > * { margin-right: 4px; }
+.index-table td.cols.edited, .index-table td.rank-cell.edited { background: var(--sec-bg); }
+.index-table .col-row td.cols .field, .index-table .add-row td.cols .field { width: 100%; min-width: 160px; border-color: var(--line); }
 .index-table .rank { display: inline-flex; justify-content: center; align-items: center; width: 20px; height: 20px; border-radius: 10px; background: var(--s3); color: var(--mut); font: 500 11px var(--font-mono); }
 .step { width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--line); background: transparent; color: var(--mut); cursor: pointer; }
 .step:hover:not(:disabled) { color: var(--acc); border-color: var(--acc-line); }

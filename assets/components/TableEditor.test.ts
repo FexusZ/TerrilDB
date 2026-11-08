@@ -299,7 +299,7 @@ describe('TableEditor', () => {
     const composite: TableDetail = { ...detail(), indexes: [{ name: 'orders_pkey', columns: ['id'], unique: true, primary: true }, { name: 'idx_two', columns: ['status', 'note'], unique: true, primary: false }] }
     const wrapper = mountEditor('postgresql', composite)
 
-    expect(wrapper.findAll('.index-table thead th').map((th) => th.text()).filter((text) => text !== '' && text !== 'Actions')).toEqual(['Nom', 'Type', 'Unique', 'Colonnes'])
+    expect(wrapper.findAll('.index-table thead th').map((th) => th.text()).filter((text) => text !== '' && text !== 'Actions')).toEqual(['Nom', 'Type', 'Unique', '#', 'Colonne', 'Ordre'])
     const groups = wrapper.findAll('.index-table tbody')
     expect(groups.map((group) => group.attributes('data-kind'))).toEqual(['primary', 'index'])
     expect(groups[0]?.text()).toContain('clé primaire')
