@@ -285,7 +285,8 @@ suppression (409 `confirmation_required`, `reason: delete_rows`) puis exécute. 
 instruction par instruction, et modifications / suppressions sont des MUTATIONS asynchrones (`ALTER TABLE … UPDATE/DELETE`) : elles ne se
 voient pas tout de suite (`asynchronous: true`, l'interface le dit) ; un ajout est immédiat. Routes web seulement :
 `POST /web/connections/{id}/tables/{name}/data/preview` et `.../apply` (ni API à jetons, ni MCP). Audit : `data.changed` (nombre de
-modifications / ajouts / suppressions, SQL en clair) et `data.failed`. Erreurs : 422 `invalid_data_change`, 409 `data_changed`,
+modifications / ajouts / suppressions, colonnes touchées, SQL AVEC ses paramètres mais jamais les valeurs : une colonne secrète ne se
+retrouve pas recopiée dans le journal) et `data.failed` (`row_changed` ou `engine_refused`, sans le message du moteur qui peut citer la valeur). Erreurs : 422 `invalid_data_change`, 409 `data_changed`,
 409 `data_change_failed` (message du moteur). Front : vue « Données » (`TableDataPane`, route `data/:name`) = SQL modifiable + `DataGrid` ;
 un onglet de requête par table (`QueryTab::table`), grille éditable seulement si la requête renvoie les colonnes de la table telles quelles
 (clé primaire sélectionnée, ou toutes les colonnes sans clé) ; brouillon `utils/dataDraft` ; bandeau « N changements en attente » avec

@@ -15,12 +15,13 @@ use App\Core\Driver\TargetConnection;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Applique un changement de données et en garde la trace : le nombre de lignes par opération et le SQL (valeurs en clair, comme
- * pour les requêtes). Un aperçu n'écrit rien et n'est pas journalisé ; une demande de confirmation non plus.
+ * Applique un changement de données et en garde la trace : le nombre de lignes par opération, les colonnes touchées et le SQL AVEC
+ * SES PARAMÈTRES (jamais les valeurs : une colonne secrète ne doit pas se retrouver recopiée dans le journal). Le message du moteur
+ * n'est pas gardé non plus : il cite parfois la valeur refusée. Un aperçu n'écrit rien et n'est pas journalisé ; une demande de
+ * confirmation non plus.
  */
 final readonly class AuditedDataChanges
 {
-    private const MAX_ERROR_LENGTH = 500;
     private const MAX_SQL_LENGTH = 4000;
 
     public function __construct(
@@ -42,7 +43,7 @@ final readonly class AuditedDataChanges
             $this->audit->record($context, AuditAction::DataChangeFailed, AuditOutcome::Failed, $connectionId, [
                 'table' => $table,
                 'engine' => $target->engine->value,
-                'error' => $e instanceof DataChangeFailedException ? mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH) : 'row_changed',
+                'error' => $e instanceof DataChangeFailedException ? 'engine_refused' : 'row_changed',
             ]);
 
             throw $e;
@@ -54,12 +55,29 @@ final readonly class AuditedDataChanges
             'updates' => self::count($plan, 'update'),
             'inserts' => self::count($plan, 'insert'),
             'deletes' => self::count($plan, 'delete'),
-            'sql' => mb_substr(implode(";\n", array_map(static fn (DataStatement $s): string => $s->display, $plan->statements)), 0, self::MAX_SQL_LENGTH),
+            'columns' => self::columns($draft),
+            'sql' => mb_substr(implode(";\n", array_map(static fn (DataStatement $s): string => $s->sql, $plan->statements)), 0, self::MAX_SQL_LENGTH),
             'asynchronous' => $plan->asynchronous,
             'confirmed' => $confirmed,
         ]);
 
         return $plan;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function columns(DataDraft $draft): array
+    {
+        $names = [];
+        foreach ($draft->updates as $update) {
+            array_push($names, ...array_map('strval', array_keys($update->changes)));
+        }
+        foreach ($draft->inserts as $insert) {
+            array_push($names, ...array_map('strval', array_keys($insert->values)));
+        }
+
+        return array_values(array_unique($names));
     }
 
     private static function count(DataPlan $plan, string $operation): int

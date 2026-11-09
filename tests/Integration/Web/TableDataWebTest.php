@@ -122,6 +122,41 @@ final class TableDataWebTest extends WebApiTestCase
         self::assertSame(0, $events[0]->getDetails()['deletes']);
     }
 
+    public function testTheAuditKeepsTheShapeOfTheChangeButNeverTheValues(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/apply', [
+            'updates' => [['original' => ['id' => 1, 'name' => 'alpha', 'note' => null], 'changes' => ['note' => 'hunter2-secret']]],
+            'inserts' => [['values' => ['id' => 3, 'name' => 'gamma-secret']]],
+        ]);
+
+        $details = $this->auditEvents($user, 'data')[0]->getDetails();
+        self::assertSame(['note', 'id', 'name'], $details['columns']);
+        $sql = $details['sql'];
+        self::assertIsString($sql);
+        self::assertStringContainsString('UPDATE', $sql);
+        self::assertStringNotContainsString('hunter2-secret', $sql);
+        self::assertStringNotContainsString('gamma-secret', $sql);
+        self::assertStringNotContainsString('alpha', $sql);
+    }
+
+    public function testAnEngineRefusalIsAuditedWithoutTheEngineMessage(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/apply', ['inserts' => [['values' => ['id' => 1, 'name' => 'dup-secret']]]]);
+
+        $details = $this->auditEvents($user, 'data')[0]->getDetails();
+        self::assertSame('engine_refused', $details['error']);
+        self::assertStringNotContainsString('dup-secret', json_encode($details, \JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString('(id)=(1)', json_encode($details, \JSON_THROW_ON_ERROR));
+    }
+
     public function testDeletingNeedsConfirmation(): void
     {
         $this->seedAndLogin();
