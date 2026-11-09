@@ -19,6 +19,10 @@ Trois entrées partageant le même cœur : **interface web**, **API REST**, **se
    passe de l'utilisateur (libsodium) ; le serveur seul ne peut pas déchiffrer.
 6. Dernières versions stables de langage et framework.
 7. Un choix d'architecture non couvert ici : poser la question, ne pas deviner.
+8. **Commits sans signature d'IA** : jamais de ligne `Co-Authored-By: Claude …` ni de mention « Generated with Claude
+   Code » dans un commit ou une description de PR (consigne du propriétaire, elle prime sur l'attribution par défaut).
+   Messages en français, style existant (`feat(…)`, `docs: …`). Identité git du dépôt : compte GitHub (`.git/config`
+   local, adresse `noreply`), rien de global.
 
 ## Stack
 
@@ -53,6 +57,20 @@ Lecture seule MCP/API par défaut : filtre lexical **et** transaction read-only 
 MVP (brief) d'abord, puis par lots : multi-utilisateur + invitations → optimiseur local (plan
 d'exécution + règles d'index ; sans PMM/Vitess) → audit d'optimisation → ER diagram → Redis → ClickHouse.
 Hors lots : diff de schémas, import CSV, assistant IA intégré. (La grille de données éditable et l'éditeur de structure sont livrés : voir « Édition de structure » et « Édition de données ».)
+
+## Licence et contributions (LICENSE, CONTRIBUTING.md)
+
+Licence **AGPL-3.0-only**, un seul titulaire des droits : l'objectif est de garder la liberté de faire évoluer la licence
+(offre commerciale, double licence, cession) ; ne rien faire qui l'entame. Donc **aucune pull request de code extérieure
+n'est acceptée** tant qu'un accord de contribution (CLA) n'existe pas (`CONTRIBUTING.md` : issues bienvenues, pas de PR de
+code ; les mises à jour Dependabot sont exclues) ; ne jamais fusionner de code tiers sans cet accord ni copier du code sous
+une autre licence. Dépendances : uniquement permissives (MIT, BSD, Apache-2.0, ISC…) ; aujourd'hui seules exceptions
+acceptées, `lightningcss` (MPL-2.0, outil de compilation, non modifié) et les polices @fontsource (OFL-1.1, livrées avec leur
+licence). Toute nouvelle dépendance GPL/AGPL/SSPL ou sans licence claire : poser la question. Les bases cibles (MySQL,
+MariaDB, Redis…) ne sont que des services joints par le réseau, jamais embarqués. Signalement de failles : option GitHub
+« Report a vulnerability » (activée). L'historique git a été réécrit le 9 novembre 2026 (retrait des signatures d'IA, poussé
+de force) : tout clone antérieur est à recloner. Aucune référence à un employeur, un client ou une organisation tiers dans
+le dépôt, y compris pour ces sujets.
 
 ## Crypto (src/Crypto)
 
