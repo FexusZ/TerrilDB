@@ -28,8 +28,8 @@ jobs:
       - name: Essais du tri
         run: sh .github/scripts/changes-test.sh
       # Seuls les contrôles concernés par les fichiers modifiés tournent (doc seule : aucun, et pas de déploiement). Dans le doute
-      # tout tourne : base introuvable, fichier inconnu, ou dernier run de main qui n'était pas vert (un correctif ne doit pas
-      # laisser passer ce qu'un run précédent avait refusé).
+      # tout tourne : base introuvable, fichier inconnu, dernier run de main qui n'était pas vert, ou autre run de main encore en cours
+      # (un correctif ne doit pas laisser passer ce qu'un run précédent avait refusé, ou va refuser).
       - name: Ce qui a changé
         id: diff
         env:
@@ -43,6 +43,9 @@ jobs:
           if [ "${{ github.event_name }}" = "push" ]; then
             dernier=$(gh run list --repo "${{ github.repository }}" --workflow CI --branch main --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "inconnu"')
             [ "$dernier" = "success" ] || tout=true
+            # Un autre run de main encore en cours peut finir rouge sans que le dernier run terminé le dise : on vérifie tout.
+            en_cours=$(gh run list --repo "${{ github.repository }}" --workflow CI --branch main --limit 20 --json databaseId,status --jq "[.[] | select(.status != \"completed\" and .databaseId != ${{ github.run_id }})] | length")
+            [ "$en_cours" = "0" ] || tout=true
           fi
           if [ "$tout" = true ]; then
             : | sh .github/scripts/changes.sh >> "$GITHUB_OUTPUT"
