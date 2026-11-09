@@ -265,6 +265,22 @@ describe('WorkspaceView', () => {
     expect(wrapper.find('[aria-label="Tables ouvertes"]').exists()).toBe(false)
   })
 
+  it('closing the data tab of the last table leaves no orphan query tab behind', async () => {
+    mocked.mockImplementation(answer())
+    const { wrapper, router } = await mountView('/connections/abc/data/orders')
+    const { useWorkspaceStore } = await import('../stores/workspace')
+    const store = useWorkspaceStore()
+    store.openTableData('orders', 'SELECT 1')
+    store.tabs = store.tabs.filter((tab) => tab.table === 'orders')
+
+    await wrapper.get('button[aria-label="Fermer orders"]').trigger('click')
+    await flushPromises()
+
+    expect(store.tabs.some((tab) => tab.table === 'orders')).toBe(false)
+    expect(store.tabs).toHaveLength(1)
+    expect(router.currentRoute.value.name).toBe('workspace')
+  })
+
   it('closing a tab you are not on leaves you where you are', async () => {
     mocked.mockImplementation(answer())
     const { wrapper, router } = await mountView('/connections/abc/tables/orders')

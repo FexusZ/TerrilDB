@@ -119,6 +119,20 @@ describe('TableDataPane', () => {
     expect(posts('/query').at(-1)?.[2]).toEqual(expect.objectContaining({ sql: 'SELECT *\n  FROM "customers"\n LIMIT 100;' }))
   })
 
+  it('keeps a separate tab, and a separate read, for the same table name in another schema', async () => {
+    const { pinia, store } = await setup()
+    const first = await mountPane(pinia)
+    first.unmount()
+    store.schema = 'archive'
+    const runs = posts('/query').length
+
+    const second = await mountPane(pinia)
+
+    expect(posts('/query')).toHaveLength(runs + 1)
+    expect(store.tabs.filter((tab) => tab.table === 'orders')).toHaveLength(2)
+    second.unmount()
+  })
+
   it('stays read-only, and says why, when the query does not give back the rows of the table', async () => {
     const { pinia } = await setup({ query: { ...result, columns: ['total'], rows: [[3]] } })
 

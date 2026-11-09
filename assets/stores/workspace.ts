@@ -25,6 +25,8 @@ export interface QueryTab {
   exportNotice: string | null
   /** Table dont cet onglet montre les données (vue « Données »), nul pour un onglet de console. */
   table: string | null
+  /** Identité complète de la table (base, schéma, nom) : deux tables homonymes de schémas différents n'ont pas le même onglet. */
+  tableKey: string | null
 }
 
 /** Une table ouverte dans un onglet de la barre des tables, avec la vue où on l'a laissée. */
@@ -35,6 +37,8 @@ export interface TableTab {
   query: Record<string, string>
   view: 'structure' | 'data'
 }
+
+const tableKeyOf = (database: string | null, schema: string | null, name: string): string => [database ?? '', schema ?? '', name].join('\u0000')
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const connectionId = ref<string | null>(null)
@@ -85,7 +89,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null, tableKey: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -403,7 +407,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** L'onglet des données d'une table : créé à la première visite (avec `sql`), retrouvé ensuite tel que l'utilisateur l'a laissé. */
   function openTableData(name: string, sql: string): { id: number; created: boolean } {
-    const existing = tabs.value.find((candidate) => candidate.table === name)
+    const key = tableKeyOf(database.value, schema.value, name)
+    const existing = tabs.value.find((candidate) => candidate.tableKey === key)
     if (existing !== undefined) {
       activeId.value = existing.id
 
@@ -413,6 +418,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const created = tab(id)
     if (created) {
       created.table = name
+      created.tableKey = key
       created.title = `Données · ${name}`
     }
 
@@ -421,7 +427,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Ouvre (ou remet au premier plan) l'onglet d'une table, en retenant la vue montrée. */
   function openTableTab(name: string, query: Record<string, string>, view: TableTab['view']): void {
-    const key = [query.database ?? '', query.schema ?? '', name].join('\u0000')
+    const key = tableKeyOf(query.database ?? null, query.schema ?? null, name)
     const existing = tableTabs.value.find((candidate) => candidate.key === key)
     if (existing === undefined) {
       tableTabs.value = [...tableTabs.value, { key, name, query, view }]
@@ -435,11 +441,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const closing = tableTabs.value.find((candidate) => candidate.key === key)
     tableTabs.value = tableTabs.value.filter((candidate) => candidate.key !== key)
     if (closing !== undefined) {
-      const remaining = tabs.value.filter((candidate) => candidate.table !== closing.name)
-      if (remaining.length !== tabs.value.length && remaining.length > 0) {
-        tabs.value = remaining
-        if (!remaining.some((candidate) => candidate.id === activeId.value)) {
-          activeId.value = remaining[0]?.id ?? 0
+      const remaining = tabs.value.filter((candidate) => candidate.tableKey !== closing.key)
+      if (remaining.length !== tabs.value.length) {
+        if (remaining.length === 0) {
+          reset()
+        } else {
+          tabs.value = remaining
+          if (!remaining.some((candidate) => candidate.id === activeId.value)) {
+            activeId.value = remaining[0]?.id ?? 0
+          }
         }
       }
     }
