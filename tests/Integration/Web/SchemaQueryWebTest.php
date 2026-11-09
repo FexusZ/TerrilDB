@@ -89,7 +89,9 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertSame(['id', 'order_id', 'line_no', 'product_id', 'quantity', 'unit_price_cents'], array_column($columns, 'name'));
         self::assertSame(['name', 'type', 'nullable', 'default', 'autoIncrement', 'comment'], array_keys(self::arrayOf($columns[0])));
         $indexes = self::arrayOf($table['indexes']);
-        self::assertSame(['name', 'columns', 'unique', 'primary'], array_keys(self::arrayOf($indexes[0])));
+        self::assertSame(['name', 'columns', 'unique', 'primary', 'sizeBytes'], array_keys(self::arrayOf($indexes[0])));
+        self::assertGreaterThan(0, $table['dataBytes']);
+        self::assertGreaterThan(0, $table['indexBytes']);
         $foreignKeys = self::arrayOf($table['foreignKeys']);
         self::assertCount(2, $foreignKeys);
         self::assertSame(['name', 'columns', 'referencedTable', 'referencedColumns', 'onUpdate', 'onDelete'], array_keys(self::arrayOf($foreignKeys[0])));
