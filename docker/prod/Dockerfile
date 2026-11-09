@@ -1,6 +1,6 @@
 # Image de production : l'interface est compilée dans un premier étage, PHP est servi par FrankenPHP (HTTP clair sur
 # 8080 : le TLS est terminé en amont par le reverse proxy de l'hôte).
-FROM node:24-alpine AS front
+FROM node:26-alpine AS front
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
