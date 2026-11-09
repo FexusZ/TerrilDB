@@ -28,15 +28,17 @@ jobs:
           lines=$(gh pr list --state open --author "app/dependabot" --limit 100 \
             --json number,title,url --jq '.[] | "- [ ] #\(.number) \(.title) — \(.url)"')
 
-          # La semaine précédente est remplacée, qu'il reste des mises à jour ou non.
-          for n in $(gh issue list --label "$label" --state open --json number --jq '.[].number'); do
-            gh issue close "$n" --comment "Remplacée par le bilan de la semaine."
-          done
+          # La semaine précédente est remplacée, qu'il reste des mises à jour ou non. Le nouveau bilan est créé AVANT de refermer
+          # les anciens : si la création échoue, le bilan précédent reste ouvert au lieu de laisser la liste vide.
+          anciens=$(gh issue list --label "$label" --state open --json number --jq '.[].number')
 
-          if [ -z "$lines" ]; then
+          if [ -n "$lines" ]; then
+            printf 'Mises à jour proposées par Dependabot, à relire et fusionner :\n\n%s\n' "$lines" > body.md
+            gh issue create --label "$label" --title "Mises à jour à faire — semaine du $(date +%F)" --body-file body.md
+          else
             echo "Aucune mise à jour en attente."
-            exit 0
           fi
 
-          printf 'Mises à jour proposées par Dependabot, à relire et fusionner :\n\n%s\n' "$lines" > body.md
-          gh issue create --label "$label" --title "Mises à jour à faire — semaine du $(date +%F)" --body-file body.md
+          for n in $anciens; do
+            gh issue close "$n" --comment "Remplacée par le bilan de la semaine."
+          done
