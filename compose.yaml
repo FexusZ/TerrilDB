@@ -63,7 +63,7 @@ services:
 
   target-mariadb:
     profiles: [targets]
-    image: mariadb:11.8
+    image: mariadb:13.0
     env_file: docker/dev/target-mariadb.env
     ports: ["33062:3306"]
     volumes:
