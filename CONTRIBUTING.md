@@ -8,8 +8,8 @@ Merci de l'intérêt porté à TerrilDB.
   PostgreSQL, ClickHouse, Redis) et les étapes pour reproduire.
 - **Ne publiez jamais** d'hôte, de mot de passe, de jeton, de phrase de récupération ni de donnée réelle dans une
   issue : remplacez-les par un exemple inventé.
-- **Une faille de sécurité** ne se décrit pas dans une issue publique : ouvrez une issue qui dit seulement qu'une faille
-  existe (sans détail technique) pour convenir d'un canal privé.
+- **Une faille de sécurité** ne se décrit pas dans une issue publique : utilisez l'option « Report a vulnerability »
+  de l'onglet *Security* du dépôt, qui ouvre un échange privé avec l'auteur.
 
 ## Les pull requests de code : pas encore
 
