@@ -65,7 +65,7 @@ final class DataChangePlanner
         // Une valeur remise telle qu'elle était n'est pas un changement (et MySQL ne compte pas une telle ligne comme touchée).
         $update = new RowUpdate($update->original, array_filter(
             $update->changes,
-            static fn (mixed $value, string|int $name): bool => !\array_key_exists($name, $update->original) || $update->original[$name] !== $value,
+            fn (mixed $value, string|int $name): bool => !\array_key_exists($name, $update->original) || !self::same($update->original[$name], $value, $this->column($table, (string) $name)->type),
             \ARRAY_FILTER_USE_BOTH,
         ));
         if ([] === $update->changes) {
@@ -201,6 +201,36 @@ final class DataChangePlanner
         }
 
         return $where;
+    }
+
+    private const NUMERIC_TYPE = '/int|numeric|decimal|float|double|real|number/i';
+
+    /** Deux écritures de la même valeur : égales, ou, pour une colonne numérique, le même nombre (« 5.00 », « 5.0 », « +5 »). */
+    private static function same(mixed $original, mixed $value, string $type): bool
+    {
+        if ($original === $value) {
+            return true;
+        }
+        if (!\is_scalar($original) || !\is_scalar($value) || \is_bool($original) || \is_bool($value) || 1 !== preg_match(self::NUMERIC_TYPE, $type)) {
+            return false;
+        }
+        $a = self::number((string) $original);
+
+        return null !== $a && $a === self::number((string) $value);
+    }
+
+    /** Un nombre décimal ramené à sa forme canonique, en texte (aucun passage par un flottant : un grand entier ne perd rien). */
+    private static function number(string $text): ?string
+    {
+        if (1 !== preg_match('/^([+-]?)(\d+)(?:\.(\d+))?$/', trim($text), $m)) {
+            return null;
+        }
+        $integer = ltrim($m[2], '0');
+        $integer = '' === $integer ? '0' : $integer;
+        $fraction = rtrim($m[3] ?? '', '0');
+        $negative = '-' === $m[1] && ('0' !== $integer || '' !== $fraction);
+
+        return ($negative ? '-' : '').$integer.('' === $fraction ? '' : '.'.$fraction);
     }
 
     private function column(TableDefinition $table, string $name): ColumnDefinition

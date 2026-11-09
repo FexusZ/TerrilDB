@@ -199,6 +199,32 @@ final class DataChangeTest extends TestCase
         self::assertSame([[1, 'alpha', null], [2, 'beta', 'b'], [3, 'gamma', 'g']], $this->rows());
     }
 
+    #[DataProvider('relationalEngines')]
+    public function testAValueTheEngineStoresUnchangedIsNotMistakenForAConflict(string $env): void
+    {
+        $this->open($env);
+        \assert(null !== $this->target);
+        $t = $this->q($this->table);
+        $this->raw(\sprintf('ALTER TABLE %s ADD COLUMN stamp %s', $t, Engine::PostgreSql === $this->engine ? 'timestamp(0)' : 'datetime'));
+        $this->raw(\sprintf("UPDATE %s SET stamp = '2024-01-01 07:00:00' WHERE id = 1", $t));
+
+        // « .0 » : le moteur range la même valeur (MySQL annonce alors 0 ligne touchée).
+        $draft = new DataDraft([new RowUpdate(['id' => 1, 'stamp' => '2024-01-01 07:00:00'], ['stamp' => '2024-01-01 07:00:00.0'])], [], []);
+
+        \assert(null !== $this->target);
+        $this->service()->apply($this->target, $this->table, $draft, false);
+
+        self::assertSame([[1, 'alpha', null], [2, 'beta', 'b'], [3, 'gamma', 'g']], $this->rows());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalEngines(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
     /**
      * @return iterable<string, array{string}>
      */

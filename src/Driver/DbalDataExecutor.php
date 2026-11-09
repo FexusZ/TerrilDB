@@ -40,7 +40,7 @@ final readonly class DbalDataExecutor implements DataExecutor
             foreach ($plan->statements as $index => $statement) {
                 $current = $statement;
                 $affected = (int) $this->connection->executeStatement($statement->sql, array_values($statement->params));
-                if ('insert' !== $statement->operation && 1 !== $affected) {
+                if ('insert' !== $statement->operation && 1 !== $affected && !$this->storedUnchanged($statement, $affected)) {
                     throw new DataChangeConflictException($index, $affected);
                 }
             }
@@ -54,6 +54,20 @@ final readonly class DbalDataExecutor implements DataExecutor
 
             throw new DataChangeFailedException(self::message($e), 0, $current, $e);
         }
+    }
+
+    /**
+     * MySQL ne compte pas une ligne dont la valeur rangée ne change pas (« 07:00:00.0 » pour « 07:00:00 ») : 0 ligne touchée ne
+     * veut pas dire « ligne introuvable ». On le vérifie dans la transaction : la ligne est-elle encore retrouvée, une fois ?
+     */
+    private function storedUnchanged(DataStatement $statement, int $affected): bool
+    {
+        if (0 !== $affected || 'update' !== $statement->operation || null === $statement->matchSql) {
+            return false;
+        }
+        $count = $this->connection->fetchOne($statement->matchSql, array_values($statement->matchParams));
+
+        return is_numeric($count) && 1 === (int) $count;
     }
 
     private function rollBack(): void

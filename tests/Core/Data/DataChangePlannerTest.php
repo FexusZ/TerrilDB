@@ -81,6 +81,37 @@ final class DataChangePlannerTest extends TestCase
         self::assertSame('UPDATE "orders" SET "note" = ? WHERE "id" = ? AND "note" IS NULL', $plan->statements[0]->sql);
     }
 
+    public function testNumbersThatAreEqualButWrittenDifferentlyAreNotAChange(): void
+    {
+        $table = new TableDefinition(
+            'prices',
+            TableKind::Table,
+            [self::col('id'), self::col('price', 'numeric(10,2)'), self::col('label', 'text')],
+            [new IndexDefinition('prices_pkey', ['id'], true, true)],
+            [],
+            null,
+            null,
+        );
+
+        $plan = (new DataChangePlanner())->plan(Engine::MySql, $table, new DataDraft(
+            [new RowUpdate(['id' => 1, 'price' => '5.00', 'label' => 'a'], ['price' => '5.0', 'label' => 'b']), new RowUpdate(['id' => 2, 'price' => 5, 'label' => 'a'], ['price' => '+5.000'])],
+            [],
+            [],
+        ));
+
+        self::assertCount(1, $plan->statements);
+        self::assertSame('UPDATE `prices` SET `label` = ? WHERE `id` = ? AND `label` = ?', $plan->statements[0]->sql);
+    }
+
+    public function testBigIntegersThatDifferByOneAreStillAChange(): void
+    {
+        $table = new TableDefinition('t', TableKind::Table, [self::col('id'), self::col('n', 'bigint')], [new IndexDefinition('t_pkey', ['id'], true, true)], [], null, null);
+
+        $plan = (new DataChangePlanner())->plan(Engine::PostgreSql, $table, new DataDraft([new RowUpdate(['id' => 1, 'n' => '9007199254740993'], ['n' => '9007199254740992'])], [], []));
+
+        self::assertCount(1, $plan->statements);
+    }
+
     public function testARowWithNothingChangedIsSkipped(): void
     {
         $plan = (new DataChangePlanner())->plan(Engine::PostgreSql, self::orders(), new DataDraft(

@@ -278,7 +278,9 @@ Même schéma que la structure : le client envoie des LIGNES (`updates` = valeur
 ou `{pN:Type}` pour ClickHouse) ; le texte montré (`display`) a les valeurs en clair mais n'est jamais exécuté. Une ligne se retrouve
 par sa clé primaire PLUS les valeurs d'origine des colonnes modifiées (une ligne changée entre-temps n'est plus retrouvée) ; sans clé
 (ClickHouse n'en a pas), par toutes ses colonnes comparables (JSON, binaire, tableaux exclus). Une valeur remise telle qu'elle était n'est
-pas un changement. 500 changements au plus. `DataChangeService::preview` compte les lignes que chaque WHERE retrouve (il en faut
+pas un changement (pour une colonne numérique, « 5.00 », « 5.0 » et « +5 » sont la même valeur, comparée en texte sans passer par un
+flottant) ; si le moteur range la même valeur sous une autre écriture (MySQL annonce 0 ligne touchée), la ligne est recomptée dans la
+transaction avant de parler de conflit. 500 changements au plus. `DataChangeService::preview` compte les lignes que chaque WHERE retrouve (il en faut
 exactement UNE : sinon `ok: false`) ; `apply` refuse (409 `data_changed`) si ce n'est plus le cas, demande confirmation pour toute
 suppression (409 `confirmation_required`, `reason: delete_rows`) puis exécute. PostgreSQL / MySQL / MariaDB : une transaction
 (`DbalDataExecutor`), une modification ou suppression qui ne touche pas exactement une ligne annule tout. ClickHouse : pas de transaction,
