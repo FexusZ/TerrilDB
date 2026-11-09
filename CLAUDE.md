@@ -52,7 +52,7 @@ Lecture seule MCP/API par défaut : filtre lexical **et** transaction read-only 
 
 MVP (brief) d'abord, puis par lots : multi-utilisateur + invitations → optimiseur local (plan
 d'exécution + règles d'index ; sans PMM/Vitess) → audit d'optimisation → ER diagram → Redis → ClickHouse.
-Hors lots : grille éditable, diff de schémas, import CSV, assistant IA intégré.
+Hors lots : diff de schémas, import CSV, assistant IA intégré. (La grille de données éditable et l'éditeur de structure sont livrés : voir « Édition de structure » et « Édition de données ».)
 
 ## Crypto (src/Crypto)
 
@@ -261,7 +261,7 @@ ClickHouse instruction par instruction (un échec laisse les précédentes appli
 remis à celui de la table), colonne AUTO_INCREMENT nouvelle et sa clé dans un seul ALTER ; ClickHouse : nullabilité dans le type,
 clé de tri en lecture seule, ni clé primaire ni clé étrangère ni auto-incrément ni renommage d'index, index de saut matérialisés ;
 passer de Nullable à non-Nullable y exige une valeur par défaut. Seules les tables sont éditables (pas les vues), pas Redis.
-Front : `TableEditor` (colonnes, index, clés étrangères modifiables sur place ; brouillon `utils/structureDraft` où colonnes, clé primaire, index et clés étrangères se réfèrent par identifiant donc un renommage les suit ; lignes nouvelle / modifiée / retirée surlignées ; barre collante en haut avec le SQL calculé par `preview`, boutons Valider / Annuler, confirmation qui liste ce qui sera perdu ; « Supprimer la table » avec le SQL montré), seulement pour les tables (une vue reste en lecture seule), la section Index est un tableau façon phpMyAdmin (une ligne par colonne avec son rang, nom / type / unique en cellules fusionnées, monter, descendre, ôter, ajouter une colonne ; la clé primaire en est la première ligne, la clé de tri ClickHouse une ligne verrouillée) ; le menu « Vues de la connexion » garde une entrée « Structure » vers la dernière table ouverte (base et schéma compris) ; `TablePane` rafraîchit les listes de tables et l'arbre après application. Tests : `tests/Core/Schema/Change` (générateurs), `tests/Integration/Driver/SchemaChangeTest` (rejoués contre les vrais moteurs),
+Front : `TableEditor` (colonnes, index, clés étrangères modifiables sur place ; brouillon `utils/structureDraft` où colonnes, clé primaire, index et clés étrangères se réfèrent par identifiant donc un renommage les suit ; lignes nouvelle / modifiée / retirée surlignées ; barre collante en haut avec le SQL calculé par `preview`, boutons Valider / Annuler, confirmation qui liste ce qui sera perdu ; « Supprimer la table » avec le SQL montré), seulement pour les tables (une vue reste en lecture seule), la section Index est un tableau façon phpMyAdmin (une ligne par colonne avec son rang, nom / type / unique en cellules fusionnées, monter, descendre, ôter, ajouter une colonne ; la clé primaire en est la première ligne, la clé de tri ClickHouse une ligne verrouillée) ; le menu « Vues de la connexion » garde une entrée « Structure » vers la dernière table ouverte (base et schéma compris) ; `TablePane` rafraîchit les listes de tables et l'arbre après application. Tailles : `IndexDefinition::$sizeBytes` et `TableDefinition::$dataBytes/$indexBytes` (octets sur disque, nuls si le moteur ne les donne pas ; HORS de l'empreinte, ils bougent sans que la structure change) : PostgreSQL `pg_relation_size` / `pg_table_size` / `pg_indexes_size` ; MySQL/MariaDB `information_schema.TABLES` pour les totaux et `mysql.innodb_index_stats` pour les index secondaires (lecture facultative, la clé primaire InnoDB est la table : pas de taille propre) ; ClickHouse `system.parts` (`bytes_on_disk`, `primary_key_size`) et `system.data_skipping_indices`. Le front montre une colonne « Taille » des index et « Données / Index / Total » sous le titre de la table. Tests : `tests/Core/Schema/Change` (générateurs), `tests/Integration/Driver/SchemaChangeTest` (rejoués contre les vrais moteurs),
 `tests/Integration/Web/TableStructureWebTest`.
 
 ## Export (src/Core/Export, ExportController)
@@ -270,6 +270,27 @@ Front : `TableEditor` (colonnes, index, clés étrangères modifiables sur place
 Le CSV neutralise les cellules qu'un tableur lirait comme une formule (`=`, `+`, `-`, `@`, tab, CR en tête) par une
 apostrophe, sauf les nombres. `POST /web/connections/{id}/export` : lecture seule, mêmes garde-fous et même audit qu'une
 exécution (`purpose: export`), 10 000 lignes par défaut, 100 000 au plus, en-tête `X-TerrilDB-Truncated` si coupé.
+
+## Édition de données (src/Core/Data, TableDataController)
+
+Même schéma que la structure : le client envoie des LIGNES (`updates` = valeurs d'origine + colonnes changées, `inserts` = valeurs,
+`deletes` = valeurs d'origine), jamais du SQL. `DataChangePlanner` écrit les instructions du moteur avec des paramètres liés (`?`,
+ou `{pN:Type}` pour ClickHouse) ; le texte montré (`display`) a les valeurs en clair mais n'est jamais exécuté. Une ligne se retrouve
+par sa clé primaire PLUS les valeurs d'origine des colonnes modifiées (une ligne changée entre-temps n'est plus retrouvée) ; sans clé
+(ClickHouse n'en a pas), par toutes ses colonnes comparables (JSON, binaire, tableaux exclus). Une valeur remise telle qu'elle était n'est
+pas un changement. 500 changements au plus. `DataChangeService::preview` compte les lignes que chaque WHERE retrouve (il en faut
+exactement UNE : sinon `ok: false`) ; `apply` refuse (409 `data_changed`) si ce n'est plus le cas, demande confirmation pour toute
+suppression (409 `confirmation_required`, `reason: delete_rows`) puis exécute. PostgreSQL / MySQL / MariaDB : une transaction
+(`DbalDataExecutor`), une modification ou suppression qui ne touche pas exactement une ligne annule tout. ClickHouse : pas de transaction,
+instruction par instruction, et modifications / suppressions sont des MUTATIONS asynchrones (`ALTER TABLE … UPDATE/DELETE`) : elles ne se
+voient pas tout de suite (`asynchronous: true`, l'interface le dit) ; un ajout est immédiat. Routes web seulement :
+`POST /web/connections/{id}/tables/{name}/data/preview` et `.../apply` (ni API à jetons, ni MCP). Audit : `data.changed` (nombre de
+modifications / ajouts / suppressions, SQL en clair) et `data.failed`. Erreurs : 422 `invalid_data_change`, 409 `data_changed`,
+409 `data_change_failed` (message du moteur). Front : vue « Données » (`TableDataPane`, route `data/:name`) = SQL modifiable + `DataGrid` ;
+un onglet de requête par table (`QueryTab::table`), grille éditable seulement si la requête renvoie les colonnes de la table telles quelles
+(clé primaire sélectionnée, ou toutes les colonnes sans clé) ; brouillon `utils/dataDraft` ; bandeau « N changements en attente » avec
+Vérifier (aperçu SQL) puis Appliquer ; relecture après application ; relancer la requête est bloqué tant que des changements attendent.
+Tests : `tests/Core/Data`, `tests/Integration/Driver/DataChangeTest` (4 moteurs), `tests/Integration/Web/TableDataWebTest`.
 
 ## Audit (src/Audit, Entity/AuditEvent)
 
@@ -299,10 +320,10 @@ de sécurité) ; `SpaController` le sert pour toute adresse `/app/…`, `Securit
 `'self'` seulement, pas de script en ligne). `docker/php/router.php` est le routeur du serveur de développement.
 Structure : `api/` (client `fetch` + en-tête CSRF, `ApiError` à code stable, `errors.ts` = messages français),
 `stores/` (Pinia : session, connexions, espace de travail à onglets), `components/`, `views/`, `utils/`,
-`styles/tokens.css` (jetons de design : teal = action, ambre = secret/chiffré ; thème sombre par défaut et thème clair sous `:root[data-theme='light']` ; aucune couleur en dur dans les composants, tout passe par les variables, y compris la coloration de CodeMirror). `stores/theme.ts` : automatique (suit le système) / clair / sombre, choix gardé dans `localStorage` (tolérant au refus), bouton dans `AppHeader`.
+`styles/tokens.css` (jetons de design, direction « Atelier » : bleu encre = action, ambre = secret/chiffré ; thème sombre par défaut et thème clair sous `:root[data-theme='light']` ; aucune couleur en dur dans les composants, tout passe par les variables, y compris la coloration de CodeMirror). `stores/theme.ts` : automatique (suit le système) / clair / sombre, choix gardé dans `localStorage` (tolérant au refus), bouton dans `AppHeader`.
 Barre latérale permanente À DROITE (`WorkbenchSidebar`, seule navigation : plus de panneau de tables à gauche, repliable, choix gardé dans `localStorage` tolérant au refus) sur toute l'espace de travail : `ConnectionTree` = arbre ARIA `tree`/`treeitem` (connexion > bases > tables cent par cent, clés pour Redis ; flèches, Début, Fin, Entrée, Espace ; actions par connexion au clic et au clavier `n`/`e`/Suppr) alimenté par le store `tree` (déplié et lu gardés pendant la session, pastille fermée/ouverte/injoignable, réponses périmées ignorées, `reset()` à la déconnexion). Page d'accueil `/workspace` (`workspace-home`) ; `/connections` reste l'écran de gestion. Une table d'une autre base s'ouvre avec `?database=` et `WorkspaceView` explore alors cette base. `SchemaTree`, `KeyBrowser` et `DatabasePicker` ont été supprimés (doublon avec l'arbre) ; une cible injoignable s'annonce en bandeau au-dessus du contenu. La page « Mes connexions » montre la couleur d'une connexion (pastille devant le nom) ; `WorkspaceView` porte un menu « Vues de la connexion » (Console, Diagramme, Audit du schéma ; absent sur Redis) qui garde `?database=`/`?schema=`, et diagramme comme audit lisent la base et le schéma explorés (`workspace.scopeSuffix()`) ; le diagramme se zoome (paliers 25 à 300 %, boutons, Ajuster, Ctrl + molette) et élargit toutes ses boîtes à la ligne « nom + type » la plus longue. Les bases vides sont masquées dans l'arbre (store `tree.probeDatabases` : à l'ouverture d'une connexion de plus d'une base, au plus 25 bases non système sont sondées une à une, une table demandée ou, sur PostgreSQL, la liste des schémas ; une sonde en échec ne cache rien ; ligne « Afficher n bases vides » pour les voir, une base ouverte reste visible). La recherche de tables/clés par motif n'existe plus (seule l'autocomplétion de l'éditeur connaît toutes les tables).
 L'éditeur a un onglet « Historique » (`HistoryPanel`, alimenté par `/web/connections/{id}/history` et rafraîchi après chaque exécution une fois ouvert) ; `/security/activity` affiche le journal du compte (`utils/audit.ts` = libellés français). Une réponse `unauthenticated`/`locked` ramène à la connexion (`onSessionLost`). Une redirection `?redirect=` n'est suivie
-que si elle est interne. Polices auto-hébergées (@fontsource), rien n'est chargé d'un tiers. Tests Vitest à côté du code
+que si elle est interne. Polices auto-hébergées (@fontsource : Fraunces pour les titres, Inter pour l'interface, JetBrains Mono pour le code), rien n'est chargé d'un tiers. Navigation d'une connexion : une ligne « Console / Diagramme / Audit du schéma », puis une ligne d'ONGLETS DE TABLES façon navigateur (`workspace.tableTabs`, gardés en mémoire seulement, une table = un onglet par base/schéma, × pour fermer, la vue où on l'a laissée est retenue), puis pour la table active une ligne « Structure / Données ». La page d'accueil est la liste des connexions (`/connections`, `/` et `/workspace` y redirigent). Tests Vitest à côté du code
 (`*.test.ts`) ; les rejets simulés se font avec `mockRejectedValueOnce` (un `mockRejectedValue` persistant déclenche un
 « unhandled rejection »).
 
