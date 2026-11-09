@@ -133,6 +133,19 @@ describe('TableDataPane', () => {
     second.unmount()
   })
 
+  it('stays read-only when the SQL has been changed to read something other than the rows of the table', async () => {
+    const { pinia } = await setup()
+    const wrapper = await mountPane(pinia)
+    expect(wrapper.find('input.field').exists()).toBe(true)
+
+    await wrapper.get('.stub').setValue('SELECT id, status, note FROM customers')
+    await wrapper.get('button.run').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('input.field').exists()).toBe(false)
+    expect(wrapper.get('.readonly').text()).toContain('Lecture seule')
+  })
+
   it('stays read-only, and says why, when the query does not give back the rows of the table', async () => {
     const { pinia } = await setup({ query: { ...result, columns: ['total'], rows: [[3]] } })
 

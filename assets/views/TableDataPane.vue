@@ -11,7 +11,7 @@ import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
 import { buildPayload, editability, emptyDraft, pendingCount, setCell, type DataDraft, type Typed } from '../utils/dataDraft'
-import { previewQuery } from '../utils/sql'
+import { isPlainReadOf, previewQuery } from '../utils/sql'
 
 const props = defineProps<{ id: string; name: string }>()
 const workspace = useWorkspaceStore()
@@ -49,7 +49,14 @@ watch(
   { immediate: true },
 )
 
-const verdict = computed(() => editability(table.value, tab.value?.result ?? null))
+const verdict = computed(() => {
+  const base = editability(table.value, tab.value?.result ?? null)
+  if (base.editable && !isPlainReadOf(tab.value?.lastSql ?? '', props.name)) {
+    return { editable: false, reason: 'Lecture seule : seule une lecture simple de la table (SELECT … FROM table, avec WHERE, ORDER BY ou LIMIT) se modifie ligne à ligne.' }
+  }
+
+  return base
+})
 const editable = computed(() => verdict.value.editable)
 
 const draft = ref<DataDraft>(emptyDraft())

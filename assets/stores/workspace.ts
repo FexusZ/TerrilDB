@@ -27,6 +27,8 @@ export interface QueryTab {
   table: string | null
   /** Identité complète de la table (base, schéma, nom) : deux tables homonymes de schémas différents n'ont pas le même onglet. */
   tableKey: string | null
+  /** L'instruction dont `result` est la réponse (le texte de l'éditeur peut avoir changé depuis). */
+  lastSql: string | null
 }
 
 /** Une table ouverte dans un onglet de la barre des tables, avec la vue où on l'a laissée. */
@@ -89,7 +91,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null, tableKey: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null, tableKey: null, lastSql: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -508,10 +510,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     target.pendingConfirmation = null
     target.view = 'result'
 
+    const sent = target.sql
     try {
-      const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: target.sql, mode: target.mode, confirmed, ...(database.value === null ? {} : { database: database.value }), ...(schema.value === null ? {} : { schema: schema.value }) })
+      const result = await api<QueryResult>('POST', `/web/connections/${connectionId.value}/query`, { sql: sent, mode: target.mode, confirmed, ...(database.value === null ? {} : { database: database.value }), ...(schema.value === null ? {} : { schema: schema.value }) })
       if (latestRun.get(id) === run) {
         target.result = result
+        target.lastSql = sent
       }
     } catch (error) {
       if (latestRun.get(id) !== run) {

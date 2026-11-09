@@ -291,7 +291,7 @@ modifications / ajouts / suppressions, colonnes touchées, SQL AVEC ses paramèt
 retrouve pas recopiée dans le journal) et `data.failed` (`row_changed` ou `engine_refused`, sans le message du moteur qui peut citer la valeur). Erreurs : 422 `invalid_data_change`, 409 `data_changed`,
 409 `data_change_failed` (message du moteur). Front : vue « Données » (`TableDataPane`, route `data/:name`) = SQL modifiable + `DataGrid` ;
 un onglet de requête par table (`QueryTab::table`), grille éditable seulement si la requête renvoie les colonnes de la table telles quelles
-(clé primaire sélectionnée, ou toutes les colonnes sans clé) ; brouillon `utils/dataDraft` ; bandeau « N changements en attente » avec
+(clé primaire sélectionnée, ou toutes les colonnes sans clé) ET si l'instruction exécutée est une lecture simple de cette table (`isPlainReadOf` : SELECT … FROM table [alias] avec WHERE / ORDER BY / LIMIT, sans jointure, agrégat, DISTINCT, UNION ni sous-requête ; `QueryTab::lastSql` = ce dont le résultat est la réponse) ; brouillon `utils/dataDraft` ; bandeau « N changements en attente » avec
 Vérifier (aperçu SQL) puis Appliquer ; relecture après application ; relancer la requête est bloqué tant que des changements attendent.
 Tests : `tests/Core/Data`, `tests/Integration/Driver/DataChangeTest` (4 moteurs), `tests/Integration/Web/TableDataWebTest`.
 
