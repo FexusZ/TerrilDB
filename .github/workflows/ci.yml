@@ -12,6 +12,7 @@ jobs:
   php:
     name: PHP (style, analyse, tests unitaires)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: ci-php-${{ github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -37,6 +38,7 @@ jobs:
   front:
     name: Interface (lint, types, tests, build)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: ci-front-${{ github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -58,6 +60,7 @@ jobs:
   integration:
     name: Intégration (bases MySQL, MariaDB, PostgreSQL, ClickHouse, Redis)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: ci-integration-${{ github.ref }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -93,10 +96,17 @@ jobs:
     # Jamais pour une pull request : ce job tourne sur la machine de production.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: [self-hosted, terrildb]
+    # Un déploiement bloqué occuperait la machine de production (une seule à la fois) : délai maximum.
+    timeout-minutes: 30
     concurrency:
       group: deploy-production
       cancel-in-progress: false
     steps:
+      # Les journaux d'un dépôt public sont lisibles de tous : le compte et les chemins de la machine y sont masqués.
+      - name: Masquer le compte et les chemins de la machine
+        run: |
+          echo "::add-mask::$HOME"
+          echo "::add-mask::$(id -un)"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

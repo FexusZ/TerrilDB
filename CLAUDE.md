@@ -19,6 +19,10 @@ Trois entrées partageant le même cœur : **interface web**, **API REST**, **se
    passe de l'utilisateur (libsodium) ; le serveur seul ne peut pas déchiffrer.
 6. Dernières versions stables de langage et framework.
 7. Un choix d'architecture non couvert ici : poser la question, ne pas deviner.
+8. **Commits sans signature d'IA** : jamais de ligne `Co-Authored-By: Claude …` ni de mention « Generated with Claude
+   Code » dans un commit ou une description de PR (consigne du propriétaire, elle prime sur l'attribution par défaut).
+   Messages en français, style existant (`feat(…)`, `docs: …`). Identité git du dépôt : compte GitHub (`.git/config`
+   local, adresse `noreply`), rien de global.
 
 ## Stack
 
@@ -53,6 +57,20 @@ Lecture seule MCP/API par défaut : filtre lexical **et** transaction read-only 
 MVP (brief) d'abord, puis par lots : multi-utilisateur + invitations → optimiseur local (plan
 d'exécution + règles d'index ; sans PMM/Vitess) → audit d'optimisation → ER diagram → Redis → ClickHouse.
 Hors lots : diff de schémas, import CSV, assistant IA intégré. (La grille de données éditable et l'éditeur de structure sont livrés : voir « Édition de structure » et « Édition de données ».)
+
+## Licence et contributions (LICENSE, CONTRIBUTING.md)
+
+Licence **AGPL-3.0-only**, un seul titulaire des droits : l'objectif est de garder la liberté de faire évoluer la licence
+(offre commerciale, double licence, cession) ; ne rien faire qui l'entame. Donc **aucune pull request de code extérieure
+n'est acceptée** tant qu'un accord de contribution (CLA) n'existe pas (`CONTRIBUTING.md` : issues bienvenues, pas de PR de
+code ; les mises à jour Dependabot sont exclues) ; ne jamais fusionner de code tiers sans cet accord ni copier du code sous
+une autre licence. Dépendances : uniquement permissives (MIT, BSD, Apache-2.0, ISC…) ; aujourd'hui seules exceptions
+acceptées, `lightningcss` (MPL-2.0, outil de compilation, non modifié) et les polices @fontsource (OFL-1.1, livrées avec leur
+licence). Toute nouvelle dépendance GPL/AGPL/SSPL ou sans licence claire : poser la question. Les bases cibles (MySQL,
+MariaDB, Redis…) ne sont que des services joints par le réseau, jamais embarqués. Signalement de failles : option GitHub
+« Report a vulnerability » (activée). L'historique git a été réécrit le 9 novembre 2026 (retrait des signatures d'IA, poussé
+de force) : tout clone antérieur est à recloner. Aucune référence à un employeur, un client ou une organisation tiers dans
+le dépôt, y compris pour ces sujets.
 
 ## Crypto (src/Crypto)
 
@@ -338,7 +356,13 @@ CI sur les serveurs GitHub (php, front, integration) puis, sur `push` vers `main
 (`~/.config/terrildb`, secret GitHub `TERRILDB_DOMAIN`) : ne jamais écrire le domaine ni un secret dans le dépôt, qui est
 public. La base interne est seule sur le réseau Docker `backend` (`internal`, partagé avec l'application, aucune sortie) ; les règles de sortie du pare-feu de l'hôte sont documentées dans `docs/deploy.md` mais jamais appliquées par le script (elles dépendent des bases cibles). L'application n'écoute que sur 127.0.0.1 (port 8090) derrière le nginx de la machine (`setup-host.sh`, une fois,
 sudo). Dépôt public + runner : les workflows de PR externes exigent une approbation, ne jamais approuver une PR qui touche
-`.github/` ou `docker/`.
+`.github/` ou `docker/`. Réglages GitHub du dépôt (hors fichiers, à refaire si on le recrée) : approbation obligatoire pour TOUT contributeur
+extérieur (`all_external_contributors`), actions limitées à celles de GitHub et figées par empreinte, règle `main-protegee` (ni suppression
+ni push forcé de `main` : la désactiver le temps d'une réécriture d'historique voulue), alertes de vulnérabilités, correctifs de sécurité
+Dependabot, secret scanning et protection des pushs, signalement privé des failles. Les journaux d'Actions d'un dépôt public sont lisibles de
+tous : le job de déploiement masque le compte et les chemins de la machine (`add-mask`), mais l'en-tête du job imprime le nom de la machine
+(`Machine name`) AVANT toute étape : ce nom doit rester neutre (nom d'hôte et dossier du runner sans rapport avec un projet ou une personne).
+Chaque job a un délai maximum (le déploiement occupe l'unique runner de production).
 
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
