@@ -353,7 +353,13 @@ CI sur les serveurs GitHub (php, front, integration) puis, sur `push` vers `main
 (`~/.config/terrildb`, secret GitHub `TERRILDB_DOMAIN`) : ne jamais écrire le domaine ni un secret dans le dépôt, qui est
 public. La base interne est seule sur le réseau Docker `backend` (`internal`, partagé avec l'application, aucune sortie) ; les règles de sortie du pare-feu de l'hôte sont documentées dans `docs/deploy.md` mais jamais appliquées par le script (elles dépendent des bases cibles). L'application n'écoute que sur 127.0.0.1 (port 8090) derrière le nginx de la machine (`setup-host.sh`, une fois,
 sudo). Dépôt public + runner : les workflows de PR externes exigent une approbation, ne jamais approuver une PR qui touche
-`.github/` ou `docker/`.
+`.github/` ou `docker/`. Réglages GitHub du dépôt (hors fichiers, à refaire si on le recrée) : approbation obligatoire pour TOUT contributeur
+extérieur (`all_external_contributors`), actions limitées à celles de GitHub et figées par empreinte, règle `main-protegee` (ni suppression
+ni push forcé de `main` : la désactiver le temps d'une réécriture d'historique voulue), alertes de vulnérabilités, correctifs de sécurité
+Dependabot, secret scanning et protection des pushs, signalement privé des failles. Les journaux d'Actions d'un dépôt public sont lisibles de
+tous : le job de déploiement masque le compte et les chemins de la machine (`add-mask`), mais l'en-tête du job imprime le nom de la machine
+(`Machine name`) AVANT toute étape : ce nom doit rester neutre (nom d'hôte et dossier du runner sans rapport avec un projet ou une personne).
+Chaque job a un délai maximum (le déploiement occupe l'unique runner de production).
 
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
