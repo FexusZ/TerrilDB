@@ -9,8 +9,52 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Fichiers modifiés
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      php: ${{ steps.diff.outputs.php }}
+      front: ${{ steps.diff.outputs.front }}
+      deploy: ${{ steps.diff.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Essais du tri
+        run: sh .github/scripts/changes-test.sh
+      # Seuls les contrôles concernés par les fichiers modifiés tournent (doc seule : aucun, et pas de déploiement). Dans le doute
+      # tout tourne : base introuvable, fichier inconnu, ou dernier run de main qui n'était pas vert (un correctif ne doit pas
+      # laisser passer ce qu'un run précédent avait refusé).
+      - name: Ce qui a changé
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          tout=false
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            tout=true
+          fi
+          if [ "${{ github.event_name }}" = "push" ]; then
+            dernier=$(gh run list --repo "${{ github.repository }}" --workflow CI --branch main --status completed --limit 1 --json conclusion --jq '.[0].conclusion // "inconnu"')
+            [ "$dernier" = "success" ] || tout=true
+          fi
+          if [ "$tout" = true ]; then
+            : | sh .github/scripts/changes.sh >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only "$BASE" HEAD | sh .github/scripts/changes.sh >> "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
   php:
     name: PHP (style, analyse, tests unitaires)
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -20,11 +64,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # L'image PHP met une minute à se construire (compilation des extensions) : elle est gardée d'un run à l'autre, et
+      # renouvelée chaque semaine pour reprendre les correctifs de l'image de base.
+      - name: Semaine de l'image PHP
+        id: semaine
+        run: echo "iso=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Image PHP en cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/image-php.tar
+          key: image-php-${{ hashFiles('docker/php/Dockerfile') }}-${{ steps.semaine.outputs.iso }}
       - name: Outils et dépendances
         run: |
           sh docker/init-env.sh
           DC="env UID=$(id -u) GID=$(id -g) docker compose"
-          $DC build php
+          if [ -f "$RUNNER_TEMP/image-php.tar" ]; then
+            docker load -i "$RUNNER_TEMP/image-php.tar"
+          else
+            $DC build php
+            docker save -o "$RUNNER_TEMP/image-php.tar" terrildb-php
+          fi
           $DC run --rm --no-deps php composer install --no-interaction --no-progress
       - name: Contrôles
         run: |
@@ -37,6 +96,8 @@ jobs:
 
   front:
     name: Interface (lint, types, tests, build)
+    needs: changes
+    if: needs.changes.outputs.front == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -59,6 +120,8 @@ jobs:
 
   integration:
     name: Intégration (bases MySQL, MariaDB, PostgreSQL, ClickHouse, Redis)
+    needs: changes
+    if: needs.changes.outputs.php == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     concurrency:
@@ -68,6 +131,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # L'image PHP met une minute à se construire (compilation des extensions) : elle est gardée d'un run à l'autre, et
+      # renouvelée chaque semaine pour reprendre les correctifs de l'image de base.
+      - name: Semaine de l'image PHP
+        id: semaine
+        run: echo "iso=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Image PHP en cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/image-php.tar
+          key: image-php-${{ hashFiles('docker/php/Dockerfile') }}-${{ steps.semaine.outputs.iso }}
       - name: Bases et dépendances
         run: |
           sh docker/init-env.sh
@@ -75,7 +148,12 @@ jobs:
           # Les bases se téléchargent et s'initialisent (une trentaine de secondes) pendant que l'image PHP se construit.
           $DC --profile targets up -d --wait db target-mysql target-mariadb target-postgres target-clickhouse target-redis &
           bases=$!
-          $DC build php
+          if [ -f "$RUNNER_TEMP/image-php.tar" ]; then
+            docker load -i "$RUNNER_TEMP/image-php.tar"
+          else
+            $DC build php
+            docker save -o "$RUNNER_TEMP/image-php.tar" terrildb-php
+          fi
           $DC run --rm --no-deps php composer install --no-interaction --no-progress
           wait "$bases"
       - name: Schémas de la base interne
@@ -94,9 +172,10 @@ jobs:
 
   deploy:
     name: Déploiement
-    needs: [php, front, integration]
-    # Jamais pour une pull request : ce job tourne sur la machine de production.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, php, front, integration]
+    # Jamais pour une pull request : ce job tourne sur la machine de production. Pas de déploiement pour de la documentation seule,
+    # ni si un contrôle a échoué (un contrôle sauté parce que rien ne le concernait ne bloque pas).
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.deploy == 'true' }}
     runs-on: [self-hosted, terrildb]
     # Un déploiement bloqué occuperait la machine de production (une seule à la fois) : délai maximum.
     timeout-minutes: 30

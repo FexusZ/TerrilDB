@@ -1,6 +1,8 @@
 services:
   php:
     build: docker/php
+    # Nom fixe : la CI garde cette image d'un run à l'autre (docker save / load), et son nom ne doit pas dépendre du dossier du clone.
+    image: terrildb-php
     working_dir: /app
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
@@ -87,7 +89,7 @@ services:
 
   target-clickhouse:
     profiles: [targets]
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:26.10
     env_file: docker/dev/target-clickhouse.env
     ports: ["18123:8123"]
     volumes:
