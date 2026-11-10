@@ -9,6 +9,8 @@ vi.mock('./api/client', async (importOriginal) => ({ ...(await importOriginal<ty
 
 const alice: User = { id: '1', username: 'alice', email: 'a@exemple.test', totpEnabled: false, recoveryCodesLeft: 0, role: 'admin', recoveryPhrase: false, createdAt: '2026-11-01T10:00:00+00:00' }
 
+const id = '3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f'
+
 function routerFor(user: User | null) {
   setActivePinia(createPinia())
   const session = useSessionStore()
@@ -24,10 +26,10 @@ describe('router guard', () => {
   it('sends an anonymous visitor to the login, remembering where they wanted to go', async () => {
     const router = routerFor(null)
 
-    await router.push('/connections/abc')
+    await router.push(`/connections/${id}`)
 
     expect(router.currentRoute.value.name).toBe('login')
-    expect(router.currentRoute.value.query.redirect).toBe('/connections/abc')
+    expect(router.currentRoute.value.query.redirect).toBe(`/connections/${id}`)
   })
 
   it('lets an anonymous visitor reach the public pages', async () => {
@@ -74,18 +76,18 @@ describe('router guard', () => {
   it('knows the workspace routes', async () => {
     const router = routerFor(alice)
 
-    await router.push('/connections/abc')
+    await router.push(`/connections/${id}`)
     expect(router.currentRoute.value.name).toBe('workspace')
-    await router.push('/connections/abc/tables/orders')
+    await router.push(`/connections/${id}/tables/orders`)
     expect(router.currentRoute.value.name).toBe('table')
     expect(router.currentRoute.value.params.name).toBe('orders')
-    await router.push('/connections/abc/audit')
+    await router.push(`/connections/${id}/audit`)
     expect(router.currentRoute.value.name).toBe('audit')
-    await router.push('/connections/abc/diagram')
+    await router.push(`/connections/${id}/diagram`)
     expect(router.currentRoute.value.name).toBe('diagram')
     await router.push('/security/invitations')
     expect(router.currentRoute.value.name).toBe('invitations')
-    await router.push('/connections/abc/edit')
+    await router.push(`/connections/${id}/edit`)
     expect(router.currentRoute.value.name).toBe('connection-edit')
     await router.push('/connections/new')
     expect(router.currentRoute.value.name).toBe('connection-new')
@@ -95,6 +97,17 @@ describe('router guard', () => {
     expect(router.currentRoute.value.name).toBe('activity')
     await router.push('/security/tokens')
     expect(router.currentRoute.value.name).toBe('tokens')
+  })
+
+  it('refuses a connection id that is not a UUID', async () => {
+    const router = routerFor(alice)
+
+    await router.push('/connections/abc')
+    expect(router.currentRoute.value.name).toBe('connections')
+    await router.push('/connections/abc/edit')
+    expect(router.currentRoute.value.name).toBe('connections')
+    await router.push('/connections/..%2F..%2Fx/tables/orders')
+    expect(router.currentRoute.value.name).toBe('connections')
   })
 
   it('answers an unknown address with the workspace', async () => {
