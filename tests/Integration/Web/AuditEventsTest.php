@@ -87,7 +87,7 @@ final class AuditEventsTest extends WebApiTestCase
     public function testThrottlingIsRecorded(): void
     {
         $user = $this->seedUser();
-        for ($i = 0; $i < 9; ++$i) {
+        for ($i = 0; $i < 6; ++$i) {
             $this->call('POST', '/web/login', ['login' => 'alice', 'password' => 'not the password!!']);
         }
 

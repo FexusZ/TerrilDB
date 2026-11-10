@@ -9,6 +9,7 @@ use App\Audit\AuditLog;
 use App\Audit\AuditOutcome;
 use App\Http\Json\JsonInput;
 use App\Http\Json\TooManyAttemptsException;
+use App\Http\Web\Security\LockoutOutcome;
 use App\Http\Web\Security\LoginThrottle;
 use App\Invitation\InvitationService;
 use App\Repository\UserRepository;
@@ -69,7 +70,7 @@ final readonly class AccountController
         $code = $input->optionalString('code');
 
         try {
-            $this->throttle->hit($request->getClientIp(), $login);
+            $this->throttle->hitLogin($request->getClientIp(), $login);
         } catch (TooManyAttemptsException $blocked) {
             // Une seule mention par minute : un attaquant qui insiste ne doit pas remplir le journal.
             if ($this->loginNoticeLimiter->create(hash('sha256', mb_strtolower(trim($login))))->consume()->isAccepted()) {
@@ -86,11 +87,12 @@ final readonly class AccountController
             if (!$failure instanceof SecondFactorRequiredException) {
                 $reason = $failure instanceof InvalidSecondFactorException ? 'invalid_second_factor' : 'invalid_credentials';
                 $this->audit->record($this->session->auditContext($this->users->findByLogin($login)), AuditAction::LoginFailure, AuditOutcome::Failed, details: ['reason' => $reason]);
+                $this->recordLockout($this->throttle->failed($request->getClientIp(), $login), $login);
             }
 
             throw $failure;
         }
-        $this->throttle->succeeded($login);
+        $this->throttle->succeeded($login, $request->getClientIp());
 
         $this->session->open($result->user, $result->key);
         $context = $this->session->auditContext($result->user);
@@ -106,5 +108,21 @@ final readonly class AccountController
     public function me(): JsonResponse
     {
         return new JsonResponse(['user' => UserPresenter::present($this->session->user())]);
+    }
+
+    /**
+     * Un blocage ou un bannissement qui vient d'être décidé : une ligne au journal (genre et durée, jamais le compte saisi).
+     */
+    private function recordLockout(?LockoutOutcome $outcome, string $login): void
+    {
+        if (null === $outcome) {
+            return;
+        }
+        $this->audit->record(
+            $this->session->auditContext($this->users->findByLogin($login)),
+            AuditAction::LoginThrottled,
+            AuditOutcome::Refused,
+            details: ['kind' => $outcome->kind->value, 'seconds' => $outcome->seconds],
+        );
     }
 }

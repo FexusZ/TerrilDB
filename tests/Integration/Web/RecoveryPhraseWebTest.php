@@ -115,7 +115,7 @@ final class RecoveryPhraseWebTest extends WebApiTestCase
         $this->enable();
         $this->call('POST', '/web/logout');
 
-        for ($i = 0; $i < 8; ++$i) {
+        for ($i = 0; $i < 5; ++$i) {
             $this->call('POST', '/web/recover', ['login' => 'alice', 'phrase' => '0000-0000-0000-0000-0000-0000-0000-0000', 'newPassword' => self::NEW]);
             self::assertSame(403, $this->statusCode());
         }

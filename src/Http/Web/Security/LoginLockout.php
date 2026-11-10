@@ -7,6 +7,7 @@ namespace App\Http\Web\Security;
 use App\Http\Json\TooManyAttemptsException;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\Clock\ClockInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Blocage à paliers des échecs de connexion, par COUPLE adresse + compte : cinq échecs de suite bloquent ce couple
@@ -30,7 +31,7 @@ final readonly class LoginLockout
     public const MEMORY = 86400;
 
     public function __construct(
-        private CacheItemPoolInterface $pool,
+        #[Autowire(service: 'cache.rate_limiter')] private CacheItemPoolInterface $pool,
         private ClockInterface $clock,
     ) {
     }
