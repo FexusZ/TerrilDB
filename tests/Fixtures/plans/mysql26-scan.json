@@ -1,0 +1,30 @@
+{
+  "query": "/* select#1 */ select `t`.`i`.`id` AS `id`,`t`.`i`.`o_id` AS `o_id`,`t`.`i`.`q` AS `q` from `t`.`i` where (`t`.`i`.`q` > 3)",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on i",
+        "table_name": "i",
+        "access_type": "table",
+        "schema_name": "t",
+        "used_columns": [
+          "id",
+          "o_id",
+          "q"
+        ],
+        "estimated_rows": 2.0,
+        "estimated_total_cost": 0.44999999999999996
+      }
+    ],
+    "condition": "(i.q > 3)",
+    "operation": "Filter: (i.q > 3)",
+    "access_type": "filter",
+    "estimated_rows": 1.0,
+    "filter_columns": [
+      "t.i.q"
+    ],
+    "estimated_total_cost": 0.44999999999999996
+  },
+  "query_type": "select",
+  "json_schema_version": "2.1"
+}

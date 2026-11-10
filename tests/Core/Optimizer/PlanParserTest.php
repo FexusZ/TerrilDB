@@ -102,6 +102,37 @@ final class PlanParserTest extends TestCase
         self::assertSame('(`shop`.`order_items`.`quantity` > 3)', $scan->condition);
     }
 
+    public function testMySql26FullScanInJsonFormatV2(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql26-scan'));
+
+        self::assertEqualsWithDelta(0.45, $plan->totalCost, 0.001);
+        $scan = $plan->root->children[0];
+        self::assertSame(PlanKind::FullScan, $scan->kind);
+        self::assertTrue($scan->fullScan);
+        self::assertSame('i', $scan->relation);
+        self::assertSame(2, $scan->rows);
+        self::assertSame('(i.q > 3)', $scan->condition);
+        self::assertSame([], $scan->children);
+    }
+
+    public function testMySql26JoinInJsonFormatV2(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql26-join'));
+
+        self::assertEqualsWithDelta(0.8, $plan->totalCost, 0.001);
+        $join = $plan->root->children[0];
+        self::assertSame(PlanKind::Join, $join->kind);
+        self::assertSame(['full_scan', 'index_scan'], self::kinds($join->children));
+        [$o, $i] = $join->children;
+        self::assertSame('o', $o->relation);
+        self::assertSame('(o.c = 1)', $o->condition);
+        self::assertSame('i', $i->relation);
+        self::assertSame('o_id', $i->index);
+        self::assertSame(1, $i->rows);
+        self::assertFalse($i->fullScan);
+    }
+
     public function testMariaDbJoinTreeCollapsesTheLoneNestedLoop(): void
     {
         $plan = (new MySqlPlanParser())->parse($this->fixture('mariadb-join'));

@@ -10,7 +10,8 @@ use App\Core\Optimizer\Exception\UnreadablePlanException;
  * Lit `EXPLAIN FORMAT=JSON` de MySQL et de MariaDB (deux variantes de la même forme : `rows` ou
  * `rows_examined_per_scan`, `cost` ou `cost_info`). Le plan est un « query_block » dont les tables sont atteintes
  * par des conteneurs (nested_loop, ordering_operation, grouping_operation…). Une jointure d'une seule table n'est
- * pas une jointure : MariaDB enveloppe tout dans un nested_loop, on le replie.
+ * pas une jointure : MariaDB enveloppe tout dans un nested_loop, on le replie. MySQL 26 rend par défaut le format
+ * JSON v2 (un arbre « query_plan » d'opérations avec leurs « inputs ») : lu par `parseTree`.
  */
 final class MySqlPlanParser implements PlanParser
 {
@@ -33,6 +34,10 @@ final class MySqlPlanParser implements PlanParser
             throw UnreadablePlanException::create();
         }
 
+        if (\is_array($data) && \is_array($data['query_plan'] ?? null)) {
+            return $this->parseTree($data['query_plan']);
+        }
+
         $block = \is_array($data) ? ($data['query_block'] ?? null) : null;
         if (!\is_array($block)) {
             throw UnreadablePlanException::create();
@@ -42,6 +47,64 @@ final class MySqlPlanParser implements PlanParser
         $root = new PlanNode(PlanKind::Other, \is_string($block['message'] ?? null) ? $block['message'] : 'Query', children: $this->collect($block));
 
         return new QueryPlan($root, self::number($costInfo['query_cost'] ?? $block['cost'] ?? null));
+    }
+
+    /**
+     * @param array<array-key, mixed> $plan
+     */
+    private function parseTree(array $plan): QueryPlan
+    {
+        return new QueryPlan(
+            new PlanNode(PlanKind::Other, 'Query', children: [$this->operation($plan, null)]),
+            self::number($plan['estimated_total_cost'] ?? null),
+        );
+    }
+
+    /**
+     * Un filtre n'est pas un nœud : sa condition passe à l'accès à la table qu'il recouvre.
+     *
+     * @param array<array-key, mixed> $op
+     */
+    private function operation(array $op, ?string $condition): PlanNode
+    {
+        $inputs = array_values(array_filter(\is_array($op['inputs'] ?? null) ? $op['inputs'] : [], \is_array(...)));
+        $access = \is_string($op['access_type'] ?? null) ? $op['access_type'] : 'unknown';
+        $label = \is_string($op['operation'] ?? null) ? $op['operation'] : $access;
+
+        if ('filter' === $access && 1 === \count($inputs)) {
+            return $this->operation($inputs[0], \is_string($op['condition'] ?? null) ? $op['condition'] : $condition);
+        }
+
+        $children = array_map(fn (array $input): PlanNode => $this->operation($input, null), $inputs);
+        $rows = self::number($op['estimated_rows'] ?? null);
+        $cost = self::number($op['estimated_total_cost'] ?? null);
+
+        if (\is_string($op['table_name'] ?? null)) {
+            $full = 'table' === $access;
+
+            return new PlanNode(
+                $full ? PlanKind::FullScan : (\is_string($op['index_name'] ?? null) && 'index_scan' === ($op['index_access_type'] ?? null) ? PlanKind::IndexFullScan : PlanKind::IndexScan),
+                $label,
+                $op['table_name'],
+                \is_string($op['index_name'] ?? null) ? $op['index_name'] : null,
+                null === $rows ? null : (int) round($rows),
+                $cost,
+                $condition,
+                $full,
+            );
+        }
+
+        $kind = match ($access) {
+            'join' => PlanKind::Join,
+            'sort' => PlanKind::Sort,
+            'aggregate' => PlanKind::Aggregate,
+            default => PlanKind::Other,
+        };
+        if (PlanKind::Join === $kind && 1 === \count($children)) {
+            return $children[0];
+        }
+
+        return new PlanNode($kind, $label, rows: null === $rows ? null : (int) round($rows), cost: $cost, condition: $condition, children: $children);
     }
 
     /**
