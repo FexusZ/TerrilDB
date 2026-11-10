@@ -152,7 +152,7 @@ lire son identifiant. Une session perd sa reconnaissance quand le hash du mot de
 Protections : en-tête `X-TerrilDB-Request: 1` obligatoire sur toute requête non sûre (CSRF), plafond de tentatives
 (`LoginThrottle` : 30/15 min par adresse, 8/15 min par compte ; aussi sur les actions qui vérifient le mot de passe),
 erreurs du domaine traduites en codes stables par `ErrorMapper` (jamais le message du moteur d'une cible injoignable).
-Inscription : `APP_REGISTRATION=first_only` (défaut, seulement le premier compte) ou `open`.
+Inscription : `APP_REGISTRATION=first_only` (défaut, seulement le premier compte) ou `open`. Le premier compte peut aussi naître en console : `app:user:create-first <e-mail> <utilisateur>` (`CreateFirstAccountCommand`, mot de passe saisi deux fois sans écho, jamais en argument ; refusé sans terminal et dès qu'un compte existe).
 Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarré à chaque requête, écritures annulées par DAMA).
 
 ## API REST à jetons (src/ApiToken, src/Http/Api, docs/api.md)

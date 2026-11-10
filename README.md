@@ -41,7 +41,12 @@ docker compose up php                                  # http://localhost:8000/a
 ```
 
 Le premier compte créé administre l'installation. Les suivants arrivent par invitation (`APP_REGISTRATION` règle
-l'inscription libre).
+l'inscription libre). Le premier compte peut aussi se créer en console, sans ouvrir le formulaire d'inscription (mot de
+passe saisi deux fois, sans écho ; refusé dès qu'un compte existe) :
+
+```bash
+docker compose run --rm php php bin/console app:user:create-first <adresse-e-mail> <nom-d-utilisateur>
+```
 
 Bases cibles de test (MySQL, MariaDB, PostgreSQL, ClickHouse, Redis) :
 

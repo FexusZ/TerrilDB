@@ -86,4 +86,7 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 - Retour arrière : le script remet l'image précédente si le démarrage échoue, mais ne défait pas les migrations déjà
   passées. Une migration doit donc rester compatible avec la version précédente du code (ajouter avant de retirer).
 - Les sessions sont dans un volume : un déploiement ne déconnecte personne.
-- Inscription : `APP_REGISTRATION=first_only` (dans `app.env`) ; les autres comptes arrivent par invitation.
+- Inscription : `APP_REGISTRATION=first_only` (dans `app.env`) ; les autres comptes arrivent par invitation. Le premier compte
+  peut se créer en console plutôt que par le formulaire : `php bin/console app:user:create-first <e-mail> <utilisateur>` dans le
+  conteneur de l'application, avec un terminal (`docker compose -f compose.prod.yaml exec app …`) ; la commande refuse dès qu'un
+  compte existe.
