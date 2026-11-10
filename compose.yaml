@@ -17,7 +17,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     command: php -S 0.0.0.0:8000 -t public docker/php/router.php
 
   # Outillage front (Vue 3, Vite, Vitest) : l'hôte n'a pas Node.
@@ -34,7 +34,7 @@ services:
       HOME: /tmp
       npm_config_cache: /tmp/npm
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     command: npm run dev -- --host 0.0.0.0
 
   # Base interne de TerrilDB (utilisateurs, connexions chiffrées, historique, audit)
@@ -56,7 +56,7 @@ services:
     profiles: [targets]
     image: mysql:8.4
     env_file: docker/dev/target-mysql.env
-    ports: ["33061:3306"]
+    ports: ["127.0.0.1:33061:3306"]
     volumes:
       - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -80,7 +80,7 @@ services:
     profiles: [targets]
     image: mariadb:11.8
     env_file: docker/dev/target-mariadb.env
-    ports: ["33062:3306"]
+    ports: ["127.0.0.1:33062:3306"]
     volumes:
       # même dialecte que MySQL pour ce jeu de données : scripts partagés
       - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
@@ -105,7 +105,7 @@ services:
     profiles: [targets]
     image: postgres:18-alpine
     env_file: docker/dev/target-postgres.env
-    ports: ["54321:5432"]
+    ports: ["127.0.0.1:54321:5432"]
     volumes:
       - ./docker/targets/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -118,7 +118,7 @@ services:
     profiles: [targets]
     image: clickhouse/clickhouse-server:26.10
     env_file: docker/dev/target-clickhouse.env
-    ports: ["18123:8123"]
+    ports: ["127.0.0.1:18123:8123"]
     volumes:
       - ./docker/targets/clickhouse:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -131,7 +131,7 @@ services:
     profiles: [targets]
     image: redis:8-alpine
     env_file: docker/dev/target-redis.env
-    ports: ["63791:6379"]
+    ports: ["127.0.0.1:63791:6379"]
     # Mot de passe lu dans l'environnement (jamais dans ce fichier) ; pas de persistance : cible jetable.
     command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
     healthcheck:
