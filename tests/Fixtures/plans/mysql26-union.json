@@ -1,0 +1,112 @@
+{
+  "query": "/* select#1 */ select `t`.`o`.`id` AS `id`,`t`.`o`.`c` AS `c`,`t`.`o`.`q` AS `q` from `t`.`o` semi join (`t`.`i`) where ((`t`.`i`.`o_id` = `t`.`o`.`id`) and (`t`.`i`.`q` > 3)) union /* select#3 */ select `t`.`o`.`id` AS `id`,`t`.`o`.`c` AS `c`,`t`.`o`.`q` AS `q` from `t`.`o` where (`t`.`o`.`c` = 2)",
+  "query_plan": {
+    "inputs": [
+      {
+        "union": true,
+        "inputs": [
+          {
+            "inputs": [
+              {
+                "operation": "Table scan on o",
+                "table_name": "o",
+                "access_type": "table",
+                "schema_name": "t",
+                "used_columns": [
+                  "id",
+                  "c",
+                  "q"
+                ],
+                "estimated_rows": 2.0,
+                "estimated_total_cost": 0.45
+              },
+              {
+                "inputs": [
+                  {
+                    "operation": "Table scan on i",
+                    "table_name": "i",
+                    "access_type": "table",
+                    "schema_name": "t",
+                    "used_columns": [
+                      "o_id",
+                      "q"
+                    ],
+                    "estimated_rows": 2.0,
+                    "estimated_total_cost": 0.22501735687255858
+                  }
+                ],
+                "heading": "Hash",
+                "condition": "(i.q > 3)",
+                "operation": "Filter: (i.q > 3)",
+                "access_type": "filter",
+                "estimated_rows": 1.0,
+                "filter_columns": [
+                  "t.i.q"
+                ],
+                "estimated_total_cost": 0.22501735687255858
+              }
+            ],
+            "join_type": "semijoin",
+            "operation": "Hash semijoin (FirstMatch) (i.o_id = o.id)",
+            "access_type": "join",
+            "join_columns": [
+              "t.i.o_id",
+              "t.o.id"
+            ],
+            "estimated_rows": 1.0,
+            "hash_condition": [
+              "(i.o_id = o.id)"
+            ],
+            "join_algorithm": "hash",
+            "semijoin_strategy": "firstmatch",
+            "estimated_total_cost": 0.7750520706176758
+          },
+          {
+            "inputs": [
+              {
+                "operation": "Table scan on o",
+                "table_name": "o",
+                "access_type": "table",
+                "schema_name": "t",
+                "used_columns": [
+                  "id",
+                  "c",
+                  "q"
+                ],
+                "estimated_rows": 2.0,
+                "estimated_total_cost": 0.44999999999999996
+              }
+            ],
+            "condition": "(o.c = 2)",
+            "operation": "Filter: (o.c = 2)",
+            "access_type": "filter",
+            "estimated_rows": 1.0,
+            "filter_columns": [
+              "t.o.c"
+            ],
+            "estimated_total_cost": 0.44999999999999996
+          }
+        ],
+        "operation": "Union materialize with deduplication",
+        "access_type": "materialize",
+        "deduplication": true,
+        "estimated_rows": 2.0,
+        "estimated_total_cost": 1.6858815637052333,
+        "estimated_first_row_cost": 1.6858815637052333
+      }
+    ],
+    "operation": "Table scan on <union temporary>",
+    "table_name": "<union temporary>",
+    "access_type": "table",
+    "used_columns": [
+      "id",
+      "c",
+      "q"
+    ],
+    "estimated_rows": 2.0,
+    "estimated_total_cost": 4.210881563705233,
+    "estimated_first_row_cost": 2.948381563705233
+  },
+  "query_type": "select",
+  "json_schema_version": "2.1"
+}

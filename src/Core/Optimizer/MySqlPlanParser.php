@@ -81,7 +81,7 @@ final class MySqlPlanParser implements PlanParser
         $rows = self::number($op['estimated_rows'] ?? null);
         $cost = self::number($op['estimated_total_cost'] ?? null) ?? ($children[0]->cost ?? null);
 
-        if (\is_string($op['table_name'] ?? null)) {
+        if (\is_string($op['table_name'] ?? null) && !str_starts_with($op['table_name'], '<')) {
             $full = 'table' === $access;
 
             return new PlanNode(

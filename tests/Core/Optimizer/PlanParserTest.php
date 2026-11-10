@@ -150,6 +150,27 @@ final class PlanParserTest extends TestCase
         self::assertFalse($scan->fullScan);
     }
 
+    public function testMySql26TemporaryTableIsNotAFullScanOfARealTable(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql26-union'));
+
+        $temporary = $plan->root->children[0];
+        self::assertSame(PlanKind::Other, $temporary->kind);
+        self::assertFalse($temporary->fullScan);
+        self::assertNull($temporary->relation);
+        self::assertCount(1, $temporary->children, 'la matérialisation de l\'union est gardée');
+        $scans = [];
+        $walk = static function (PlanNode $n) use (&$walk, &$scans): void {
+            if ($n->fullScan) {
+                $scans[] = $n->relation;
+            }
+            array_map($walk, $n->children);
+        };
+        $walk($plan->root);
+        sort($scans);
+        self::assertSame(['i', 'o', 'o'], $scans);
+    }
+
     public function testMariaDbJoinTreeCollapsesTheLoneNestedLoop(): void
     {
         $plan = (new MySqlPlanParser())->parse($this->fixture('mariadb-join'));
