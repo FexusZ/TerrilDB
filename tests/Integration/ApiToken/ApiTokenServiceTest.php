@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\ApiToken;
 
+use App\ApiToken\ApiTokenSecret;
 use App\ApiToken\ApiTokenService;
 use App\ApiToken\Exception\ApiTokenNotFoundException;
 use App\ApiToken\Exception\InvalidApiTokenException;
@@ -114,6 +115,24 @@ final class ApiTokenServiceTest extends DatabaseTestCase
         $this->entityManager->clear();
 
         self::assertSame('2026-11-01T10:02:00+00:00', $this->tokens->find($access->token->getId())?->getLastUsedAt()?->format(\DATE_ATOM));
+    }
+
+    public function testAConcurrentWriteOfTheTokenDoesNotMakeAuthenticationFail(): void
+    {
+        $token = $this->issue();
+        $id = ApiTokenSecret::parse($token)->id;
+        $this->clock->sleep(120);
+        $this->entityManager->clear();
+        // Cette requête a déjà lu le jeton ; une autre l'écrit avant elle (la version du verrou optimiste avance).
+        self::assertNotNull($this->tokens->find($id));
+        $this->entityManager->getConnection()->executeStatement('UPDATE api_token SET version = version + 1, last_used_at = ? WHERE id = ?', ['2026-11-01 10:02:00', $id->toRfc4122()]);
+
+        $access = $this->service->authenticate($token);
+
+        self::assertTrue($access->token->getId()->equals($id));
+        self::assertTrue($this->entityManager->isOpen());
+        $this->entityManager->clear();
+        self::assertSame('2026-11-01T10:02:00+00:00', $this->tokens->find($id)?->getLastUsedAt()?->format(\DATE_ATOM));
     }
 
     public function testTheKeyOpensTheConnectionsOfTheOwner(): void

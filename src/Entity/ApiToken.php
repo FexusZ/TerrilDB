@@ -222,6 +222,12 @@ final class ApiToken
         return hash_equals($this->verifier, $verifier);
     }
 
+    /** Vrai si la dernière utilisation date de plus d'une minute (ou n'est pas connue) : il faut alors l'enregistrer. */
+    public function isUseRecordDue(\DateTimeImmutable $now): bool
+    {
+        return null === $this->lastUsedAt || $now->getTimestamp() - $this->lastUsedAt->getTimestamp() >= self::USE_RECORD_INTERVAL_SECONDS;
+    }
+
     /**
      * Mémorise la dernière utilisation, au plus une fois par minute : une écriture à chaque requête serait inutile.
      *
@@ -229,10 +235,10 @@ final class ApiToken
      */
     public function recordUse(\DateTimeImmutable $now): bool
     {
-        $now = $now->setTimezone(new \DateTimeZone('UTC'));
-        if (null !== $this->lastUsedAt && $now->getTimestamp() - $this->lastUsedAt->getTimestamp() < self::USE_RECORD_INTERVAL_SECONDS) {
+        if (!$this->isUseRecordDue($now)) {
             return false;
         }
+        $now = $now->setTimezone(new \DateTimeZone('UTC'));
 
         $this->lastUsedAt = $now;
 

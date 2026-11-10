@@ -20,6 +20,15 @@ final class ApiTokenRepository extends ServiceEntityRepository
         parent::__construct($registry, ApiToken::class);
     }
 
+    /** N'avance jamais la date, ne touche ni à la version ni à l'entité : une écriture concurrente du jeton reste valide. */
+    public function recordUse(ApiToken $token, \DateTimeImmutable $now): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE api_token SET last_used_at = :now WHERE id = :id AND (last_used_at IS NULL OR last_used_at < :now)',
+            ['now' => $now->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'), 'id' => $token->getId()->toRfc4122()],
+        );
+    }
+
     public function save(ApiToken $token): void
     {
         $entityManager = $this->getEntityManager();
