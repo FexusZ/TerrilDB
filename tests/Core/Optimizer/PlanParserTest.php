@@ -133,6 +133,23 @@ final class PlanParserTest extends TestCase
         self::assertFalse($i->fullScan);
     }
 
+    public function testMySql26SortAndGroupWrapTheIndexScan(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql26-group'));
+
+        self::assertEqualsWithDelta(0.91, $plan->totalCost, 0.01, 'le tri ne donne pas de coût : celui de son entrée');
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        $stream = $sort->children[0];
+        self::assertSame(PlanKind::Other, $stream->kind);
+        $group = $stream->children[0];
+        self::assertSame(PlanKind::Aggregate, $group->kind);
+        $scan = $group->children[0];
+        self::assertSame(PlanKind::IndexFullScan, $scan->kind);
+        self::assertSame('o_id', $scan->index);
+        self::assertFalse($scan->fullScan);
+    }
+
     public function testMariaDbJoinTreeCollapsesTheLoneNestedLoop(): void
     {
         $plan = (new MySqlPlanParser())->parse($this->fixture('mariadb-join'));

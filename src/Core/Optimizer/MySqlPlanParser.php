@@ -54,9 +54,11 @@ final class MySqlPlanParser implements PlanParser
      */
     private function parseTree(array $plan): QueryPlan
     {
+        $top = $this->operation($plan, null);
+
         return new QueryPlan(
-            new PlanNode(PlanKind::Other, 'Query', children: [$this->operation($plan, null)]),
-            self::number($plan['estimated_total_cost'] ?? null),
+            new PlanNode(PlanKind::Other, 'Query', children: [$top]),
+            self::number($plan['estimated_total_cost'] ?? null) ?? $top->cost,
         );
     }
 
@@ -77,7 +79,7 @@ final class MySqlPlanParser implements PlanParser
 
         $children = array_map(fn (array $input): PlanNode => $this->operation($input, null), $inputs);
         $rows = self::number($op['estimated_rows'] ?? null);
-        $cost = self::number($op['estimated_total_cost'] ?? null);
+        $cost = self::number($op['estimated_total_cost'] ?? null) ?? ($children[0]->cost ?? null);
 
         if (\is_string($op['table_name'] ?? null)) {
             $full = 'table' === $access;
