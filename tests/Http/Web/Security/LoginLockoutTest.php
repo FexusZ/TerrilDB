@@ -166,4 +166,31 @@ final class LoginLockoutTest extends TestCase
 
         self::assertNotNull($this->retryAfter('alice', ip: ''));
     }
+
+    public function testAnAddressCanBeUnbannedByHand(): void
+    {
+        foreach (['alice', 'bob', 'carol'] as $login) {
+            $this->failTimes($login, 5);
+        }
+        self::assertNotNull($this->retryAfter('dave'));
+
+        $this->lockout->liftBan(self::IP);
+
+        self::assertNull($this->retryAfter('dave'));
+    }
+
+    public function testUnbanningKeepsTheMemoryOfPastBansSoARepeatIsStillLonger(): void
+    {
+        foreach (['alice', 'bob', 'carol'] as $login) {
+            $this->failTimes($login, 5);
+        }
+        $this->lockout->liftBan(self::IP);
+        $this->clock->sleep(900);
+
+        foreach (['erin', 'frank', 'grace'] as $login) {
+            $this->failTimes($login, 5);
+        }
+
+        self::assertSame(259200, $this->retryAfter('dave'));
+    }
 }

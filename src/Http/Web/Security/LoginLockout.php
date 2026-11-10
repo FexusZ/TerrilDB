@@ -98,6 +98,19 @@ final readonly class LoginLockout
         return new LockoutOutcome(LockoutKind::AddressBanned, $ban);
     }
 
+    /**
+     * Lève à la main le bannissement d'une adresse. Le palier est gardé : une récidive reste plus longue. Les blocages de
+     * couples adresse + compte déjà posés (12 h au plus) s'éteignent d'eux-mêmes.
+     */
+    public function liftBan(string $ip): void
+    {
+        $key = self::addressKey($ip);
+        $address = $this->load($key);
+        $address['until'] = min($address['until'], $this->now());
+        $address['accounts'] = [];
+        $this->save($key, $address, self::MEMORY * 2);
+    }
+
     public function succeeded(?string $ip, string $login): void
     {
         $key = self::pairKey($ip, $login);
