@@ -281,16 +281,19 @@ describe('QueryPane', () => {
     wrapper.unmount()
   })
 
-  it('offers no execution plan for an engine that has none', async () => {
+  it.each([
+    ['clickhouse', true],
+    ['redis', false],
+  ] as const)('offers the execution plan button only where the engine has one (%s)', async (engine, offered) => {
     const pinia = createPinia()
     setActivePinia(pinia)
-    useConnectionsStore().items = [{ id: 'abc', name: 'Analytique', engine: 'clickhouse', createdAt: '', updatedAt: '' }]
+    useConnectionsStore().items = [{ id: 'abc', name: 'Cible', engine, createdAt: '', updatedAt: '' }]
     mocked.mockResolvedValueOnce({ tables: [] })
     await useWorkspaceStore().open('abc')
     const wrapper = mount(QueryPane, { global: { plugins: [pinia], stubs: { SqlEditor: EditorStub } }, attachTo: document.body })
 
-    expect(wrapper.find('button.plan').exists()).toBe(false)
-    expect(wrapper.get('.stub').attributes('data-dialect')).toBe('clickhouse')
+    expect(wrapper.find('button.plan').exists()).toBe(offered)
+    expect(wrapper.get('.stub').attributes('data-dialect')).toBe(engine)
     wrapper.unmount()
   })
 
