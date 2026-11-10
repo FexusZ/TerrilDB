@@ -12,9 +12,11 @@ use App\Connection\TargetHostPolicy;
 use App\Connection\TargetOpener;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Connection\SshJump;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Crypto\DerivedKey;
 use App\Crypto\Exception\DecryptionFailedException;
 use App\Crypto\KeyDerivation;
@@ -229,5 +231,17 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         self::assertSame('shop', $opener->defaultDatabase($this->alice, $this->key, $withDatabase->getId()));
         self::assertNull($opener->defaultDatabase($this->alice, $this->key, $without->getId()));
+    }
+
+    public function testAConnectionWithAJumpIsNotOpenedYet(): void
+    {
+        $key = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAfaux\n-----END OPENSSH PRIVATE KEY-----\n";
+        $parameters = new ConnectionParameters('db.example', 5432, 'shop', 'reader', 'secret', transport: new SshJump('93.184.216.34', 22, 'tunnel', $key));
+        $saved = $this->manager->create($this->alice, $this->key, 'Via bastion', Engine::PostgreSql, $parameters);
+        $opener = new TargetOpener($this->manager, $this->drivers, $this->hostPolicy());
+
+        $this->expectException(UnsupportedOperationException::class);
+
+        $opener->open($this->alice, $this->key, $saved->getId());
     }
 }

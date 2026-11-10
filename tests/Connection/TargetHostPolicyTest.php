@@ -8,6 +8,8 @@ use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Connection\HostResolver;
 use App\Connection\TargetHostPolicy;
 use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\Socks5Proxy;
+use App\Core\Connection\SshJump;
 use App\Crypto\KeyDerivation;
 use App\Entity\Role;
 use App\Entity\User;
@@ -16,6 +18,7 @@ use PHPUnit\Framework\TestCase;
 
 final class TargetHostPolicyTest extends TestCase
 {
+    private const KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAAfaux\n-----END OPENSSH PRIVATE KEY-----\n";
     private const HASH = '$argon2id$v=19$m=16384,t=3,p=1$c29tZXNhbHQ$aGFzaGhhc2hoYXNoaGFzaA';
 
     private function user(Role $role): User
@@ -190,5 +193,38 @@ final class TargetHostPolicyTest extends TestCase
     private function countingResolver(array $names = []): CountingResolver
     {
         return new CountingResolver($names);
+    }
+
+    public function testAMemberCannotUseTheMachineItselfAsJumpOrProxy(): void
+    {
+        $this->expectException(ForbiddenTargetHostException::class);
+
+        $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new SshJump('127.0.0.1', 22, 'u', self::KEY)));
+    }
+
+    public function testAMemberCannotUseTheInternalDatabaseAsProxy(): void
+    {
+        $this->expectException(ForbiddenTargetHostException::class);
+
+        $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new Socks5Proxy('db')));
+    }
+
+    public function testTheFinalTargetBehindAJumpIsTheJumpsBusiness(): void
+    {
+        $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('127.0.0.1', new SshJump('93.184.216.34', 22, 'u', self::KEY)));
+
+        $this->addToAssertionCount(1);
+    }
+
+    public function testAnAdministratorMayUseALocalJump(): void
+    {
+        $this->policy()->assertAllowed($this->user(Role::Admin), $this->withTransport('db.example', new SshJump('127.0.0.1', 22, 'u', self::KEY)));
+
+        $this->addToAssertionCount(1);
+    }
+
+    private function withTransport(string $host, SshJump|Socks5Proxy $transport): ConnectionParameters
+    {
+        return new ConnectionParameters($host, 5432, 'shop', 'reader', 'secret', transport: $transport);
     }
 }

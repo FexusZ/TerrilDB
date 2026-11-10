@@ -8,6 +8,7 @@ use App\Audit\AuditedTargetHosts;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Driver\TargetConnection;
 use App\Crypto\DerivedKey;
 use App\Entity\User;
@@ -31,11 +32,16 @@ final readonly class TargetOpener
      * @throws Exception\ForbiddenTargetHostException
      * @throws InvalidConnectionParametersException   nom de base ou de schéma invalide
      * @throws TargetConnectionFailedException
+     * @throws UnsupportedOperationException          connexion avec rebond ou proxy (pas encore ouvrable)
      */
     public function open(User $owner, DerivedKey $key, Uuid $id, ?string $database = null, ?string $schema = null): TargetConnection
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
+        if (null !== $parameters->transport) {
+            // Le relais local qui porte le tunnel n'existe pas encore : joindre la base en direct contournerait le rebond voulu.
+            throw UnsupportedOperationException::for($engine, 'connection through a jump or proxy');
+        }
         if (null !== $database) {
             // Une connexion reste une base (PostgreSQL ne change pas de base en route) : on ouvre une connexion sur celle-là.
             $parameters = $parameters->withDatabase($database);

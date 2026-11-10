@@ -43,7 +43,9 @@ final readonly class TargetHostPolicy
      */
     public function pinnedAddress(User $user, ConnectionParameters $parameters): ?string
     {
-        $host = strtolower(trim($parameters->host, "[] .\t"));
+        // Le premier saut est ce que le serveur joint vraiment : le bastion ou le proxy s'il y en a un. La cible finale, derrière
+        // lui, est résolue par lui (sa « boucle locale » est la sienne) : elle n'est pas du ressort de cette règle.
+        $host = strtolower(trim($parameters->firstHop()[0], "[] .\t"));
         if (!$user->isAdmin() && ('localhost' === $host || str_ends_with($host, '.localhost'))) {
             throw ForbiddenTargetHostException::create();
         }
