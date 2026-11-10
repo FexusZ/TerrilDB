@@ -33,7 +33,7 @@ final readonly class PlanService
      */
     public function statementFor(Engine $engine, string $sql): string
     {
-        if (!$engine->speaksSql() || Engine::ClickHouse === $engine) {
+        if (!$engine->speaksSql()) {
             throw PlanNotAvailableException::for($engine);
         }
 
@@ -44,7 +44,11 @@ final readonly class PlanService
 
         $statement = ltrim(rtrim($sql, " \t\r\n;"));
 
-        return (Engine::PostgreSql === $engine ? 'EXPLAIN (FORMAT JSON) ' : 'EXPLAIN FORMAT=JSON ').$statement;
+        return match ($engine) {
+            Engine::PostgreSql => 'EXPLAIN (FORMAT JSON) ',
+            Engine::ClickHouse => 'EXPLAIN json=1, indexes=1 ',
+            default => 'EXPLAIN FORMAT=JSON ',
+        }.$statement;
     }
 
     /**
@@ -57,6 +61,12 @@ final readonly class PlanService
             throw UnreadablePlanException::create();
         }
 
-        return (Engine::PostgreSql === $engine ? new PostgreSqlPlanParser() : new MySqlPlanParser())->parse($json);
+        $parser = match ($engine) {
+            Engine::PostgreSql => new PostgreSqlPlanParser(),
+            Engine::ClickHouse => new ClickHousePlanParser(),
+            default => new MySqlPlanParser(),
+        };
+
+        return $parser->parse($json);
     }
 }
