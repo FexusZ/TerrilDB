@@ -25,7 +25,7 @@ services:
   #   docker compose --profile front up node   # serveur de développement sur :5173 (proxy vers le PHP)
   node:
     profiles: [front]
-    image: node:24-alpine
+    image: node:26-alpine
     working_dir: /app
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
