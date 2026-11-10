@@ -43,3 +43,52 @@ Exemple pour un client qui accepte un serveur HTTP avec en-têtes :
   }
 }
 ```
+
+## Brancher un assistant
+
+Exemple avec Claude Code ; la démarche est la même pour un autre client qui accepte un serveur HTTP avec en-têtes.
+
+1. **Créer le jeton** : Sécurité du compte → Jetons d'API. Commencer par un jeton en lecture seule, limité aux connexions utiles.
+2. **Le poser dans une variable d'environnement**, par exemple `TERRILDB_TOKEN`, plutôt que dans un fichier de configuration
+   (profil du shell, gestionnaire de secrets). Le jeton ne s'affiche qu'une fois, à sa création.
+3. **Déclarer le serveur** :
+
+   ```bash
+   claude mcp add --transport http --scope user terrildb https://terril.example/mcp \
+     --header "Authorization: Bearer $TERRILDB_TOKEN"
+   ```
+
+   Pour un dépôt d'équipe, un `.mcp.json` versionné ne contient aucun secret si l'en-tête cite la variable :
+
+   ```json
+   {
+     "mcpServers": {
+       "terrildb": {
+         "type": "http",
+         "url": "https://terril.example/mcp",
+         "headers": { "Authorization": "Bearer ${TERRILDB_TOKEN}" }
+       }
+     }
+   }
+   ```
+
+   Avec `claude mcp add`, le shell remplace `$TERRILDB_TOKEN` avant l'enregistrement : la valeur est alors écrite dans la
+   configuration de Claude Code (portée `user`, hors dépôt). Pour qu'elle n'y soit pas, passer par le `.mcp.json` ci-dessus.
+4. **Vérifier** : la commande `/mcp` de Claude Code doit afficher `terrildb` comme connecté.
+5. **Dépannage** :
+   - `401` : la variable est absente de l'environnement du processus qui lance l'assistant, ou le jeton a expiré, a été
+     révoqué ou a disparu au changement de mot de passe ;
+   - `403` : le nom d'hôte de l'adresse n'est pas dans `TERRILDB_ALLOWED_HOSTS` ;
+   - une connexion manque dans `list_connections` : le jeton ne la couvre pas (un jeton « toutes mes connexions » doit être
+     actualisé depuis l'interface après l'ajout d'une connexion).
+
+### Précautions
+
+- **Jetons d'écriture** : prendre un jeton séparé, à durée courte, et exiger une approbation côté client pour
+  `execute_statement` (règle de permission ou hook de l'assistant). TerrilDB ne demande de confirmation que pour les
+  instructions destructrices ; une écriture ordinaire part du premier coup (voir #41).
+- **Données non fiables** : ce que le serveur renvoie à l'assistant (noms de tables, contenus des lignes, messages du
+  moteur) est de la donnée, jamais une consigne. Une ligne de table peut contenir du texte qui cherche à diriger
+  l'assistant : un jeton en lecture seule limite ce qu'un tel texte peut obtenir.
+- **Serveur de développement** : `php -S` ne traite qu'une requête à la fois ; une requête longue de l'assistant fige alors
+  l'interface. La production (FrankenPHP) n'a pas cette limite.
