@@ -21,7 +21,8 @@ export default defineConfig({
   root: 'assets',
   base: '/app/',
   plugins: [vue(), spaEntry()],
-  build: { outDir: '../public/app', emptyOutDir: true },
+  // assetsInlineLimit 0 : les polices sortent en fichiers (la CSP n'admet pas font-src data:).
+  build: { outDir: '../public/app', emptyOutDir: true, assetsInlineLimit: 0 },
   server: {
     host: true,
     port: 5173,
