@@ -45,7 +45,7 @@ final readonly class SchemaAuditController
                 $definitions[] = $introspector->describeTable($name);
             }
 
-            return [$this->auditor->audit($target->engine, $definitions), \count($definitions), $truncated];
+            return [$this->auditor->audit($target->engine, $definitions, $introspector->autoCounters()), \count($definitions), $truncated];
         }, DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse([
