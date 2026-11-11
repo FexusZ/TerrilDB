@@ -11,6 +11,7 @@ use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use PHPUnit\Framework\TestCase;
 
@@ -77,6 +78,11 @@ final class ServerDiagnosticsTest extends TestCase
             public function locks(): LockReport
             {
                 return new LockReport(DiagnosticStatus::available(), [], [], false);
+            }
+
+            public function tableHolders(string $table): TableHolders
+            {
+                return new TableHolders(DiagnosticStatus::available(), []);
             }
         };
 
