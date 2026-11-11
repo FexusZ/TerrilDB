@@ -253,6 +253,27 @@ export interface LockReport {
   blocking: BlockingNode[]
 }
 
+export interface ServerVariable {
+  name: string
+  /** Nul pour un secret (`masked`) ou une valeur que le compte ne peut pas lire. */
+  value: string | null
+  default: string | null
+  /** Diffère du défaut du moteur (ou a une autre origine que la compilation quand il ne donne pas de défaut). */
+  changed: boolean
+  /** Le nom évoque un secret : la valeur n'est jamais servie. */
+  masked: boolean
+  source: string | null
+  restart: 'required' | 'pending' | null
+  scope: 'global' | 'session' | 'server' | null
+  unit: string | null
+}
+
+export interface VariableReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  variables: ServerVariable[]
+}
+
 export type AuditOutcome = 'success' | 'refused' | 'failed'
 export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
 

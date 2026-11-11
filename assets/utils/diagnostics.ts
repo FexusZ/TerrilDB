@@ -48,3 +48,36 @@ export interface BlockingLine {
 export function flattenBlocking(nodes: BlockingNode[], depth = 0): BlockingLine[] {
   return nodes.flatMap((node) => [{ node, depth }, ...flattenBlocking(node.blocked, depth + 1)])
 }
+
+/** Ce qu'un redémarrage change pour une variable ; vide quand le moteur ne le dit pas. */
+export function describeRestart(restart: 'required' | 'pending' | null): string {
+  switch (restart) {
+    case 'required':
+      return 'Redémarrage nécessaire'
+    case 'pending':
+      return 'Valeur en attente de redémarrage'
+    case null:
+      return ''
+  }
+}
+
+const SOURCES: Record<string, string> = {
+  COMPILED: 'défaut compilé',
+  'COMPILE-TIME': 'défaut compilé',
+  GLOBAL: 'fichier de configuration',
+  EXPLICIT: 'fichier de configuration',
+  CONFIG: 'fichier de configuration',
+  'configuration file': 'fichier de configuration',
+  COMMAND_LINE: 'ligne de commande',
+  'COMMAND-LINE': 'ligne de commande',
+  'command line': 'ligne de commande',
+  PERSISTED: 'persistée',
+  DYNAMIC: 'modifiée à chaud',
+  SQL: 'modifiée à chaud',
+  AUTO: 'calculée au démarrage',
+  default: 'défaut',
+  override: 'imposée par le serveur',
+}
+
+/** D'où vient une valeur, en français pour les origines courantes ; une origine inconnue reste telle que le moteur la dit. */
+export const describeSource = (source: string | null): string => (source === null ? '' : (SOURCES[source] ?? source))
