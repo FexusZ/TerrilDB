@@ -20,9 +20,21 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `list_connections` | – | `id`, `name`, `engine` des connexions permises |
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
-| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
+| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?`, `format?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
 | `execute_statement` | `connection`, `sql`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
 | `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
+
+### Réponses compactes (`format` de `run_query`)
+
+Sans `format`, `run_query` rend le résultat en JSON indenté dans `content[0].text` ET dans `structuredContent` (comportement
+d'origine, inchangé). Avec `format`, le résultat n'est que du texte, sans doublon `structuredContent` :
+
+- `csv` : un premier bloc CSV (en-tête puis une ligne par enregistrement, RFC 4180), un second bloc JSON compact
+  `{rowCount, truncated, durationMs}`. Comme pour l'export, une cellule qu'un tableur lirait comme une formule est
+  précédée d'une apostrophe ;
+- `json` : un seul bloc, le même objet que par défaut mais sans indentation.
+
+Une valeur inconnue est refusée par la validation des arguments.
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
 comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `invalid_input`,

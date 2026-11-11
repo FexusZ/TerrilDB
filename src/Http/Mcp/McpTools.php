@@ -13,6 +13,7 @@ use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\TargetConnection;
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
@@ -22,6 +23,7 @@ use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
 use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Result\CallToolResult;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -81,15 +83,17 @@ final readonly class McpTools
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed>|CallToolResult
      */
-    public function runQuery(string $connection, string $sql, ?int $maxRows = null, ?int $timeoutMs = null): array
+    public function runQuery(string $connection, string $sql, ?int $maxRows = null, ?int $timeoutMs = null, ?string $format = null): array|CallToolResult
     {
-        return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs): array {
+        return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs, $format): array|CallToolResult {
             $defaults = new QueryOptions();
             $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
 
-            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
+            $result = $this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options));
+
+            return null === $format ? ResultPresenter::present($result) : CompactResult::render($result, ResultFormat::tryFrom($format) ?? throw new InvalidQueryOptionsException('The format is not supported.'));
         });
     }
 
