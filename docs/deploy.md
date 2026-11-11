@@ -95,6 +95,10 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
   exemple avec `cron` (`crontab -e`, sans sudo si l'utilisateur peut lancer Docker) :
   `17 4 * * * cd <dossier-du-depot> && docker compose -f compose.prod.yaml exec -T app php bin/console app:audit:purge`.
   Vérifier à la main une première fois (la commande affiche le nombre d'événements supprimés).
+- Grosses tables : modifier la structure (ou supprimer) une table dont le nombre de lignes ESTIMÉ par le moteur (jamais un
+  COUNT) atteint `TERRILDB_BIG_TABLE_WARN_ROWS` (100000 par défaut) affiche un avertissement ; à partir de
+  `TERRILDB_BIG_TABLE_CONFIRM_ROWS` (1000000 par défaut) il faut en plus retaper le nom de la table. À régler dans `app.env`,
+  par installation ; `0` désactive le seuil. Si le moteur ne donne aucune estimation, l'interface le dit sans avertir.
 - Bannissement d'adresse après des échecs de connexion répétés : `php bin/console app:ban:lift <adresse>` dans le conteneur
   le lève (par exemple pour un réseau partagé). L'état des blocages vit dans le cache de l'application : un vidage du cache
   ou un déploiement qui le vide lève aussi les blocages en cours.

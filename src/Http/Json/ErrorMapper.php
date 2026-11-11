@@ -28,6 +28,7 @@ use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Schema\Change\Exception\BigTableNeedsConfirmationException;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
@@ -102,6 +103,7 @@ final class ErrorMapper
             ]),
             $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
+            $error instanceof BigTableNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'big_table_name', 'bigTable' => ChangePlanPresenter::bigTable($error->assessment)]),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
             $error instanceof SchemaChangeFailedException => new ErrorResponse(409, 'schema_change_failed', [
                 'message' => $error->getMessage(),

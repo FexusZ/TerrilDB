@@ -195,6 +195,66 @@ final class TableStructureWebTest extends WebApiTestCase
         self::assertSame(['id', 'name'], $this->columnsOf($table));
     }
 
+    private function scratchWithRows(int $rows): string
+    {
+        $table = $this->scratch();
+        $this->target()->executeStatement(\sprintf('INSERT INTO "%s" SELECT g, \'n\', NULL FROM generate_series(1, %d) g', $table, $rows));
+        $this->target()->executeStatement(\sprintf('ANALYZE "%s"', $table));
+
+        return $table;
+    }
+
+    public function testPreviewOfASmallTableAsksForNothing(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratchWithRows(3);
+        [$detail, $fingerprint] = $this->load($id, $table);
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+
+        self::assertSame(['level' => 'none', 'estimatedRows' => 3, 'warnAt' => 10, 'confirmAt' => 100], $body['bigTable']);
+    }
+
+    public function testPreviewOfABigTableWarnsThenAsksForTheName(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $warned = $this->scratchWithRows(20);
+        $big = $this->scratchWithRows(150);
+
+        [$detail, $fingerprint] = $this->load($id, $warned);
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$warned.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+        self::assertSame(['level' => 'warning', 'estimatedRows' => 20, 'warnAt' => 10, 'confirmAt' => 100], $body['bigTable']);
+
+        [$detail, $fingerprint] = $this->load($id, $big);
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$big.'/structure/preview', ['drop' => true, 'fingerprint' => $fingerprint]);
+        self::assertSame(['level' => 'confirm_name', 'estimatedRows' => 150, 'warnAt' => 10, 'confirmAt' => 100], $body['bigTable']);
+    }
+
+    public function testABigTableIsOnlyChangedOnceItsNameIsTyped(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratchWithRows(150);
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $request = ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint];
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', $request);
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $body['error'] ?? null);
+        self::assertSame('big_table_name', $body['reason'] ?? null);
+        self::assertSame(150, self::arrayOf($body['bigTable'])['estimatedRows']);
+
+        $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', $request + ['confirmedTableName' => strtoupper($table)]);
+        self::assertSame(409, $this->statusCode());
+        self::assertSame(['id', 'name', 'note'], $this->columnsOf($table));
+
+        $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', $request + ['confirmedTableName' => $table]);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['id', 'name', 'note', 'qty'], $this->columnsOf($table));
+    }
+
     public function testRefusesAnApplyBasedOnAStaleFingerprint(): void
     {
         $this->seedAndLogin();

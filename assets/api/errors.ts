@@ -10,6 +10,7 @@ const REASONS: Record<string, string> = {
   unsupported_statement: 'Cette instruction n’est pas prise en charge (transaction, session, verrou…).',
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
+  big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
