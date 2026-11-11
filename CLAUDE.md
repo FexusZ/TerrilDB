@@ -120,7 +120,7 @@ Un `Driver` (tagué `app.driver`, rassemblés dans `DriverRegistry`) sert un ou 
 reste dans l'exception précédente, jamais montré à l'utilisateur). Drivers : `MySql` (MySQL + MariaDB, information_schema),
 `PostgreSql` (pg_catalog), `ClickHouse` et `Redis` (voir plus bas). `TargetConnection` ne dépend d'aucune bibliothèque
 d'accès : le driver lui donne l'exécuteur, la façon de se libérer, et selon le moteur un introspecteur (SQL) et/ou une
-navigation par clés (`keys()`). Ce qui manque lève `UnsupportedOperationException` (501 `unsupported_operation`). Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
+navigation par clés (`keys()`). Ce qui manque lève `UnsupportedOperationException` (501 `unsupported_operation`). MariaDB : `TABLE_TYPE = 'SEQUENCE'` donne `TableKind::Sequence` (lecture seule comme une vue, ni éditable, ni diagramme, ni audit ; `JSON` y est un alias de `longtext`, la grille le traite donc comme du texte, exact car stocké tel quel). Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
 primaire d'abord puis par nom, tri à l'octet car l'ordre du moteur dépend de la collation) ; périmètre = base de la
 connexion (MySQL) ou schéma courant (PostgreSQL). Nombres de lignes = estimations du moteur, jamais un COUNT. Les noms
 de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : connexion enregistrée + clé -> cible ouverte.
@@ -276,7 +276,7 @@ pour ce qui détruit : retirer colonne, index, clé, changer un type, supprimer 
 `failed` ; 422 `invalid_schema_change`). `drop: true` à la place de `draft` supprime la table. Exécution par `TargetConnection::ddl()`
 (`DbalDdlExecutor`, `ClickHouseDdlExecutor`) : PostgreSQL en UNE transaction (tout ou rien, `lock_timeout` 10 s), MySQL/MariaDB et
 ClickHouse instruction par instruction (un échec laisse les précédentes appliquées, rapportées dans `applied`). Audit `schema.changed` /
-`schema.failed` avec le SQL exact. Particularités : MySQL `MODIFY COLUMN` redit la définition (commentaire gardé, jeu de caractères
+`schema.failed` avec le SQL exact. Défauts : MariaDB rend `current_timestamp()`, `curdate()` et des chaînes entre apostrophes, MySQL `CURRENT_TIMESTAMP` : `DefaultValue` ramène les deux à la même expression canonique (sans parenthèses vides) ; une expression de défaut entre parenthèses (`(1 + 1)`, rendue par les deux familles) non touchée est redite telle que le moteur la rend à `MODIFY COLUMN` (`MySqlDdlDialect::isParenthesised`), jamais lue depuis un texte tapé. Tests : `tests/Integration/Driver/MySqlFamilyDifferencesTest` (4 cibles). Particularités : MySQL `MODIFY COLUMN` redit la définition (commentaire gardé, jeu de caractères
 remis à celui de la table), colonne AUTO_INCREMENT nouvelle et sa clé dans un seul ALTER ; ClickHouse : nullabilité dans le type,
 clé de tri en lecture seule, ni clé primaire ni clé étrangère ni auto-incrément ni renommage d'index, index de saut matérialisés ;
 passer de Nullable à non-Nullable y exige une valeur par défaut. Seules les tables sont éditables (pas les vues), pas Redis.
