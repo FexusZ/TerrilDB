@@ -4,6 +4,7 @@ import { messageFor } from '../api/errors'
 import { fetchLocks, fetchSessions } from '../api/diagnostics'
 import type { LockReport, SessionReport } from '../api/types'
 import AppButton from '../components/AppButton.vue'
+import TopQueriesPanel from '../components/TopQueriesPanel.vue'
 import { useWorkspaceStore } from '../stores/workspace'
 import { describeStatus, flattenBlocking, formatSeconds, isLongTransaction } from '../utils/diagnostics'
 
@@ -15,6 +16,8 @@ const locks = ref<LockReport | null>(null)
 const sessionsError = ref<string | null>(null)
 const locksError = ref<string | null>(null)
 const loading = ref(false)
+// Deux onglets : l'état du moment (sessions, verrous) et les requêtes coûteuses (lues à l'ouverture seulement).
+const tab = ref<'activity' | 'queries'>('activity')
 // Seuil de « transaction trop longue » : réglable ici, jamais enregistré.
 const threshold = ref(60)
 
@@ -59,7 +62,14 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
 
 <template>
   <section class="pane">
-    <div class="head">
+    <div class="tabs" role="tablist" aria-label="Vues de l’activité">
+      <button type="button" role="tab" :aria-selected="tab === 'activity'" :class="{ on: tab === 'activity' }" @click="tab = 'activity'">Sessions et verrous</button>
+      <button type="button" role="tab" :aria-selected="tab === 'queries'" :class="{ on: tab === 'queries' }" @click="tab = 'queries'">Requêtes coûteuses</button>
+    </div>
+
+    <TopQueriesPanel v-if="tab === 'queries'" :id="props.id" :scope="scope()" />
+
+    <div v-if="tab === 'activity'" class="head">
       <h1>Activité du serveur</h1>
       <p class="meta">Lecture seule, à la demande : rien n’est arrêté ni modifié depuis cette page. Les requêtes des autres sessions sont raccourcies.</p>
       <div class="tools">
@@ -68,7 +78,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
       </div>
     </div>
 
-    <section class="group" aria-labelledby="blocking-title">
+    <section v-if="tab === 'activity'" class="group" aria-labelledby="blocking-title">
       <h2 id="blocking-title">Qui bloque qui</h2>
       <p v-if="locksError" class="error" role="alert">{{ locksError }}</p>
       <p v-else-if="!locks" class="meta" role="status">Lecture en cours…</p>
@@ -96,7 +106,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
       </template>
     </section>
 
-    <section class="group" aria-labelledby="transactions-title">
+    <section v-if="tab === 'activity'" class="group" aria-labelledby="transactions-title">
       <h2 id="transactions-title">Transactions ouvertes<template v-if="locks && !locksNote"> · {{ locks.transactions.length }}</template></h2>
       <template v-if="locks && !locksNote">
         <p v-if="locks.transactions.length === 0" class="clean">Aucune transaction ouverte.</p>
@@ -123,7 +133,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
       <p v-else-if="locks" class="note" role="status">{{ locksNote }}</p>
     </section>
 
-    <section class="group" aria-labelledby="sessions-title">
+    <section v-if="tab === 'activity'" class="group" aria-labelledby="sessions-title">
       <h2 id="sessions-title">Sessions<template v-if="sessions && !sessionsNote"> · {{ sessions.sessions.length }}</template></h2>
       <p v-if="sessionsError" class="error" role="alert">{{ sessionsError }}</p>
       <p v-else-if="!sessions" class="meta" role="status">Lecture en cours…</p>
@@ -155,6 +165,10 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
 .pane { flex: 1; min-width: 0; overflow: auto; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 22px; }
 h1 { font-size: 30px; line-height: 1.1; font-weight: 600; }
 h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { padding: 8px 14px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--mut); font: 500 13px var(--font-ui); cursor: pointer; }
+.tabs button.on { color: var(--fg); border-bottom-color: var(--acc); }
+.tabs button:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .head { display: flex; flex-direction: column; gap: 8px; }
 .tools { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
 .threshold { color: var(--mut); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
