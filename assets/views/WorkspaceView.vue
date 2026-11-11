@@ -18,7 +18,7 @@ const error = ref<string | null>(null)
 const ready = ref(false)
 
 const connection = computed(() => connections.byId(props.id))
-// Diagramme et audit lisent le schéma : pas de sens sur un moteur clé-valeur. On garde la base et le schéma explorés d'une vue à l'autre.
+// Diagramme, audit et activité lisent le serveur SQL : pas de sens sur un moteur clé-valeur. On garde la base et le schéma explorés d'une vue à l'autre.
 const hasSchemaViews = computed(() => connection.value !== undefined && connection.value.engine !== 'redis')
 const scope = computed(() => ({ ...(workspace.database === null ? {} : { database: workspace.database }), ...(workspace.schema === null ? {} : { schema: workspace.schema }) }))
 
@@ -120,6 +120,7 @@ watch(() => [route.query.database, route.query.schema], () => {
       <RouterLink :to="{ name: 'workspace', params: { id }, query: scope }" exact-active-class="on">Console</RouterLink>
       <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
       <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
+      <RouterLink :to="{ name: 'server-activity', params: { id }, query: scope }" active-class="on">Activité</RouterLink>
     </nav>
 
     <div v-if="hasSchemaViews && !error && tableTabs.length > 0" class="tabs" :data-color="connection?.color ?? undefined" role="tablist" aria-label="Tables ouvertes">
