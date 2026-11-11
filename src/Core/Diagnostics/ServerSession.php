@@ -10,7 +10,7 @@ namespace App\Core\Diagnostics;
  */
 final readonly class ServerSession
 {
-    public const MAX_QUERY_LENGTH = 200;
+    public const MAX_QUERY_LENGTH = QueryText::MAX_LENGTH;
 
     public ?string $query;
 
@@ -29,9 +29,6 @@ final readonly class ServerSession
         if ('' === $id) {
             throw new \InvalidArgumentException('A session needs an identifier.');
         }
-        $query = null === $query ? null : mb_scrub($query, 'UTF-8');
-        $this->query = null === $query || '' === trim($query)
-            ? null
-            : (mb_strlen($query) > self::MAX_QUERY_LENGTH ? mb_substr($query, 0, self::MAX_QUERY_LENGTH - 1).'…' : $query);
+        $this->query = QueryText::shorten($query);
     }
 }

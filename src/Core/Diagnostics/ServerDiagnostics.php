@@ -16,6 +16,7 @@ final readonly class ServerDiagnostics
     public function __construct(
         private Engine $engine,
         private ?SessionDiagnostics $sessions = null,
+        private ?LockDiagnostics $locks = null,
     ) {
     }
 
@@ -28,6 +29,14 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function locks(): LockDiagnostics
+    {
+        return $this->locks ?? throw UnsupportedOperationException::for($this->engine, 'locks');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données.
      *
      * @return array<string, DiagnosticStatus>
@@ -36,6 +45,7 @@ final readonly class ServerDiagnostics
     {
         return [
             'sessions' => $this->sessions?->status() ?? DiagnosticStatus::unsupported(),
+            'locks' => $this->locks?->status() ?? DiagnosticStatus::unsupported(),
         ];
     }
 }
