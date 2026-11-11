@@ -6,7 +6,7 @@ import { messageFor } from '../api/errors'
 import type { SchemaAudit, SchemaFinding } from '../api/types'
 import AppButton from '../components/AppButton.vue'
 import { useWorkspaceStore } from '../stores/workspace'
-import { describeSchemaFinding } from '../utils/optimizer'
+import { describeCheck, describeSchemaFinding } from '../utils/optimizer'
 
 const props = defineProps<{ id: string }>()
 const workspace = useWorkspaceStore()
@@ -64,6 +64,13 @@ async function open(finding: SchemaFinding): Promise<void> {
           </ul>
         </section>
       </template>
+
+      <section v-if="audit.checks.length > 0" class="checks">
+        <h2>Non vérifié · {{ audit.checks.length }}</h2>
+        <ul>
+          <li v-for="check in audit.checks" :key="check.rule + check.state" class="meta">{{ describeCheck(check) }}</li>
+        </ul>
+      </section>
     </template>
   </section>
 </template>

@@ -243,7 +243,7 @@ export interface PlanResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'unused_index'
   severity: 'warning' | 'info'
   table: string
   columns: string[]
@@ -253,10 +253,19 @@ export interface SchemaFinding {
   detail: string | null
 }
 
+/** Une règle d'exploitation qui n'a pas pu juger : une raison, jamais un constat. */
+export interface AuditCheck {
+  rule: 'unused_index'
+  state: 'unavailable' | 'too_short'
+  reason: string | null
+  detail: string | null
+}
+
 export interface SchemaAudit {
   tablesAudited: number
   truncated: boolean
   findings: SchemaFinding[]
+  checks: AuditCheck[]
 }
 
 export interface DiagramColumn {

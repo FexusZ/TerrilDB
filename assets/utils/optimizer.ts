@@ -1,4 +1,4 @@
-import type { PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
+import type { AuditCheck, PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
 import { formatEstimate } from './format'
 
 export interface Wording {
@@ -28,7 +28,42 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `La clé étrangère de « ${finding.table} » sur ${finding.columns.join(', ')} n’a pas le type de la colonne qu’elle référence${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Pour comparer les deux colonnes, le moteur convertit celle de cette table sur chaque ligne : son index ne sert plus dans les jointures ni dans les recherches par la clé. Lui donner le type de la colonne référencée règle le problème ; la modification réécrit la colonne, à planifier sur une grosse table.',
       }
+    case 'unused_index':
+      return {
+        title: `L’index « ${finding.index ?? ''} » de « ${finding.table} » n’a servi à aucune lecture${finding.detail === null ? '' : ` (${finding.detail})`}.`,
+        help: 'Les compteurs du moteur repartent à zéro au redémarrage du serveur : un index utilisé seulement en fin de mois ou par un traitement de nuit peut paraître inutile. Observez une période représentative avant de décider. Sur MySQL et MariaDB, rendez-le d’abord invisible (ignoré) : le moteur ne s’en sert plus mais le garde, et le rétablir est immédiat ; il reste cependant mis à jour à chaque écriture, l’essai ne mesure donc pas le gain côté écritures. PostgreSQL n’a pas d’index invisible : la suppression se prépare avec prudence. Un index qui porte une contrainte n’est jamais proposé.',
+      }
   }
+}
+
+const RULE_NAMES: Record<AuditCheck['rule'], string> = { unused_index: 'Index jamais lus' }
+
+const REASONS: Record<string, string> = {
+  performance_schema_off: 'performance_schema est désactivé sur ce serveur',
+  instrument_off: 'l’instrument d’E/S des tables est désactivé sur ce serveur',
+  permission_denied: 'le compte n’a pas le droit de lire les compteurs d’index',
+}
+
+function duration(seconds: number): string {
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (days > 0) {
+    return `${days} j ${hours} h`
+  }
+
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`
+}
+
+/** Ce qu'une règle d'exploitation n'a pas pu vérifier, et pourquoi. */
+export function describeCheck(check: AuditCheck): string {
+  const name = RULE_NAMES[check.rule]
+  if (check.state === 'too_short') {
+    return `${name} : non vérifiable, la collecte des compteurs ne date que de ${duration(Number(check.detail ?? 0))} (il en faut 7 jours).`
+  }
+  const reason = check.reason === null ? undefined : REASONS[check.reason]
+
+  return reason === undefined ? `${name} : non vérifiable, les compteurs n’ont pas pu être lus.` : `${name} : non vérifiable, ${reason}.`
 }
 
 export function describePlanFinding(finding: PlanFindingInfo): string {
