@@ -24,21 +24,6 @@ final class StatementGuardCorpusTest extends TestCase
     private const MYSQL_FAMILY = [Engine::MySql, Engine::MariaDb];
 
     /**
-     * Lacunes constatées, corrigées une par une : chaque famille quitte cette liste dans le commit qui la corrige.
-     *
-     * @var array<string, string> instruction => famille
-     */
-    private const PENDING = [
-        'CREATE OR REPLACE TABLE t (a INT)' => 'structure',
-        'CREATE OR REPLACE VIEW v AS SELECT 1' => 'structure',
-        'OPTIMIZE TABLE t' => 'structure',
-        'ANALYZE TABLE t' => 'structure',
-        'VACUUM t' => 'structure',
-        'ANALYZE DELETE FROM t' => 'structure',
-        'OPTIMIZE TABLE t FINAL' => 'structure',
-    ];
-
-    /**
      * @param list<Engine> $engines
      *
      * @return iterable<string, array{string, Engine, QueryMode, string}>
@@ -288,10 +273,6 @@ final class StatementGuardCorpusTest extends TestCase
     #[DataProvider('corpus')]
     public function testVerdictOfTheCorpus(string $sql, Engine $engine, QueryMode $mode, string $expected): void
     {
-        if (isset(self::PENDING[$sql])) {
-            self::markTestSkipped('Lacune connue : '.self::PENDING[$sql]);
-        }
-
         $verdict = (new StatementGuard())->check($sql, $engine, $mode);
 
         $actual = match ($verdict->decision) {

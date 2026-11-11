@@ -21,7 +21,10 @@ final class StatementGuard
     private const READ = ['SELECT', 'VALUES', 'TABLE'];
     private const INSPECT = ['SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'EXISTS'];
     private const WRITE = ['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE', 'CALL', 'DO'];
-    private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'REFRESH', 'CLUSTER', 'ATTACH'];
+    private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'REFRESH', 'ATTACH'];
+    // Maintenance : elle reconstruit des tables ou des index et prend des verrous (OPTIMIZE, VACUUM…) ; MariaDB exécute
+    // d'ailleurs l'instruction qui suit ANALYZE. Une confirmation, comme pour une modification de structure.
+    private const MAINTENANCE = ['ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'CLUSTER'];
     private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE'];
     // Lecture ou écriture de fichiers du serveur, contrôle du serveur, ouverture de connexions sortantes.
     private const DANGEROUS_FUNCTIONS = [
@@ -133,7 +136,7 @@ final class StatementGuard
             \in_array($first, self::READ, true) => StatementKind::Read,
             \in_array($first, self::INSPECT, true) => StatementKind::Inspect,
             \in_array($first, self::WRITE, true) => StatementKind::Write,
-            \in_array($first, self::SCHEMA_SAFE, true), \in_array($first, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
+            \in_array($first, self::SCHEMA_SAFE, true), \in_array($first, self::MAINTENANCE, true), \in_array($first, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
             default => null,
         };
     }
@@ -207,7 +210,9 @@ final class StatementGuard
             return GuardVerdict::refused(GuardReason::WriteNotPermitted, $kind);
         }
 
-        if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true)) {
+        // CREATE OR REPLACE détruit l'objet existant.
+        $replaces = 'CREATE' === $first && $statement->hasSequence('OR', 'REPLACE');
+        if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true) || \in_array($first, self::MAINTENANCE, true) || $replaces) {
             return GuardVerdict::needsConfirmation($kind, GuardReason::DestructiveStatement);
         }
         if (StatementKind::Write === $kind && $this->modifiesRowsWithoutWhere($statement)) {
