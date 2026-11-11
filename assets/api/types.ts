@@ -168,6 +168,8 @@ export interface ApiTokenInfo {
   writeData: boolean
   writeSchema: boolean
   createConnections: boolean
+  /** Lit la supervision du serveur (sessions…), sans rien écrire. */
+  diagnostic: boolean
   createdAt: string
   /** Nul : le jeton n'expire jamais. */
   expiresAt: string | null
@@ -185,6 +187,37 @@ export interface ApiTokenInput {
   writeData?: boolean
   writeSchema?: boolean
   createConnections?: boolean
+  diagnostic?: boolean
+}
+
+/** Pourquoi une source de supervision se lit ou non : « vide » n'est jamais un état. */
+export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled'
+
+export interface DiagnosticStatus {
+  availability: DiagnosticAvailability
+  /** Code stable (`insufficient_privilege`, `not_supported`…), jamais le message du moteur. */
+  reason: string | null
+  /** Le droit manquant, pour `permission_denied`. */
+  privilege: string | null
+}
+
+export interface ServerSession {
+  id: string
+  user: string | null
+  client: string | null
+  database: string | null
+  state: string | null
+  seconds: number | null
+  /** Début de la requête en cours, toujours raccourci par le serveur. */
+  query: string | null
+  /** La session de TerrilDB lui-même. */
+  current: boolean
+}
+
+export interface SessionReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  sessions: ServerSession[]
 }
 
 export type AuditOutcome = 'success' | 'refused' | 'failed'

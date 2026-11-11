@@ -19,6 +19,7 @@ const everything = ref(false)
 const writeData = ref(false)
 const writeSchema = ref(false)
 const createConnections = ref(false)
+const diagnostic = ref(false)
 const lifetime = ref('30')
 const error = ref<string | null>(null)
 const listError = ref<string | null>(null)
@@ -61,6 +62,7 @@ async function create(): Promise<void> {
       ...(writeData.value ? { writeData: true } : {}),
       ...(writeSchema.value ? { writeSchema: true } : {}),
       ...(createConnections.value ? { createConnections: true } : {}),
+      ...(diagnostic.value ? { diagnostic: true } : {}),
     }
     fresh.value = await tokens.create(
       everything.value ? { name: name.value, allConnections: true, ...validity, ...rights } : { name: name.value, connectionIds: chosen.value, ...validity, ...rights },
@@ -171,6 +173,10 @@ async function revoke(): Promise<void> {
             <input id="token-create-connections" v-model="createConnections" type="checkbox">
             <span>Créer des connexions <small class="hint">(elles rejoignent automatiquement le jeton)</small></span>
           </label>
+          <label class="choice">
+            <input id="token-diagnostic" v-model="diagnostic" type="checkbox">
+            <span>Lire la supervision du serveur <small class="hint">(sessions en cours ; lecture seule, textes de requêtes raccourcis)</small></span>
+          </label>
         </fieldset>
         <div class="field">
           <label for="token-lifetime">Validité</label>
@@ -196,6 +202,7 @@ async function revoke(): Promise<void> {
               <span v-if="token.writeData" class="chip warn">Modifie les données</span>
               <span v-if="token.writeSchema" class="chip warn">Modifie la structure</span>
               <span v-if="token.createConnections" class="chip warn">Crée des connexions</span>
+              <span v-if="token.diagnostic" class="chip">Lit la supervision du serveur</span>
             </p>
             <p class="meta">
               <template v-if="token.expiresAt === null">N’expire jamais</template>
