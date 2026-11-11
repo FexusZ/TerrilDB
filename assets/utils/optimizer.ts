@@ -34,8 +34,16 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
 export function describePlanFinding(finding: PlanFindingInfo): string {
   const rows = finding.rows === null ? '' : ` (${formatEstimate(finding.rows)} lignes)`
   const condition = finding.condition === null ? '' : `, filtré par ${finding.condition}`
+  const table = `« ${finding.relation ?? 'la table'} »`
 
-  return `Parcours complet de « ${finding.relation ?? 'la table'} »${rows}${condition}. Un index sur les colonnes filtrées peut l’éviter.`
+  switch (finding.rule) {
+    case 'large_sort':
+      return `Tri de ${table}${rows} sans LIMIT. Ce tri n’indique pas un accès disque, mais il lit et ordonne toutes les lignes : un index sur les colonnes triées, ou une limite, peut l’éviter. Estimation du moteur.`
+    case 'leading_wildcard':
+      return `Parcours complet de ${table}${rows}${condition}. Un LIKE dont le motif commence par un joker (%) ne peut pas s’appuyer sur un index ordinaire : chercher un début de texte, ou un index de recherche plein texte, selon le moteur.`
+    default:
+      return `Parcours complet de ${table}${rows}${condition}. Un index sur les colonnes filtrées peut l’éviter.`
+  }
 }
 
 const KINDS: Record<Exclude<PlanKind, 'other'>, string> = {
