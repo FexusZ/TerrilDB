@@ -12,6 +12,9 @@ parameters:
     # Durée de conservation du journal d'audit, en jours (commande app:audit:purge)
     env(TERRILDB_AUDIT_RETENTION_DAYS): '365'
     # Noms d'hôte acceptés par le point d'entrée MCP (protection contre le « DNS rebinding »), séparés par des virgules
+    # Durée de session en secondes ; 0 = pas de limite (comportement d'origine). Inactivité et durée maximale depuis la connexion.
+    env(TERRILDB_SESSION_IDLE_SECONDS): '0'
+    env(TERRILDB_SESSION_MAX_SECONDS): '0'
     env(TERRILDB_ALLOWED_HOSTS): 'localhost,127.0.0.1,[::1]'
 
     # Envoi des invitations par e-mail : actif seulement si l'expéditeur ET l'adresse publique sont renseignés
