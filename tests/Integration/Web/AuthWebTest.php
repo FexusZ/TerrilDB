@@ -126,7 +126,7 @@ final class AuthWebTest extends WebApiTestCase
     {
         $this->seedUser();
 
-        for ($i = 0; $i < 8; ++$i) {
+        for ($i = 0; $i < 5; ++$i) {
             $this->call('POST', '/web/login', ['login' => 'alice', 'password' => 'not the password!!']);
             self::assertSame(401, $this->statusCode());
         }
@@ -146,12 +146,39 @@ final class AuthWebTest extends WebApiTestCase
         $this->seedUser();
 
         for ($round = 0; $round < 3; ++$round) {
-            for ($i = 0; $i < 5; ++$i) {
+            for ($i = 0; $i < 4; ++$i) {
                 $this->call('POST', '/web/login', ['login' => 'alice', 'password' => 'not the password!!']);
                 self::assertSame(401, $this->statusCode());
             }
             $this->login();
         }
+    }
+
+    public function testABlockedPairLeavesOtherAccountsAlone(): void
+    {
+        $this->seedUser();
+        for ($i = 0; $i < 5; ++$i) {
+            $this->call('POST', '/web/login', ['login' => 'alice', 'password' => 'not the password!!']);
+        }
+
+        $this->call('POST', '/web/login', ['login' => 'bob', 'password' => 'not the password!!']);
+
+        self::assertSame(401, $this->statusCode(), 'un autre compte, même adresse : seul le couple adresse + compte est bloqué');
+    }
+
+    public function testAnAddressThatGetsThreeAccountsBlockedIsBanned(): void
+    {
+        foreach (['bob', 'carol', 'dave'] as $login) {
+            for ($i = 0; $i < 5; ++$i) {
+                $this->call('POST', '/web/login', ['login' => $login, 'password' => 'not the password!!']);
+                self::assertSame(401, $this->statusCode(), $login);
+            }
+        }
+
+        $this->call('POST', '/web/login', ['login' => 'erin', 'password' => 'not the password!!']);
+
+        self::assertSame(429, $this->statusCode());
+        self::assertGreaterThanOrEqual(86000, (int) $this->client->getResponse()->headers->get('Retry-After'));
     }
 
     public function testUnknownRoutesAnswerInJson(): void

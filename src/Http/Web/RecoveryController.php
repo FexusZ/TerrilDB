@@ -65,7 +65,7 @@ final readonly class RecoveryController
         $phrase = $input->string('phrase');
         $newPassword = $input->string('newPassword');
 
-        $this->throttle->hit($request->getClientIp(), $login);
+        $this->throttle->hitLogin($request->getClientIp(), $login);
         $user = $this->users->findByLogin($login);
 
         try {
@@ -75,12 +75,16 @@ final readonly class RecoveryController
             $key = $this->recovery->reset($user, $phrase, $newPassword);
         } catch (InvalidRecoveryException $failure) {
             $this->audit->record($this->session->auditContext($user), AuditAction::PhraseFailed, AuditOutcome::Failed);
+            $outcome = $this->throttle->failed($request->getClientIp(), $login);
+            if (null !== $outcome) {
+                $this->audit->record($this->session->auditContext($user), AuditAction::LoginThrottled, AuditOutcome::Refused, details: ['kind' => $outcome->kind->value, 'seconds' => $outcome->seconds]);
+            }
 
             throw $failure;
         }
         // La clé neuve n'ouvre aucune session : l'utilisateur se connecte avec son nouveau mot de passe (et son code).
         $key->wipe();
-        $this->throttle->succeeded($login);
+        $this->throttle->succeeded($login, $request->getClientIp());
         $this->audit->record($this->session->auditContext($user), AuditAction::PhraseUsed);
 
         return new Response(status: Response::HTTP_NO_CONTENT);

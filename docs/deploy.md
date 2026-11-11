@@ -86,4 +86,15 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 - Retour arrière : le script remet l'image précédente si le démarrage échoue, mais ne défait pas les migrations déjà
   passées. Une migration doit donc rester compatible avec la version précédente du code (ajouter avant de retirer).
 - Les sessions sont dans un volume : un déploiement ne déconnecte personne.
-- Inscription : `APP_REGISTRATION=first_only` (dans `app.env`) ; les autres comptes arrivent par invitation.
+- Inscription : `APP_REGISTRATION=first_only` (dans `app.env`) ; les autres comptes arrivent par invitation. Le premier compte
+  peut se créer en console plutôt que par le formulaire : `php bin/console app:user:create-first <e-mail> <utilisateur>` dans le
+  conteneur de l'application, avec un terminal (`docker compose -f compose.prod.yaml exec app …`) ; la commande refuse dès qu'un
+  compte existe.
+- Journal d'audit : rien ne le purge tout seul. Les événements plus vieux que `TERRILDB_AUDIT_RETENTION_DAYS` (365 par
+  défaut, dans `app.env`) se suppriment avec `app:audit:purge`. À planifier une fois par jour sur la machine hôte, par
+  exemple avec `cron` (`crontab -e`, sans sudo si l'utilisateur peut lancer Docker) :
+  `17 4 * * * cd <dossier-du-depot> && docker compose -f compose.prod.yaml exec -T app php bin/console app:audit:purge`.
+  Vérifier à la main une première fois (la commande affiche le nombre d'événements supprimés).
+- Bannissement d'adresse après des échecs de connexion répétés : `php bin/console app:ban:lift <adresse>` dans le conteneur
+  le lève (par exemple pour un réseau partagé). L'état des blocages vit dans le cache de l'application : un vidage du cache
+  ou un déploiement qui le vide lève aussi les blocages en cours.

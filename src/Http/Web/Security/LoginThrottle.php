@@ -18,6 +18,7 @@ final readonly class LoginThrottle
     public function __construct(
         private RateLimiterFactoryInterface $loginIpLimiter,
         private RateLimiterFactoryInterface $loginAccountLimiter,
+        private LoginLockout $lockout,
     ) {
     }
 
@@ -38,9 +39,37 @@ final readonly class LoginThrottle
         }
     }
 
-    public function succeeded(string $login): void
+    /**
+     * Avant une vraie connexion (ou une récupération) : refuse un couple adresse + compte bloqué ou une adresse bannie, et
+     * garde le plafond par adresse. Pas de plafond par compte ici : il laissait un tiers verrouiller le compte de tout
+     * le monde ; le blocage vise désormais le couple adresse + compte (voir LoginLockout).
+     *
+     * @throws TooManyAttemptsException
+     */
+    public function hitLogin(?string $ip, string $login): void
+    {
+        $this->lockout->check($ip, $login);
+
+        $limit = $this->loginIpLimiter->create($ip ?? 'unknown')->consume();
+        if (!$limit->isAccepted()) {
+            throw new TooManyAttemptsException(max(1, $limit->getRetryAfter()->getTimestamp() - time()));
+        }
+    }
+
+    /**
+     * Un échec de connexion : rend ce qu'il déclenche (blocage du couple, bannissement de l'adresse), à journaliser.
+     */
+    public function failed(?string $ip, string $login): ?LockoutOutcome
+    {
+        return $this->lockout->failed($ip, $login);
+    }
+
+    public function succeeded(string $login, ?string $ip = null): void
     {
         $this->loginAccountLimiter->create(self::accountKey($login))->reset();
+        if (null !== $ip) {
+            $this->lockout->succeeded($ip, $login);
+        }
     }
 
     private static function accountKey(string $login): string

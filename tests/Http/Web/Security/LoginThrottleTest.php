@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Http\Web\Security;
 
 use App\Http\Json\TooManyAttemptsException;
+use App\Http\Web\Security\LoginLockout;
 use App\Http\Web\Security\LoginThrottle;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\RateLimiter\Storage\InMemoryStorage;
 
@@ -19,6 +22,7 @@ final class LoginThrottleTest extends TestCase
         return new LoginThrottle(
             new RateLimiterFactory(['id' => 'ip', 'policy' => 'fixed_window', 'limit' => $perIp, 'interval' => '15 minutes'], $storage),
             new RateLimiterFactory(['id' => 'account', 'policy' => 'fixed_window', 'limit' => $perAccount, 'interval' => '15 minutes'], $storage),
+            new LoginLockout(new ArrayAdapter(), new MockClock()),
         );
     }
 
