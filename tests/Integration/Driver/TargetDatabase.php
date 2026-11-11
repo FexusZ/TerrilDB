@@ -18,7 +18,9 @@ final class TargetDatabase
 {
     private const ENGINES = [
         'TARGET_MYSQL_URL' => Engine::MySql,
+        'TARGET_MYSQL26_URL' => Engine::MySql,
         'TARGET_MARIADB_URL' => Engine::MariaDb,
+        'TARGET_MARIADB13_URL' => Engine::MariaDb,
         'TARGET_POSTGRES_URL' => Engine::PostgreSql,
         'TARGET_CLICKHOUSE_URL' => Engine::ClickHouse,
         'TARGET_REDIS_URL' => Engine::Redis,
@@ -30,7 +32,9 @@ final class TargetDatabase
     public static function all(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
         yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
         yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL'];
     }
@@ -43,7 +47,9 @@ final class TargetDatabase
     public static function relational(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
         yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
     }
 

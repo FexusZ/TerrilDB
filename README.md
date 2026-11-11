@@ -9,7 +9,7 @@ Trois entrées partagent le même cœur : une **interface web**, une **API REST*
 
 | Moteur | Accès | Schéma | Plan d'exécution |
 | --- | --- | --- | --- |
-| MySQL 8.4 / MariaDB 11.8 | DBAL | oui | oui |
+| MySQL 8.4 et 26 / MariaDB 11.8 et 13 | DBAL | oui | oui |
 | PostgreSQL 18 | DBAL | oui | oui |
 | ClickHouse | interface HTTP | oui (sans clés étrangères) | non |
 | Redis | commandes + `SCAN` | navigation par clés | non |

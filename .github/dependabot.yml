@@ -35,6 +35,13 @@ updates:
       # l'ancienne (dump et restauration à faire à la main, voir docs/deploy.md), jamais par une fusion automatique.
       - dependency-name: postgres
         update-types: ["version-update:semver-major"]
+      # Les cibles de test MySQL et MariaDB gardent DEUX séries chacune (la plus ancienne qu'on supporte et la plus
+      # récente, compose.yaml) : une montée de série automatique en ferait glisser une sur l'autre. Les mineures et
+      # correctifs de chaque série suivent ; changer de série se fait à la main (TargetVersionTest le garde).
+      - dependency-name: mysql
+        update-types: ["version-update:semver-major"]
+      - dependency-name: mariadb
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
