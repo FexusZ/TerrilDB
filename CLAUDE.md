@@ -230,7 +230,7 @@ jamais un index unique ; clé étrangère dont la colonne doit être CONVERTIE p
 (garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB / ClickHouse (`PostgreSqlPlanParser`, `MySqlPlanParser`, `ClickHousePlanParser`, fixtures
 réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
 d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
-avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
+avec l'instruction de l'utilisateur (`purpose: plan`). Règles de conception (#78, une par commit, pures, lisent le modèle existant) : `text_primary_key` (clé primaire d'UNE colonne en char/varchar(36) = UUID en texte ; SQL seulement sur PostgreSQL, un MODIFY en BINARY(16) tronquerait) et `float_amount` (info, « à vérifier » : colonne float/double/real dont le NOM porte un mot d'argent sans mot d'exclusion comme cents/poids/taux ; SQL sauf défaut ou commentaire à reporter sur MySQL/MariaDB). Le schéma `shop` n'en émet aucune ; la suite de #78 (utf8mb3, collations jointes, clé implicite…) reste à faire. Les statistiques d'un moteur peuvent être périmées (MySQL annonce
 1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
 
 ## Diagramme ER (SchemaDiagramController, assets/utils/erLayout.ts, DiagramPane)

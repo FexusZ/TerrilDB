@@ -379,4 +379,144 @@ final class SchemaAuditorTest extends TestCase
         self::assertCount(1, $findings);
         self::assertSame(['a'], $findings[0]->columns);
     }
+
+    /**
+     * @param array<string, string> $types nom de colonne => type natif
+     */
+    private function typed(string $name, array $types, string $primary = 'id', bool $nullable = false, ?string $default = null): TableDefinition
+    {
+        $columns = [];
+        foreach ($types as $column => $type) {
+            $columns[] = new ColumnDefinition($column, $type, $nullable, $default, false, null);
+        }
+
+        return new TableDefinition($name, TableKind::Table, $columns, [new IndexDefinition('pk', [$primary], true, true)], [], null, null);
+    }
+
+    /**
+     * @return iterable<string, array{string, Engine}>
+     */
+    public static function uuidTextKeys(): iterable
+    {
+        yield 'char(36) MySQL' => ['char(36)', Engine::MySql];
+        yield 'varchar(36) MariaDB' => ['varchar(36)', Engine::MariaDb];
+        yield 'character(36) PostgreSQL' => ['character(36)', Engine::PostgreSql];
+        yield 'character varying(36) PostgreSQL' => ['character varying(36)', Engine::PostgreSql];
+        yield 'majuscules' => ['CHAR(36)', Engine::MySql];
+    }
+
+    #[DataProvider('uuidTextKeys')]
+    public function testFlagsAnUuidStoredAsTextPrimaryKey(string $type, Engine $engine): void
+    {
+        $findings = $this->audit([$this->typed('accounts', ['id' => $type, 'name' => 'text'])], $engine);
+
+        self::assertCount(1, $findings);
+        self::assertSame(FindingRule::TextPrimaryKey, $findings[0]->rule);
+        self::assertSame(Severity::Warning, $findings[0]->severity);
+        self::assertSame(['id'], $findings[0]->columns);
+        self::assertSame(strtolower($type), strtolower((string) $findings[0]->detail));
+    }
+
+    public function testSuggestsTheUuidTypeOnPostgreSqlOnly(): void
+    {
+        $table = $this->typed('accounts', ['id' => 'character(36)']);
+
+        self::assertSame('ALTER TABLE "accounts" ALTER COLUMN "id" TYPE uuid USING "id"::uuid;', $this->audit([$table])[0]->suggestion);
+        // Un MODIFY en BINARY(16) tronquerait les valeurs : sans conversion sûre en une instruction, pas de SQL.
+        self::assertNull($this->audit([$table], Engine::MySql)[0]->suggestion);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function acceptableKeys(): iterable
+    {
+        yield 'entier' => ['integer'];
+        yield 'uuid natif' => ['uuid'];
+        yield 'binary(16)' => ['binary(16)'];
+        yield 'varchar court' => ['varchar(20)'];
+        yield 'varchar(255)' => ['varchar(255)'];
+        yield 'varchar(360)' => ['varchar(360)'];
+        yield 'text' => ['text'];
+    }
+
+    #[DataProvider('acceptableKeys')]
+    public function testOtherPrimaryKeyTypesAreLeftAlone(string $type): void
+    {
+        self::assertSame([], $this->audit([$this->typed('t', ['id' => $type])]));
+    }
+
+    public function testACompositeKeyWithAnUuidPartIsLeftAlone(): void
+    {
+        $table = new TableDefinition('t', TableKind::Table, [
+            new ColumnDefinition('a', 'char(36)', false, null, false, null),
+            new ColumnDefinition('b', 'integer', false, null, false, null),
+        ], [new IndexDefinition('pk', ['a', 'b'], true, true)], [], null, null);
+
+        self::assertSame([], $this->audit([$table]));
+    }
+
+    public function testAnUuidColumnThatIsNotTheKeyIsLeftAlone(): void
+    {
+        self::assertSame([], $this->audit([$this->typed('t', ['id' => 'integer', 'ref' => 'char(36)'])]));
+    }
+
+    /**
+     * @return iterable<string, array{string, string, Engine}>
+     */
+    public static function floatAmounts(): iterable
+    {
+        yield 'price double MySQL' => ['price', 'double', Engine::MySql];
+        yield 'prix float MariaDB' => ['prix', 'float', Engine::MariaDb];
+        yield 'total_amount' => ['total_amount', 'float unsigned', Engine::MySql];
+        yield 'montantTtc' => ['montantTtc', 'real', Engine::PostgreSql];
+        yield 'unit_price double precision' => ['unit_price', 'double precision', Engine::PostgreSql];
+        yield 'float(10,2)' => ['cost', 'float(10,2)', Engine::MySql];
+    }
+
+    #[DataProvider('floatAmounts')]
+    public function testFlagsAMoneyColumnStoredAsFloatingPoint(string $name, string $type, Engine $engine): void
+    {
+        $findings = $this->audit([$this->typed('invoices', ['id' => 'integer', $name => $type])], $engine);
+
+        self::assertCount(1, $findings);
+        self::assertSame(FindingRule::FloatAmount, $findings[0]->rule);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame([$name], $findings[0]->columns);
+        self::assertSame($type, $findings[0]->detail);
+    }
+
+    public function testSuggestsDecimalKeepingNullabilityWhereTheSqlIsSafe(): void
+    {
+        $nullable = $this->typed('invoices', ['id' => 'integer', 'price' => 'double precision'], nullable: true);
+        $notNull = $this->typed('invoices', ['id' => 'integer', 'price' => 'double'], nullable: false);
+        $withDefault = $this->typed('invoices', ['id' => 'integer', 'price' => 'double'], default: '0');
+
+        self::assertSame('ALTER TABLE "invoices" ALTER COLUMN "price" TYPE numeric(12,2);', $this->audit([$nullable])[0]->suggestion);
+        self::assertSame('ALTER TABLE `invoices` MODIFY `price` DECIMAL(12,2) NOT NULL;', $this->audit([$notNull], Engine::MySql)[0]->suggestion);
+        // MODIFY redit toute la définition : avec un défaut à reporter, on ne propose rien plutôt qu'un SQL qui le perdrait.
+        self::assertNull($this->audit([$withDefault], Engine::MySql)[0]->suggestion);
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function acceptableAmounts(): iterable
+    {
+        yield 'decimal' => ['price', 'decimal(10,2)'];
+        yield 'numeric' => ['amount', 'numeric'];
+        yield 'entier en centimes' => ['price_cents', 'integer'];
+        yield 'centimes en flottant' => ['price_cents', 'double'];
+        yield 'poids' => ['total_weight', 'double'];
+        yield 'taux' => ['price_rate', 'float'];
+        yield 'nom neutre' => ['latitude', 'double'];
+        yield 'mot contenu' => ['priceless', 'double'];
+        yield 'score total' => ['total_score', 'float'];
+    }
+
+    #[DataProvider('acceptableAmounts')]
+    public function testOtherColumnsAreLeftAlone(string $name, string $type): void
+    {
+        self::assertSame([], $this->audit([$this->typed('t', ['id' => 'integer', $name => $type])]));
+    }
 }
