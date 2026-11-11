@@ -37,6 +37,17 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame(401, $this->statusCode());
     }
 
+    /**
+     * Les index jamais lus dépendent de l'âge de la cible (au-delà de sept jours de collecte, un index de l'exemple que personne
+     * n'a interrogé remonte à bon droit) : ce constat-là est jugé à part.
+     *
+     * @return list<mixed>
+     */
+    private static function withoutUnusedIndexes(mixed $findings): array
+    {
+        return array_values(array_filter(self::arrayOf($findings), static fn (mixed $f): bool => 'unused_index' !== self::arrayOf($f)['rule']));
+    }
+
     #[DataProvider('targets')]
     public function testTheSampleSchemaIsClean(string $envVar): void
     {
@@ -48,7 +59,45 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame(200, $this->statusCode());
         self::assertSame(5, $body['tablesAudited']);
         self::assertFalse($body['truncated']);
-        self::assertSame([], $body['findings']);
+        self::assertSame([], self::withoutUnusedIndexes($body['findings']));
+    }
+
+    /**
+     * @return iterable<string, array{string, ?string, ?string}>
+     */
+    public static function usageChecks(): iterable
+    {
+        // Les cibles viennent de démarrer : MySQL et PostgreSQL disent que la collecte est trop récente (ni constat ni erreur),
+        // MariaDB que ses compteurs sont éteints, ClickHouse n'a pas de règle.
+        yield 'MySQL' => ['TARGET_MYSQL_URL', 'too_short', null];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL', 'too_short', null];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL', 'unavailable', 'performance_schema_off'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'unavailable', 'performance_schema_off'];
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL', 'too_short', null];
+        yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL', null, null];
+    }
+
+    #[DataProvider('usageChecks')]
+    public function testUnusedIndexRuleSaysWhyItCouldNotJudge(string $envVar, ?string $state, ?string $reason): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame([], self::withoutUnusedIndexes($body['findings']));
+        $checks = array_map(self::arrayOf(...), self::arrayOf($body['checks']));
+        if (null === $state || ('too_short' === $state && [] === $checks)) {
+            // Pas de règle (ClickHouse), ou une cible qui tourne depuis plus de sept jours : la règle a pu juger.
+            self::assertSame([], $checks);
+
+            return;
+        }
+        self::assertCount(1, $checks);
+        self::assertSame('unused_index', $checks[0]['rule']);
+        self::assertSame($state, $checks[0]['state']);
+        self::assertSame($reason, $checks[0]['reason']);
     }
 
     public function testFindsWhatIsWrongInAnActualSchema(): void
