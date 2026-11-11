@@ -8,6 +8,9 @@ declare module 'vue-router' {
   }
 }
 
+// Un identifiant de connexion est un UUID : toute autre forme n'ouvre pas l'espace de travail.
+const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+
 export function createAppRouter(history: RouterHistory): Router {
   const router = createRouter({
     history,
@@ -20,9 +23,9 @@ export function createAppRouter(history: RouterHistory): Router {
       { path: '/workspace', name: 'workspace-home', redirect: { name: 'connections' } },
       { path: '/connections', name: 'connections', component: () => import('./views/ConnectionsView.vue') },
       { path: '/connections/new', name: 'connection-new', component: () => import('./views/ConnectionFormView.vue') },
-      { path: '/connections/:id/edit', name: 'connection-edit', component: () => import('./views/ConnectionFormView.vue'), props: true },
+      { path: `/connections/:id(${UUID})/edit`, name: 'connection-edit', component: () => import('./views/ConnectionFormView.vue'), props: true },
       {
-        path: '/connections/:id',
+        path: `/connections/:id(${UUID})`,
         component: () => import('./views/WorkspaceView.vue'),
         props: true,
         children: [
