@@ -76,6 +76,35 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 - Après la pose, vérifier depuis le conteneur qu'une adresse non listée est bien injoignable (`docker compose -f compose.prod.yaml exec app php -r 'var_dump(@fsockopen("1.1.1.1", 443, $e, $m, 3));'` doit rendre `false`) et qu'une base listée l'est toujours, avant de fermer la session.
 - Ces règles ne sont pas testées par l'intégration continue : à valider sur votre machine.
 
+## Durcissement du conteneur applicatif
+
+- **Système de fichiers en lecture seule** (`read_only: true` dans `compose.prod.yaml`). L'application n'écrit que dans quatre endroits :
+  les `tmpfs` `/app/var/cache` (cache Symfony réchauffé au démarrage, compteurs de limitation de tentatives, sessions du protocole MCP),
+  `/app/var/log` et `/tmp` (état de Caddy), et le volume `sessions` (`/data/sessions`, survit aux redéploiements). Tout le reste, code
+  compris, est refusé en écriture : un fichier déposé par une faille ne peut plus s'installer dans l'image.
+- **Hôtes de confiance** : `docker/prod/entrypoint.sh` pose `SYMFONY_TRUSTED_HOSTS` à partir de `TERRILDB_ALLOWED_HOSTS` (donc du domaine
+  de `deploy.env`, jamais écrit dans le dépôt), plus `localhost` et `127.0.0.1` pour le contrôle de santé. Une requête dont l'en-tête
+  `Host` n'est pas listé reçoit 400, avant tout contrôleur (nginx doit donc transmettre le `Host` d'origine, ce que fait
+  `nginx.conf.template`).
+- **Risques** : les compteurs de tentatives et les sessions MCP, en `tmpfs`, repartent de zéro à chaque redémarrage du conteneur (les
+  sessions de l'interface, elles, restent dans le volume). Si un futur composant écrit ailleurs, il échoue avec « Read-only file system »
+  dans `docker compose -f compose.prod.yaml logs app` : ajouter alors un `tmpfs` ou un volume, ne pas retirer `read_only`.
+- **Retour arrière** : retirer `read_only: true` (et au besoin les `tmpfs`) de `compose.prod.yaml`, puis `docker compose -f compose.prod.yaml up -d app` ;
+  pour les seuls hôtes, définir `SYMFONY_TRUSTED_HOSTS` dans `app.env` à un motif plus large n'a pas d'effet (l'entrypoint le remplace) :
+  revenir au commit précédent de `docker/prod/entrypoint.sh`. `deploy.sh` remet de lui-même l'image précédente si le démarrage échoue.
+- **Vérifié hors production** sur un projet Compose jetable (image construite depuis la branche, domaine factice, base jetable) : démarrage
+  et santé, création du premier compte, connexion, requête et plan, `docker diff` vide, aucune erreur d'écriture, 400 pour un `Host`
+  inconnu, session conservée après redémarrage. Reste à constater en production : le comportement derrière le nginx réel (en-tête `Host`
+  transmis, HTTPS) et au premier déploiement après fusion.
+
+## Reste de l'issue de durcissement (non traité ici)
+
+- **TLS vers les bases cibles** : les pilotes PDO ne vérifient aucun nom de certificat aujourd'hui ; une option par connexion (mode,
+  autorité) est un chantier à part.
+- **Rotation des secrets** (`APP_SECRET`, mot de passe de la base interne) : manuelle. `APP_SECRET` invalide les sessions et les jetons de
+  protection ; le mot de passe PostgreSQL se change dans la base ET dans `db.env`/`app.env`, puis redémarrage.
+- **Sauvegardes** : `pg_dump` avant migration seulement (sept conservées, sur la même machine). Une copie hors machine, chiffrée, reste à planifier.
+
 ## Exploitation
 
 - Journaux : `docker compose -f compose.prod.yaml logs app` avec `TERRILDB_DEPLOY_DIR` et `TERRILDB_DOMAIN` exportés
