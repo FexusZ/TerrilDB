@@ -8,8 +8,8 @@ Un jeton « toutes mes connexions » couvre celles du compte au moment de sa cr�
 l'interface y ajoute ensuite les connexions créées depuis (et retire les supprimées) sans changer le texte du jeton,
 donc sans rien reconfigurer côté client. Il est
 supprimé quand le mot de passe du compte change. Par défaut un jeton ne fait que lire : une écriture sur `/query` est refusée par le filtre puis, en dernier recours, par le moteur
-lui-même (transaction en lecture seule). Trois droits se cochent à la création et ne changent plus (on émet un autre jeton) :
-`writeData`, `writeSchema`, `createConnections` (voir plus bas).
+lui-même (transaction en lecture seule). Quatre droits se cochent à la création et ne changent plus (on émet un autre jeton) :
+`writeData`, `writeSchema`, `createConnections` (voir plus bas) et `diagnostic` (supervision du serveur, lecture seule, voir « Diagnostics »).
 
 | Méthode | Chemin | Rôle |
 | --- | --- | --- |
@@ -19,6 +19,8 @@ lui-même (transaction en lecture seule). Trois droits se cochent à la créatio
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
 | POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` |
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
+| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` = `{availability, reason, privilege}` |
+| GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -45,6 +47,27 @@ pour la tenir ; limitez aussi les droits du compte de la base elle-même.
 Une connexion créée par jeton est chiffrée par la clé du jeton, rejoint aussitôt la liste de ce jeton, et n'est visible des autres jetons
 « toutes mes connexions » qu'à leur actualisation. Une adresse qui désigne le serveur de TerrilDB lui-même (boucle locale, lien local, base interne) répond 403 `forbidden_target` sauf si le
 compte est administrateur, comme dans l'interface web ; les autres machines, réseaux privés compris, restent permises.
+
+## Diagnostics
+
+Le droit `diagnostic` (refusé par défaut, distinct de tout droit d'écriture) donne la supervision du serveur de la connexion, jamais par la
+console : des requêtes de catalogue fixes, écrites par TerrilDB, en lecture seule (aucun `KILL`, `SET`, `ALTER`). Sans le droit : 403
+`permission_denied`. Moteur sans supervision (Redis) : `capabilities` dit `unsupported`, la route des sessions répond 501 `unsupported_operation`.
+
+Chaque source rend un **état** et non une erreur : `availability` = `available`, `unsupported`, `permission_denied` (avec `privilege`, le droit
+manquant) ou `disabled` (source éteinte ; `reason` en donne le code stable). Une liste vide d'une source illisible n'est jamais rendue comme
+« personne ». Sessions : `id`, `user`, `client` (sans port), `database`, `state`, `seconds`, `query`, `current` (la session de TerrilDB) ; 200 au
+plus (`truncated`). Le texte de la requête est **toujours raccourci à 200 caractères** et ne figure jamais dans le journal d'audit de TerrilDB
+(`diagnostic.read` note qui a lu quelle page, le nombre de lignes et l'état).
+
+Compte de supervision minimal à donner à la connexion (documenté, pas imposé : sans le droit, l'état le dit) :
+
+| Moteur | Source | Droit |
+| --- | --- | --- |
+| MySQL, MariaDB | `information_schema.PROCESSLIST` | `PROCESS` (accordé au compte lui-même : un droit reçu par un rôle n'est pas vu) |
+| PostgreSQL | `pg_stat_activity` | rôle `pg_monitor` ou `pg_read_all_stats` |
+| ClickHouse | `system.processes` | `SELECT ON system.processes` |
+| Redis | – | non pris en charge |
 
 ## Limites
 
