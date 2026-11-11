@@ -16,6 +16,7 @@ use App\Core\Data\Exception\DataChangeConflictException;
 use App\Core\Data\Exception\DataChangeFailedException;
 use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
 use App\Core\Data\Exception\InvalidDataChangeException;
+use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
@@ -108,6 +109,7 @@ final class ErrorMapper
                 'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
                 'failed' => ChangePlanPresenter::statement($error->failed),
             ]),
+            $error instanceof DiagnosticsFailedException => new ErrorResponse(502, 'diagnostics_failed'),
             $error instanceof UnsupportedOperationException => new ErrorResponse(501, 'unsupported_operation'),
             $error instanceof PlanNotAvailableException => new ErrorResponse(501, 'plan_unavailable'),
             $error instanceof UnreadablePlanException => new ErrorResponse(502, 'unreadable_plan'),

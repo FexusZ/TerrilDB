@@ -74,6 +74,7 @@ final class ErrorMapperTest extends TestCase
         yield 'invalid key' => [new InvalidKeyException('x'), 422, 'invalid_input'];
         yield 'key not found' => [KeyNotFoundException::named('k'), 404, 'not_found'];
         yield 'unsupported operation' => [UnsupportedOperationException::for(Engine::Redis, 'tables'), 501, 'unsupported_operation'];
+        yield 'diagnostics failed' => [\App\Core\Diagnostics\Exception\DiagnosticsFailedException::create(new \RuntimeException('engine detail')), 502, 'diagnostics_failed'];
         yield 'plan not available' => [PlanNotAvailableException::for(Engine::ClickHouse), 501, 'plan_unavailable'];
         yield 'unreadable plan' => [UnreadablePlanException::create(), 502, 'unreadable_plan'];
         yield 'query timeout' => [QueryTimeoutException::afterMilliseconds(100), 408, 'query_timeout'];
