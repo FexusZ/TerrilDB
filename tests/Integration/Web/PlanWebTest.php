@@ -103,6 +103,19 @@ final class PlanWebTest extends WebApiTestCase
         self::assertTrue($scans[0]['fullScan']);
     }
 
+    #[DataProvider('targets')]
+    public function testFlagsALargeSortOnlyWithoutLimit(string $envVar): void
+    {
+        $this->prepare($envVar);
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from order_items order by quantity']);
+        $rules = array_column(self::arrayOf($body['findings']), 'rule');
+        self::assertContains('large_sort', $rules);
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from order_items order by quantity limit 10']);
+        self::assertNotContains('large_sort', array_column(self::arrayOf($body['findings']), 'rule'));
+    }
+
     public function testTheStatementIsNotRun(): void
     {
         $this->prepare('TARGET_POSTGRES_URL');

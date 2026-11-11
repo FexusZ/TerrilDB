@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Core\Optimizer;
 
 /**
- * Cherche dans un plan ce qui mérite attention. Seul un parcours complet d'une table que le moteur estime grande est
- * signalé : sur une petite table, lire tout est le bon choix. Sans estimation du moteur, on ne dit rien.
+ * Cherche dans un plan ce qui mérite attention. Tout se mesure au même seuil de lignes estimées : sur une petite table,
+ * lire tout ou trier tout est le bon choix. Sans estimation du moteur, on ne dit rien.
+ *
+ * Règles : parcours complet d'une grosse table (`full_scan`) ; tri de beaucoup de lignes sans limite (`large_sort`) : un
+ * tri seul n'indique pas un disque, d'où le silence sous un LIMIT, que PostgreSQL montre dans son plan (nœud Limit juste
+ * au-dessus du tri) mais pas MySQL ni MariaDB (l'appelant le dit par `$limited`, voir `StatementLimit`).
  */
 final class PlanAnalyzer
 {
@@ -15,10 +19,10 @@ final class PlanAnalyzer
     /**
      * @return list<PlanFinding>
      */
-    public function analyze(QueryPlan $plan): array
+    public function analyze(QueryPlan $plan, bool $limited = false): array
     {
         $findings = [];
-        $this->walk($plan->root, $findings);
+        $this->walk($plan->root, $limited, false, $findings);
 
         return $findings;
     }
@@ -26,13 +30,31 @@ final class PlanAnalyzer
     /**
      * @param list<PlanFinding> $findings
      */
-    private function walk(PlanNode $node, array &$findings): void
+    private function walk(PlanNode $node, bool $limited, bool $underLimit, array &$findings): void
     {
         if ($node->fullScan && null !== $node->rows && $node->rows >= self::FULL_SCAN_ROWS) {
             $findings[] = new PlanFinding('full_scan', $node->relation, $node->rows, $node->condition);
         }
-        foreach ($node->children as $child) {
-            $this->walk($child, $findings);
+        if (PlanKind::Sort === $node->kind && !$limited && !$underLimit && null !== $node->rows && $node->rows >= self::FULL_SCAN_ROWS) {
+            $findings[] = new PlanFinding('large_sort', self::firstRelation($node), $node->rows, null);
         }
+        foreach ($node->children as $child) {
+            $this->walk($child, $limited, PlanKind::Limit === $node->kind, $findings);
+        }
+    }
+
+    private static function firstRelation(PlanNode $node): ?string
+    {
+        if (null !== $node->relation) {
+            return $node->relation;
+        }
+        foreach ($node->children as $child) {
+            $relation = self::firstRelation($child);
+            if (null !== $relation) {
+                return $relation;
+            }
+        }
+
+        return null;
     }
 }

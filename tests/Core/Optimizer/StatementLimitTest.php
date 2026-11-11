@@ -22,7 +22,7 @@ final class StatementLimitTest extends TestCase
         yield 'fetch first' => ['SELECT * FROM t ORDER BY a FETCH FIRST 10 ROWS ONLY', true];
         yield 'limite dans une sous-requête' => ['SELECT * FROM (SELECT * FROM t LIMIT 5) x ORDER BY a', true];
         yield 'mot dans une chaîne' => ["SELECT * FROM t WHERE a = 'limit 5' ORDER BY a", false];
-        yield 'mot dans un commentaire' => ["SELECT * FROM t /* limit 5 */ ORDER BY a", false];
+        yield 'mot dans un commentaire' => ['SELECT * FROM t /* limit 5 */ ORDER BY a', false];
         yield 'colonne entre guillemets' => ['SELECT "limit" FROM t ORDER BY a', false];
     }
 
