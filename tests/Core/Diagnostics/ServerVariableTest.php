@@ -12,13 +12,14 @@ final class ServerVariableTest extends TestCase
 {
     public function testKeepsWhatTheEngineSays(): void
     {
-        $variable = new ServerVariable('max_connections', '200', '151', true, 'CONFIG', RestartNeed::Pending, 'global');
+        $variable = new ServerVariable('max_connections', '200', '151', true, 'CONFIG', RestartNeed::Pending, 'global', '8kB');
 
         self::assertSame('200', $variable->value);
         self::assertSame('151', $variable->default);
         self::assertTrue($variable->changed);
         self::assertFalse($variable->masked);
         self::assertSame(RestartNeed::Pending, $variable->restart);
+        self::assertSame('8kB', $variable->unit);
     }
 
     public function testASecretNeverCarriesItsValueNorItsDefault(): void

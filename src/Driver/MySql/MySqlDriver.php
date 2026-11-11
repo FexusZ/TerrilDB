@@ -35,6 +35,6 @@ final readonly class MySqlDriver implements Driver
 
         $connection = $this->connector->connect($engine, $parameters);
 
-        return new TargetConnection($engine, new MySqlIntrospector($connection), new MySqlQueryRunner($connection, $engine), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection), diagnostics: new ServerDiagnostics($engine, new MySqlSessionDiagnostics($connection), new MySqlLockDiagnostics($connection, $engine)));
+        return new TargetConnection($engine, new MySqlIntrospector($connection), new MySqlQueryRunner($connection, $engine), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection), diagnostics: new ServerDiagnostics($engine, new MySqlSessionDiagnostics($connection), new MySqlLockDiagnostics($connection, $engine), new MySqlVariableDiagnostics($connection, $engine)));
     }
 }

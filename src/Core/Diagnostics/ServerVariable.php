@@ -27,6 +27,8 @@ final readonly class ServerVariable
         public ?RestartNeed $restart,
         /** `global`, `session` ou `server` quand le moteur le distingue. */
         public ?string $scope,
+        /** Unité de la valeur et du défaut quand le moteur en donne une (`8kB`, `ms`). */
+        public ?string $unit = null,
     ) {
         $this->masked = SecretVariables::matches($name);
         $this->value = $this->masked ? null : self::shorten($value);
