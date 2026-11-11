@@ -74,7 +74,7 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
      */
     public function tableHolders(string $table): TableHolders
     {
-        return $this->catalog->read(function (Connection $c) use ($table): TableHolders {
+        return $this->catalog->read(static function (Connection $c) use ($table): TableHolders {
             if (1 !== (new RowReader(['v' => $c->fetchOne('SELECT @@performance_schema')]))->int('v')) {
                 return TableHolders::unreadable(DiagnosticStatus::disabled('performance_schema_off'));
             }
