@@ -77,7 +77,12 @@ final class DefaultValueTest extends TestCase
         yield 'now upper' => ['NOW()', 'now()'];
         yield 'current_timestamp' => ['CURRENT_TIMESTAMP', 'current_timestamp'];
         yield 'current_timestamp precision' => ['current_timestamp(3)', 'current_timestamp(3)'];
+        yield 'current_timestamp, as MariaDB reports it' => ['current_timestamp()', 'current_timestamp'];
+        yield 'current_timestamp precision, as MariaDB reports it' => ['current_timestamp(6)', 'current_timestamp(6)'];
         yield 'current_date' => ['current_date', 'current_date'];
+        yield 'current_date with parentheses' => ['current_date()', 'current_date'];
+        yield 'curdate, as both engines report it' => ['curdate()', 'current_date'];
+        yield 'curtime, as both engines report it' => ['curtime()', 'current_time'];
         yield 'uuid' => ['uuid()', 'uuid()'];
         yield 'gen_random_uuid' => ['gen_random_uuid()', 'gen_random_uuid()'];
         yield 'true' => ['TRUE', 'true'];
