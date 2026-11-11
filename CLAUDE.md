@@ -233,6 +233,8 @@ d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête.
 avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
 1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
 
+Audit d'EXPLOITATION (#80, première règle) : `unused_index` = index jamais LU depuis le début de la collecte (`SchemaIntrospector::indexUsage()` -> `IndexUsageReport`, MySQL `performance_schema.table_io_waits_summary_by_index_usage` colonne `COUNT_READ` + uptime ; PostgreSQL `pg_stat_user_indexes.idx_scan`, collecte = `stats_reset` de la base ou à défaut le démarrage ; MariaDB l'a éteint par défaut, ClickHouse/Redis n'ont rien). Jamais signalé : clé primaire, index unique, index qui porte une clé étrangère, contrainte d'exclusion ; rien avant 7 jours de collecte. Suggestion à relire : INVISIBLE (MySQL) / IGNORED (MariaDB) d'abord, DROP en commentaire ; PostgreSQL : DROP en commentaire seulement. Une source illisible n'est JAMAIS une erreur ni un constat : `SchemaAuditor::checks()` rend des `AuditCheck` (`unavailable` + raison stable `performance_schema_off`/`instrument_off`/`permission_denied`/`unreadable`, ou `too_short` + durée) exposés dans `checks` de `GET .../audit` et listés « Non vérifié » par `AuditPane`. Les tests d'intégration du schéma `shop` écartent `unused_index` (il dépend de l'âge de la cible). À venir, une PR chacun : statistiques périmées, espace récupérable, `DEFINER` orphelin.
+
 ## Diagramme ER (SchemaDiagramController, assets/utils/erLayout.ts, DiagramPane)
 
 `GET /web/connections/{id}/diagram` : tables (pas les vues, 300 au plus) avec colonnes (type, nullable, clé primaire) et
