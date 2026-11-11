@@ -36,13 +36,14 @@ final class PlanServiceTest extends TestCase
         self::assertSame('EXPLAIN (FORMAT JSON) select * from orders', $this->service()->statementFor(Engine::PostgreSql, 'select * from orders'));
         self::assertSame('EXPLAIN FORMAT=JSON select * from orders', $this->service()->statementFor(Engine::MySql, 'select * from orders'));
         self::assertSame('EXPLAIN FORMAT=JSON select * from orders', $this->service()->statementFor(Engine::MariaDb, 'select * from orders'));
+        self::assertSame('EXPLAIN json=1, indexes=1 select * from orders', $this->service()->statementFor(Engine::ClickHouse, 'select * from orders'));
     }
 
     public function testNoPlanIsOfferedForAnEngineWithoutOne(): void
     {
         $this->expectException(PlanNotAvailableException::class);
 
-        $this->service()->statementFor(Engine::ClickHouse, 'select * from orders');
+        $this->service()->statementFor(Engine::Redis, 'select * from orders');
     }
 
     public function testDropsTheTrailingSemicolonAndSpaces(): void
@@ -89,6 +90,10 @@ final class PlanServiceTest extends TestCase
         self::assertSame(PlanKind::FullScan, $postgres->root->kind);
         self::assertSame(PlanKind::FullScan, $mysql->root->children[0]->kind);
         self::assertSame(PlanKind::FullScan, $mariadb->root->children[0]->kind);
+
+        $clickhouse = $this->service()->parse(Engine::ClickHouse, QueryResult::rows(['explain'], [[$this->fixture('clickhouse-key')]], false, 1));
+        self::assertSame(PlanKind::Other, $clickhouse->root->kind);
+        self::assertNull($clickhouse->totalCost);
     }
 
     public function testAnEmptyOrOddResultIsUnreadable(): void

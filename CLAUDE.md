@@ -195,8 +195,9 @@ antislash dans chaînes ET identifiants, `--` sans espace, `#` commentaire, pas 
 les commentaires `/* */` sont lus sans imbrication (ClickHouse les imbrique : la lecture est plus stricte, jamais plus laxiste).
 `ClickHouseIntrospector` : `system.tables/columns/data_skipping_indices` ; pas de clé étrangère, et la clé de tri est un index
 non unique nommé « ORDER BY » (« PRIMARY KEY » si différente), jamais une clé primaire relationnelle ; lignes = `total_rows`.
-Pas de plan d'exécution (`PlanNotAvailableException` -> 501 `plan_unavailable`, bouton masqué par `ENGINE_HAS_PLAN`) et pas de
-règle d'audit (relationnelles). Cible de test `target-clickhouse` (`TARGET_CLICKHOUSE_URL`, port hôte 18123) dans le profil `targets`.
+Plan d'exécution par `EXPLAIN json=1, indexes=1` lu par `ClickHousePlanParser` (ni coût ni lignes dans ce format : `PlanAnalyzer` ne
+signale donc rien ; une lecture dont la clé de tri ne restreint rien est un parcours complet, sinon « PRIMARY KEY » + condition) ; pas de
+règle d'audit (relationnelles). Redis garde le 501 `plan_unavailable` (bouton masqué par `ENGINE_HAS_PLAN`). Cible de test `target-clickhouse` (`TARGET_CLICKHOUSE_URL`, port hôte 18123) dans le profil `targets`.
 
 ## Redis (src/Driver/Redis, src/Core/KeyValue, src/Core/Guard/Redis*)
 
@@ -226,7 +227,7 @@ Sans PMM ni service externe : tout part de l'introspection et de `EXPLAIN`. `Sch
 clé primaire, clé étrangère sans index couvrant — colonnes en tête de l'index, ordre indifférent —, index redondant ;
 jamais un index unique) rend des `Finding` avec une suggestion SQL à relire, jamais exécutée par TerrilDB
 (`GET /web/connections/{id}/audit`, 300 tables au plus). `PlanService` ne construit l'EXPLAIN que d'une lecture simple
-(garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB (`PostgreSqlPlanParser`, `MySqlPlanParser`, fixtures
+(garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB / ClickHouse (`PostgreSqlPlanParser`, `MySqlPlanParser`, `ClickHousePlanParser`, fixtures
 réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
 d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
 avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce

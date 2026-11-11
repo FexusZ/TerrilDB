@@ -47,14 +47,28 @@ final class PlanWebTest extends WebApiTestCase
         return $all;
     }
 
-    public function testClickHouseHasNoPlanToShow(): void
+    public function testClickHouseExplainsARead(): void
     {
         $this->prepare('TARGET_CLICKHOUSE_URL');
 
-        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from orders']);
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from orders where customer_id = 5 order by ordered_at limit 10']);
 
-        self::assertSame(501, $this->statusCode());
-        self::assertSame('plan_unavailable', $body['error']);
+        self::assertSame(200, $this->statusCode());
+        $plan = self::arrayOf($body['plan']);
+        self::assertNull($plan['totalCost']);
+        $reads = array_values(array_filter(self::flatten($plan['root']), static fn (array $n): bool => 'orders' === $n['relation']));
+        self::assertCount(1, $reads);
+        self::assertSame('index_scan', $reads[0]['kind']);
+        self::assertSame('PRIMARY KEY', $reads[0]['index']);
+    }
+
+    public function testClickHouseRefusesToExplainAWrite(): void
+    {
+        $this->prepare('TARGET_CLICKHOUSE_URL');
+
+        $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'drop table orders']);
+
+        self::assertSame(403, $this->statusCode());
     }
 
     #[DataProvider('targets')]

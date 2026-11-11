@@ -1,0 +1,70 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_7",
+      "Description": "Project names",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_18",
+          "Plans": [
+            {
+              "Node Type": "JoinLazyColumnsStep",
+              "Node Id": "JoinLazyColumnsStep_15",
+              "Plans": [
+                {
+                  "Node Type": "Limit",
+                  "Node Id": "Limit_6",
+                  "Description": "preliminary LIMIT",
+                  "Plans": [
+                    {
+                      "Node Type": "Sorting",
+                      "Node Id": "Sorting_5",
+                      "Description": "Sorting for ORDER BY",
+                      "Plans": [
+                        {
+                          "Node Type": "Expression",
+                          "Node Id": "Expression_19",
+                          "Plans": [
+                            {
+                              "Node Type": "Expression",
+                              "Node Id": "Expression_12",
+                              "Plans": [
+                                {
+                                  "Node Type": "ReadFromMergeTree",
+                                  "Node Id": "ReadFromMergeTree_0",
+                                  "Description": "shop.orders",
+                                  "Indexes": [
+                                    {
+                                      "Type": "PrimaryKey",
+                                      "Keys": ["customer_id"],
+                                      "Condition": "(customer_id in [5, 5])",
+                                      "Search Algorithm": "binary search",
+                                      "Initial Parts": 1,
+                                      "Selected Parts": 1,
+                                      "Initial Granules": 1,
+                                      "Selected Granules": 1
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "Node Type": "LazilyReadFromMergeTree",
+                  "Node Id": "LazilyReadFromMergeTree_11"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

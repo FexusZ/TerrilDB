@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Core\Optimizer;
 
+use App\Core\Optimizer\ClickHousePlanParser;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Optimizer\MySqlPlanParser;
 use App\Core\Optimizer\PlanKind;
@@ -233,5 +234,47 @@ final class PlanParserTest extends TestCase
         self::assertNull($plan->root->rows);
         self::assertNull($plan->root->cost);
         self::assertNull($plan->totalCost);
+    }
+
+    public function testClickHouseReadWithoutUsableKeyIsAFullScan(): void
+    {
+        $plan = (new ClickHousePlanParser())->parse($this->fixture('clickhouse-group'));
+
+        self::assertNull($plan->totalCost);
+        self::assertSame(PlanKind::Other, $plan->root->kind);
+        $aggregate = $plan->root->children[0];
+        self::assertSame(PlanKind::Aggregate, $aggregate->kind);
+        self::assertSame('Aggregating', $aggregate->label);
+
+        $read = $aggregate->children[0]->children[0]->children[0];
+        self::assertSame(PlanKind::FullScan, $read->kind);
+        self::assertSame('orders', $read->relation);
+        self::assertNull($read->index);
+        self::assertTrue($read->fullScan);
+        self::assertNull($read->rows);
+    }
+
+    public function testClickHouseReadNarrowedBySortingKeyIsAnIndexScan(): void
+    {
+        $plan = (new ClickHousePlanParser())->parse($this->fixture('clickhouse-key'));
+
+        $limit = $plan->root->children[0]->children[0]->children[0];
+        self::assertSame(PlanKind::Limit, $limit->kind);
+        $sort = $limit->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+
+        $read = $sort->children[0]->children[0]->children[0];
+        self::assertSame(PlanKind::IndexScan, $read->kind);
+        self::assertSame('orders', $read->relation);
+        self::assertSame('PRIMARY KEY', $read->index);
+        self::assertSame('(customer_id in [5, 5])', $read->condition);
+        self::assertFalse($read->fullScan);
+    }
+
+    public function testClickHouseRejectsWhatIsNotAPlan(): void
+    {
+        $this->expectException(UnreadablePlanException::class);
+
+        (new ClickHousePlanParser())->parse('[{"Nope": 1}]');
     }
 }
