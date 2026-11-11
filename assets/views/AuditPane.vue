@@ -15,6 +15,7 @@ const router = useRouter()
 const audit = ref<SchemaAudit | null>(null)
 const error = ref<string | null>(null)
 
+const criticals = computed(() => audit.value?.findings.filter((finding) => finding.severity === 'critical') ?? [])
 const warnings = computed(() => audit.value?.findings.filter((finding) => finding.severity === 'warning') ?? [])
 const infos = computed(() => audit.value?.findings.filter((finding) => finding.severity === 'info') ?? [])
 
@@ -49,7 +50,7 @@ async function open(finding: SchemaFinding): Promise<void> {
       <p v-if="audit.truncated" class="truncated" role="status">L’audit s’est arrêté aux 300 premières tables.</p>
       <p v-if="audit.findings.length === 0" class="clean">Rien à signaler : chaque table a sa clé primaire, chaque clé étrangère son index, et aucun index n’est superflu.</p>
 
-      <template v-for="group in [{ title: 'À corriger', items: warnings }, { title: 'À savoir', items: infos }]" :key="group.title">
+      <template v-for="group in [{ title: 'Urgent', items: criticals }, { title: 'À corriger', items: warnings }, { title: 'À savoir', items: infos }]" :key="group.title">
         <section v-if="group.items.length > 0" class="group">
           <h2>{{ group.title }} · {{ group.items.length }}</h2>
           <ul>
@@ -77,6 +78,7 @@ h2 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
 ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .finding { padding: 14px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--s1); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .finding.warning { box-shadow: inset 3px 0 0 var(--sec); }
+.finding.critical { box-shadow: inset 3px 0 0 var(--bad); }
 .title { font-weight: 500; }
 pre { margin: 4px 0 0; padding: 8px 10px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--line); font: 400 12.5px/1.5 var(--font-mono); overflow-x: auto; max-width: 100%; }
 .clean { padding: 12px 14px; border-radius: var(--radius); background: var(--ok-bg); border: 1px solid var(--ok-line); color: var(--ok); }
