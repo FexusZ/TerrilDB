@@ -229,7 +229,7 @@ jamais un index unique ; clé étrangère dont la colonne doit être CONVERTIE p
 (`GET /web/connections/{id}/audit`, 300 tables au plus). `PlanService` ne construit l'EXPLAIN que d'une lecture simple
 (garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB / ClickHouse (`PostgreSqlPlanParser`, `MySqlPlanParser`, `ClickHousePlanParser`, fixtures
 réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
-d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
+d'une table estimée à 1000 lignes ou plus. Deux autres règles, au même seuil de lignes estimées : `large_sort` (un nœud Sort sans LIMIT ; seul un VRAI tri compte : `ordering_operation` sans `using_filesort` n'en est pas un ; PostgreSQL montre le LIMIT dans son plan, MySQL/MariaDB non, d'où `StatementLimit` qui lit l'instruction et `PlanAnalyzer::analyze($plan, $limited)`) et `leading_wildcard` (parcours complet dont la condition est un LIKE à joker initial, dit À LA PLACE de `full_scan` : un index ne l'aiderait pas ; PostgreSQL estime les lignes APRÈS filtre, un LIKE très sélectif y passe sous le seuil). Fixtures réelles par règle dans `tests/Fixtures/plans` (`*-sort*`, `*-like-*`, cas négatifs petite table/préfixe). Jamais d'`ANALYZE`. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
 avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
 1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
 
