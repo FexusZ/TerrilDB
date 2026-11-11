@@ -29,8 +29,6 @@ final class StatementGuardCorpusTest extends TestCase
      * @var array<string, string> instruction => famille
      */
     private const PENDING = [
-        "SELECT nextval('s')" => 'séquences',
-        "SELECT setval('s', 10)" => 'séquences',
         'CREATE OR REPLACE TABLE t (a INT)' => 'structure',
         'CREATE OR REPLACE VIEW v AS SELECT 1' => 'structure',
         'OPTIMIZE TABLE t' => 'structure',
@@ -170,6 +168,9 @@ final class StatementGuardCorpusTest extends TestCase
             yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
             yield from self::rows($sql, $pg, $rw, 'allow:Write');
         }
+        yield from self::rows("EXPLAIN ANALYZE SELECT nextval('s')", $pg, $ro, 'refuse:NotReadOnly');
+        yield from self::rows("EXPLAIN SELECT nextval('s')", $pg, $ro, 'allow:Inspect');
+        yield from self::rows("WITH x AS (SELECT nextval('s')) SELECT * FROM x", $pg, $ro, 'refuse:NotReadOnly');
         yield from self::rows("SELECT set_config('a.b', 'c', false)", $pg, $rw, 'refuse:ForbiddenConstruct');
         yield from self::rows("SELECT load_file('/etc/passwd')", $my, $rw, 'refuse:ForbiddenConstruct');
         yield from self::rows("SELECT pg_read_file('/etc/passwd')", $pg, $rw, 'refuse:ForbiddenConstruct');

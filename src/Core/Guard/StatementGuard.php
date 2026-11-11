@@ -85,6 +85,9 @@ final class StatementGuard
         }
 
         $kind = $this->kind($statement);
+        if (null !== $kind && $this->advancesSequence($statement, $kind)) {
+            $kind = StatementKind::Write;
+        }
         if (null === $kind) {
             return GuardVerdict::refused(GuardReason::UnsupportedStatement);
         }
@@ -133,6 +136,18 @@ final class StatementGuard
             \in_array($first, self::SCHEMA_SAFE, true), \in_array($first, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
             default => null,
         };
+    }
+
+    /**
+     * nextval() et setval() avancent une séquence : un SELECT qui les appelle écrit (PostgreSQL les refuse d'ailleurs en
+     * lecture seule), même derrière WITH ou EXPLAIN ANALYZE ; un EXPLAIN simple n'exécute rien.
+     */
+    private function advancesSequence(ScannedStatement $statement, StatementKind $kind): bool
+    {
+        $executes = StatementKind::Read === $kind
+            || (StatementKind::Inspect === $kind && ($statement->has('ANALYZE') || $statement->has('ANALYSE')));
+
+        return $executes && ($statement->calls('NEXTVAL') || $statement->calls('SETVAL'));
     }
 
     /**
