@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Optimizer;
 
 use App\Core\Connection\Engine;
+use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\TableDefinition;
@@ -23,10 +24,11 @@ final class SchemaAuditor
 
     /**
      * @param list<TableDefinition> $tables
+     * @param list<AutoCounter>     $counters les compteurs automatiques lus au catalogue (sans eux, la règle de saturation se tait)
      *
      * @return list<Finding>
      */
-    public function audit(Engine $engine, array $tables): array
+    public function audit(Engine $engine, array $tables, array $counters = []): array
     {
         if (Engine::ClickHouse === $engine) {
             // Ni clé primaire, ni clé étrangère, ni unicité : les règles relationnelles ne s'appliquent pas.
@@ -38,11 +40,13 @@ final class SchemaAuditor
             if (TableKind::Table !== $table->kind) {
                 continue;
             }
-            array_push($findings, ...$this->auditTable($engine, $table, $tables));
+            array_push($findings, ...$this->auditTable($engine, $table, $tables), ...$this->saturation($engine, $table, $counters));
         }
 
         // Par table, puis les constats graves d'abord.
-        $rank = static fn (Finding $f): array => [$f->table, Severity::Warning === $f->severity ? 0 : 1, $f->rule->value, $f->index ?? implode(',', $f->columns)];
+        $rank = static fn (Finding $f): array => [$f->table, match ($f->severity) {
+            Severity::Critical => 0, Severity::Warning => 1, Severity::Info => 2
+        }, $f->rule->value, $f->index ?? implode(',', $f->columns)];
         usort($findings, static fn (Finding $a, Finding $b): int => $rank($a) <=> $rank($b));
 
         return $findings;
@@ -92,6 +96,110 @@ final class SchemaAuditor
         }
 
         return $findings;
+    }
+
+    private const WARNING_RATIO = 0.7;
+    private const CRITICAL_RATIO = 0.9;
+
+    /** Largeur des entiers : [signé, non signé]. Les bornes sont des flottants : seul le rapport compte ici. */
+    private const INTEGER_LIMITS = [
+        'tinyint' => [127.0, 255.0],
+        'smallint' => [32767.0, 65535.0],
+        'mediumint' => [8388607.0, 16777215.0],
+        'int' => [2147483647.0, 4294967295.0],
+        'integer' => [2147483647.0, 4294967295.0],
+        'bigint' => [9223372036854775807.0, 18446744073709551615.0],
+    ];
+
+    private const BIGINT_MAX = '9223372036854775807';
+
+    /**
+     * Compteur proche de la limite de son type (ou de sa séquence) : à 70 % un avertissement, à 90 % un constat grave. Le
+     * catalogue donne la dernière valeur attribuée ; un type qui n'est pas un entier connu n'est pas jugé. La suggestion est du
+     * texte à relire : changer le type réécrit la table, et les colonnes qui la référencent doivent suivre.
+     *
+     * @param list<AutoCounter> $counters
+     *
+     * @return list<Finding>
+     */
+    private function saturation(Engine $engine, TableDefinition $table, array $counters): array
+    {
+        $findings = [];
+        foreach ($counters as $counter) {
+            $column = $counter->table === $table->name ? $table->column($counter->column) : null;
+            if (null === $column || !is_numeric($counter->lastValue)) {
+                continue;
+            }
+            $type = self::baseType($column->type);
+            $unsigned = str_contains($type, 'unsigned');
+            $width = trim(str_replace(['unsigned', 'zerofill'], '', $type));
+            $limits = self::INTEGER_LIMITS[$width] ?? null;
+            if (null === $limits) {
+                continue;
+            }
+            $typeMax = $limits[$unsigned ? 1 : 0];
+            $max = null !== $counter->maxValue && is_numeric($counter->maxValue) ? min($typeMax, (float) $counter->maxValue) : $typeMax;
+            $ratio = (float) $counter->lastValue / $max;
+            if ($ratio < self::WARNING_RATIO) {
+                continue;
+            }
+
+            $limitText = null !== $counter->maxValue && is_numeric($counter->maxValue) && (float) $counter->maxValue < $typeMax
+                ? $counter->maxValue
+                : self::limitText($width, $unsigned);
+            $findings[] = new Finding(
+                FindingRule::CounterNearLimit,
+                $ratio >= self::CRITICAL_RATIO ? Severity::Critical : Severity::Warning,
+                $table->name,
+                [$column->name],
+                suggestion: $this->widen($engine, $table->name, $column->name, $width, $unsigned, $counter, $max < $typeMax),
+                detail: \sprintf('%s : %s sur %s (%d %%)', $column->type, $counter->lastValue, $limitText, (int) floor($ratio * 100)),
+            );
+        }
+
+        return $findings;
+    }
+
+    private static function limitText(string $width, bool $unsigned): string
+    {
+        return match ($width.($unsigned ? ' unsigned' : '')) {
+            'tinyint' => '127', 'tinyint unsigned' => '255',
+            'smallint' => '32767', 'smallint unsigned' => '65535',
+            'mediumint' => '8388607', 'mediumint unsigned' => '16777215',
+            'int', 'integer' => '2147483647', 'int unsigned', 'integer unsigned' => '4294967295',
+            'bigint' => '9223372036854775807',
+            default => '18446744073709551615',
+        };
+    }
+
+    private function widen(Engine $engine, string $table, string $column, string $width, bool $unsigned, AutoCounter $counter, bool $cappedBySequence): ?string
+    {
+        if (Engine::PostgreSql === $engine) {
+            $sequence = null === $counter->sequence ? null : implode('.', array_map(static fn (string $part): string => self::quote($engine, $part), explode('.', $counter->sequence, 2)));
+            if ($cappedBySequence && null !== $sequence) {
+                // La séquence est plafonnée plus bas que son type : on lève le plafond (un bigint porte jusque-là).
+                return \sprintf('ALTER SEQUENCE %s MAXVALUE %s;', $sequence, self::BIGINT_MAX);
+            }
+            if ('bigint' === $width) {
+                return null;
+            }
+            $alter = \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE bigint;', self::quote($engine, $table), self::quote($engine, $column));
+
+            // Une identité suit le type de sa colonne ; la séquence d'un serial reste un entier tant qu'on ne la change pas.
+            return null === $sequence || $counter->identity ? $alter : $alter.'
+'.\sprintf('ALTER SEQUENCE %s AS bigint;', $sequence);
+        }
+
+        if ('bigint' === $width && $unsigned) {
+            return null;
+        }
+
+        return \sprintf(
+            'ALTER TABLE %s MODIFY %s BIGINT%s NOT NULL AUTO_INCREMENT;',
+            self::quote($engine, $table),
+            self::quote($engine, $column),
+            $unsigned || 'bigint' === $width ? ' UNSIGNED' : '',
+        );
     }
 
     /**
