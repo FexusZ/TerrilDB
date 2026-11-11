@@ -7,5 +7,20 @@
 :8080 {
 	root * /app/public
 	encode zstd gzip
+
+	# Les fichiers de /app/ que Caddy sert lui-même (index compilé, scripts, styles, polices) ne passent pas par Symfony : mêmes
+	# en-têtes que SecurityHeadersListener (un test vérifie que les deux restent identiques). Les réponses de Symfony les
+	# portent déjà : le matcher @static (fichier existant) évite de les doubler, ce que des navigateurs rejettent.
+	@static {
+		path /app/*
+		file
+	}
+	header @static {
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	}
+
 	php_server
 }
