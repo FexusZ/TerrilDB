@@ -376,10 +376,28 @@ export interface StructurePlan {
   destructive: boolean
 }
 
+/** Une session qui tient la table : un ALTER attendrait sa fin. Jamais le texte de sa requête. */
+export interface TableHolder {
+  session: string
+  user: string | null
+  /** Âge de sa transaction, quand le moteur le dit. */
+  seconds: number | null
+  sleeping: boolean
+  mode: string | null
+}
+
+/** Pré-contrôle des verrous : un avertissement, jamais un blocage ; `status` dit si la source se lit. */
+export interface StructureLockCheck {
+  status: DiagnosticStatus
+  holders: TableHolder[]
+}
+
 export interface StructurePreview extends StructurePlan {
   fingerprint: string
   /** La table a changé depuis qu’on l’a chargée. */
   stale: boolean
+  /** Nul quand le moteur n'a pas de diagnostic. */
+  lockCheck?: StructureLockCheck | null
 }
 
 export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'

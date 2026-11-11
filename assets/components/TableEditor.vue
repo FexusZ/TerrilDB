@@ -2,9 +2,10 @@
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { ApiError } from '../api/client'
 import { messageFor } from '../api/errors'
+import { describeHolder, describeStatus } from '../utils/diagnostics'
 import { formatBytes } from '../utils/format'
 import { applyStructure, previewStructure, type StructureScope } from '../api/structure'
-import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructurePreview, type TableDetail } from '../api/types'
+import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructureLockCheck, type StructurePreview, type TableDetail, type TableHolder } from '../api/types'
 import { useWorkspaceStore } from '../stores/workspace'
 import {
   addColumn,
@@ -217,7 +218,7 @@ const incomplete = computed(() => {
 const preview = ref<StructurePreview | null>(null)
 const previewing = ref(false)
 const problem = ref<string | null>(null)
-const failure = ref<{ message: string; applied: string[] } | null>(null)
+const failure = ref<{ message: string; applied: string[]; holders: TableHolder[] | null } | null>(null)
 const applying = ref(false)
 const confirming = ref(false)
 const dropping = ref<StructurePreview | null>(null)
@@ -314,7 +315,12 @@ function handleFailure(error: unknown): void {
   }
   if (error instanceof ApiError && error.code === 'schema_change_failed') {
     const applied = Array.isArray(error.details.applied) ? (error.details.applied as { operation: string; subject: string }[]).map((s) => describeStatement(s.operation, s.subject)) : []
-    failure.value = { message: messageFor(error), applied }
+    const check = error.details.lockCheck as StructureLockCheck | null | undefined
+    failure.value = {
+      message: error.details.lockTimeout === true ? 'Une transaction ouverte retient cette table : la modification a attendu son verrou jusqu’au délai maximum.' : messageFor(error),
+      applied,
+      holders: error.details.lockTimeout === true && check?.status.availability === 'available' ? check.holders : null,
+    }
     if (applied.length > 0) {
       // Une partie est déjà en place (MySQL, MariaDB, ClickHouse) : la table affichée n'est plus la vraie.
       stale.value = true
@@ -348,6 +354,7 @@ async function confirmDrop(): Promise<void> {
   }
 }
 
+const lockUnreadable = computed(() => (preview.value?.lockCheck ? describeStatus(preview.value.lockCheck.status, 'les verrous') : null))
 const destructive = computed(() => preview.value?.statements.filter((statement) => statement.destructive) ?? [])
 </script>
 
@@ -367,10 +374,21 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
         </li>
       </ul>
       <p v-else-if="preview" class="hint" role="status">Ces modifications ne changent rien dans la base.</p>
+      <div v-if="preview?.lockCheck" class="lock-check" role="status" data-test="lock-check" :class="{ held: preview.lockCheck.holders.length > 0 }">
+        <template v-if="lockUnreadable">
+          <p>Verrous : non vérifiable. {{ lockUnreadable }}</p>
+        </template>
+        <template v-else-if="preview.lockCheck.holders.length > 0">
+          <p>{{ preview.lockCheck.holders.length }} session{{ preview.lockCheck.holders.length > 1 ? 's' : '' }} tien{{ preview.lockCheck.holders.length > 1 ? 'nent' : 't' }} cette table dans une transaction ouverte : l’application attendrait leur fin (au plus 10 s) et ferait attendre derrière elle les requêtes suivantes sur la table. Rien ne vous empêche de continuer.</p>
+          <ul><li v-for="holder in preview.lockCheck.holders" :key="holder.session">{{ describeHolder(holder) }}</li></ul>
+        </template>
+        <p v-else>Aucune transaction ouverte ne tient cette table.</p>
+      </div>
       <p v-if="stale && !failure" class="alert" role="alert">La table a changé depuis son chargement. <button type="button" class="link" @click="emit('reload')">Recharger la table</button></p>
       <p v-if="problem && !(stale && !failure)" class="alert" role="alert">{{ problem }}</p>
-      <div v-if="failure" class="alert" role="alert">
+      <div v-if="failure" class="alert" role="alert" :data-test="failure.holders === null ? undefined : 'lock-timeout'">
         <p>{{ failure.message }}</p>
+        <ul v-if="failure.holders !== null && failure.holders.length > 0"><li v-for="holder in failure.holders" :key="holder.session">{{ describeHolder(holder) }}</li></ul>
         <template v-if="failure.applied.length > 0">
           <p>Déjà appliqué avant l’erreur :</p>
           <ul><li v-for="line in failure.applied" :key="line">{{ line }}</li></ul>
@@ -624,6 +642,10 @@ h2 { font-size: 22px; font-weight: 600; }
 .buttons { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .alert { padding: 8px 10px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 .alert p { margin: 0 0 4px; }
+.lock-check { padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--line); color: var(--mut); font-size: 13px; }
+.lock-check.held { border-color: var(--sec-line); background: var(--sec-bg); color: var(--sec-ink); }
+.lock-check p { margin: 0 0 4px; }
+.lock-check ul { margin: 0 0 4px 18px; padding: 0; }
 .alert ul { margin: 0 0 4px 18px; padding: 0; }
 .link { background: none; border: 0; padding: 0; color: var(--acc); text-decoration: underline; cursor: pointer; font: inherit; }
 .name { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 10px; }

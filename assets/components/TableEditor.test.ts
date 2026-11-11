@@ -229,6 +229,73 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  const holder = { session: '42', user: 'alice', seconds: 135, sleeping: true, mode: 'SHARED_READ' }
+  const available = { availability: 'available' as const, reason: null, privilege: null }
+
+  async function previewWith(lockCheck: StructurePreview['lockCheck']): Promise<VueWrapper> {
+    mocked.mockImplementation(() => Promise.resolve(preview({ lockCheck })))
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    return wrapper
+  }
+
+  it('warns, without blocking, about the open transactions that hold the table', async () => {
+    const wrapper = await previewWith({ status: available, holders: [holder] })
+
+    const warning = wrapper.get('[data-test="lock-check"]')
+    expect(warning.text()).toContain('1 session')
+    expect(warning.text()).toContain('alice')
+    expect(warning.text()).toContain('42')
+    expect(warning.text()).toContain('2 min 15 s')
+    expect(warning.text()).toContain('transaction ouverte')
+    expect(wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('says the holders cannot be checked rather than that there are none', async () => {
+    const wrapper = await previewWith({ status: { availability: 'disabled', reason: 'performance_schema_off', privilege: null }, holders: [] })
+
+    const text = wrapper.get('[data-test="lock-check"]').text()
+    expect(text).toContain('non vérifiable')
+    expect(text).toContain('performance_schema')
+    wrapper.unmount()
+  })
+
+  it('says nothing alarming when nobody holds the table, and nothing when the engine has no check', async () => {
+    const free = await previewWith({ status: available, holders: [] })
+    expect(free.get('[data-test="lock-check"]').text()).toContain('Aucune transaction ouverte')
+    free.unmount()
+
+    const none = await previewWith(null)
+    expect(none.find('[data-test="lock-check"]').exists()).toBe(false)
+    none.unmount()
+  })
+
+  it('explains a lock timeout by naming who held the table', async () => {
+    mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
+      if (url.endsWith('/preview')) {
+        return Promise.resolve(preview())
+      }
+
+      return Promise.reject(new ApiError(409, 'schema_change_failed', { message: 'Lock wait timeout exceeded', applied: [], failed: { sql: 'y', operation: 'add_column', subject: 'x', destructive: false }, lockTimeout: true, lockCheck: { status: available, holders: [holder] } }))
+    })
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.trigger('click')
+    await flushPromises()
+
+    const alert = wrapper.get('[data-test="lock-timeout"]').text()
+    expect(alert).toContain('Une transaction ouverte retient cette table')
+    expect(alert).toContain('alice')
+    expect(alert).toContain('42')
+    expect(alert).toContain('Rien n’a été modifié')
+    wrapper.unmount()
+  })
+
   it('shows what the engine said and what was already applied when a change fails half way', async () => {
     mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
       if (url.endsWith('/preview')) {
