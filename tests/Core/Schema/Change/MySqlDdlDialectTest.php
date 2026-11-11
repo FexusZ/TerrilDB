@@ -146,4 +146,26 @@ final class MySqlDdlDialectTest extends TestCase
     {
         self::assertFalse((new MySqlDdlDialect())->transactional());
     }
+
+    public function testAnUnchangedExpressionDefaultIsRepeatedAsTheEngineReportedIt(): void
+    {
+        $before = new ColumnDefinition('calc', 'int', false, '(1 + 1)', false, null);
+        $after = new ColumnDraft('calc', 'calc', 'int', true, '(1 + 1)', false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `calc` int NULL DEFAULT (1 + 1)'],
+            self::sql([new ModifyColumn($before, $after, false, true, false, false)]),
+        );
+    }
+
+    public function testATypedParenthesisIsStillOnlyAString(): void
+    {
+        $before = new ColumnDefinition('calc', 'varchar(20)', false, null, false, null);
+        $after = new ColumnDraft('calc', 'calc', 'varchar(20)', false, '(1); DROP TABLE x', false);
+
+        self::assertSame(
+            ["ALTER TABLE `orders` MODIFY COLUMN `calc` varchar(20) NOT NULL DEFAULT '(1); DROP TABLE x'"],
+            self::sql([new ModifyColumn($before, $after, false, false, true, false)]),
+        );
+    }
 }
