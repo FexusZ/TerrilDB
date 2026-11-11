@@ -10,6 +10,8 @@ use App\Core\Schema\Exception\InvalidSchemaException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsage;
+use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\SchemaSummary;
@@ -20,6 +22,7 @@ use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 
 /**
  * Introspection de PostgreSQL par les catalogues pg_catalog, dans le schéma courant de la connexion.
@@ -128,6 +131,37 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
         }
 
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
+    }
+
+    /**
+     * `idx_scan` de pg_stat_user_indexes, sans les index qui portent une contrainte d'exclusion. La collecte part de la dernière
+     * remise à zéro des statistiques de la base, à défaut du démarrage du serveur (les statistiques survivent à un arrêt propre :
+     * c'est alors une durée minimale, jamais trop longue).
+     */
+    public function indexUsage(): IndexUsageReport
+    {
+        try {
+            $seconds = $this->connection->fetchOne(
+                'SELECT EXTRACT(EPOCH FROM now() - COALESCE((SELECT stats_reset FROM pg_stat_database WHERE datname = current_database()), pg_postmaster_start_time()))::bigint',
+            );
+            $rows = $this->connection->fetchAllAssociative(
+                'SELECT s.relname AS tbl, s.indexrelname AS idx, s.idx_scan AS read_count
+                   FROM pg_stat_user_indexes s
+                   JOIN pg_index i ON i.indexrelid = s.indexrelid
+                  WHERE s.schemaname = current_schema() AND NOT i.indisexclusion AND i.indisvalid
+                  ORDER BY s.relname, s.indexrelname',
+            );
+        } catch (DriverException $e) {
+            return IndexUsageReport::unavailable('42501' === $e->getSQLState() ? 'permission_denied' : 'unreadable');
+        }
+
+        $usages = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $usages[] = new IndexUsage($row->string('tbl'), $row->string('idx'), $row->int('read_count'));
+        }
+
+        return IndexUsageReport::available(is_numeric($seconds) ? (int) $seconds : 0, $usages);
     }
 
     public function describeTable(string $name): TableDefinition
