@@ -38,7 +38,7 @@ final class SchemaAuditor
             if (TableKind::Table !== $table->kind) {
                 continue;
             }
-            array_push($findings, ...$this->auditTable($engine, $table));
+            array_push($findings, ...$this->auditTable($engine, $table, $tables));
         }
 
         // Par table, puis les constats graves d'abord.
@@ -49,9 +49,11 @@ final class SchemaAuditor
     }
 
     /**
+     * @param list<TableDefinition> $tables
+     *
      * @return list<Finding>
      */
-    private function auditTable(Engine $engine, TableDefinition $table): array
+    private function auditTable(Engine $engine, TableDefinition $table, array $tables): array
     {
         $findings = [];
         if (null === $table->primaryKey()) {
@@ -70,6 +72,10 @@ final class SchemaAuditor
             }
         }
 
+        foreach ($table->foreignKeys as $key) {
+            array_push($findings, ...$this->typeMismatches($engine, $table, $key, $tables));
+        }
+
         foreach ($table->indexes as $index) {
             $covering = $this->coveredBy($index, $table->indexes);
             if (null !== $covering) {
@@ -86,6 +92,88 @@ final class SchemaAuditor
         }
 
         return $findings;
+    }
+
+    /**
+     * Familles d'opérateurs de PostgreSQL pour les types qu'on sait comparer : deux types de la même famille se comparent
+     * sans convertir la colonne indexée (smallint, integer et bigint ; varchar et text).
+     */
+    private const FAMILIES = [
+        'smallint' => 'integer', 'integer' => 'integer', 'bigint' => 'integer',
+        'numeric' => 'numeric', 'decimal' => 'numeric',
+        'real' => 'float', 'double precision' => 'float',
+        'text' => 'text', 'character varying' => 'text', 'varchar' => 'text',
+        'character' => 'bpchar', 'char' => 'bpchar', 'bpchar' => 'bpchar',
+    ];
+
+    /**
+     * Pour une colonne de la famille de la clé, les familles référencées qui obligent le moteur à CONVERTIR la colonne qui
+     * porte la clé (donc à ne plus se servir de son index). Mesuré sur PostgreSQL 18 : un entier vers un numeric ou un
+     * flottant, un char(n) vers un text. L'inverse, ou deux types d'une même famille, garde l'index.
+     */
+    private const CONVERTED = [
+        'integer' => ['numeric', 'float'],
+        'bpchar' => ['text'],
+    ];
+
+    /**
+     * Une clé étrangère qui oblige le moteur à convertir sa propre colonne pour la comparer à la colonne référencée : son
+     * index ne sert alors plus dans les jointures. Seul PostgreSQL est jugé : ailleurs le moteur refuse déjà de créer une
+     * clé entre des types incompatibles. La table ou la colonne référencée absente de la liste (autre schéma, table non
+     * lue) n'est pas jugée, ni un type hors des familles connues (dans le doute, on se tait).
+     *
+     * @param list<TableDefinition> $tables
+     *
+     * @return list<Finding>
+     */
+    private function typeMismatches(Engine $engine, TableDefinition $table, ForeignKeyDefinition $key, array $tables): array
+    {
+        if (Engine::PostgreSql !== $engine) {
+            return [];
+        }
+
+        $target = null;
+        foreach ($tables as $candidate) {
+            if ($candidate->name === $key->referencedTable) {
+                $target = $candidate;
+                break;
+            }
+        }
+        if (null === $target) {
+            return [];
+        }
+
+        $findings = [];
+        foreach ($key->columns as $position => $name) {
+            $own = $table->column($name);
+            $referenced = $target->column($key->referencedColumns[$position]);
+            if (null === $own || null === $referenced) {
+                continue;
+            }
+            $ownFamily = self::FAMILIES[self::baseType($own->type)] ?? null;
+            $referencedFamily = self::FAMILIES[self::baseType($referenced->type)] ?? null;
+            if (null === $ownFamily || null === $referencedFamily || !\in_array($referencedFamily, self::CONVERTED[$ownFamily] ?? [], true)) {
+                continue;
+            }
+            $findings[] = new Finding(
+                FindingRule::ForeignKeyTypeMismatch,
+                Severity::Warning,
+                $table->name,
+                [$name],
+                suggestion: \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s;', self::quote($engine, $table->name), self::quote($engine, $name), $referenced->type),
+                detail: $own->type.' → '.$referenced->type,
+            );
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Le type sans ses paramètres (longueur, précision), en minuscules : « CHARACTER VARYING(50) » -> « character varying ».
+     */
+    private static function baseType(string $type): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', (string) preg_replace('/\([^)]*\)/', '', strtolower($type))));
     }
 
     /**

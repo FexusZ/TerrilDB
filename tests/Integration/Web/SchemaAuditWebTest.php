@@ -82,7 +82,36 @@ final class SchemaAuditWebTest extends WebApiTestCase
         $redundant = $findings[array_search('redundant_index:audit_probe_ix', $summary, true)];
         self::assertSame('audit_probe_ix_a', $redundant['index']);
         self::assertSame('audit_probe_ix_ab', $redundant['coveredBy']);
-        self::assertSame(['rule', 'severity', 'table', 'columns', 'index', 'coveredBy', 'suggestion'], array_keys($fk));
+        self::assertSame(['rule', 'severity', 'table', 'columns', 'index', 'coveredBy', 'suggestion', 'detail'], array_keys($fk));
+    }
+
+    public function testFindsAForeignKeyThatForcesAConversionButNotOneThatKeepsItsIndex(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+        $connection = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        try {
+            $connection->executeStatement('CREATE TABLE audit_probe_num (id numeric PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE audit_probe_big (id bigint PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE audit_probe_small (id integer PRIMARY KEY, num_id integer REFERENCES audit_probe_num (id), big_id integer REFERENCES audit_probe_big (id))');
+            $connection->executeStatement('CREATE INDEX audit_probe_small_num ON audit_probe_small (num_id)');
+            $connection->executeStatement('CREATE INDEX audit_probe_small_big ON audit_probe_small (big_id)');
+
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_small, audit_probe_num, audit_probe_big');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'foreign_key_type_mismatch' === $f['rule']));
+        // integer -> numeric convertit la colonne (index perdu) ; integer -> bigint, non (index gardé).
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_small', $findings[0]['table']);
+        self::assertSame(['num_id'], $findings[0]['columns']);
+        self::assertSame('integer → numeric', $findings[0]['detail']);
+        self::assertSame('ALTER TABLE "audit_probe_small" ALTER COLUMN "num_id" TYPE numeric;', $findings[0]['suggestion']);
     }
 
     public function testAnotherAccountsConnectionIsNotFound(): void

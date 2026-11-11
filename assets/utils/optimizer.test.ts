@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PlanFindingInfo, SchemaFinding } from '../api/types'
 import { describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
 
-const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, ...extra })
+const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
 
 describe('optimizer wording', () => {
   it('words each schema rule', () => {
@@ -16,6 +16,10 @@ describe('optimizer wording', () => {
     const redundant = describeSchemaFinding(finding({ rule: 'redundant_index', severity: 'info', table: 'orders', index: 'idx_a', coveredBy: 'idx_ab' }))
     expect(redundant.title).toBe('L’index « idx_a » de « orders » est inutile : « idx_ab » le couvre déjà.')
     expect(redundant.help).toContain('écritures')
+
+    const mismatch = describeSchemaFinding(finding({ rule: 'foreign_key_type_mismatch', table: 'orders', columns: ['customer_id'], detail: 'integer → numeric' }))
+    expect(mismatch.title).toBe('La clé étrangère de « orders » sur customer_id n’a pas le type de la colonne qu’elle référence (integer → numeric).')
+    expect(mismatch.help).toContain('convertit')
   })
 
   it('words a big full scan, with its condition when there is one', () => {

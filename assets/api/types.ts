@@ -243,13 +243,14 @@ export interface PlanResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch'
   severity: 'warning' | 'info'
   table: string
   columns: string[]
   index: string | null
   coveredBy: string | null
   suggestion: string | null
+  detail: string | null
 }
 
 export interface SchemaAudit {

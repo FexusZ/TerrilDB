@@ -15,9 +15,9 @@ const audit: SchemaAudit = {
   tablesAudited: 5,
   truncated: false,
   findings: [
-    { rule: 'foreign_key_without_index', severity: 'warning', table: 'orders', columns: ['customer_id'], index: null, coveredBy: null, suggestion: 'CREATE INDEX idx_orders_customer_id ON "orders" ("customer_id");' },
-    { rule: 'redundant_index', severity: 'info', table: 'orders', columns: ['a'], index: 'idx_a', coveredBy: 'idx_ab', suggestion: 'DROP INDEX "idx_a";' },
-    { rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null },
+    { rule: 'foreign_key_without_index', severity: 'warning', table: 'orders', columns: ['customer_id'], index: null, coveredBy: null, suggestion: 'CREATE INDEX idx_orders_customer_id ON "orders" ("customer_id");', detail: null },
+    { rule: 'redundant_index', severity: 'info', table: 'orders', columns: ['a'], index: 'idx_a', coveredBy: 'idx_ab', suggestion: 'DROP INDEX "idx_a";', detail: null },
+    { rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null },
   ],
 }
 

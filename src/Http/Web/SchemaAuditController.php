@@ -59,6 +59,7 @@ final readonly class SchemaAuditController
                 'index' => $f->index,
                 'coveredBy' => $f->coveredBy,
                 'suggestion' => $f->suggestion,
+                'detail' => $f->detail,
             ], $findings),
         ]);
     }

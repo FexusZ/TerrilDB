@@ -12,4 +12,5 @@ enum FindingRule: string
     case MissingPrimaryKey = 'missing_primary_key';
     case ForeignKeyWithoutIndex = 'foreign_key_without_index';
     case RedundantIndex = 'redundant_index';
+    case ForeignKeyTypeMismatch = 'foreign_key_type_mismatch';
 }
