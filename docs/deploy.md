@@ -97,6 +97,10 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
   inconnu, session conservée après redémarrage. Reste à constater en production : le comportement derrière le nginx réel (en-tête `Host`
   transmis, HTTPS) et au premier déploiement après fusion.
 
+- **Durée des sessions** (facultatif, dans `app.env`) : `TERRILDB_SESSION_IDLE_SECONDS` (inactivité) et `TERRILDB_SESSION_MAX_SECONDS`
+  (durée maximale depuis la connexion, même si l'on reste actif). `0` ou absent = pas de limite, comme avant. Passé la limite, la session
+  est invalidée (et avec elle la clé de chiffrement qu'elle portait) : il faut se reconnecter. Par exemple 1800 et 43200.
+
 ## Reste de l'issue de durcissement (non traité ici)
 
 - **TLS vers les bases cibles** : les pilotes PDO ne vérifient aucun nom de certificat aujourd'hui ; une option par connexion (mode,
