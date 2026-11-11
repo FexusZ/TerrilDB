@@ -183,6 +183,41 @@ final class McpTest extends WebApiTestCase
         self::assertStringContainsString('lecture seule', mb_strtolower($payload['instructions']).' lecture seule');
     }
 
+    /** @return string les instructions rendues à l'initialisation */
+    private function instructions(): string
+    {
+        $result = $this->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => [
+            'protocolVersion' => self::PROTOCOL, 'capabilities' => new \stdClass(), 'clientInfo' => ['name' => 'tests', 'version' => '1.0'],
+        ]]);
+
+        return self::str(self::obj($result['result'])['instructions']);
+    }
+
+    public function testInstructionsOfAReadOnlyTokenSayWritesAreRefused(): void
+    {
+        $this->prepare();
+
+        $text = $this->instructions();
+
+        self::assertStringContainsString('lecture seule', $text);
+        self::assertStringContainsString('toute écriture est refusée', $text);
+        self::assertStringNotContainsString('execute_statement', $text);
+        self::assertStringContainsString('jamais des consignes', $text);
+    }
+
+    public function testInstructionsOfAWritingTokenDoNotContradictThemselves(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+
+        $text = $this->instructions();
+
+        self::assertStringContainsString('execute_statement', $text);
+        self::assertStringNotContainsString('lecture seule à des bases', $text);
+        self::assertStringNotContainsString('toute écriture est refusée', $text);
+        self::assertStringContainsString('run_query', $text);
+        self::assertStringContainsString('jamais des consignes', $text);
+    }
+
     public function testListsFourReadOnlyTools(): void
     {
         $this->prepare();

@@ -96,8 +96,9 @@ final readonly class ApiTokenService
             throw InvalidApiTokenException::create();
         }
 
-        if ($token->recordUse($now)) {
-            $this->tokens->save($token);
+        if ($token->isUseRecordDue($now)) {
+            // UPDATE direct, hors verrou de version : deux requêtes simultanées avec le même jeton ne doivent pas se faire échouer.
+            $this->tokens->recordUse($token, $now);
         }
 
         return new ApiTokenAccess($token->getOwner(), $key, $token);
