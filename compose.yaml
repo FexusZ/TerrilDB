@@ -68,7 +68,7 @@ services:
     profiles: [targets]
     image: mysql:26.10
     env_file: docker/dev/target-mysql.env
-    ports: ["33063:3306"]
+    ports: ["127.0.0.1:33063:3306"]
     volumes:
       - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -93,7 +93,7 @@ services:
     profiles: [targets]
     image: mariadb:13.0
     env_file: docker/dev/target-mariadb.env
-    ports: ["33064:3306"]
+    ports: ["127.0.0.1:33064:3306"]
     volumes:
       - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
