@@ -1,0 +1,61 @@
+{
+  "query": "/* select#1 */ select `t`.`o`.`id` AS `id`,`t`.`i`.`q` AS `q` from `t`.`o` join `t`.`i` where ((`t`.`i`.`o_id` = `t`.`o`.`id`) and (`t`.`o`.`c` = 1))",
+  "query_plan": {
+    "inputs": [
+      {
+        "inputs": [
+          {
+            "operation": "Table scan on o",
+            "table_name": "o",
+            "access_type": "table",
+            "schema_name": "t",
+            "used_columns": [
+              "id",
+              "c"
+            ],
+            "estimated_rows": 2.0,
+            "estimated_total_cost": 0.44999999999999996
+          }
+        ],
+        "condition": "(o.c = 1)",
+        "operation": "Filter: (o.c = 1)",
+        "access_type": "filter",
+        "estimated_rows": 1.0,
+        "filter_columns": [
+          "t.o.c"
+        ],
+        "estimated_total_cost": 0.44999999999999996
+      },
+      {
+        "covering": false,
+        "operation": "Index lookup on i using o_id (o_id = o.id)",
+        "index_name": "o_id",
+        "table_name": "i",
+        "access_type": "index",
+        "key_columns": [
+          "o_id"
+        ],
+        "schema_name": "t",
+        "used_columns": [
+          "o_id",
+          "q"
+        ],
+        "estimated_rows": 1.0,
+        "lookup_condition": "o_id = o.id",
+        "index_access_type": "index_lookup",
+        "lookup_references": [
+          "t.o.id"
+        ],
+        "estimated_total_cost": 0.35
+      }
+    ],
+    "join_type": "inner join",
+    "operation": "Nested loop inner join",
+    "access_type": "join",
+    "estimated_rows": 1.0,
+    "join_algorithm": "nested_loop",
+    "estimated_total_cost": 0.7999999999999999
+  },
+  "query_type": "select",
+  "json_schema_version": "2.1"
+}
