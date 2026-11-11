@@ -28,6 +28,11 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `La clé étrangère de « ${finding.table} » sur ${finding.columns.join(', ')} n’a pas le type de la colonne qu’elle référence${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Pour comparer les deux colonnes, le moteur convertit celle de cette table sur chaque ligne : son index ne sert plus dans les jointures ni dans les recherches par la clé. Lui donner le type de la colonne référencée règle le problème ; la modification réécrit la colonne, à planifier sur une grosse table.',
       }
+    case 'text_primary_key':
+      return {
+        title: `La clé primaire de « ${finding.table} » (${finding.columns.join(', ')}) est un UUID rangé en texte${finding.detail === null ? '' : ` (${finding.detail})`}.`,
+        help: 'À vérifier : si ces valeurs sont bien des UUID, le texte occupe 36 octets au lieu de 16, et InnoDB recopie la clé primaire dans chaque index secondaire. Le type natif (uuid sur PostgreSQL, BINARY(16) avec UUID_TO_BIN sur MySQL et MariaDB) allège la table et ses index ; la conversion réécrit la colonne et les clés étrangères qui la référencent, à planifier.',
+      }
   }
 }
 

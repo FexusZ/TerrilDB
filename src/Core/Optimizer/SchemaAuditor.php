@@ -60,6 +60,11 @@ final class SchemaAuditor
             $findings[] = new Finding(FindingRule::MissingPrimaryKey, Severity::Warning, $table->name);
         }
 
+        $textKey = $this->textPrimaryKey($engine, $table);
+        if (null !== $textKey) {
+            $findings[] = $textKey;
+        }
+
         foreach ($table->foreignKeys as $key) {
             if (!$this->isCovered($key, $table->indexes)) {
                 $findings[] = new Finding(
@@ -92,6 +97,35 @@ final class SchemaAuditor
         }
 
         return $findings;
+    }
+
+    /**
+     * Un UUID rangé en texte (char(36) ou varchar(36)) comme clé primaire d'une seule colonne : 36 octets au lieu de 16, et
+     * InnoDB recopie la clé primaire dans chaque index secondaire. Seule la longueur 36 est jugée (un varchar quelconque peut
+     * être un identifiant voulu). Le SQL n'est proposé que pour PostgreSQL, où `USING` convertit les valeurs : un MODIFY en
+     * BINARY(16) sur MySQL/MariaDB tronquerait le texte, il faut passer par une colonne intermédiaire (UUID_TO_BIN).
+     */
+    private function textPrimaryKey(Engine $engine, TableDefinition $table): ?Finding
+    {
+        $primary = $table->primaryKey();
+        if (null === $primary || 1 !== \count($primary->columns)) {
+            return null;
+        }
+        $column = $table->column($primary->columns[0]);
+        if (null === $column || 1 !== preg_match('/^(?:char|character|varchar|character varying)\(36\)$/', trim(strtolower($column->type)))) {
+            return null;
+        }
+
+        return new Finding(
+            FindingRule::TextPrimaryKey,
+            Severity::Warning,
+            $table->name,
+            [$column->name],
+            suggestion: Engine::PostgreSql === $engine
+                ? \sprintf('ALTER TABLE %1$s ALTER COLUMN %2$s TYPE uuid USING %2$s::uuid;', self::quote($engine, $table->name), self::quote($engine, $column->name))
+                : null,
+            detail: $column->type,
+        );
     }
 
     /**
