@@ -168,6 +168,88 @@ final class StatementDiagnosticsTest extends TestCase
         }
     }
 
+    public function testPostgreSqlWithoutTheExtensionSaysHowItIsOff(): void
+    {
+        $target = $this->open('TARGET_POSTGRES_URL');
+        $statements = $target->diagnostics()->statements();
+        $status = $statements->status();
+        if ($status->isAvailable()) {
+            self::markTestSkipped('This PostgreSQL target has pg_stat_statements: see the nominal test.');
+        }
+
+        self::assertSame(Availability::Disabled, $status->availability);
+        self::assertContains($status->reason, ['extension_missing', 'library_not_loaded']);
+        $report = $statements->top(new DigestQuery());
+        self::assertSame(Availability::Disabled, $report->status->availability);
+        self::assertSame([], $report->digests);
+        $target->close();
+    }
+
+    /**
+     * Demande pg_stat_statements chargée (shared_preload_libraries) et créée dans la base : la cible de test n'en dispose pas
+     * par défaut, ce test est alors sauté.
+     */
+    public function testPostgreSqlFindsTheDigestOfAQuery(): void
+    {
+        $target = $this->open('TARGET_POSTGRES_URL');
+        $statements = $target->diagnostics()->statements();
+        if (!$statements->status()->isAvailable()) {
+            self::markTestSkipped('pg_stat_statements is not installed on this PostgreSQL target.');
+        }
+
+        $alias = 'tdb75_'.bin2hex(random_bytes(6));
+        $client = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+        for ($i = 0; $i < 3; ++$i) {
+            $client->fetchAllAssociative(\sprintf('SELECT COUNT(*) AS %s FROM order_items WHERE quantity > 1000', $alias));
+        }
+        $client->close();
+
+        $digest = $this->find($statements->top(new DigestQuery(DigestOrder::Calls, 100)), $alias);
+
+        self::assertSame(3, $digest->calls);
+        self::assertSame('shop', $digest->database);
+        self::assertStringContainsString('$1', (string) $digest->text);
+        self::assertStringNotContainsString('1000', (string) $digest->text);
+        self::assertSame(3, $digest->rowsReturned);
+        self::assertNull($digest->rowsExamined, 'pg_stat_statements does not count the rows it read.');
+        self::assertNull($digest->ratio());
+        self::assertGreaterThan(0.0, $digest->totalMs);
+        self::assertGreaterThanOrEqual($digest->meanMs, $digest->maxMs);
+        self::assertNotNull($digest->firstSeen);
+        $target->close();
+    }
+
+    public function testPostgreSqlWithoutMonitoringRightGetsAStateNotAnError(): void
+    {
+        $parameters = TargetDatabase::parameters('TARGET_POSTGRES_URL');
+        $admin = (new DbalConnector())->connect(Engine::PostgreSql, $parameters);
+        $user = 'tdb_stmt_'.bin2hex(random_bytes(4));
+        $password = bin2hex(random_bytes(12));
+        $admin->executeStatement(\sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", $user, $password));
+        try {
+            $full = $this->open('TARGET_POSTGRES_URL');
+            $installed = $full->diagnostics()->statements()->status()->isAvailable();
+            $full->close();
+            if (!$installed) {
+                self::markTestSkipped('pg_stat_statements is not installed on this PostgreSQL target.');
+            }
+            $reduced = $this->open('TARGET_POSTGRES_URL', new ConnectionParameters($parameters->host, $parameters->port, $parameters->database, $user, $password));
+            $status = $reduced->diagnostics()->statements()->status();
+            $reduced->close();
+
+            self::assertSame(Availability::PermissionDenied, $status->availability);
+            self::assertSame('pg_read_all_stats', $status->privilege);
+
+            $admin->executeStatement(\sprintf('GRANT pg_monitor TO %s', $user));
+            $granted = $this->open('TARGET_POSTGRES_URL', new ConnectionParameters($parameters->host, $parameters->port, $parameters->database, $user, $password));
+            self::assertSame(Availability::Available, $granted->diagnostics()->statements()->status()->availability);
+            $granted->close();
+        } finally {
+            $admin->executeStatement(\sprintf('DROP ROLE IF EXISTS %s', $user));
+            $admin->close();
+        }
+    }
+
     private function find(DigestReport $report, string $alias): \App\Core\Diagnostics\StatementDigest
     {
         foreach ($report->digests as $digest) {
