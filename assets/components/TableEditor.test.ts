@@ -33,6 +33,7 @@ const preview = (over: Partial<StructurePreview> = {}): StructurePreview => ({
   destructive: false,
   fingerprint: 'f'.repeat(64),
   stale: false,
+  bigTable: { level: 'none', estimatedRows: 10, warnAt: 100000, confirmAt: 1000000 },
   ...over,
 })
 
@@ -268,6 +269,84 @@ describe('TableEditor', () => {
     expect(structureCalls('apply')[0]?.[2]).toMatchObject({ drop: true, confirmed: true })
     expect(wrapper.emitted('applied')?.[0]).toEqual([null, 'orders'])
     wrapper.unmount()
+  })
+
+  describe('big tables', () => {
+    const level = (level: 'warning' | 'confirm_name', estimatedRows: number | null = 2_500_000) => ({ level, estimatedRows, warnAt: 100000, confirmAt: 1000000 })
+
+    async function edit(wrapper: VueWrapper): Promise<void> {
+      await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+      await settle()
+    }
+
+    const validateButton = (wrapper: VueWrapper) => wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')
+
+    it('warns above the first threshold and still applies without typing the name', async () => {
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ bigTable: level('warning', 150_000) }) : { ...preview(), table: detail() }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+
+      expect(wrapper.get('[data-test="big-table"]').text()).toContain('volumineuse')
+      expect(wrapper.find('input[aria-label="Retapez le nom de la table pour confirmer"]').exists()).toBe(false)
+      await validateButton(wrapper)?.trigger('click')
+      await flushPromises()
+
+      expect(structureCalls('apply')[0]?.[2]).not.toHaveProperty('confirmedTableName')
+      wrapper.unmount()
+    })
+
+    it('asks for the table name above the second threshold, and sends it', async () => {
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ bigTable: level('confirm_name') }) : { ...preview(), table: detail() }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+      const input = wrapper.get('input[aria-label="Retapez le nom de la table pour confirmer"]')
+
+      expect(validateButton(wrapper)?.attributes('disabled')).toBeDefined()
+      await input.setValue('order')
+      expect(validateButton(wrapper)?.attributes('disabled')).toBeDefined()
+      await input.setValue('orders')
+      expect(validateButton(wrapper)?.attributes('disabled')).toBeUndefined()
+      await validateButton(wrapper)?.trigger('click')
+      await flushPromises()
+
+      expect(structureCalls('apply')[0]?.[2]).toMatchObject({ confirmedTableName: 'orders' })
+      wrapper.unmount()
+    })
+
+    it('says so when the engine gives no estimate, instead of staying silent', async () => {
+      mocked.mockResolvedValue(preview({ bigTable: { level: 'none', estimatedRows: null, warnAt: 100000, confirmAt: 1000000 } }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+
+      expect(wrapper.get('[data-test="big-table"]').text()).toContain('inconnue')
+      wrapper.unmount()
+    })
+
+    it('says nothing when both thresholds are disabled or the table is small', async () => {
+      mocked.mockResolvedValue(preview({ bigTable: { level: 'none', estimatedRows: null, warnAt: 0, confirmAt: 0 } }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+
+      expect(wrapper.find('[data-test="big-table"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('asks for the name before dropping a big table', async () => {
+      const dropStatement = { sql: 'DROP TABLE "orders"', operation: 'drop_table', subject: 'orders', destructive: true }
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ statements: [dropStatement], destructive: true, bigTable: level('confirm_name') }) : { statements: [dropStatement], transactional: true, destructive: true, table: null }))
+      const wrapper = mountEditor()
+      await wrapper.findAll('button').find((button) => button.text().startsWith('Supprimer la table'))?.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.confirm').attributes('disabled')).toBeDefined()
+      await wrapper.get('[role="dialog"] input[aria-label="Retapez le nom de la table pour confirmer"]').setValue('orders')
+      expect(wrapper.get('.confirm').attributes('disabled')).toBeUndefined()
+      await wrapper.get('.confirm').trigger('click')
+      await flushPromises()
+
+      expect(structureCalls('apply')[0]?.[2]).toMatchObject({ drop: true, confirmed: true, confirmedTableName: 'orders' })
+      wrapper.unmount()
+    })
   })
 
   it('highlights a renamed table', async () => {

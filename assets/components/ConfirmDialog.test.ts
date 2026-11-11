@@ -71,4 +71,11 @@ describe('ConfirmDialog', () => {
     expect(wrapper.get('button.confirm').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
+
+  it('can keep the confirmation disabled until a condition is met', () => {
+    const wrapper = mountDialog({ confirmDisabled: true })
+
+    expect(wrapper.get('button.confirm').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
 })

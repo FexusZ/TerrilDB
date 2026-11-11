@@ -222,6 +222,8 @@ const applying = ref(false)
 const confirming = ref(false)
 const dropping = ref<StructurePreview | null>(null)
 const stale = ref(false)
+const typedName = ref('')
+const dropTypedName = ref('')
 let ticket = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -255,6 +257,7 @@ watch([payload, dirty, incomplete], () => {
   clearTimeout(timer)
   ticket++
   preview.value = null
+  typedName.value = ''
   problem.value = null
   failure.value = null
   previewing.value = false
@@ -279,7 +282,7 @@ function cancel(): void {
 }
 
 async function validate(): Promise<void> {
-  if (preview.value === null || preview.value.stale || applying.value) {
+  if (preview.value === null || preview.value.stale || applying.value || (needsName.value && !nameTyped.value)) {
     return
   }
   if (preview.value.destructive) {
@@ -290,11 +293,29 @@ async function validate(): Promise<void> {
   await apply(false)
 }
 
+const needsName = computed(() => preview.value?.bigTable.level === 'confirm_name')
+const nameTyped = computed(() => typedName.value === props.table.name)
+const bigTableNote = computed(() => {
+  const big = preview.value?.bigTable
+  if (preview.value === null || big === undefined || preview.value.statements.length === 0) {
+    return null
+  }
+  if (big.estimatedRows === null) {
+    return big.warnAt > 0 || big.confirmAt > 0 ? 'Taille de la table inconnue : le moteur n’en donne pas d’estimation, aucun avertissement de volume n’est possible.' : null
+  }
+
+  return big.level === 'none' ? null : bigTableText(big.estimatedRows)
+})
+
+function bigTableText(rows: number): string {
+  return `Table volumineuse : environ ${rows.toLocaleString('fr-FR')} lignes (estimation du moteur). La modification peut être longue et bloquer les accès à la table pendant ce temps.`
+}
+
 async function apply(confirmed: boolean): Promise<void> {
   applying.value = true
   failure.value = null
   try {
-    const result = await applyStructure(props.connectionId, props.table.name, { draft: payload.value, fingerprint: props.table.fingerprint, confirmed }, props.scope)
+    const result = await applyStructure(props.connectionId, props.table.name, { draft: payload.value, fingerprint: props.table.fingerprint, confirmed, ...(needsName.value ? { confirmedTableName: typedName.value } : {}) }, props.scope)
     confirming.value = false
     emit('applied', result.table, props.table.name)
   } catch (error) {
@@ -328,6 +349,7 @@ function handleFailure(error: unknown): void {
 async function askDrop(): Promise<void> {
   problem.value = null
   try {
+    dropTypedName.value = ''
     dropping.value = await previewStructure(props.connectionId, props.table.name, { drop: true, fingerprint: props.table.fingerprint }, props.scope)
   } catch (error) {
     problem.value = detailOf(error)
@@ -337,7 +359,7 @@ async function askDrop(): Promise<void> {
 async function confirmDrop(): Promise<void> {
   applying.value = true
   try {
-    await applyStructure(props.connectionId, props.table.name, { drop: true, fingerprint: props.table.fingerprint, confirmed: true }, props.scope)
+    await applyStructure(props.connectionId, props.table.name, { drop: true, fingerprint: props.table.fingerprint, confirmed: true, ...(dropping.value?.bigTable.level === 'confirm_name' ? { confirmedTableName: dropTypedName.value } : {}) }, props.scope)
     dropping.value = null
     emit('applied', null, props.table.name)
   } catch (error) {
@@ -367,6 +389,11 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
         </li>
       </ul>
       <p v-else-if="preview" class="hint" role="status">Ces modifications ne changent rien dans la base.</p>
+      <p v-if="bigTableNote" class="warn" :class="{ danger: needsName }" role="status" data-test="big-table">{{ bigTableNote }}</p>
+      <label v-if="needsName" class="retype">
+        <span>Retapez le nom de la table pour confirmer</span>
+        <input v-model="typedName" class="field mono" aria-label="Retapez le nom de la table pour confirmer" spellcheck="false" autocomplete="off">
+      </label>
       <p v-if="stale && !failure" class="alert" role="alert">La table a changé depuis son chargement. <button type="button" class="link" @click="emit('reload')">Recharger la table</button></p>
       <p v-if="problem && !(stale && !failure)" class="alert" role="alert">{{ problem }}</p>
       <div v-if="failure" class="alert" role="alert">
@@ -380,7 +407,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       </div>
       <div class="buttons">
         <AppButton variant="ghost" small :disabled="applying" @click="cancel">Annuler</AppButton>
-        <AppButton variant="primary" small :busy="applying" :disabled="preview === null || preview.statements.length === 0 || stale" @click="validate">Valider les changements</AppButton>
+        <AppButton variant="primary" small :busy="applying" :disabled="preview === null || preview.statements.length === 0 || stale || (needsName && !nameTyped)" @click="validate">Valider les changements</AppButton>
       </div>
     </aside>
     <p v-else-if="problem" class="alert" role="alert">{{ problem }}</p>
@@ -600,10 +627,16 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       confirm-label="Supprimer la table"
       danger
       :busy="applying"
+      :confirm-disabled="dropping.bigTable.level === 'confirm_name' && dropTypedName !== table.name"
       @confirm="confirmDrop"
       @cancel="dropping = null"
     >
       <ul class="sql"><li v-for="statement in dropping.statements" :key="statement.sql" class="destructive"><code>{{ statement.sql }};</code></li></ul>
+      <p v-if="dropping.bigTable.level !== 'none' && dropping.bigTable.estimatedRows !== null" class="warn" role="status" data-test="big-table">{{ bigTableText(dropping.bigTable.estimatedRows) }}</p>
+      <label v-if="dropping.bigTable.level === 'confirm_name'" class="retype">
+        <span>Retapez le nom de la table pour confirmer</span>
+        <input v-model="dropTypedName" class="field mono" aria-label="Retapez le nom de la table pour confirmer" spellcheck="false" autocomplete="off">
+      </label>
     </ConfirmDialog>
   </div>
 </template>
@@ -624,6 +657,9 @@ h2 { font-size: 22px; font-weight: 600; }
 .buttons { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .alert { padding: 8px 10px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 .alert p { margin: 0 0 4px; }
+.warn { padding: 8px 10px; border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
+.warn.danger { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); }
+.retype { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .alert ul { margin: 0 0 4px 18px; padding: 0; }
 .link { background: none; border: 0; padding: 0; color: var(--acc); text-decoration: underline; cursor: pointer; font: inherit; }
 .name { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 10px; }
