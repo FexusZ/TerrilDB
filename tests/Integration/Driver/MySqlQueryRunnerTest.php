@@ -30,7 +30,9 @@ final class MySqlQueryRunnerTest extends TestCase
     public static function targets(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
     }
 
     private function open(string $envVar): void

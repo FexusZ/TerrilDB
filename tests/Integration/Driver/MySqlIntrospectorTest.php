@@ -25,7 +25,9 @@ final class MySqlIntrospectorTest extends TestCase
     public static function targets(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
     }
 
     /**
@@ -36,7 +38,9 @@ final class MySqlIntrospectorTest extends TestCase
     public static function targetsWithIntegerTypes(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL', 'int unsigned', 'smallint unsigned'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL', 'int unsigned', 'smallint unsigned'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL', 'int(10) unsigned', 'smallint(5) unsigned'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'int(10) unsigned', 'smallint(5) unsigned'];
     }
 
     private function introspector(string $envVar): MySqlIntrospector
