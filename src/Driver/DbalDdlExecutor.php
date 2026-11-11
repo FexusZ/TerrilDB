@@ -54,7 +54,10 @@ final readonly class DbalDdlExecutor implements DdlExecutor
             $info = \is_array($e->errorInfo) ? $e->errorInfo : [];
             $message = \is_string($info[2] ?? null) ? $info[2] : $e->getMessage();
 
-            throw new SchemaChangeFailedException(trim((string) preg_replace('/^ERROR:\s+/', '', $message)), $applied, $current ?? $statements[0], $e);
+            // MySQL et MariaDB : 1205 (ER_LOCK_WAIT_TIMEOUT) ; PostgreSQL : SQLSTATE 55P03 (lock_not_available).
+            $lockTimeout = Engine::PostgreSql === $this->engine ? '55P03' === ($info[0] ?? null) : 1205 === ($info[1] ?? null);
+
+            throw new SchemaChangeFailedException(trim((string) preg_replace('/^ERROR:\s+/', '', $message)), $applied, $current ?? $statements[0], $e, $lockTimeout);
         }
     }
 }
