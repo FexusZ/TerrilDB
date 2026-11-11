@@ -75,14 +75,15 @@ final class LockScenario
      */
     public function startWaiter(string $sqlTemplate = 'UPDATE %s SET v = v + 10 WHERE id = 1'): void
     {
-        $this->process = proc_open(
+        $process = proc_open(
             [\PHP_BINARY, __DIR__.'/lock_waiter.php', $this->envVar, \sprintf($sqlTemplate, $this->table)],
             [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $this->pipes,
         );
-        if (!\is_resource($this->process)) {
+        if (false === $process) {
             throw new \RuntimeException('Cannot start the waiter.');
         }
+        $this->process = $process;
         $line = fgets($this->pipes[1]);
         $this->waiterId = false === $line ? '' : trim($line);
         if ('' === $this->waiterId) {

@@ -158,7 +158,10 @@ final class LockDiagnosticsTest extends TestCase
         self::assertContains($scenario->waiterId(), $transactions);
         $scenario->release();
         $after = $this->open($envVar);
-        $gone = $after->diagnostics()->locks()->locks();
+        $gone = LockScenario::until(
+            static fn (): LockReport => $after->diagnostics()->locks()->locks(),
+            static fn (LockReport $r): bool => [] === array_filter($r->waits, static fn ($w): bool => $w->blocking->id === $scenario->holderId()),
+        );
         $after->close();
         self::assertSame([], array_filter($gone->waits, static fn ($w): bool => $w->blocking->id === $scenario->holderId()), 'Once released, nobody waits.');
     }
@@ -211,7 +214,7 @@ final class LockDiagnosticsTest extends TestCase
             $admin->executeStatement($postgres ? \sprintf('GRANT pg_monitor TO %s', $user) : \sprintf("GRANT PROCESS ON *.* TO '%s'@'%%'", $user));
             if (Engine::MySql === TargetDatabase::engine($envVar)) {
                 $admin->executeStatement(\sprintf("GRANT SELECT ON performance_schema.* TO '%s'@'%%'", $user));
-                $admin->executeStatement(\sprintf("GRANT SELECT ON sys.* TO '%s'@'%%'", $user));
+                $admin->executeStatement(\sprintf("GRANT SELECT, EXECUTE ON sys.* TO '%s'@'%%'", $user));
             }
             $granted = $this->open($envVar, $as);
             self::assertSame(Availability::Available, $granted->diagnostics()->locks()->status()->availability);
@@ -242,6 +245,13 @@ final class LockDiagnosticsTest extends TestCase
             self::assertSame(Availability::PermissionDenied, $status->availability);
             self::assertSame('SELECT ON performance_schema', $status->privilege);
             self::assertSame(Availability::PermissionDenied, $report->status->availability);
+
+            $admin->executeStatement(\sprintf("GRANT SELECT ON performance_schema.* TO '%s'@'%%'", $user));
+            $half = $this->open($envVar, new ConnectionParameters($parameters->host, $parameters->port, $parameters->database, $user, $password));
+            $halfStatus = $half->diagnostics()->locks()->status();
+            $half->close();
+            self::assertSame(Availability::PermissionDenied, $halfStatus->availability);
+            self::assertSame('SELECT AND EXECUTE ON sys', $halfStatus->privilege);
         } finally {
             $admin->executeStatement(\sprintf("DROP USER IF EXISTS '%s'@'%%'", $user));
             $admin->close();

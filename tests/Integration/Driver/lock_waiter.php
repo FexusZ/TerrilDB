@@ -11,7 +11,10 @@ use App\Tests\Integration\Driver\TargetDatabase;
 
 require dirname(__DIR__, 3).'/vendor/autoload.php';
 
-[, $envVar, $sql] = $argv + [null, '', ''];
+/** @var list<string> $arguments */
+$arguments = is_array($_SERVER['argv'] ?? null) ? array_values(array_map(static fn (mixed $a): string => is_string($a) ? $a : '', $_SERVER['argv'])) : [];
+$envVar = $arguments[1] ?? '';
+$sql = $arguments[2] ?? '';
 $engine = TargetDatabase::engine($envVar);
 $connection = (new DbalConnector())->connect($engine, TargetDatabase::parameters($envVar));
 if (Engine::PostgreSql === $engine) {
@@ -24,7 +27,7 @@ if (Engine::PostgreSql === $engine) {
     $connection->executeStatement('START TRANSACTION');
     $id = $connection->fetchOne('SELECT CONNECTION_ID()');
 }
-echo $id, "\n";
+echo is_scalar($id) ? (string) $id : '', "\n";
 fflush(\STDOUT);
 
 try {

@@ -31,13 +31,13 @@ final readonly class MySqlSessionDiagnostics implements SessionDiagnostics
 
     public function status(): DiagnosticStatus
     {
-        return $this->catalog->read(fn (Connection $c): DiagnosticStatus => $this->hasProcessPrivilege($c) ? DiagnosticStatus::available() : DiagnosticStatus::denied(self::PRIVILEGE));
+        return $this->catalog->read(static fn (Connection $c): DiagnosticStatus => MySqlPrivileges::hasProcess($c) ? DiagnosticStatus::available() : DiagnosticStatus::denied(self::PRIVILEGE));
     }
 
     public function sessions(): SessionReport
     {
-        return $this->catalog->read(function (Connection $c): SessionReport {
-            if (!$this->hasProcessPrivilege($c)) {
+        return $this->catalog->read(static function (Connection $c): SessionReport {
+            if (!MySqlPrivileges::hasProcess($c)) {
                 return new SessionReport(DiagnosticStatus::denied(self::PRIVILEGE), [], false);
             }
 
@@ -67,14 +67,5 @@ final readonly class MySqlSessionDiagnostics implements SessionDiagnostics
 
             return new SessionReport(DiagnosticStatus::available(), $sessions, \count($rows) > self::LIMIT);
         });
-    }
-
-    private function hasProcessPrivilege(Connection $connection): bool
-    {
-        $count = $connection->fetchOne(
-            "SELECT COUNT(*) FROM information_schema.USER_PRIVILEGES WHERE PRIVILEGE_TYPE = 'PROCESS' AND REPLACE(GRANTEE, '''', '') = CURRENT_USER()",
-        );
-
-        return 0 < (new RowReader(['count' => $count]))->int('count');
     }
 }
