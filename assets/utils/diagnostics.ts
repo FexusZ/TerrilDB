@@ -2,7 +2,20 @@ import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/typ
 
 const REASONS: Record<string, string> = {
   performance_schema_off: 'performance_schema est éteint sur ce serveur',
+  extension_missing: 'L’extension pg_stat_statements n’est pas créée dans cette base',
+  library_not_loaded: 'L’extension pg_stat_statements n’est pas préchargée par le serveur (shared_preload_libraries)',
+  query_log_off: 'Le journal system.query_log est absent ou désactivé sur ce serveur ClickHouse',
 }
+
+const HINTS: Record<string, string> = {
+  performance_schema_off: 'Démarrer le serveur avec performance_schema=ON (MariaDB le livre éteint, MySQL l’allume par défaut), puis redémarrer.',
+  extension_missing: 'Dans la base, avec un compte autorisé : CREATE EXTENSION pg_stat_statements;',
+  library_not_loaded: "Dans la configuration du serveur : shared_preload_libraries = 'pg_stat_statements', puis redémarrer PostgreSQL et lancer CREATE EXTENSION pg_stat_statements; dans la base.",
+  query_log_off: 'Activer la section query_log de la configuration du serveur ClickHouse (activée par défaut dans la configuration d’origine).',
+}
+
+/** La façon d'allumer une source éteinte, à LIRE : TerrilDB ne l'exécute jamais. */
+export const enableHint = (reason: string | null): string | null => (reason !== null && HINTS[reason] !== undefined ? HINTS[reason] : null)
 
 /**
  * Pourquoi une source ne se lit pas, en français ; null quand elle se lit. Une source illisible n'est jamais présentée comme
@@ -47,4 +60,22 @@ export interface BlockingLine {
 /** L'arbre à plat, parcours en profondeur : une ligne par session, avec sa profondeur pour l'indentation. */
 export function flattenBlocking(nodes: BlockingNode[], depth = 0): BlockingLine[] {
   return nodes.flatMap((node) => [{ node, depth }, ...flattenBlocking(node.blocked, depth + 1)])
+}
+
+/** Une durée en millisecondes dans l'unité qui se lit : 0,4 ms, 12 ms, 1,5 s, 2 min 30 s. */
+export function formatMs(ms: number): string {
+  if (ms < 1) return `${ms.toFixed(1).replace('.', ',')} ms`
+  if (ms < 1000) return `${String(Math.round(ms))} ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1).replace('.', ',').replace(/,0$/, '')} s`
+
+  return formatSeconds(ms / 1000)
+}
+
+/** Lignes examinées pour une ligne renvoyée : « 1 000 », « 2,5 » ; vide si la source ne le dit pas. */
+export function formatRatio(ratio: number | null): string {
+  if (ratio === null) return ''
+  const [whole = '0', decimals] = String(Math.round(ratio * 10) / 10).split('.')
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ' ')
+
+  return decimals === undefined ? grouped : `${grouped},${decimals}`
 }
