@@ -1,0 +1,143 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Integration\Driver;
+
+use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Schema\AutoCounter;
+use App\Core\Schema\SchemaIntrospector;
+use App\Driver\DbalConnector;
+use App\Driver\MySql\MySqlIntrospector;
+use App\Driver\PostgreSql\PostgreSqlIntrospector;
+use Doctrine\DBAL\Connection;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Les compteurs automatiques lus au catalogue, sur des tables à part (le schéma partagé n'est jamais touché).
+ */
+#[Group('integration')]
+final class AutoCounterTest extends TestCase
+{
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function mysqlTargets(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
+    }
+
+    private function connect(string $envVar): Connection
+    {
+        try {
+            return (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+        } catch (TargetConnectionFailedException) {
+            self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
+        }
+    }
+
+    /**
+     * @return array<string, AutoCounter> par table
+     */
+    private static function byTable(SchemaIntrospector $introspector): array
+    {
+        $counters = [];
+        foreach ($introspector->autoCounters() as $counter) {
+            $counters[$counter->table] = $counter;
+        }
+
+        return $counters;
+    }
+
+    #[DataProvider('mysqlTargets')]
+    public function testMySqlCounterIsTheLastValueGivenAndFollowsInsertsMadeAfterAFirstRead(string $envVar): void
+    {
+        $connection = $this->connect($envVar);
+        $introspector = new MySqlIntrospector($connection);
+
+        try {
+            $connection->executeStatement('DROP TABLE IF EXISTS counter_probe, counter_probe_big, counter_probe_plain');
+            $connection->executeStatement('CREATE TABLE counter_probe (id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY, v INT NULL)');
+            $connection->executeStatement('CREATE TABLE counter_probe_big (id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE counter_probe_plain (id INT NOT NULL PRIMARY KEY)');
+            $connection->executeStatement('ALTER TABLE counter_probe AUTO_INCREMENT = 60000');
+            $connection->executeStatement('ALTER TABLE counter_probe_big AUTO_INCREMENT = 18446744073709551000');
+            $connection->executeStatement('INSERT INTO counter_probe (v) VALUES (1)');
+
+            $first = self::byTable($introspector);
+            // Une lecture déjà faite ne doit pas figer le chiffre (MySQL 8 garde ces statistiques en cache jusqu'à 24 h).
+            $connection->executeStatement('INSERT INTO counter_probe (v) VALUES (2), (3), (4)');
+            $second = self::byTable($introspector);
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS counter_probe, counter_probe_big, counter_probe_plain');
+            $connection->close();
+        }
+
+        self::assertSame('60000', $first['counter_probe']->lastValue);
+        self::assertSame('id', $first['counter_probe']->column);
+        self::assertNull($first['counter_probe']->maxValue);
+        self::assertSame('60003', $second['counter_probe']->lastValue);
+        self::assertSame('18446744073709550999', $second['counter_probe_big']->lastValue);
+        self::assertArrayNotHasKey('counter_probe_plain', $second);
+    }
+
+    #[DataProvider('mysqlTargets')]
+    public function testMySqlSharedSchemaHasNoCounterNearItsLimit(string $envVar): void
+    {
+        $connection = $this->connect($envVar);
+        $counters = (new MySqlIntrospector($connection))->autoCounters();
+        $connection->close();
+
+        self::assertNotSame([], $counters);
+        foreach ($counters as $counter) {
+            self::assertLessThan(1000000, (int) $counter->lastValue);
+        }
+    }
+
+    public function testPostgreSqlCountersCoverIdentitySerialAndCappedSequences(): void
+    {
+        $connection = $this->connect('TARGET_POSTGRES_URL');
+        $introspector = new PostgreSqlIntrospector($connection);
+        $drop = 'DROP TABLE IF EXISTS counter_probe_identity, counter_probe_serial, counter_probe_capped, counter_probe_unused, counter_probe_plain';
+
+        try {
+            $connection->executeStatement($drop);
+            $connection->executeStatement('CREATE TABLE counter_probe_identity (id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE counter_probe_serial (id smallserial PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE counter_probe_capped (id bigint GENERATED BY DEFAULT AS IDENTITY (MAXVALUE 1000) PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE counter_probe_unused (id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY)');
+            $connection->executeStatement('CREATE TABLE counter_probe_plain (id integer PRIMARY KEY)');
+            $connection->executeStatement('ALTER TABLE counter_probe_identity ALTER COLUMN id RESTART WITH 2100000000');
+            $connection->executeStatement('ALTER SEQUENCE counter_probe_serial_id_seq RESTART WITH 32000');
+            $connection->executeStatement('ALTER TABLE counter_probe_capped ALTER COLUMN id RESTART WITH 950');
+            foreach (['counter_probe_identity', 'counter_probe_serial', 'counter_probe_capped'] as $table) {
+                $connection->executeStatement('INSERT INTO '.$table.' DEFAULT VALUES');
+            }
+            $counters = self::byTable($introspector);
+        } finally {
+            $connection->executeStatement($drop);
+            $connection->close();
+        }
+
+        self::assertSame('2100000000', $counters['counter_probe_identity']->lastValue);
+        self::assertSame('2147483647', $counters['counter_probe_identity']->maxValue);
+        self::assertTrue($counters['counter_probe_identity']->identity);
+        self::assertStringEndsWith('.counter_probe_identity_id_seq', (string) $counters['counter_probe_identity']->sequence);
+
+        self::assertSame('32000', $counters['counter_probe_serial']->lastValue);
+        self::assertSame('32767', $counters['counter_probe_serial']->maxValue);
+        self::assertFalse($counters['counter_probe_serial']->identity);
+
+        self::assertSame('950', $counters['counter_probe_capped']->lastValue);
+        self::assertSame('1000', $counters['counter_probe_capped']->maxValue);
+
+        // Séquence jamais utilisée : rien à juger ; colonne sans compteur : absente.
+        self::assertArrayNotHasKey('counter_probe_unused', $counters);
+        self::assertArrayNotHasKey('counter_probe_plain', $counters);
+    }
+}

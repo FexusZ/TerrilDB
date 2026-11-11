@@ -50,6 +50,11 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
         return $databases;
     }
 
+    public function autoCounters(): array
+    {
+        return [];
+    }
+
     public function listSchemas(): array
     {
         throw UnsupportedOperationException::for(Engine::ClickHouse, 'schemas');

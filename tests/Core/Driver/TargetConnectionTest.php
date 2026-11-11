@@ -33,6 +33,11 @@ final class TargetConnectionTest extends TestCase
                 return new \App\Core\Schema\TablePage([], null, 0);
             }
 
+            public function autoCounters(): array
+            {
+                return [];
+            }
+
             public function listSchemas(): array
             {
                 return [];

@@ -6,6 +6,7 @@ namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
@@ -125,6 +126,35 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         }
 
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
+    }
+
+    public function autoCounters(): array
+    {
+        // MySQL 8 garde AUTO_INCREMENT en cache jusqu'à 24 h (information_schema_stats_expiry) : on veut la valeur du moment.
+        // MariaDB n'a pas cette variable et lit toujours à jour.
+        try {
+            $this->connection->executeStatement('SET SESSION information_schema_stats_expiry = 0');
+        } catch (\Throwable) {
+        }
+
+        // AUTO_INCREMENT est la PROCHAINE valeur : la dernière attribuée en est le précédent (en décimal, un BIGINT UNSIGNED
+        // dépasse l'entier de PHP). Une table sans ligne ni compteur n'a rien à dire.
+        $rows = $this->connection->fetchAllAssociative(
+            "SELECT t.TABLE_NAME AS tbl, c.COLUMN_NAME AS col, CAST(t.AUTO_INCREMENT AS DECIMAL(21, 0)) - 1 AS used
+               FROM information_schema.TABLES t
+               JOIN information_schema.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME
+              WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE' AND t.AUTO_INCREMENT IS NOT NULL
+                AND c.EXTRA LIKE '%auto_increment%'
+              ORDER BY t.TABLE_NAME",
+        );
+
+        $counters = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $counters[] = new AutoCounter($row->string('tbl'), $row->string('col'), $row->string('used'));
+        }
+
+        return $counters;
     }
 
     public function describeTable(string $name): TableDefinition

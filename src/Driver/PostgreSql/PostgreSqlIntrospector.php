@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Driver\PostgreSql;
 
+use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\InvalidSchemaException;
@@ -128,6 +129,42 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
         }
 
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
+    }
+
+    public function autoCounters(): array
+    {
+        // Séquences possédées par une colonne (serial = dépendance « a », identité = « i ») ; pg_sequences donne last_value
+        // (nul tant que la séquence n'a servi à rien) et max_value sans toucher à la table.
+        $rows = $this->connection->fetchAllAssociative(
+            "SELECT c.relname AS tbl, a.attname AS col, s.last_value::text AS last_value, s.max_value::text AS max_value,
+                    s.schemaname || '.' || s.sequencename AS sequence, d.deptype = 'i' AS identity
+               FROM pg_depend d
+               JOIN pg_class sc ON sc.oid = d.objid AND sc.relkind = 'S'
+               JOIN pg_namespace sn ON sn.oid = sc.relnamespace
+               JOIN pg_sequences s ON s.schemaname = sn.nspname AND s.sequencename = sc.relname
+               JOIN pg_class c ON c.oid = d.refobjid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.refobjsubid
+              WHERE d.classid = 'pg_class'::regclass AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')
+                AND c.relkind IN ('r', 'p') AND n.nspname = current_schema()
+                AND s.last_value IS NOT NULL AND s.increment_by > 0
+              ORDER BY c.relname, a.attnum",
+        );
+
+        $counters = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $counters[] = new AutoCounter(
+                $row->string('tbl'),
+                $row->string('col'),
+                $row->string('last_value'),
+                $row->nullableString('max_value'),
+                $row->string('sequence'),
+                $row->bool('identity'),
+            );
+        }
+
+        return $counters;
     }
 
     public function describeTable(string $name): TableDefinition
