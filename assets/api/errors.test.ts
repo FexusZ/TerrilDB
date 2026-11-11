@@ -63,4 +63,14 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
   })
+
+  it('gives advice for lock conflicts without echoing anything from the engine', () => {
+    const deadlock = messageFor(new ApiError(409, 'deadlock', { retryable: true, message: "value 'jean@example.org'" }))
+    expect(deadlock).toContain('interblocage')
+    expect(deadlock).toContain('Relancez')
+    expect(deadlock).not.toContain('jean')
+    const timeout = messageFor(new ApiError(409, 'lock_timeout', { retryable: true }))
+    expect(timeout).toContain('verrou')
+    expect(timeout).not.toBe(deadlock)
+  })
 })

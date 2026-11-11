@@ -87,6 +87,10 @@ export function messageFor(error: unknown): string {
       return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification des données.'
     case 'invalid_data_change':
       return 'Cette modification de données est invalide.'
+    case 'deadlock':
+      return 'La base a détecté un interblocage avec une autre transaction et a annulé cette opération. Relancez-la telle quelle.'
+    case 'lock_timeout':
+      return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':
