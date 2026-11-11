@@ -231,7 +231,7 @@ jamais un index unique ; clé étrangère dont la colonne doit être CONVERTIE p
 réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
 d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
 avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
-1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
+1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit. Règle « compteur proche de la limite de son type » (`counter_near_limit`, gravité `critical` dès 90 %, `warning` dès 70 %, seuils fixes) : `SchemaIntrospector::autoCounters()` lit la dernière valeur attribuée au catalogue sans COUNT ni MAX (MySQL/MariaDB `information_schema.TABLES.AUTO_INCREMENT` avec `information_schema_stats_expiry = 0` en session, car MySQL 8 sert sinon un chiffre périmé, constaté sur 8.4 et 26 ; PostgreSQL `pg_sequences` des séquences possédées par une colonne, jaugées aussi contre un `max_value` plus bas que le type) ; les objets `SEQUENCE` de MariaDB et les séquences nommées sans colonne ne sont pas encore jugés.
 
 ## Diagramme ER (SchemaDiagramController, assets/utils/erLayout.ts, DiagramPane)
 
