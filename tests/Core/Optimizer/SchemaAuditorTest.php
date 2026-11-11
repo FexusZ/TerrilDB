@@ -460,4 +460,63 @@ final class SchemaAuditorTest extends TestCase
     {
         self::assertSame([], $this->audit([$this->typed('t', ['id' => 'integer', 'ref' => 'char(36)'])]));
     }
+
+    /**
+     * @return iterable<string, array{string, string, Engine}>
+     */
+    public static function floatAmounts(): iterable
+    {
+        yield 'price double MySQL' => ['price', 'double', Engine::MySql];
+        yield 'prix float MariaDB' => ['prix', 'float', Engine::MariaDb];
+        yield 'total_amount' => ['total_amount', 'float unsigned', Engine::MySql];
+        yield 'montantTtc' => ['montantTtc', 'real', Engine::PostgreSql];
+        yield 'unit_price double precision' => ['unit_price', 'double precision', Engine::PostgreSql];
+        yield 'float(10,2)' => ['cost', 'float(10,2)', Engine::MySql];
+    }
+
+    #[DataProvider('floatAmounts')]
+    public function testFlagsAMoneyColumnStoredAsFloatingPoint(string $name, string $type, Engine $engine): void
+    {
+        $findings = $this->audit([$this->typed('invoices', ['id' => 'integer', $name => $type])], $engine);
+
+        self::assertCount(1, $findings);
+        self::assertSame(FindingRule::FloatAmount, $findings[0]->rule);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame([$name], $findings[0]->columns);
+        self::assertSame($type, $findings[0]->detail);
+    }
+
+    public function testSuggestsDecimalKeepingNullabilityWhereTheSqlIsSafe(): void
+    {
+        $nullable = $this->typed('invoices', ['id' => 'integer', 'price' => 'double precision'], nullable: true);
+        $notNull = $this->typed('invoices', ['id' => 'integer', 'price' => 'double'], nullable: false);
+        $withDefault = $this->typed('invoices', ['id' => 'integer', 'price' => 'double'], default: '0');
+
+        self::assertSame('ALTER TABLE "invoices" ALTER COLUMN "price" TYPE numeric(12,2);', $this->audit([$nullable])[0]->suggestion);
+        self::assertSame('ALTER TABLE `invoices` MODIFY `price` DECIMAL(12,2) NOT NULL;', $this->audit([$notNull], Engine::MySql)[0]->suggestion);
+        // MODIFY redit toute la définition : avec un défaut à reporter, on ne propose rien plutôt qu'un SQL qui le perdrait.
+        self::assertNull($this->audit([$withDefault], Engine::MySql)[0]->suggestion);
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function acceptableAmounts(): iterable
+    {
+        yield 'decimal' => ['price', 'decimal(10,2)'];
+        yield 'numeric' => ['amount', 'numeric'];
+        yield 'entier en centimes' => ['price_cents', 'integer'];
+        yield 'centimes en flottant' => ['price_cents', 'double'];
+        yield 'poids' => ['total_weight', 'double'];
+        yield 'taux' => ['price_rate', 'float'];
+        yield 'nom neutre' => ['latitude', 'double'];
+        yield 'mot contenu' => ['priceless', 'double'];
+        yield 'score total' => ['total_score', 'float'];
+    }
+
+    #[DataProvider('acceptableAmounts')]
+    public function testOtherColumnsAreLeftAlone(string $name, string $type): void
+    {
+        self::assertSame([], $this->audit([$this->typed('t', ['id' => 'integer', $name => $type])]));
+    }
 }

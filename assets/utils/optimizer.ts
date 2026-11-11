@@ -33,6 +33,11 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `La clé primaire de « ${finding.table} » (${finding.columns.join(', ')}) est un UUID rangé en texte${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'À vérifier : si ces valeurs sont bien des UUID, le texte occupe 36 octets au lieu de 16, et InnoDB recopie la clé primaire dans chaque index secondaire. Le type natif (uuid sur PostgreSQL, BINARY(16) avec UUID_TO_BIN sur MySQL et MariaDB) allège la table et ses index ; la conversion réécrit la colonne et les clés étrangères qui la référencent, à planifier.',
       }
+    case 'float_amount':
+      return {
+        title: `La colonne « ${finding.columns.join(', ')} » de « ${finding.table} » est un nombre à virgule flottante${finding.detail === null ? '' : ` (${finding.detail})`} alors que son nom évoque une somme d’argent.`,
+        help: 'À vérifier, d’après le nom seul : un flottant binaire n’écrit pas exactement 0,10 et les écarts d’arrondi s’accumulent dans les sommes et les comparaisons. Pour de l’argent, DECIMAL (numeric sur PostgreSQL) est exact ; la conversion réécrit la colonne, à planifier sur une grosse table.',
+      }
   }
 }
 

@@ -156,6 +156,31 @@ final class SchemaAuditWebTest extends WebApiTestCase
         }
     }
 
+    #[DataProvider('relationalTargets')]
+    public function testFindsAMoneyColumnStoredAsFloatingPoint(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $engine = TargetDatabase::engine($envVar);
+        $connection = (new DbalConnector())->connect($engine, TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement('CREATE TABLE audit_probe_money (id integer PRIMARY KEY, price double precision NOT NULL, price_cents double precision, weight double precision)');
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_money');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'float_amount' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_money', $findings[0]['table']);
+        self::assertSame(['price'], $findings[0]['columns']);
+        self::assertSame('info', $findings[0]['severity']);
+        self::assertSame(Engine::PostgreSql === $engine ? 'ALTER TABLE "audit_probe_money" ALTER COLUMN "price" TYPE numeric(12,2);' : 'ALTER TABLE `audit_probe_money` MODIFY `price` DECIMAL(12,2) NOT NULL;', $findings[0]['suggestion']);
+    }
+
     public function testAnotherAccountsConnectionIsNotFound(): void
     {
         $this->seedAndLogin('alice');

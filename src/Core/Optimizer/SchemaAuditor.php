@@ -65,6 +65,8 @@ final class SchemaAuditor
             $findings[] = $textKey;
         }
 
+        array_push($findings, ...$this->floatAmounts($engine, $table));
+
         foreach ($table->foreignKeys as $key) {
             if (!$this->isCovered($key, $table->indexes)) {
                 $findings[] = new Finding(
@@ -126,6 +128,46 @@ final class SchemaAuditor
                 : null,
             detail: $column->type,
         );
+    }
+
+    /** Mots (le nom coupé sur `_`, les tirets, les espaces et les majuscules) qui désignent une somme d'argent. */
+    private const MONEY_WORDS = ['price', 'prix', 'amount', 'montant', 'total', 'cost', 'cout', 'tarif', 'salary', 'salaire', 'balance', 'solde', 'fee', 'frais', 'revenue'];
+
+    /** Mots qui disent qu'il ne s'agit pas d'une somme (unité entière, mesure, rapport) : ils écartent la colonne. */
+    private const NOT_MONEY_WORDS = ['cents', 'cent', 'centimes', 'weight', 'poids', 'rate', 'taux', 'ratio', 'score', 'percent', 'pct', 'count', 'qty', 'quantity', 'nb', 'size', 'length', 'duration', 'distance'];
+
+    /**
+     * Une colonne au nom évocateur d'une somme d'argent (prix, montant, total…) en virgule flottante : les flottants
+     * binaires n'écrivent pas exactement 0,10 et les écarts d'arrondi s'accumulent dans les sommes. Heuristique sur le NOM :
+     * sévérité « info », à vérifier. Le SQL ne vient que quand il ne peut rien perdre : PostgreSQL garde défaut et nullabilité,
+     * MySQL/MariaDB MODIFY redit la définition, donc rien si la colonne a un défaut, un commentaire ou un auto-incrément.
+     *
+     * @return list<Finding>
+     */
+    private function floatAmounts(Engine $engine, TableDefinition $table): array
+    {
+        $findings = [];
+        foreach ($table->columns as $column) {
+            $type = strtolower(trim($column->type));
+            if (1 !== preg_match('/^(?:float|double|real)\b/', $type)) {
+                continue;
+            }
+            $words = preg_split('/[^a-z0-9]+/', strtolower((string) preg_replace('/(?<=[a-z0-9])(?=[A-Z])/', '_', $column->name)), -1, \PREG_SPLIT_NO_EMPTY);
+            if (false === $words || [] === array_intersect($words, self::MONEY_WORDS) || [] !== array_intersect($words, self::NOT_MONEY_WORDS)) {
+                continue;
+            }
+
+            $suggestion = null;
+            if (Engine::PostgreSql === $engine) {
+                $suggestion = \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE numeric(12,2);', self::quote($engine, $table->name), self::quote($engine, $column->name));
+            } elseif (null === $column->default && null === $column->comment && !$column->autoIncrement) {
+                $suggestion = \sprintf('ALTER TABLE %s MODIFY %s DECIMAL(12,2) %s;', self::quote($engine, $table->name), self::quote($engine, $column->name), $column->nullable ? 'NULL' : 'NOT NULL');
+            }
+
+            $findings[] = new Finding(FindingRule::FloatAmount, Severity::Info, $table->name, [$column->name], suggestion: $suggestion, detail: $column->type);
+        }
+
+        return $findings;
     }
 
     /**

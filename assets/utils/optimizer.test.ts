@@ -29,6 +29,13 @@ describe('optimizer wording', () => {
     expect(text.help).toContain('À vérifier')
   })
 
+  it('words a money column stored as a float, flagged as a guess', () => {
+    const money = describeSchemaFinding(finding({ rule: 'float_amount', severity: 'info', table: 'invoices', columns: ['price'], detail: 'double' }))
+    expect(money.title).toBe('La colonne « price » de « invoices » est un nombre à virgule flottante (double) alors que son nom évoque une somme d’argent.')
+    expect(money.help).toContain('DECIMAL')
+    expect(money.help).toContain('À vérifier')
+  })
+
   it('words a big full scan, with its condition when there is one', () => {
     const base: PlanFindingInfo = { rule: 'full_scan', relation: 'orders', rows: 11420, condition: '(status = 1)' }
 
