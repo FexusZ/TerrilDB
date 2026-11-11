@@ -448,6 +448,33 @@ final class McpTest extends WebApiTestCase
         self::assertArrayHasKey('error', $result);
     }
 
+    public function testMeasureRunsTheWholeQueryAndReturnsOnlyAPreview(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $result = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select * from order_items', 'measure' => true]);
+
+        $data = self::textOf($result);
+        self::assertGreaterThan(5000, $data['totalRows']);
+        self::assertSame(100, $data['rowCount']);
+        self::assertIsInt($data['durationMs']);
+        self::assertTrue($data['truncated']);
+        self::assertCount(100, self::list($data['rows']));
+    }
+
+    public function testMeasureKeepsTheSqlLimitAndStaysReadOnly(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $limited = self::textOf($this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select * from order_items limit 250', 'measure' => true]));
+        self::assertSame(250, $limited['totalRows']);
+
+        $refused = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => "insert into categories (name) values ('sneaky')", 'measure' => true]);
+        self::assertTrue($refused['isError']);
+    }
+
     public function testAWriteIsRefusedAndExplained(): void
     {
         $this->prepare();

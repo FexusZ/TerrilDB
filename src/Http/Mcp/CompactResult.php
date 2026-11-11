@@ -24,7 +24,7 @@ final class CompactResult
 
         return new CallToolResult([
             new TextContent((new CsvExporter())->export($result)),
-            new TextContent(self::json(['rowCount' => $result->rowCount(), 'truncated' => $result->truncated, 'durationMs' => $result->durationMs])),
+            new TextContent(self::json((null === $result->totalRows ? [] : ['totalRows' => $result->totalRows]) + ['rowCount' => $result->rowCount(), 'truncated' => $result->truncated, 'durationMs' => $result->durationMs])),
         ]);
     }
 

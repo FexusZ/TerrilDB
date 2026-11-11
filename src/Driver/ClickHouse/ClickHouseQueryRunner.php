@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Driver\ClickHouse;
 
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\CellValue;
 use App\Core\Query\Exception\QueryFailedException;
@@ -34,6 +35,10 @@ final readonly class ClickHouseQueryRunner implements QueryRunner
 
     public function run(string $sql, StatementKind $kind, QueryOptions $options): QueryResult
     {
+        if ($options->measure) {
+            throw new UnsupportedOperationException('Measuring a complete query is not available for this engine.');
+        }
+
         $started = hrtime(true);
         $settings = ['max_execution_time' => $options->timeoutMs / 1000];
         if (QueryMode::ReadOnly === $options->mode) {

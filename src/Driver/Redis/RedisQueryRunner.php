@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Driver\Redis;
 
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Guard\GuardReason;
 use App\Core\Guard\RedisCommandLine;
 use App\Core\Guard\StatementKind;
@@ -43,6 +44,10 @@ final readonly class RedisQueryRunner implements QueryRunner
 
     public function run(string $sql, StatementKind $kind, QueryOptions $options): QueryResult
     {
+        if ($options->measure) {
+            throw new UnsupportedOperationException('Measuring a complete query is not available for this engine.');
+        }
+
         $line = RedisCommandLine::parse($sql);
         $arguments = $line->commands[0] ?? null;
         if (!$line->complete || null === $arguments || 1 !== \count($line->commands)) {

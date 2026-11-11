@@ -211,4 +211,10 @@ final class RedisQueryRunnerTest extends TestCase
 
         self::assertSame([['Alice']], $this->read('get user:1')->rows);
     }
+
+    public function testMeasuringIsNotSupported(): void
+    {
+        $this->expectException(\App\Core\Driver\Exception\UnsupportedOperationException::class);
+        $this->runner()->run('GET nothing', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 10, measure: true));
+    }
 }
