@@ -42,8 +42,8 @@ final readonly class PlanController
 
         $limited = false;
         $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, &$limited) {
-            $limited = $this->limits->has($target->engine, $sql);
             $statement = $this->plans->statementFor($target->engine, $sql);
+            $limited = $this->limits->has($target->engine, $sql);
             $result = $this->queries->execute(
                 $this->session->auditContext(),
                 $uuid,
