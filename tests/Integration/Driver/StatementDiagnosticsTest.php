@@ -14,6 +14,7 @@ use App\Core\Driver\Driver;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
 use App\Driver\ClickHouse\ClickHouseDriver;
+use App\Driver\ClickHouse\ClickHouseHttp;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
 use App\Driver\PostgreSql\PostgreSqlDriver;
@@ -248,6 +249,35 @@ final class StatementDiagnosticsTest extends TestCase
             $admin->executeStatement(\sprintf('DROP ROLE IF EXISTS %s', $user));
             $admin->close();
         }
+    }
+
+    public function testClickHouseFindsTheDigestOfAQueryWithoutItsValues(): void
+    {
+        $target = $this->open('TARGET_CLICKHOUSE_URL');
+        $http = new ClickHouseHttp(HttpClient::create(), TargetDatabase::parameters('TARGET_CLICKHOUSE_URL'));
+        // normalizeQuery masque les identifiants qui contiennent un chiffre : l'alias unique n'est fait que de lettres.
+        $alias = 'tdb'.strtr(bin2hex(random_bytes(6)), '0123456789', 'ghijklmnop');
+        foreach ([-3, -2, -1] as $value) {
+            $http->query(\sprintf('SELECT sum(quantity) AS %s FROM order_items WHERE quantity > %d', $alias, $value));
+        }
+        // Le journal est écrit par le serveur toutes les quelques secondes : on le force, avec le compte de la cible.
+        $http->query('SYSTEM FLUSH LOGS');
+
+        $statements = $target->diagnostics()->statements();
+        $report = $statements->top(new DigestQuery(DigestOrder::Calls, 100));
+        $digest = $this->find($report, $alias);
+
+        self::assertSame(Availability::Available, $statements->status()->availability);
+        self::assertSame(3, $digest->calls, 'Three different values are one digest.');
+        self::assertStringNotContainsString('-3', (string) $digest->text);
+        self::assertStringNotContainsString('-1', (string) $digest->text);
+        self::assertSame(3, $digest->rowsReturned);
+        self::assertGreaterThan(0, $digest->rowsExamined);
+        self::assertGreaterThanOrEqual($digest->meanMs, $digest->maxMs);
+        self::assertEqualsWithDelta($digest->totalMs / 3, $digest->meanMs, 0.01);
+        self::assertNotNull($digest->firstSeen);
+        self::assertNotNull($digest->lastSeen);
+        $target->close();
     }
 
     private function find(DigestReport $report, string $alias): \App\Core\Diagnostics\StatementDigest
