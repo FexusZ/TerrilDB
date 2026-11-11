@@ -108,6 +108,8 @@ final class ErrorMapper
                 'message' => $error->getMessage(),
                 'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
                 'failed' => ChangePlanPresenter::statement($error->failed),
+                'lockTimeout' => $error->lockTimeout,
+                'lockCheck' => null === $error->holders ? null : DiagnosticsPresenter::tableHolders($error->holders),
             ]),
             $error instanceof DiagnosticsFailedException => new ErrorResponse(502, 'diagnostics_failed'),
             $error instanceof UnsupportedOperationException => new ErrorResponse(501, 'unsupported_operation'),
