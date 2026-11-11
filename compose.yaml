@@ -51,7 +51,7 @@ services:
   # Bases cibles de test (profil "targets") : jeu de données ajouté dans un lot dédié
   target-mysql:
     profiles: [targets]
-    image: mysql:8.4
+    image: mysql:26.10
     env_file: docker/dev/target-mysql.env
     ports: ["33061:3306"]
     volumes:
