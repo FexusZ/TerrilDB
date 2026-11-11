@@ -263,4 +263,23 @@ final class SqlScannerTest extends TestCase
         self::assertNull($head('with x as (select 1)'));
         self::assertNull($head('select 1'));
     }
+
+    #[DataProvider('dialects')]
+    public function testLooksForTheWhereOfEachRowChangeInItsOwnLevel(SqlDialect $dialect): void
+    {
+        $unbounded = static fn (string $sql): bool => (new SqlScanner())->scan($sql, $dialect)->statements[0]->hasUnboundedRowChange();
+
+        self::assertTrue($unbounded('delete from t'));
+        self::assertFalse($unbounded('delete from t where a = 1'));
+        self::assertTrue($unbounded('update t set a = (select b from u where u.id = 1)'));
+        self::assertTrue($unbounded('with d as (delete from t returning *) select * from d where a = 1'));
+        self::assertFalse($unbounded('with d as (delete from t where id = 3 returning *) select * from d'));
+        self::assertTrue($unbounded('with d as (delete from t where id = 3 returning *), e as (update u set a = 1 returning *) select 1'));
+        // Deux groupes voisins : le WHERE de l'un n'est pas celui de l'autre.
+        self::assertTrue($unbounded('with d as (delete from t returning *), e as (select 1 where true) select 1'));
+        self::assertFalse($unbounded('insert into t values (1) on duplicate key update a = 2'));
+        self::assertFalse($unbounded('insert into t values (1) on conflict (id) do update set a = 2'));
+        self::assertFalse($unbounded('select * from t for update'));
+        self::assertTrue($unbounded('merge into t using s on t.id = s.id when matched then delete'));
+    }
 }

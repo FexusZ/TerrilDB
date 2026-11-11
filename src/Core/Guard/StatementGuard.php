@@ -193,16 +193,12 @@ final class StatementGuard
     }
 
     /**
-     * Un UPDATE ou un DELETE (éventuellement derrière WITH ou EXPLAIN ANALYZE) sans WHERE de même niveau :
-     * le WHERE d'une sous-requête ne limite pas les lignes touchées.
+     * Un UPDATE ou un DELETE sans WHERE de même niveau, où qu'il soit (derrière WITH, EXPLAIN ANALYZE, dans une expression
+     * de table qui écrit, dans un MERGE) : le WHERE d'une sous-requête ne limite pas les lignes touchées.
      */
     private function modifiesRowsWithoutWhere(ScannedStatement $statement): bool
     {
-        $first = $statement->first();
-        $modifies = \in_array($first, ['UPDATE', 'DELETE'], true)
-            || (\in_array($first, ['WITH', 'EXPLAIN'], true) && ($statement->hasTopLevel('UPDATE') || $statement->hasTopLevel('DELETE')));
-
-        return $modifies && !$statement->hasTopLevel('WHERE');
+        return $statement->hasUnboundedRowChange();
     }
 
     private function hasLockingClause(ScannedStatement $statement): bool

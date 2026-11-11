@@ -24,8 +24,9 @@ final readonly class ScannedStatement
      * @param list<int>              $depths    profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
      * @param list<string>           $called    mots directement suivis d'une parenthèse ouvrante (appels de fonction)
      * @param list<bool>             $callFlags pour chaque mot : directement suivi d'une parenthèse ouvrante
+     * @param list<int>              $groups    pour chaque mot : la paire de parenthèses qui le contient (0 = hors de toute paire, chaque paire a son numéro)
      */
-    public function __construct(public array $words, private array $depths, private array $called = [], private array $callFlags = [])
+    public function __construct(public array $words, private array $depths, private array $called = [], private array $callFlags = [], private array $groups = [])
     {
         if (\count($depths) !== \count($words)) {
             throw new \InvalidArgumentException('Each word needs a depth.');
@@ -58,6 +59,29 @@ final readonly class ScannedStatement
         }
 
         return true;
+    }
+
+    /**
+     * Un UPDATE ou un DELETE (à n'importe quel niveau : tête, expression de table, MERGE…) sans WHERE dans sa propre
+     * paire de parenthèses : le WHERE d'une sous-requête ou d'une autre expression ne limite pas les lignes touchées.
+     */
+    public function hasUnboundedRowChange(): bool
+    {
+        foreach ($this->words as $index => $word) {
+            if (!\in_array($word, ['UPDATE', 'DELETE'], true) || !$this->isRowWriteAt($index)) {
+                continue;
+            }
+            $group = $this->groups[$index] ?? $this->depths[$index];
+            $bounded = false;
+            for ($j = $index + 1, $count = \count($this->words); $j < $count && !$bounded; ++$j) {
+                $bounded = 'WHERE' === $this->words[$j] && ($this->groups[$j] ?? $this->depths[$j]) === $group;
+            }
+            if (!$bounded) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

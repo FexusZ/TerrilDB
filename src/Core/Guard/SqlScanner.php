@@ -34,6 +34,9 @@ final class SqlScanner
         $complete = true;
         $called = [];
         $callFlags = [];
+        $groups = [];
+        $openGroups = [0];
+        $lastGroup = 0;
         $executableComment = false;
         $separators = [];
         $separatorInExecutableComment = false;
@@ -51,14 +54,20 @@ final class SqlScanner
             } elseif (';' === $char) {
                 $separators[] = $i;
                 $separatorInExecutableComment = $separatorInExecutableComment || $executableComment;
-                $this->flush($words, $depths, $called, $callFlags, $statements);
+                $this->flush($words, $depths, $called, $callFlags, $groups, $statements);
                 $depth = 0;
+                $openGroups = [0];
+                $lastGroup = 0;
                 ++$i;
             } elseif ('(' === $char) {
                 ++$depth;
+                $openGroups[] = ++$lastGroup;
                 ++$i;
             } elseif (')' === $char) {
                 $depth = max(0, $depth - 1);
+                if (\count($openGroups) > 1) {
+                    array_pop($openGroups);
+                }
                 ++$i;
             } elseif ('-' === $char && '-' === $next && (!$mysql || $this->endsOrSpaces($sql, $i + 2))) {
                 $i = $this->endOfLine($sql, $i);
@@ -115,6 +124,7 @@ final class SqlScanner
                 } else {
                     $words[] = strtoupper($word);
                     $depths[] = $depth;
+                    $groups[] = $openGroups[array_key_last($openGroups)];
                     $isCall = '(' === $this->nextNonSpace($sql, $i);
                     $callFlags[] = $isCall;
                     if ($isCall) {
@@ -130,7 +140,7 @@ final class SqlScanner
             }
         }
 
-        $this->flush($words, $depths, $called, $callFlags, $statements);
+        $this->flush($words, $depths, $called, $callFlags, $groups, $statements);
 
         return new ScannedSql($statements, $complete, $separators, $separatorInExecutableComment);
     }
@@ -140,17 +150,19 @@ final class SqlScanner
      * @param list<int>              $depths
      * @param list<string>           $called
      * @param list<bool>             $callFlags
+     * @param list<int>              $groups
      * @param list<ScannedStatement> $statements
      */
-    private function flush(array &$words, array &$depths, array &$called, array &$callFlags, array &$statements): void
+    private function flush(array &$words, array &$depths, array &$called, array &$callFlags, array &$groups, array &$statements): void
     {
         if ([] !== $words) {
-            $statements[] = new ScannedStatement($words, $depths, $called, $callFlags);
+            $statements[] = new ScannedStatement($words, $depths, $called, $callFlags, $groups);
         }
         $words = [];
         $depths = [];
         $called = [];
         $callFlags = [];
+        $groups = [];
     }
 
     private function nextNonSpace(string $sql, int $from): string

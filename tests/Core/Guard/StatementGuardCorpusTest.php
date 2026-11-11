@@ -29,12 +29,6 @@ final class StatementGuardCorpusTest extends TestCase
      * @var array<string, string> instruction => famille
      */
     private const PENDING = [
-        'WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d' => 'cte',
-        'WITH u AS (UPDATE t SET a = 1 RETURNING *) SELECT * FROM u' => 'cte',
-        'WITH d AS (DELETE FROM t WHERE id = 3 RETURNING *), e AS (DELETE FROM u RETURNING *) SELECT 1' => 'cte',
-        'WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d WHERE a = 1' => 'cte',
-        'MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN DELETE' => 'cte',
-        'MERGE INTO t USING s ON t.id = s.id WHEN MATCHED THEN UPDATE SET a = 1' => 'cte',
         "SELECT GET_LOCK('x', 10)" => 'verrous',
         "SELECT RELEASE_LOCK('x')" => 'verrous',
         'SELECT RELEASE_ALL_LOCKS()' => 'verrous',
