@@ -15,7 +15,7 @@ describe('diagnostics API', () => {
     const result = await fetchDiagnosticCapabilities('abc', { database: null, schema: null })
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics')
-    expect(result.sessions.availability).toBe('available')
+    expect(result.sessions?.availability).toBe('available')
   })
 
   it('reads the sessions of the explored database', async () => {
