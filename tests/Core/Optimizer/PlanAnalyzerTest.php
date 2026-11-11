@@ -86,6 +86,68 @@ final class PlanAnalyzerTest extends TestCase
         self::assertSame([], self::findings($parser, $fixture));
     }
 
+    /**
+     * @return iterable<string, array{PlanParser, string}>
+     */
+    public static function wildcards(): iterable
+    {
+        yield 'MySQL 8.4' => [new MySqlPlanParser(), 'mysql-like-wildcard'];
+        yield 'MySQL 26 (JSON v2)' => [new MySqlPlanParser(), 'mysql26-like-wildcard'];
+        yield 'MariaDB' => [new MySqlPlanParser(), 'mariadb-like-wildcard'];
+        yield 'PostgreSQL' => [new PostgreSqlPlanParser(), 'postgres-like-wildcard'];
+    }
+
+    #[DataProvider('wildcards')]
+    public function testALikeStartingWithAWildcardOnABigScanExplainsWhyNoIndexHelps(PlanParser $parser, string $fixture): void
+    {
+        $findings = self::findings($parser, $fixture);
+
+        self::assertCount(1, $findings, 'le conseil « ajoutez un index » du parcours complet serait faux ici');
+        self::assertSame('leading_wildcard', $findings[0]->rule);
+        self::assertSame('customers', $findings[0]->relation);
+        self::assertSame(1000, $findings[0]->rows);
+        self::assertStringContainsString('%a%', (string) $findings[0]->condition);
+    }
+
+    /**
+     * @return iterable<string, array{PlanParser, string}>
+     */
+    public static function quietLikes(): iterable
+    {
+        yield 'MySQL 8.4 préfixe' => [new MySqlPlanParser(), 'mysql-like-prefix'];
+        yield 'MySQL 26 préfixe' => [new MySqlPlanParser(), 'mysql26-like-prefix'];
+        yield 'MariaDB préfixe' => [new MySqlPlanParser(), 'mariadb-like-prefix'];
+        yield 'PostgreSQL préfixe' => [new PostgreSqlPlanParser(), 'postgres-like-prefix'];
+        yield 'MySQL 8.4 petite table' => [new MySqlPlanParser(), 'mysql-like-wildcard-small'];
+        yield 'MySQL 26 petite table' => [new MySqlPlanParser(), 'mysql26-like-wildcard-small'];
+        yield 'MariaDB petite table' => [new MySqlPlanParser(), 'mariadb-like-wildcard-small'];
+        yield 'PostgreSQL petite table' => [new PostgreSqlPlanParser(), 'postgres-like-wildcard-small'];
+    }
+
+    #[DataProvider('quietLikes')]
+    public function testAPrefixLikeOrASmallTableIsNeverFlagged(PlanParser $parser, string $fixture): void
+    {
+        self::assertSame([], self::findings($parser, $fixture));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function otherConditions(): iterable
+    {
+        yield 'comparaison' => ['(`shop`.`orders`.`status` = \'%x\')'];
+        yield 'like sans joker initial' => ['(o.name like \'a%\')'];
+        yield 'not like' => ['(o.name not like \'abc\')'];
+    }
+
+    #[DataProvider('otherConditions')]
+    public function testOnlyALikeWithAnInitialWildcardIsRecognised(string $condition): void
+    {
+        $scan = new PlanNode(PlanKind::FullScan, 'ALL', 'o', rows: 5000, condition: $condition, fullScan: true);
+
+        self::assertSame(['full_scan'], array_map(static fn (PlanFinding $f): string => $f->rule, (new PlanAnalyzer())->analyze(new QueryPlan($scan, null))));
+    }
+
     public function testASortWithoutEstimateStaysQuiet(): void
     {
         $plan = new QueryPlan(new PlanNode(PlanKind::Sort, 'Sort', children: [new PlanNode(PlanKind::IndexScan, 'Index Scan', 'orders', rows: 90000)]), null);

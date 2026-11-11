@@ -1,0 +1,23 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 0.00424968,
+    "nested_loop": [
+      {
+        "table": {
+          "table_name": "customers",
+          "access_type": "range",
+          "possible_keys": ["uq_customers_email"],
+          "key": "uq_customers_email",
+          "key_length": "762",
+          "used_key_parts": ["email"],
+          "loops": 1,
+          "rows": 1,
+          "cost": 0.00424968,
+          "filtered": 100,
+          "index_condition": "customers.email like 'a%'"
+        }
+      }
+    ]
+  }
+}

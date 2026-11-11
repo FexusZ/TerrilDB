@@ -116,6 +116,16 @@ final class PlanWebTest extends WebApiTestCase
         self::assertNotContains('large_sort', array_column(self::arrayOf($body['findings']), 'rule'));
     }
 
+    #[DataProvider('targets')]
+    public function testExplainsWhyALeadingWildcardLikeIgnoresIndexes(string $envVar): void
+    {
+        $this->prepare($envVar);
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => "select * from customers where email like '%a%'"]);
+
+        self::assertContains('leading_wildcard', array_column(self::arrayOf($body['findings']), 'rule'));
+    }
+
     public function testTheStatementIsNotRun(): void
     {
         $this->prepare('TARGET_POSTGRES_URL');

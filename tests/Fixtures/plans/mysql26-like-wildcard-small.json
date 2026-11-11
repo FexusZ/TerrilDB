@@ -1,0 +1,30 @@
+{
+  "query": "/* select#1 */ select `shop`.`categories`.`id` AS `id`,`shop`.`categories`.`parent_id` AS `parent_id`,`shop`.`categories`.`name` AS `name` from `shop`.`categories` where (`shop`.`categories`.`name` like '%a%')",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on categories",
+        "table_name": "categories",
+        "access_type": "table",
+        "schema_name": "shop",
+        "used_columns": [
+          "id",
+          "parent_id",
+          "name"
+        ],
+        "estimated_rows": 20.0,
+        "estimated_total_cost": 2.25
+      }
+    ],
+    "condition": "(categories.`name` like '%a%')",
+    "operation": "Filter: (categories.`name` like '%a%')",
+    "access_type": "filter",
+    "estimated_rows": 2.2220000624656677,
+    "filter_columns": [
+      "shop.categories.`name`"
+    ],
+    "estimated_total_cost": 2.25
+  },
+  "query_type": "select",
+  "json_schema_version": "2.1"
+}

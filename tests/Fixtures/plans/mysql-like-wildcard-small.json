@@ -1,0 +1,27 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "2.25"
+    },
+    "table": {
+      "table_name": "categories",
+      "access_type": "ALL",
+      "rows_examined_per_scan": 20,
+      "rows_produced_per_join": 2,
+      "filtered": "11.11",
+      "cost_info": {
+        "read_cost": "2.03",
+        "eval_cost": "0.22",
+        "prefix_cost": "2.25",
+        "data_read_per_join": "746"
+      },
+      "used_columns": [
+        "id",
+        "parent_id",
+        "name"
+      ],
+      "attached_condition": "(`shop`.`categories`.`name` like '%a%')"
+    }
+  }
+}
