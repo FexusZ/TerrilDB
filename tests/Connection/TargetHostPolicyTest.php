@@ -8,7 +8,6 @@ use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Connection\HostResolver;
 use App\Connection\TargetHostPolicy;
 use App\Core\Connection\ConnectionParameters;
-use App\Core\Connection\Socks5Proxy;
 use App\Core\Connection\SshJump;
 use App\Crypto\KeyDerivation;
 use App\Entity\Role;
@@ -195,18 +194,18 @@ final class TargetHostPolicyTest extends TestCase
         return new CountingResolver($names);
     }
 
-    public function testAMemberCannotUseTheMachineItselfAsJumpOrProxy(): void
+    public function testAMemberCannotUseTheMachineItselfAsJump(): void
     {
         $this->expectException(ForbiddenTargetHostException::class);
 
         $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new SshJump('127.0.0.1', 22, 'u', self::KEY)));
     }
 
-    public function testAMemberCannotUseTheInternalDatabaseAsProxy(): void
+    public function testAMemberCannotUseTheInternalDatabaseAsJump(): void
     {
         $this->expectException(ForbiddenTargetHostException::class);
 
-        $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new Socks5Proxy('db')));
+        $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new SshJump('db', 22, 'u', self::KEY)));
     }
 
     public function testTheFinalTargetBehindAJumpIsTheJumpsBusiness(): void
@@ -223,7 +222,7 @@ final class TargetHostPolicyTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    private function withTransport(string $host, SshJump|Socks5Proxy $transport): ConnectionParameters
+    private function withTransport(string $host, SshJump $transport): ConnectionParameters
     {
         return new ConnectionParameters($host, 5432, 'shop', 'reader', 'secret', transport: $transport);
     }

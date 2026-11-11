@@ -99,7 +99,7 @@ final readonly class ConnectionParameters
     }
 
     /**
-     * Le premier saut que le serveur joint vraiment : le bastion ou le proxy s'il y en a un, sinon la base elle-même.
+     * Le premier saut que le serveur joint vraiment : le bastion s'il y en a un, sinon la base elle-même.
      *
      * @return array{string, int}
      */
@@ -161,9 +161,6 @@ final readonly class ConnectionParameters
             'ssh' => null !== $text('host') && null !== $number('port') && null !== $text('username') && null !== $text('privateKey')
                 ? new SshJump($text('host'), $number('port'), $text('username'), $text('privateKey'), $text('hostKeyFingerprint'))
                 : null,
-            'socks5' => null !== $text('host') && null !== $number('port')
-                ? new Socks5Proxy($text('host'), $number('port'), $text('username'), $text('password'))
-                : null,
             default => null,
         };
 
@@ -182,7 +179,7 @@ final readonly class ConnectionParameters
             'username' => $this->username,
             'address' => $this->address(),
             'password' => '***',
-            'transport' => null === $this->transport ? '' : \sprintf('%s %s:%d', $this->transport instanceof SshJump ? 'ssh' : 'socks5', $this->transport->host, $this->transport->port),
+            'transport' => null === $this->transport ? '' : \sprintf('ssh %s:%d', $this->transport->host, $this->transport->port),
         ];
     }
 
