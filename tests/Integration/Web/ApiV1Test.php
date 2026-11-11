@@ -549,6 +549,10 @@ final class ApiV1Test extends WebApiTestCase
         $locks = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/locks');
         self::assertSame(403, $this->statusCode());
         self::assertSame(['error' => 'permission_denied'], $locks);
+
+        $queries = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $queries);
     }
 
     #[DataProvider('targets')]
@@ -559,7 +563,10 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
-        self::assertSame(['sessions' => 'available', 'locks' => $locks], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+        self::assertSame(['sessions', 'locks', 'statements'], array_keys(self::arrayOf($capabilities['capabilities'])));
+        self::assertSame($locks, self::arrayOf(self::arrayOf($capabilities['capabilities'])['locks'])['availability']);
+        self::assertSame('available', self::arrayOf(self::arrayOf($capabilities['capabilities'])['sessions'])['availability']);
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => self::arrayOf(self::arrayOf($capabilities['capabilities'])['statements'])['availability']], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
@@ -618,5 +625,43 @@ final class ApiV1Test extends WebApiTestCase
         $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/locks');
 
         self::assertSame(404, $this->statusCode());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheCostliestQueries(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries?order=total_time&limit=3');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'order', 'digests'], array_keys($body));
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertNotEmpty($body['digests']);
+        self::assertLessThanOrEqual(3, \count(self::listOf($body['digests'])));
+    }
+
+    public function testTheQueriesRouteRefusesBadInputAndOtherConnections(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $bad = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries?limit=1000');
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $bad['error']);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/queries');
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testTheQueriesReadIsAuditedAsTheApiWithoutTheTexts(): void
+    {
+        $user = $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries');
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'top_queries' === ($e->getDetails()['topic'] ?? null)));
+        self::assertCount(1, $events);
+        self::assertSame('api', $events[0]->getActor()->value);
+        self::assertArrayNotHasKey('query', $events[0]->getDetails());
+        self::assertArrayNotHasKey('text', $events[0]->getDetails());
     }
 }

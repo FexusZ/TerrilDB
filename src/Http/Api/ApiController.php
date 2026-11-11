@@ -17,6 +17,7 @@ use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\DiagnosticsPresenter;
+use App\Http\Json\DigestQueryParam;
 use App\Http\Json\JsonInput;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
@@ -167,6 +168,19 @@ final readonly class ApiController
         $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
+
+    /**
+     * Les requêtes les plus coûteuses du serveur de la connexion, par empreinte : texte normalisé, jamais les valeurs.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/queries', requirements: self::ID, methods: ['GET'])]
+    public function queries(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $query = DigestQueryParam::fromQuery($request);
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+
+        return new JsonResponse(DiagnosticsPresenter::statements($report));
     }
 
     /**

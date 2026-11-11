@@ -13,6 +13,7 @@ use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Diagnostics\DigestQuery;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
@@ -149,6 +150,19 @@ final readonly class McpTools
             $this->request->get()->requireDiagnostic();
 
             return DiagnosticsPresenter::locks($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function topQueries(string $connection, ?string $order = null, ?int $limit = null): array
+    {
+        return $this->guard(function () use ($connection, $order, $limit): array {
+            $this->request->get()->requireDiagnostic();
+            $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit);
+
+            return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
         });
     }
 
