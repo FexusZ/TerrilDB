@@ -135,4 +135,10 @@ final class ClickHouseQueryRunnerTest extends TestCase
             self::assertStringNotContainsString('version', $e->getMessage());
         }
     }
+
+    public function testMeasuringIsNotSupported(): void
+    {
+        $this->expectException(\App\Core\Driver\Exception\UnsupportedOperationException::class);
+        $this->runner->run('SELECT 1', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 10, measure: true));
+    }
 }

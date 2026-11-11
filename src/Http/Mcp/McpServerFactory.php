@@ -71,6 +71,8 @@ final readonly class McpServerFactory
                         'sql' => ['type' => 'string', 'description' => 'Une instruction SQL de lecture, dans le dialecte du moteur de la connexion.'],
                         'maxRows' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000, 'description' => 'Nombre maximal de lignes rendues (1000 par défaut).'],
                         'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => 600000, 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
+                        'measure' => ['type' => 'boolean', 'description' => 'Facultatif (faux par défaut). Vrai : exécute la requête EN ENTIER (le LIMIT écrit dans le SQL reste respecté) sans renvoyer les lignes, et rend durationMs, totalRows et un aperçu des 100 premières lignes (maxRows est ignoré). Sert à juger du coût d’une requête ; la durée maximale (timeoutMs) s’applique. Non disponible pour ClickHouse ni Redis.'],
+                        'format' => ['type' => 'string', 'enum' => array_map(static fn (ResultFormat $format): string => $format->value, ResultFormat::cases()), 'description' => 'Facultatif. Absent : JSON indenté (et structuredContent). « csv » : en-tête puis une ligne par enregistrement, suivi d’un second bloc JSON compact (rowCount, truncated, durationMs) ; « json » : un seul JSON sans indentation. Les deux formats compacts évitent le doublon structuredContent et dépensent bien moins de jetons sur un résultat large.'],
                     ],
                     'required' => ['connection', 'sql'],
                     'additionalProperties' => false,

@@ -392,6 +392,89 @@ final class McpTest extends WebApiTestCase
         self::assertTrue($result['truncated']);
     }
 
+    public function testTheDefaultAnswerKeepsItsIndentedTextAndItsStructuredContent(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $result = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select id, name from categories order by id', 'maxRows' => 2]);
+
+        self::assertArrayHasKey('structuredContent', $result);
+        $text = self::obj(self::first($result['content']))['text'];
+        self::assertIsString($text);
+        self::assertStringContainsString("\n    ", $text);
+    }
+
+    public function testACsvAnswerIsCompactAndNotDoubledInStructuredContent(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $result = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select id, name from categories order by id', 'maxRows' => 2, 'format' => 'csv']);
+
+        self::assertArrayNotHasKey('structuredContent', $result);
+        $blocks = self::list($result['content']);
+        $csv = self::obj($blocks[0])['text'];
+        self::assertIsString($csv);
+        self::assertSame('id,name', explode("\r\n", $csv)[0]);
+        self::assertCount(3, explode("\r\n", rtrim($csv)));
+        $meta = json_decode(self::str(self::obj($blocks[1])['text']), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(2, self::obj($meta)['rowCount']);
+        self::assertTrue(self::obj($meta)['truncated']);
+    }
+
+    public function testACompactJsonAnswerHasNoIndentationAndNoStructuredContent(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $result = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select id, name from categories order by id', 'maxRows' => 2, 'format' => 'json']);
+
+        self::assertArrayNotHasKey('structuredContent', $result);
+        $text = self::str(self::obj(self::first($result['content']))['text']);
+        self::assertStringNotContainsString("\n", $text);
+        $decoded = self::textOf($result);
+        self::assertSame(['id', 'name'], $decoded['columns']);
+        self::assertSame(2, $decoded['rowCount']);
+    }
+
+    public function testAnUnknownFormatIsRefused(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $result = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select 1', 'format' => 'xml']);
+
+        self::assertArrayHasKey('error', $result);
+    }
+
+    public function testMeasureRunsTheWholeQueryAndReturnsOnlyAPreview(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $result = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select * from order_items', 'measure' => true]);
+
+        $data = self::textOf($result);
+        self::assertGreaterThan(5000, $data['totalRows']);
+        self::assertSame(100, $data['rowCount']);
+        self::assertIsInt($data['durationMs']);
+        self::assertTrue($data['truncated']);
+        self::assertCount(100, self::list($data['rows']));
+    }
+
+    public function testMeasureKeepsTheSqlLimitAndStaysReadOnly(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $limited = self::textOf($this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select * from order_items limit 250', 'measure' => true]));
+        self::assertSame(250, $limited['totalRows']);
+
+        $refused = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => "insert into categories (name) values ('sneaky')", 'measure' => true]);
+        self::assertTrue($refused['isError']);
+    }
+
     public function testAWriteIsRefusedAndExplained(): void
     {
         $this->prepare();

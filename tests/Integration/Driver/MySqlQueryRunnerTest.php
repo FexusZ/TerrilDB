@@ -255,4 +255,28 @@ final class MySqlQueryRunnerTest extends TestCase
         }
         self::assertSame([[0]], $this->read("select count(*) from categories where name = 'sneaky'")->rows);
     }
+
+    #[DataProvider('targets')]
+    public function testMeasuringReadsEveryRowButKeepsOnlyAPreview(string $envVar): void
+    {
+        $this->open($envVar);
+
+        $result = $this->runner->run('select * from order_items', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+        self::assertSame(100, $result->rowCount());
+        self::assertGreaterThan(5000, $result->totalRows);
+        self::assertTrue($result->truncated);
+
+        $limited = $this->runner->run('select * from order_items limit 250', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+        self::assertSame(250, $limited->totalRows);
+        self::assertNull($this->read('select * from order_items', 10)->totalRows);
+    }
+
+    #[DataProvider('targets')]
+    public function testMeasuringStillHonoursTheTimeout(string $envVar): void
+    {
+        $this->open($envVar);
+
+        $this->expectException(QueryTimeoutException::class);
+        $this->runner->run('select sum(a.id + b.id + c.id) from order_items a cross join order_items b cross join order_items c', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 300, 100, measure: true));
+    }
 }
