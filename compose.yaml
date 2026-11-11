@@ -48,7 +48,10 @@ services:
       interval: 3s
       retries: 20
 
-  # Bases cibles de test (profil "targets") : jeu de données ajouté dans un lot dédié
+  # Bases cibles de test (profil "targets"). MySQL et MariaDB ont chacun DEUX cibles : la série à support long, que
+  # des installations de production gardent des années, et la plus récente. Une version ne remplace pas l'autre ;
+  # tests/Integration/Driver/TargetVersionTest.php garde chaque série à sa place (Dependabot ne monte pas les majeures
+  # de ces images, voir .github/dependabot.yml : on change de série à la main, en connaissance de cause).
   target-mysql:
     profiles: [targets]
     image: mysql:8.4
@@ -61,13 +64,37 @@ services:
       interval: 3s
       retries: 40
 
+  target-mysql-26:
+    profiles: [targets]
+    image: mysql:26.10
+    env_file: docker/dev/target-mysql.env
+    ports: ["33063:3306"]
+    volumes:
+      - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      retries: 40
+
   target-mariadb:
     profiles: [targets]
-    image: mariadb:13.0
+    image: mariadb:11.8
     env_file: docker/dev/target-mariadb.env
     ports: ["33062:3306"]
     volumes:
       # même dialecte que MySQL pour ce jeu de données : scripts partagés
+      - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 40
+
+  target-mariadb-13:
+    profiles: [targets]
+    image: mariadb:13.0
+    env_file: docker/dev/target-mariadb.env
+    ports: ["33064:3306"]
+    volumes:
       - ./docker/targets/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]

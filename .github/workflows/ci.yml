@@ -149,7 +149,7 @@ jobs:
           sh docker/init-env.sh
           DC="env UID=$(id -u) GID=$(id -g) docker compose"
           # Les bases se téléchargent et s'initialisent (une trentaine de secondes) pendant que l'image PHP se construit.
-          $DC --profile targets up -d --wait db target-mysql target-mariadb target-postgres target-clickhouse target-redis &
+          $DC --profile targets up -d --wait db target-mysql target-mysql-26 target-mariadb target-mariadb-13 target-postgres target-clickhouse target-redis &
           bases=$!
           if [ -f "$RUNNER_TEMP/image-php.tar" ]; then
             docker load -i "$RUNNER_TEMP/image-php.tar"

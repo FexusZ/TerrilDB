@@ -138,7 +138,9 @@ final class TargetOpenerTest extends DatabaseTestCase
     public static function neighbours(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL', 'information_schema'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL', 'information_schema'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL', 'information_schema'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'information_schema'];
         yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL', 'system'];
     }
 

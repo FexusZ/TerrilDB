@@ -12,7 +12,7 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('integration')]
 final class TablesPageWebTest extends WebApiTestCase
 {
-    private const TARGETS = ['TARGET_MYSQL_URL', 'TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'];
+    private const TARGETS = ['TARGET_MYSQL_URL', 'TARGET_MYSQL26_URL', 'TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'];
 
     /** @var array<string, bool> */
     private static array $ready = [];
@@ -44,6 +44,7 @@ final class TablesPageWebTest extends WebApiTestCase
     public static function targets(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
         yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL'];
     }

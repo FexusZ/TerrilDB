@@ -370,7 +370,7 @@ Chaque job a un délai maximum (le déploiement occupe l'unique runner de produc
 ```bash
 sh docker/init-env.sh                                     # une fois : mots de passe locaux aléatoires (docker/dev/, ignoré)
 docker compose up -d db                                   # base interne
-docker compose --profile targets up -d                    # MySQL 8.4 / MariaDB 11.8 / PG 18 / ClickHouse / Redis de test
+docker compose --profile targets up -d                    # MySQL 8.4+26 / MariaDB 11.8+13 / PG 18 / ClickHouse / Redis de test
 R="docker compose run --rm --no-deps php"
 $R vendor/bin/phpunit                                     # tests
 $R vendor/bin/phpstan analyse --no-progress --memory-limit=512M   # analyse statique (niveau max)
@@ -398,11 +398,17 @@ persistance (`tests/Integration/Persistence`) tournent dans une transaction annu
 ## Bases cibles de test
 
 Scripts d'init déterministes (SQL pur, sans aléatoire) dans `docker/targets/` : `mysql/` (partagé par
-MySQL 8.4 et MariaDB 11.8, même dialecte), `postgres/` et `clickhouse/` (même jeu, tables MergeTree sans clés étrangères). Schéma `shop` : `categories` (auto-FK),
+MySQL 8.4 et 26, MariaDB 11.8 et 13, même dialecte), `postgres/` et `clickhouse/` (même jeu, tables MergeTree sans clés étrangères). Schéma `shop` : `categories` (auto-FK),
 `customers`, `products`, `orders`, `order_items` (11 420 lignes), index simples/composites/uniques et
 vues `v_order_totals`, `v_product_sales`. Les tests d'intégration lisent `TARGET_MYSQL_URL`,
-`TARGET_MARIADB_URL`, `TARGET_POSTGRES_URL`, `TARGET_CLICKHOUSE_URL`, `TARGET_REDIS_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
+`TARGET_MYSQL26_URL`, `TARGET_MARIADB_URL`, `TARGET_MARIADB13_URL`, `TARGET_POSTGRES_URL`, `TARGET_CLICKHOUSE_URL`, `TARGET_REDIS_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
 sautés si la base est injoignable. Un changement de script impose `down -v` pour être rejoué.
+MySQL et MariaDB ont DEUX cibles chacune (`target-mysql` 8.4 et `target-mysql-26`, `target-mariadb` 11.8 et `target-mariadb-13`) : la
+série à support long, que des installations gardent des années, et la plus récente ; une série ne remplace pas l'autre. Les tests
+par moteur (`TargetDatabase::all()`/`relational()`) les parcourent toutes, et `TargetVersionTest` garde chaque cible à sa série
+(`SELECT VERSION()`). Dependabot ignore les majeures de `mysql` et `mariadb` : changer de série se fait à la main. Le pilote est le
+même pour toutes les versions (un seul `MySqlDriver` ; les variantes se lisent à la forme des réponses, ex. plan JSON v1/v2) ;
+`docker/init-env.sh` complète un `docker/dev/php.env` existant avec les variables ajoutées depuis.
 
 ## Conventions PHP
 

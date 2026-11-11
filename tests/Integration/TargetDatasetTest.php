@@ -27,7 +27,9 @@ final class TargetDatasetTest extends TestCase
     public static function engines(): iterable
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
         yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
     }
 
