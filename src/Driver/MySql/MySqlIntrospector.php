@@ -11,6 +11,8 @@ use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsage;
+use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
@@ -20,6 +22,7 @@ use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 
 /**
  * Introspection de MySQL et MariaDB par information_schema, dans la base de la connexion. Les noms de tables
@@ -125,6 +128,42 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         }
 
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
+    }
+
+    /**
+     * Lectures par index depuis performance_schema (jamais sys, qui n'existe pas partout). La collecte part du démarrage du
+     * serveur (ou d'une remise à zéro de la table) : la durée donnée est l'uptime, jamais un faux « depuis toujours ». Éteint
+     * (MariaDB l'est par défaut), instrument coupé ou droit manquant : un état indisponible, pas une erreur.
+     */
+    public function indexUsage(): IndexUsageReport
+    {
+        try {
+            $enabled = $this->connection->fetchOne('SELECT @@performance_schema');
+            if (!\is_scalar($enabled) || 1 !== (int) $enabled) {
+                return IndexUsageReport::unavailable('performance_schema_off');
+            }
+            $instrument = $this->connection->fetchOne("SELECT ENABLED FROM performance_schema.setup_instruments WHERE NAME = 'wait/io/table/sql/handler'");
+            if ('YES' !== $instrument) {
+                return IndexUsageReport::unavailable('instrument_off');
+            }
+            $uptime = $this->connection->fetchAssociative("SHOW GLOBAL STATUS LIKE 'Uptime'");
+            $rows = $this->connection->fetchAllAssociative(
+                'SELECT OBJECT_NAME AS tbl, INDEX_NAME AS idx, COUNT_READ AS read_count
+                   FROM performance_schema.table_io_waits_summary_by_index_usage
+                  WHERE OBJECT_SCHEMA = DATABASE() AND INDEX_NAME IS NOT NULL
+                  ORDER BY OBJECT_NAME, INDEX_NAME',
+            );
+        } catch (DriverException $e) {
+            return IndexUsageReport::unavailable(\in_array($e->getCode(), [1044, 1142, 1143, 1227], true) ? 'permission_denied' : 'unreadable');
+        }
+
+        $usages = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $usages[] = new IndexUsage($row->string('tbl'), $row->string('idx'), $row->int('read_count'));
+        }
+
+        return IndexUsageReport::available(false === $uptime ? 0 : (new RowReader($uptime))->int('Value'), $usages);
     }
 
     public function describeTable(string $name): TableDefinition
