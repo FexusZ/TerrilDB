@@ -23,8 +23,7 @@ final class SchemaChangeService
     public function __construct(
         private readonly SchemaChangePlanner $planner = new SchemaChangePlanner(),
         private readonly BigTablePolicy $bigTables = new BigTablePolicy(),
-    )
-    {
+    ) {
     }
 
     /**

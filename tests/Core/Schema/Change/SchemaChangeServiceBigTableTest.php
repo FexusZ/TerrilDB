@@ -24,8 +24,13 @@ use PHPUnit\Framework\TestCase;
 
 final class SchemaChangeServiceBigTableTest extends TestCase
 {
-    /** @var list<string> */
-    private array $executed = [];
+    /** @var \ArrayObject<int, string> */
+    private \ArrayObject $executed;
+
+    protected function setUp(): void
+    {
+        $this->executed = new \ArrayObject();
+    }
 
     private function table(?int $rows): TableDefinition
     {
@@ -65,26 +70,26 @@ final class SchemaChangeServiceBigTableTest extends TestCase
             }
         };
         $ddl = new class($this->executed) implements DdlExecutor {
-            /** @param list<string> $log */
-            public function __construct(private array &$log)
+            /** @param \ArrayObject<int, string> $log */
+            public function __construct(private readonly \ArrayObject $log)
             {
             }
 
             public function execute(array $statements, bool $transactional): void
             {
                 foreach ($statements as $statement) {
-                    $this->log[] = $statement->sql;
+                    $this->log->append($statement->sql);
                 }
             }
         };
 
-        return new TargetConnection(Engine::PostgreSql, $introspector, new \App\Tests\Core\Schema\Change\NullRunner(), static function (): void {
+        return new TargetConnection(Engine::PostgreSql, $introspector, new NullRunner(), static function (): void {
         }, null, $ddl);
     }
 
     private function service(): SchemaChangeService
     {
-        return new SchemaChangeService(new \App\Core\Schema\Change\SchemaChangePlanner(), new BigTablePolicy(100, 1000));
+        return new SchemaChangeService(new SchemaChangePlanner(), new BigTablePolicy(100, 1000));
     }
 
     private function addColumn(): TableDraft
@@ -148,7 +153,7 @@ final class SchemaChangeServiceBigTableTest extends TestCase
         } catch (BigTableNeedsConfirmationException $e) {
             self::assertSame(5000, $e->assessment->estimatedRows);
         }
-        self::assertSame([], $this->executed);
+        self::assertCount(0, $this->executed);
     }
 
     public function testNameLevelRefusesAWrongName(): void
@@ -159,7 +164,7 @@ final class SchemaChangeServiceBigTableTest extends TestCase
         try {
             $this->service()->apply($this->target($table), 'events', $this->addColumn(), SchemaChangePlanner::fingerprint($table), true, 'Events');
         } finally {
-            self::assertSame([], $this->executed);
+            self::assertCount(0, $this->executed);
         }
     }
 

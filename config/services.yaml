@@ -19,6 +19,11 @@ parameters:
     env(TERRILDB_MAIL_FROM): ''
     env(TERRILDB_PUBLIC_URL): ''
 
+    # Grosse table : au-delà de ce nombre de lignes ESTIMÉES (jamais un COUNT), modifier la structure affiche un avertissement ;
+    # au-delà du second seuil il faut en plus retaper le nom de la table. 0 désactive le seuil.
+    env(TERRILDB_BIG_TABLE_WARN_ROWS): '100000'
+    env(TERRILDB_BIG_TABLE_CONFIRM_ROWS): '1000000'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -35,6 +40,11 @@ services:
             $from: '%env(TERRILDB_MAIL_FROM)%'
             $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
 
+    App\Core\Schema\Change\BigTablePolicy:
+        arguments:
+            $warnAt: '%env(int:TERRILDB_BIG_TABLE_WARN_ROWS)%'
+            $confirmAt: '%env(int:TERRILDB_BIG_TABLE_CONFIRM_ROWS)%'
+
     App\Http\Web\RegistrationPolicy:
         arguments:
             $mode: '%env(APP_REGISTRATION)%'
@@ -43,6 +53,10 @@ services:
     # please note that last definitions always *replace* previous ones
 
 when@test:
+    parameters:
+        # Seuils bas pour que les tests n'aient pas à remplir des centaines de milliers de lignes
+        env(TERRILDB_BIG_TABLE_WARN_ROWS): '10'
+        env(TERRILDB_BIG_TABLE_CONFIRM_ROWS): '100'
     services:
         # Aucun service n'injecte encore le coffre : sans cela le conteneur compilé retire l'alias.
         App\Crypto\SessionKeyVault:

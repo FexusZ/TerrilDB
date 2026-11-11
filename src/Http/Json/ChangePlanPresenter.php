@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\Core\Schema\Change\BigTableAssessment;
 use App\Core\Schema\Change\ChangePlan;
 use App\Core\Schema\Change\DdlStatement;
 
@@ -22,6 +23,14 @@ final class ChangePlanPresenter
             'transactional' => $plan->transactional,
             'destructive' => $plan->hasDestructive(),
         ];
+    }
+
+    /**
+     * @return array{level: string, estimatedRows: ?int, warnAt: int, confirmAt: int}
+     */
+    public static function bigTable(BigTableAssessment $assessment): array
+    {
+        return ['level' => $assessment->level->value, 'estimatedRows' => $assessment->estimatedRows, 'warnAt' => $assessment->warnAt, 'confirmAt' => $assessment->confirmAt];
     }
 
     /**
