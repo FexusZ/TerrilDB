@@ -20,7 +20,7 @@ const tree = useTreeStore()
 const table = ref<TableDetail | null>(null)
 const error = ref<string | null>(null)
 
-const KINDS = { table: 'table', view: 'vue', materialized_view: 'vue matérialisée' } as const
+const KINDS = { table: 'table', view: 'vue', materialized_view: 'vue matérialisée', sequence: 'séquence' } as const
 const rows = computed(() => (table.value === null || table.value.estimatedRows === null ? '' : `${formatEstimate(table.value.estimatedRows)} lignes`))
 
 const sizes = computed(() => {

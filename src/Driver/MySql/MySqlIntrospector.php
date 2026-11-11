@@ -159,7 +159,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 
     private static function kind(string $type): TableKind
     {
-        return 'VIEW' === $type ? TableKind::View : TableKind::Table;
+        return match ($type) {
+            'VIEW' => TableKind::View,
+            'SEQUENCE' => TableKind::Sequence,
+            default => TableKind::Table,
+        };
     }
 
     /**
