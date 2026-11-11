@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\Core\Diagnostics\BlockingNode;
 use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\LockReport;
+use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionReport;
 
@@ -46,6 +49,48 @@ final class DiagnosticsPresenter
                 'query' => $s->query,
                 'current' => $s->current,
             ], $report->sessions),
+        ];
+    }
+
+    /**
+     * Les transactions ouvertes et l'arbre « qui bloque qui » : chaque racine bloque sans attendre, ses enfants attendent après
+     * elle (durée, mode et objet de l'attente en face de chaque enfant). Rien ici n'est une instruction à exécuter.
+     *
+     * @return array<string, mixed>
+     */
+    public static function locks(LockReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'truncated' => $report->truncated,
+            'transactions' => array_map(static fn (OpenTransaction $t): array => [
+                'session' => $t->session,
+                'user' => $t->user,
+                'state' => $t->state,
+                'seconds' => $t->seconds,
+                'rowsLocked' => $t->rowsLocked,
+                'rowsModified' => $t->rowsModified,
+                'sleeping' => $t->sleeping,
+                'query' => $t->query,
+            ], $report->transactions),
+            'blocking' => array_map(self::node(...), $report->tree()),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function node(BlockingNode $node): array
+    {
+        return [
+            'id' => $node->party->id,
+            'user' => $node->party->user,
+            'query' => $node->party->query,
+            'seconds' => $node->seconds,
+            'kind' => $node->kind?->value,
+            'mode' => $node->mode,
+            'object' => $node->object,
+            'blocked' => array_map(self::node(...), $node->blocked),
         ];
     }
 }

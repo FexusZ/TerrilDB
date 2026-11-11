@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Audit;
 
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Driver\TargetConnection;
 use Symfony\Component\Uid\Uuid;
@@ -36,6 +37,26 @@ final readonly class AuditedDiagnostics
         }
 
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->sessions)]);
+
+        return $report;
+    }
+
+    /**
+     * @throws DiagnosticsFailedException
+     */
+    public function locks(AuditContext $context, Uuid $connectionId, TargetConnection $target): LockReport
+    {
+        $base = ['topic' => 'locks', 'engine' => $target->engine->value];
+
+        try {
+            $report = $target->diagnostics()->locks()->locks();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'transactions' => \count($report->transactions), 'waits' => \count($report->waits)]);
 
         return $report;
     }

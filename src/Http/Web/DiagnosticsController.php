@@ -43,4 +43,13 @@ final readonly class DiagnosticsController
 
         return new JsonResponse(DiagnosticsPresenter::sessions($report));
     }
+
+    #[Route('/web/connections/{id}/diagnostics/locks', requirements: self::ID, methods: ['GET'])]
+    public function locks(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->locks($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
 }
