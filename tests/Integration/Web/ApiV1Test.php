@@ -587,7 +587,7 @@ final class ApiV1Test extends WebApiTestCase
 
         $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
 
-        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic')));
+        $events = $this->auditEvents($user, 'diagnostic');
         self::assertCount(1, $events);
         self::assertSame('api', $events[0]->getActor()->value);
         self::assertSame($this->tokenId, $events[0]->getTokenId()?->toRfc4122());
