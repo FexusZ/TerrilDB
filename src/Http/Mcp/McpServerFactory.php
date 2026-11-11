@@ -115,6 +115,23 @@ final readonly class McpServerFactory
                 annotations: $readOnly,
                 inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
             );
+            $builder->addTool(
+                [$this->tools, 'listVariables'],
+                name: 'list_variables',
+                description: 'Liste les variables de configuration du serveur de la connexion : valeur courante, valeur par défaut quand le moteur la donne, écart au défaut (`changed`), origine de la valeur, redémarrage nécessaire. Lecture seule, rien n’est modifié ; la valeur d’une variable dont le nom évoque un secret n’est jamais donnée (`masked`). `search` = morceau de nom (sans casse), `changedOnly` = seulement celles qui diffèrent du défaut, `limit` de 1 à 500 (100 par défaut).',
+                annotations: $readOnly,
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'search' => ['type' => 'string', 'maxLength' => 64, 'description' => 'Morceau du nom de la variable, sans casse.'],
+                        'changedOnly' => ['type' => 'boolean', 'description' => 'Seulement les variables qui diffèrent du défaut.'],
+                        'limit' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 500, 'description' => 'Nombre maximal de variables (100 par défaut).'],
+                    ],
+                    'required' => ['connection'],
+                    'additionalProperties' => false,
+                ],
+            );
         }
 
         if ($writes) {

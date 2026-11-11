@@ -7,6 +7,8 @@ namespace App\Audit;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Diagnostics\VariableQuery;
+use App\Core\Diagnostics\VariableReport;
 use App\Core\Driver\TargetConnection;
 use Symfony\Component\Uid\Uuid;
 
@@ -57,6 +59,28 @@ final readonly class AuditedDiagnostics
         }
 
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'transactions' => \count($report->transactions), 'waits' => \count($report->waits)]);
+
+        return $report;
+    }
+
+    /**
+     * Ni les valeurs lues ni le texte cherché ne sont journalisés : seulement l'état, le nombre de lignes et le filtre « modifiées ».
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function variables(AuditContext $context, Uuid $connectionId, TargetConnection $target, VariableQuery $query): VariableReport
+    {
+        $base = ['topic' => 'variables', 'engine' => $target->engine->value, 'changedOnly' => $query->changedOnly];
+
+        try {
+            $report = $target->diagnostics()->variables()->variables($query);
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->variables)]);
 
         return $report;
     }

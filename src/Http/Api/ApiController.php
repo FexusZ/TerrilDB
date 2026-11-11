@@ -21,6 +21,7 @@ use App\Http\Json\JsonInput;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
+use App\Http\Json\VariableQueryParser;
 use App\Http\Web\TokenPresenter;
 use App\Http\Web\UserPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -167,6 +168,20 @@ final readonly class ApiController
         $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
+
+    /**
+     * Les variables de configuration du serveur de la connexion, en lecture seule : aucun SET, la valeur d'un secret jamais servie.
+     * Paramètres `q` (morceau de nom), `changed` (1 = seulement celles qui diffèrent du défaut), `limit` (1 à 500).
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/variables', requirements: self::ID, methods: ['GET'])]
+    public function variables(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $query = VariableQueryParser::fromRequest($request);
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+
+        return new JsonResponse(DiagnosticsPresenter::variables($report));
     }
 
     /**
