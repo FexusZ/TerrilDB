@@ -10,16 +10,78 @@ namespace App\Core\Guard;
  */
 final readonly class ScannedStatement
 {
+    /** Mots qui ouvrent une instruction : la tête d'un WITH est le premier d'entre eux hors de toute parenthèse. */
+    private const STATEMENT_VERBS = [
+        'SELECT', 'VALUES', 'TABLE', 'INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE', 'CALL', 'DO',
+        'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'EXISTS',
+        'CREATE', 'COMMENT', 'ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'REFRESH', 'CLUSTER', 'ATTACH',
+        'DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE',
+        'LOAD', 'COPY', 'SET', 'BEGIN', 'COMMIT', 'ROLLBACK', 'USE', 'LOCK', 'UNLOCK', 'FLUSH', 'KILL', 'SHUTDOWN',
+    ];
+
     /**
      * @param non-empty-list<string> $words
-     * @param list<int>              $depths profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
-     * @param list<string>           $called mots directement suivis d'une parenthèse ouvrante (appels de fonction)
+     * @param list<int>              $depths    profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
+     * @param list<string>           $called    mots directement suivis d'une parenthèse ouvrante (appels de fonction)
+     * @param list<bool>             $callFlags pour chaque mot : directement suivi d'une parenthèse ouvrante
      */
-    public function __construct(public array $words, private array $depths, private array $called = [])
+    public function __construct(public array $words, private array $depths, private array $called = [], private array $callFlags = [])
     {
         if (\count($depths) !== \count($words)) {
             throw new \InvalidArgumentException('Each word needs a depth.');
         }
+    }
+
+    /**
+     * Le mot à cette position est écrit comme un appel de fonction (« replace (a, b) »), pas comme un mot-clé.
+     */
+    public function isCallAt(int $index): bool
+    {
+        return $this->callFlags[$index] ?? false;
+    }
+
+    /**
+     * Le mot à cette position est un verbe d'écriture qui ouvre une instruction (ou une expression de table qui écrit) :
+     * ni la fonction « replace(…) », ni « FOR UPDATE », « ON DUPLICATE KEY UPDATE », « DO UPDATE » ou « ON DELETE CASCADE ».
+     */
+    public function isRowWriteAt(int $index): bool
+    {
+        $word = $this->words[$index];
+        if (!\in_array($word, ['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE'], true) || $this->isCallAt($index)) {
+            return false;
+        }
+        if (\in_array($word, ['UPDATE', 'DELETE'], true) && $index > 0) {
+            $sameGroup = ($this->depths[$index - 1] ?? -1) === $this->depths[$index];
+            if ($sameGroup && \in_array($this->words[$index - 1], ['ON', 'DO', 'KEY', 'FOR'], true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Pour une instruction qui commence par WITH : le mot qui ouvre l'instruction après les expressions de table
+     * (SELECT, UPDATE, DROP…), ou null s'il n'y en a pas. Les noms d'expression (suivis de AS ou d'une liste de colonnes)
+     * ne comptent pas, et ce qui est entre parenthèses est le corps des expressions.
+     */
+    public function withHead(): ?string
+    {
+        if ('WITH' !== $this->words[0]) {
+            return null;
+        }
+        for ($i = 1, $count = \count($this->words); $i < $count; ++$i) {
+            $word = $this->words[$i];
+            if (0 !== $this->depths[$i] || !\in_array($word, self::STATEMENT_VERBS, true)) {
+                continue;
+            }
+            $named = 'AS' === ($this->words[$i + 1] ?? '') || ($this->isCallAt($i) && !\in_array($word, ['SELECT', 'VALUES'], true));
+            if (!$named) {
+                return $word;
+            }
+        }
+
+        return null;
     }
 
     public function first(): string

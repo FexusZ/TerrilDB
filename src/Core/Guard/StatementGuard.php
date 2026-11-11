@@ -23,7 +23,6 @@ final class StatementGuard
     private const WRITE = ['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE', 'CALL', 'DO'];
     private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'REFRESH', 'CLUSTER', 'ATTACH'];
     private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE'];
-    private const WRITE_VERBS = ['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE'];
     // Lecture ou écriture de fichiers du serveur, contrôle du serveur, ouverture de connexions sortantes.
     private const DANGEROUS_FUNCTIONS = [
         'LOAD_FILE', 'PG_READ_FILE', 'PG_READ_BINARY_FILE', 'PG_LS_DIR', 'PG_STAT_FILE', 'LO_IMPORT', 'LO_EXPORT',
@@ -97,8 +96,31 @@ final class StatementGuard
     {
         $first = $statement->first();
 
+        if ('WITH' === $first) {
+            return $this->withKind($statement);
+        }
+
+        return $this->kindOfVerb($first, $statement);
+    }
+
+    /**
+     * Un WITH prend la nature de son instruction de tête (WITH … DROP est une structure, WITH … UPDATE une écriture) ;
+     * une expression de table qui écrit (PostgreSQL : WITH d AS (DELETE … RETURNING *) SELECT …) en fait une écriture.
+     */
+    private function withKind(ScannedStatement $statement): ?StatementKind
+    {
+        $head = $statement->withHead();
+        if (null === $head) {
+            return null;
+        }
+        $kind = $this->kindOfVerb($head, $statement);
+
+        return StatementKind::Read === $kind && $this->hasWriteVerb($statement) ? StatementKind::Write : $kind;
+    }
+
+    private function kindOfVerb(string $first, ScannedStatement $statement): ?StatementKind
+    {
         return match (true) {
-            'WITH' === $first => $this->hasWriteVerb($statement) ? StatementKind::Write : StatementKind::Read,
             'EXPLAIN' === $first => ($statement->has('ANALYZE') || $statement->has('ANALYSE')) && $this->hasWriteVerb($statement) ? StatementKind::Write : StatementKind::Inspect,
             \in_array($first, self::READ, true) => StatementKind::Read,
             \in_array($first, self::INSPECT, true) => StatementKind::Inspect,
@@ -124,8 +146,8 @@ final class StatementGuard
 
     private function hasWriteVerb(ScannedStatement $statement): bool
     {
-        foreach (self::WRITE_VERBS as $verb) {
-            if ($statement->has($verb)) {
+        foreach (array_keys($statement->words) as $index) {
+            if ($statement->isRowWriteAt($index)) {
                 return true;
             }
         }
@@ -147,7 +169,8 @@ final class StatementGuard
 
     private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes): GuardVerdict
     {
-        $first = $statement->first();
+        // Derrière un WITH, c'est l'instruction de tête qui compte (WITH … DROP TABLE se juge comme DROP TABLE).
+        $first = $statement->withHead() ?? $statement->first();
 
         // Un refus faute de droit est définitif et passe avant toute demande de confirmation. CALL et DO exécutent du
         // code opaque : ils exigent le droit sur la structure, le plus large.

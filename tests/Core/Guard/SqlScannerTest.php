@@ -234,4 +234,33 @@ final class SqlScannerTest extends TestCase
 
         self::assertTrue($statements[1]->hasTopLevel('DELETE'));
     }
+
+    #[DataProvider('dialects')]
+    public function testTellsAFunctionCallFromTheSameWordUsedAsAKeyword(SqlDialect $dialect): void
+    {
+        $statement = (new SqlScanner())->scan("with x as (select 1) select replace(a, 'b', 'c') from t; replace into t values (1)", $dialect)->statements;
+
+        $words = $statement[0]->words;
+        $replace = array_search('REPLACE', $words, true);
+        self::assertIsInt($replace);
+        self::assertTrue($statement[0]->isCallAt($replace));
+        self::assertFalse($statement[0]->isCallAt((int) array_search('FROM', $words, true)));
+        self::assertFalse($statement[1]->isCallAt(0));
+    }
+
+    #[DataProvider('dialects')]
+    public function testFindsTheVerbThatEndsTheCommonTableExpressions(SqlDialect $dialect): void
+    {
+        $head = static fn (string $sql): ?string => (new SqlScanner())->scan($sql, $dialect)->statements[0]->withHead();
+
+        self::assertSame('SELECT', $head('with x as (select 1), y(a) as (select 2) select * from x'));
+        self::assertSame('SELECT', $head('with recursive n(i) as (select 1 union all select i + 1 from n) select i from n'));
+        // Une tête entre parenthèses n'est pas reconnue : le garde la refuse par prudence.
+        self::assertNull($head('with x as (select 1) (select 2)'));
+        self::assertSame('UPDATE', $head('with x as (select 1) update t set a = 1'));
+        self::assertSame('DROP', $head('with x as (select 1) drop table t'));
+        self::assertSame('DELETE', $head('with x as (select 1) delete from t'));
+        self::assertNull($head('with x as (select 1)'));
+        self::assertNull($head('select 1'));
+    }
 }

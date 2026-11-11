@@ -29,13 +29,6 @@ final class StatementGuardCorpusTest extends TestCase
      * @var array<string, string> instruction => famille
      */
     private const PENDING = [
-        'WITH x AS (SELECT 1) DROP TABLE t' => 'tête',
-        'WITH x AS (SELECT 1) TRUNCATE t' => 'tête',
-        'WITH x AS (SELECT 1) GRANT ALL ON t TO u' => 'tête',
-        'WITH x AS (SELECT 1) SELECT * FROM x FOR UPDATE' => 'tête',
-        "WITH x AS (SELECT 1) SELECT replace(a, 'b', 'c') FROM t" => 'tête',
-        "WITH x AS (SELECT 1) SELECT REPLACE (a, 'b', 'c') FROM t" => 'tête',
-        "WITH x AS (SELECT 1) SELECT insert('abc', 1, 1, 'x') FROM t" => 'tête',
         'WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d' => 'cte',
         'WITH u AS (UPDATE t SET a = 1 RETURNING *) SELECT * FROM u' => 'cte',
         'WITH d AS (DELETE FROM t WHERE id = 3 RETURNING *), e AS (DELETE FROM u RETURNING *) SELECT 1' => 'cte',
@@ -320,9 +313,9 @@ final class StatementGuardCorpusTest extends TestCase
         $verdict = (new StatementGuard())->check($sql, $engine, $mode);
 
         $actual = match ($verdict->decision) {
-            Decision::Allowed => 'allow:'.($verdict->kind?->name ?? ''),
-            Decision::NeedsConfirmation => 'confirm:'.($verdict->reason?->name ?? ''),
-            Decision::Refused => 'refuse:'.($verdict->reason?->name ?? ''),
+            Decision::Allowed => 'allow:'.(string) $verdict->kind?->name,
+            Decision::NeedsConfirmation => 'confirm:'.(string) $verdict->reason?->name,
+            Decision::Refused => 'refuse:'.(string) $verdict->reason?->name,
         };
 
         self::assertSame($expected, $actual, $sql);

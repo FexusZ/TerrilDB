@@ -33,6 +33,7 @@ final class SqlScanner
         $depth = 0;
         $complete = true;
         $called = [];
+        $callFlags = [];
         $executableComment = false;
         $separators = [];
         $separatorInExecutableComment = false;
@@ -50,7 +51,7 @@ final class SqlScanner
             } elseif (';' === $char) {
                 $separators[] = $i;
                 $separatorInExecutableComment = $separatorInExecutableComment || $executableComment;
-                $this->flush($words, $depths, $called, $statements);
+                $this->flush($words, $depths, $called, $callFlags, $statements);
                 $depth = 0;
                 ++$i;
             } elseif ('(' === $char) {
@@ -114,7 +115,9 @@ final class SqlScanner
                 } else {
                     $words[] = strtoupper($word);
                     $depths[] = $depth;
-                    if ('(' === $this->nextNonSpace($sql, $i)) {
+                    $isCall = '(' === $this->nextNonSpace($sql, $i);
+                    $callFlags[] = $isCall;
+                    if ($isCall) {
                         $called[] = strtoupper($word);
                     }
                 }
@@ -127,7 +130,7 @@ final class SqlScanner
             }
         }
 
-        $this->flush($words, $depths, $called, $statements);
+        $this->flush($words, $depths, $called, $callFlags, $statements);
 
         return new ScannedSql($statements, $complete, $separators, $separatorInExecutableComment);
     }
@@ -136,16 +139,18 @@ final class SqlScanner
      * @param list<string>           $words
      * @param list<int>              $depths
      * @param list<string>           $called
+     * @param list<bool>             $callFlags
      * @param list<ScannedStatement> $statements
      */
-    private function flush(array &$words, array &$depths, array &$called, array &$statements): void
+    private function flush(array &$words, array &$depths, array &$called, array &$callFlags, array &$statements): void
     {
         if ([] !== $words) {
-            $statements[] = new ScannedStatement($words, $depths, $called);
+            $statements[] = new ScannedStatement($words, $depths, $called, $callFlags);
         }
         $words = [];
         $depths = [];
         $called = [];
+        $callFlags = [];
     }
 
     private function nextNonSpace(string $sql, int $from): string
