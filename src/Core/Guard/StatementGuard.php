@@ -28,6 +28,11 @@ final class StatementGuard
         'LOAD_FILE', 'PG_READ_FILE', 'PG_READ_BINARY_FILE', 'PG_LS_DIR', 'PG_STAT_FILE', 'LO_IMPORT', 'LO_EXPORT',
         'PG_TERMINATE_BACKEND', 'PG_CANCEL_BACKEND', 'PG_RELOAD_CONF', 'PG_ROTATE_LOGFILE', 'SET_CONFIG',
     ];
+    // Verrous qui survivent à l'instruction (consultatifs, nommés) : ils bloquent d'autres sessions et ne servent à rien dans
+    // une exécution isolée. Refusés dans les deux modes. Les pauses (SLEEP, pg_sleep, BENCHMARK) restent permises : le délai du
+    // moteur les interrompt. IS_FREE_LOCK / IS_USED_LOCK ne font que lire.
+    private const LOCK_FUNCTIONS = ['GET_LOCK', 'RELEASE_LOCK', 'RELEASE_ALL_LOCKS'];
+    private const LOCK_FUNCTION_PREFIXES = ['PG_ADVISORY_', 'PG_TRY_ADVISORY_'];
     // Fonctions de table ClickHouse qui lisent des fichiers du serveur ou ouvrent des connexions sortantes : elles ne
     // sont refusées que lorsqu'elles sont appelées (« file(…) »), une colonne nommée « file » reste lisible.
     private const CLICKHOUSE_TABLE_FUNCTIONS = [
@@ -172,6 +177,11 @@ final class StatementGuard
         // Derrière un WITH, c'est l'instruction de tête qui compte (WITH … DROP TABLE se juge comme DROP TABLE).
         $first = $statement->withHead() ?? $statement->first();
 
+        // Mêmes refus définitifs qu'en lecture seule : fichiers du serveur, contrôle du serveur, verrous durables.
+        if ($this->usesDangerousFunction($statement)) {
+            return GuardVerdict::refused(GuardReason::ForbiddenConstruct, $kind);
+        }
+
         // Un refus faute de droit est définitif et passe avant toute demande de confirmation. CALL et DO exécutent du
         // code opaque : ils exigent le droit sur la structure, le plus large.
         $opaque = \in_array($first, ['CALL', 'DO'], true);
@@ -215,8 +225,13 @@ final class StatementGuard
     private function usesDangerousFunction(ScannedStatement $statement): bool
     {
         foreach ($statement->words as $word) {
-            if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {
+            if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || \in_array($word, self::LOCK_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {
                 return true;
+            }
+            foreach (self::LOCK_FUNCTION_PREFIXES as $prefix) {
+                if (str_starts_with($word, $prefix)) {
+                    return true;
+                }
             }
         }
 

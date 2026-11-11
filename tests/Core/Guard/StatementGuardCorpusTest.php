@@ -29,21 +29,8 @@ final class StatementGuardCorpusTest extends TestCase
      * @var array<string, string> instruction => famille
      */
     private const PENDING = [
-        "SELECT GET_LOCK('x', 10)" => 'verrous',
-        "SELECT RELEASE_LOCK('x')" => 'verrous',
-        'SELECT RELEASE_ALL_LOCKS()' => 'verrous',
-        'SELECT pg_advisory_lock(1)' => 'verrous',
-        'SELECT pg_try_advisory_lock(1)' => 'verrous',
-        'SELECT pg_advisory_xact_lock(1, 2)' => 'verrous',
-        'SELECT pg_advisory_unlock(1)' => 'verrous',
-        'SELECT pg_advisory_unlock_all()' => 'verrous',
-        'SELECT pg_advisory_lock_shared(1)' => 'verrous',
         "SELECT nextval('s')" => 'séquences',
         "SELECT setval('s', 10)" => 'séquences',
-        "SELECT set_config('a.b', 'c', false)" => 'dangereuses',
-        "SELECT load_file('/etc/passwd')" => 'dangereuses',
-        "SELECT pg_read_file('/etc/passwd')" => 'dangereuses',
-        'SELECT pg_terminate_backend(1)' => 'dangereuses',
         'CREATE OR REPLACE TABLE t (a INT)' => 'structure',
         'CREATE OR REPLACE VIEW v AS SELECT 1' => 'structure',
         'OPTIMIZE TABLE t' => 'structure',
