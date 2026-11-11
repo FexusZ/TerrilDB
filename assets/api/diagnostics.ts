@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DiagnosticStatus, SessionReport } from './types'
+import type { DiagnosticStatus, LockReport, SessionReport } from './types'
 
 export interface DiagnosticScope {
   database: string | null
@@ -24,3 +24,6 @@ export async function fetchDiagnosticCapabilities(id: string, scope: DiagnosticS
 /** Les sessions en cours sur le serveur, avec l'état de la source (droits manquants, non pris en charge…). */
 export const fetchSessions = (id: string, scope: DiagnosticScope): Promise<SessionReport> =>
   api<SessionReport>('GET', `/web/connections/${id}/diagnostics/sessions${suffix(scope)}`)
+
+/** Transactions ouvertes et arbre « qui bloque qui » : lecture seule, rien n'est arrêté. */
+export const fetchLocks = (id: string, scope: DiagnosticScope): Promise<LockReport> => api<LockReport>('GET', `/web/connections/${id}/diagnostics/locks${suffix(scope)}`)

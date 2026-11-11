@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './client'
-import { fetchDiagnosticCapabilities, fetchSessions } from './diagnostics'
+import { fetchDiagnosticCapabilities, fetchLocks, fetchSessions } from './diagnostics'
 
 vi.mock('./client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./client')>()), api: vi.fn() }))
 
@@ -33,5 +33,14 @@ describe('diagnostics API', () => {
     await fetchSessions('abc', { database: 'my db', schema: 'a&b' })
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/sessions?database=my%20db&schema=a%26b')
+  })
+
+  it('reads the locks of the explored database', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, transactions: [], blocking: [] })
+
+    const report = await fetchLocks('abc', { database: 'shop', schema: 'public' })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/locks?database=shop&schema=public')
+    expect(report.blocking).toEqual([])
   })
 })
