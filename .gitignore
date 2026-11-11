@@ -39,3 +39,6 @@ node_modules/
 ###> docker ###
 /docker/dev/
 ###< docker ###
+
+# Réglages propres à la machine (par exemple pour ouvrir les ports de développement au réseau)
+compose.override.yaml
