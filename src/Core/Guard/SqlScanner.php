@@ -34,6 +34,8 @@ final class SqlScanner
         $complete = true;
         $called = [];
         $executableComment = false;
+        $separators = [];
+        $separatorInExecutableComment = false;
         $i = 0;
 
         while ($i < $length) {
@@ -46,6 +48,8 @@ final class SqlScanner
             } elseif (ctype_space($char)) {
                 ++$i;
             } elseif (';' === $char) {
+                $separators[] = $i;
+                $separatorInExecutableComment = $separatorInExecutableComment || $executableComment;
                 $this->flush($words, $depths, $called, $statements);
                 $depth = 0;
                 ++$i;
@@ -125,7 +129,7 @@ final class SqlScanner
 
         $this->flush($words, $depths, $called, $statements);
 
-        return new ScannedSql($statements, $complete);
+        return new ScannedSql($statements, $complete, $separators, $separatorInExecutableComment);
     }
 
     /**

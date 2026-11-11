@@ -12,8 +12,10 @@ final readonly class ScannedSql
 {
     /**
      * @param list<ScannedStatement> $statements
+     * @param list<int>              $separators                   positions (octets) des points-virgules qui séparent des instructions
+     * @param bool                   $separatorInExecutableComment un point-virgule se trouve dans un commentaire que MySQL exécute
      */
-    public function __construct(public array $statements, public bool $complete)
+    public function __construct(public array $statements, public bool $complete, public array $separators = [], public bool $separatorInExecutableComment = false)
     {
     }
 }
