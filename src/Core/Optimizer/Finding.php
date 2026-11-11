@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Optimizer;
 
 /**
- * Un constat de l'audit : une règle, la table concernée, et le détail. `suggestion` est une instruction SQL à relire
+ * Un constat de l'audit : une règle, la table concernée, et le détail. `detail` précise le constat quand le nom des colonnes ne suffit pas (types en cause). `suggestion` est une instruction SQL à relire
  * puis lancer soi-même : TerrilDB ne modifie jamais une base cible de sa propre initiative.
  */
 final readonly class Finding
@@ -21,6 +21,7 @@ final readonly class Finding
         public ?string $index = null,
         public ?string $coveredBy = null,
         public ?string $suggestion = null,
+        public ?string $detail = null,
     ) {
     }
 }

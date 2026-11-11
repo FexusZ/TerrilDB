@@ -225,7 +225,7 @@ Cible de test `target-redis` (`TARGET_REDIS_URL`, base 15, hôte 63791) : `Redis
 
 Sans PMM ni service externe : tout part de l'introspection et de `EXPLAIN`. `SchemaAuditor` (règles pures : table sans
 clé primaire, clé étrangère sans index couvrant — colonnes en tête de l'index, ordre indifférent —, index redondant ;
-jamais un index unique) rend des `Finding` avec une suggestion SQL à relire, jamais exécutée par TerrilDB
+jamais un index unique ; clé étrangère dont la colonne doit être CONVERTIE pour être comparée à la colonne référencée, donc sans usage de son index : PostgreSQL seulement, entier vers numeric ou flottant, char(n) vers text — entier vers bigint ou varchar vers text gardent l'index et ne sont pas signalés, mesuré) rend des `Finding` avec une suggestion SQL à relire, jamais exécutée par TerrilDB
 (`GET /web/connections/{id}/audit`, 300 tables au plus). `PlanService` ne construit l'EXPLAIN que d'une lecture simple
 (garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB / ClickHouse (`PostgreSqlPlanParser`, `MySqlPlanParser`, `ClickHousePlanParser`, fixtures
 réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
