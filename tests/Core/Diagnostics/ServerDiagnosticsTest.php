@@ -11,6 +11,9 @@ use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Diagnostics\VariableDiagnostics;
+use App\Core\Diagnostics\VariableQuery;
+use App\Core\Diagnostics\VariableReport;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use PHPUnit\Framework\TestCase;
 
@@ -44,7 +47,7 @@ final class ServerDiagnosticsTest extends TestCase
     {
         $diagnostics = new ServerDiagnostics(Engine::Redis);
 
-        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
+        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'variables' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
     }
 
     public function testCapabilitiesAskTheThemeForItsStatus(): void
@@ -86,5 +89,28 @@ final class ServerDiagnosticsTest extends TestCase
         self::assertSame('disabled', $diagnostics->capabilities()['locks']->availability->value);
         $this->expectException(UnsupportedOperationException::class);
         (new ServerDiagnostics(Engine::ClickHouse))->locks();
+    }
+
+    public function testVariablesAreServedOrUnsupported(): void
+    {
+        $variables = new class implements VariableDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::disabled('performance_schema_off');
+            }
+
+            public function variables(VariableQuery $query): VariableReport
+            {
+                return new VariableReport(DiagnosticStatus::available(), [], false);
+            }
+        };
+
+        $diagnostics = new ServerDiagnostics(Engine::MySql, variables: $variables);
+
+        self::assertSame($variables, $diagnostics->variables());
+        self::assertSame('performance_schema_off', $diagnostics->capabilities()['variables']->reason);
+
+        $this->expectException(UnsupportedOperationException::class);
+        (new ServerDiagnostics(Engine::Redis))->variables();
     }
 }
