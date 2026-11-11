@@ -320,6 +320,40 @@ final class McpTest extends WebApiTestCase
         self::assertStringContainsString('write_not_permitted', self::str(self::obj(self::first($schema['content']))['text']));
     }
 
+    public function testATokenWithoutTheDiagnosticRightDoesNotSeeTheSessionsTool(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'createConnections' => true]);
+        $this->initialize();
+        self::assertNotContains('list_sessions', $this->toolNames());
+        $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
+        self::assertArrayNotHasKey('structuredContent', $refused);
+    }
+
+    public function testATokenWithTheDiagnosticRightSeesTheSessionsTool(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_sessions', $this->toolNames());
+    }
+
+    public function testListsTheSessionsThroughMcpWithoutWriting(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        $report = self::textOf($this->callTool('list_sessions', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertNotEmpty($report['sessions']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_sessions', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+        self::assertStringContainsString('not_found', self::str(self::obj(self::first($other['content']))['text']));
+    }
+
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void
     {
         $this->prepare();

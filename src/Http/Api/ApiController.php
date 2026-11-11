@@ -6,6 +6,7 @@ namespace App\Http\Api;
 
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
+use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
@@ -15,6 +16,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
+use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\JsonInput;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
@@ -41,6 +43,7 @@ final readonly class ApiController
         private TargetSession $targets,
         private AuditedQueries $queries,
         private TokenConnections $created,
+        private AuditedDiagnostics $diagnostics,
     ) {
     }
 
@@ -128,6 +131,30 @@ final readonly class ApiController
         $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options, $confirmed));
 
         return new JsonResponse(ResultPresenter::present($result));
+    }
+
+    /**
+     * Ce que chaque source de supervision peut lire pour cette connexion. Réservé aux jetons qui ont le droit `diagnostic`.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics', requirements: self::ID, methods: ['GET'])]
+    public function diagnostics(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $capabilities = $this->open($id, static fn (TargetConnection $target): array => $target->diagnostics()->capabilities());
+
+        return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
+    }
+
+    /**
+     * Les sessions en cours sur le serveur de la connexion, en lecture seule, textes de requêtes raccourcis.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]
+    public function sessions(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::sessions($report));
     }
 
     /**
