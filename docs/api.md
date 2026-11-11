@@ -19,9 +19,10 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
 | POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` |
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
-| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` et `capabilities.locks` = `{availability, reason, privilege}` |
+| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions`, `.locks` et `.variables` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
+| GET | `/api/v1/connections/{id}/diagnostics/variables` | (droit `diagnostic`) variables de configuration, lecture seule : `q` (morceau de nom), `changed=1`, `limit` (1 à 500, 100 par défaut) |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -68,6 +69,17 @@ DDL), `mode` et `object` tels que le moteur les nomme. Aucune instruction d'arr�
 vide) se distingue de « non lisible » (`permission_denied`, `disabled` avec `reason: performance_schema_off`). MariaDB ne rapporte que les verrous de
 lignes (ses verrous de métadonnées demandent `performance_schema`, éteint par défaut) ; ClickHouse et Redis : `unsupported`, route 501.
 
+**Variables** (`/diagnostics/variables`) : `variables` classées par nom (à l'octet) avec `value`, `default` (quand le moteur le donne), `changed`
+(diffère du défaut), `source` (origine de la valeur telle que le moteur la dit), `restart` (`required` : le serveur ne la relit qu'au démarrage ;
+`pending` : valeur posée mais pas encore prise ; absent = le moteur ne le dit pas), `scope`, `unit`. Le nom cherché (`q`) est un paramètre lié, sans
+casse, `_` et `%` littéraux ; hors bornes ou valeur illisible : 422 `invalid_input`. **Un nom qui évoque un mot de passe, un secret, un jeton ou une
+clé (liste fermée) est rendu `masked: true` avec `value` et `default` nuls**, quel que soit le moteur. « Diffère du défaut » : MariaDB = origine autre que
+`COMPILE-TIME` ; MySQL (qui ne donne pas de défaut, `default` nul) = origine de `variables_info` autre que `COMPILED` ; PostgreSQL = origine autre que
+`default`/`override` (`boot_val` n'est qu'un repère) ; ClickHouse = `changed` de `system.settings` / `system.server_settings` (portées `session` et
+`server` ; la lecture en `readonly=1` de TerrilDB y compte elle-même). MySQL : `performance_schema` éteint = `disabled`. ClickHouse : droit
+`SELECT ON system.server_settings`. Redis : `unsupported` (501). Rien n'est modifié (ni `SET`, ni `SET PERSIST`) ; l'audit note le thème, l'état, le
+nombre de lignes et le filtre « modifiées », jamais une valeur ni le nom cherché.
+
 Compte de supervision minimal à donner à la connexion (documenté, pas imposé : sans le droit, l'état le dit) :
 
 | Moteur | Source | Droit |
@@ -76,6 +88,9 @@ Compte de supervision minimal à donner à la connexion (documenté, pas imposé
 | PostgreSQL | `pg_stat_activity` | rôle `pg_monitor` ou `pg_read_all_stats` |
 | ClickHouse | `system.processes` | `SELECT ON system.processes` |
 | Redis | – | non pris en charge |
+
+Variables : MySQL et MariaDB, aucun droit particulier (`SELECT` sur `performance_schema` implicite pour MySQL) ; PostgreSQL, lisible par tout compte, mais les
+valeurs réservées (chemins, commandes) ne sont lues qu'avec `pg_read_all_settings` (inclus dans `pg_monitor`) ; ClickHouse `SELECT ON system.server_settings`.
 
 Verrous et transactions : MySQL `PROCESS` + `SELECT` sur `performance_schema` + `SELECT` et `EXECUTE` sur `sys` (verrous de métadonnées) ; MariaDB `PROCESS` ;
 PostgreSQL `pg_monitor` ; ClickHouse et Redis, sans objet.
