@@ -34,6 +34,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     {
     }
 
+    private const COMPRESSED = '~\s*/\*M?!\d+\s+COMPRESSED(?:=\w+)?\s*\*/~i';
+
     private const SYSTEM_DATABASES = ['information_schema', 'mysql', 'performance_schema', 'sys'];
 
     public function listDatabases(): array
@@ -181,9 +183,12 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             $row = new RowReader($row);
             $nullable = $row->bool('nullable');
             $default = $row->nullableString('col_default');
+            // MariaDB écrit la compression en commentaire exécutable dans le type : on la lit à part.
+            $type = $row->string('type');
+            $compressed = 1 === preg_match(self::COMPRESSED, $type);
             $columns[] = new ColumnDefinition(
                 $row->string('name'),
-                $row->string('type'),
+                $compressed ? trim((string) preg_replace(self::COMPRESSED, '', $type)) : $type,
                 $nullable,
                 // MariaDB écrit le littéral NULL pour « pas de défaut » sur une colonne nullable.
                 $nullable && 'NULL' === $default ? null : $default,
@@ -191,6 +196,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 $row->nullableString('comment'),
                 str_contains($row->string('extra'), 'INVISIBLE'),
                 1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
+                $compressed,
             );
         }
 

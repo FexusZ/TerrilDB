@@ -111,6 +111,17 @@ final class MySqlDdlDialectTest extends TestCase
         );
     }
 
+    public function testModifyingACompressedColumnRestatesItAsCompressed(): void
+    {
+        $before = new ColumnDefinition('payload', 'text', true, null, false, null, false, null, true);
+        $after = new ColumnDraft('payload', 'payload', 'text', false, null, false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `payload` text COMPRESSED NOT NULL'],
+            self::sql([new ModifyColumn($before, $after, false, true, false, false)]),
+        );
+    }
+
     public function testPrimaryKey(): void
     {
         $old = new IndexDefinition('PRIMARY', ['id'], true, true);
