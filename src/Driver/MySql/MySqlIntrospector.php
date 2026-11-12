@@ -237,27 +237,56 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     }
 
     /**
+     * Les colonnes de information_schema.STATISTICS selon la version : MySQL 8 a IS_VISIBLE et EXPRESSION, MariaDB a IGNORED.
+     *
+     * @return array<string, true>
+     */
+    private function statisticsColumns(): array
+    {
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'STATISTICS'",
+        );
+
+        $available = [];
+        foreach ($names as $name) {
+            $available[strtoupper((new RowReader(['name' => $name]))->string('name'))] = true;
+        }
+
+        return $available;
+    }
+
+    /**
      * @return list<IndexDefinition>
      */
     private function indexes(string $table): array
     {
+        $available = $this->statisticsColumns();
+        $hidden = match (true) {
+            isset($available['IS_VISIBLE']) => "IS_VISIBLE = 'NO'",
+            isset($available['IGNORED']) => "IGNORED = 'YES'",
+            default => '0',
+        };
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col
+            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col, ('.$hidden.') AS hidden
                FROM information_schema.STATISTICS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY INDEX_NAME, SEQ_IN_INDEX',
             [$table],
         );
 
-        /** @var array<string, array{unique: bool, columns: list<string>}> $grouped */
+        /** @var array<string, array{unique: bool, columns: list<string>, lock: ?LockReason}> $grouped */
         $grouped = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $name = $row->string('name');
-            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => []];
+            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => [], 'lock' => null];
             $column = $row->nullableString('col');
             if (null !== $column) {
                 $grouped[$name]['columns'][] = $column;
+            }
+            if ($row->bool('hidden')) {
+                // MySQL : INVISIBLE ; MariaDB : IGNORED. Recréer l'index le rendrait de nouveau actif.
+                $grouped[$name]['lock'] = isset($available['IS_VISIBLE']) ? LockReason::IndexInvisible : LockReason::IndexIgnored;
             }
         }
 
@@ -268,7 +297,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 continue;
             }
             // La clé primaire InnoDB est la table elle-même : sa place est déjà dans les données.
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null));
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null), $index['lock']);
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 
