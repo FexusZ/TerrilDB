@@ -67,7 +67,7 @@ final readonly class PostgreSqlLockDiagnostics implements LockDiagnostics
                         b.pid::text AS blocking, b.usename AS blocking_user, LEFT(b.query, 4096) AS blocking_query,
                         EXTRACT(EPOCH FROM (now() - COALESCE(a.state_change, a.query_start)))::bigint AS seconds,
                         l.mode, COALESCE(l.rel::regclass::text, l.locktype) AS object
-                   FROM pg_stat_activity a
+                   FROM (SELECT * FROM pg_stat_activity WHERE wait_event_type = 'Lock') a
                   CROSS JOIN LATERAL unnest(pg_blocking_pids(a.pid)) AS bp(pid)
                    JOIN pg_stat_activity b ON b.pid = bp.pid
                    LEFT JOIN LATERAL (
