@@ -229,29 +229,58 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
     private function indexes(int $oid): array
     {
         // indnkeyatts exclut les colonnes INCLUDE ; pg_get_indexdef(…, n, true) rend la colonne ou le texte de l'expression.
+        // Les particularités que le modèle ne sait pas redire sont lues ici (indices des vecteurs indkey/indclass/indcollation/indoption
+        // : base zéro) ; indnullsnotdistinct n'existe qu'à partir de PostgreSQL 15, d'où to_jsonb.
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT ic.relname AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
-                    pg_get_indexdef(i.indexrelid, k.n, true) AS col, pg_relation_size(i.indexrelid) AS size
+            "SELECT ic.relname AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
+                    pg_get_indexdef(i.indexrelid, k.n, true) AS col, pg_relation_size(i.indexrelid) AS size,
+                    am.amname AS method, (i.indpred IS NOT NULL) AS is_partial, (i.indnatts > i.indnkeyatts) AS has_include,
+                    COALESCE((to_jsonb(i) ->> 'indnullsnotdistinct')::boolean, false) AS nulls_not_distinct,
+                    (i.indkey[k.n - 1] = 0) AS is_expression, NOT oc.opcdefault AS custom_opclass,
+                    (a.attnum IS NOT NULL AND i.indcollation[k.n - 1] <> a.attcollation) AS custom_collation,
+                    i.indoption[k.n - 1] AS option
                FROM pg_index i
                JOIN pg_class ic ON ic.oid = i.indexrelid
+               JOIN pg_am am ON am.oid = ic.relam
               CROSS JOIN LATERAL generate_series(1, i.indnkeyatts) AS k(n)
+               JOIN pg_opclass oc ON oc.oid = i.indclass[k.n - 1]
+               LEFT JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[k.n - 1] AND a.attnum > 0
               WHERE i.indrelid = ?
-              ORDER BY ic.relname, k.n',
+              ORDER BY ic.relname, k.n",
             [$oid],
         );
 
-        /** @var array<string, array{unique: bool, primary: bool, columns: list<string>, size: ?int}> $grouped */
+        /** @var array<string, array{unique: bool, primary: bool, columns: list<string>, size: ?int, lock: ?LockReason}> $grouped */
         $grouped = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $name = $row->string('name');
-            $grouped[$name] ??= ['unique' => $row->bool('is_unique'), 'primary' => $row->bool('is_primary'), 'columns' => [], 'size' => $row->nullableInt('size')];
-            $grouped[$name]['columns'][] = $row->string('col');
+            $grouped[$name] ??= ['unique' => $row->bool('is_unique'), 'primary' => $row->bool('is_primary'), 'columns' => [], 'size' => $row->nullableInt('size'), 'lock' => null];
+            // Le texte d'une expression n'est pas une colonne : un brouillon qui le citerait serait invalide (comme côté MySQL, on l'omet).
+            if (!$row->bool('is_expression')) {
+                $grouped[$name]['columns'][] = $row->string('col');
+            }
+            $option = $row->nullableInt('option') ?? 0;
+            $grouped[$name]['lock'] ??= match (true) {
+                'btree' !== $row->string('method') => LockReason::AccessMethod,
+                $row->bool('is_partial') => LockReason::Partial,
+                $row->bool('has_include') => LockReason::Include,
+                $row->bool('nulls_not_distinct') => LockReason::NullsNotDistinct,
+                $row->bool('is_expression') => LockReason::Expression,
+                $row->bool('custom_opclass') => LockReason::OperatorClass,
+                $row->bool('custom_collation') => LockReason::Collation,
+                0 !== ($option & 1) => LockReason::Descending,
+                0 !== ($option & 2) => LockReason::NullsOrder,
+                default => null,
+            };
         }
 
         $indexes = [];
         foreach ($grouped as $name => $index) {
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], $index['primary'], $index['size']);
+            if ([] === $index['columns']) {
+                continue;
+            }
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], $index['primary'], $index['size'], $index['lock']);
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 

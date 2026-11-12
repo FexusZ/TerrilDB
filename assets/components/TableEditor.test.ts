@@ -500,6 +500,34 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('locks a PostgreSQL index with a particularity and says which one', async () => {
+    const rich: TableDetail = {
+      ...detail(),
+      columns: [
+        { name: 'id', type: 'integer', nullable: false, default: null, autoIncrement: true, comment: null },
+        { name: 'total', type: 'integer', nullable: true, default: null, autoIncrement: false, comment: null },
+      ],
+      indexes: [
+        { name: 'orders_pkey', columns: ['id'], unique: true, primary: true },
+        { name: 'idx_partial', columns: ['total'], unique: false, primary: false, lock: 'partial' },
+        { name: 'idx_hash', columns: ['total'], unique: false, primary: false, lock: 'access_method' },
+        { name: 'idx_include', columns: ['total'], unique: false, primary: false, lock: 'include' },
+        { name: 'idx_ops', columns: ['total'], unique: false, primary: false, lock: 'operator_class' },
+      ],
+      foreignKeys: [],
+    }
+    const wrapper = mountEditor('postgresql', rich)
+
+    const text = wrapper.findAll('.index-table tbody[data-kind="locked"]').map((part) => part.text())
+    expect(text).toHaveLength(4)
+    expect(text[0]).toContain('partiel')
+    expect(text[1]).toContain('type d’index')
+    expect(text[2]).toContain('INCLUDE')
+    expect(text[3]).toContain('classe d’opérateurs')
+    expect(text.join(' ')).not.toContain('non prise en charge')
+    wrapper.unmount()
+  })
+
   it('adds new columns as non-nullable on ClickHouse, where Nullable is the exception', async () => {
     const clickhouse: TableDetail = { ...detail(), columns: [{ name: 'id', type: 'UInt64', nullable: false, default: null, autoIncrement: false, comment: null }], indexes: [], foreignKeys: [] }
     const wrapper = mountEditor('clickhouse', clickhouse)

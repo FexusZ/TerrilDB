@@ -12,6 +12,13 @@ const LABELS: Record<string, { short: string; sentence: string }> = {
   prefix: { short: 'index à préfixe', sentence: 'cet index porte une longueur de préfixe' },
   descending: { short: 'index décroissant', sentence: 'cet index a un ordre décroissant' },
   expression: { short: 'index sur expression', sentence: 'cet index porte une expression' },
+  access_method: { short: 'type d’index particulier', sentence: 'cet index n’est pas un index B-tree (hash, GIN, GiST, BRIN…)' },
+  partial: { short: 'index partiel', sentence: 'cet index est partiel (clause WHERE)' },
+  include: { short: 'index avec INCLUDE', sentence: 'cet index porte des colonnes INCLUDE' },
+  operator_class: { short: 'classe d’opérateurs particulière', sentence: 'cet index utilise une classe d’opérateurs particulière' },
+  collation: { short: 'collation particulière', sentence: 'cet index utilise une collation différente de celle de sa colonne' },
+  nulls_order: { short: 'ordre des NULL particulier', sentence: 'cet index place les NULL dans un ordre particulier (NULLS FIRST / LAST)' },
+  nulls_not_distinct: { short: 'NULLS NOT DISTINCT', sentence: 'cet index traite les NULL comme égaux (NULLS NOT DISTINCT)' },
 }
 
 export function lockShort(reason: string): string {

@@ -20,4 +20,11 @@ enum LockReason: string
     case Prefix = 'prefix';
     case Descending = 'descending';
     case Expression = 'expression';
+    case AccessMethod = 'access_method';
+    case Partial = 'partial';
+    case Include = 'include';
+    case OperatorClass = 'operator_class';
+    case Collation = 'collation';
+    case NullsOrder = 'nulls_order';
+    case NullsNotDistinct = 'nulls_not_distinct';
 }

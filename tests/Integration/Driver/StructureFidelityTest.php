@@ -19,6 +19,7 @@ use App\Core\Schema\Change\IndexDraft;
 use App\Core\Schema\Change\SchemaChangePlanner;
 use App\Core\Schema\Change\SchemaChangeService;
 use App\Core\Schema\Change\TableDraft;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\TableDefinition;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
@@ -132,6 +133,75 @@ final class StructureFidelityTest extends TestCase
         } finally {
             self::assertSame($before, $this->mark($table, $case));
         }
+    }
+
+    /**
+     * Les index PostgreSQL que le modèle ne sait pas redire : cas => [instruction CREATE INDEX (nom idx_p), raison attendue].
+     *
+     * @return iterable<string, array{string, LockReason}>
+     */
+    public static function postgreSqlIndexes(): iterable
+    {
+        yield 'partial' => ['CREATE INDEX idx_p ON %s (qty) WHERE qty > 0', LockReason::Partial];
+        yield 'hash' => ['CREATE INDEX idx_p ON %s USING hash (name)', LockReason::AccessMethod];
+        yield 'brin' => ['CREATE INDEX idx_p ON %s USING brin (qty)', LockReason::AccessMethod];
+        yield 'include' => ['CREATE INDEX idx_p ON %s (name) INCLUDE (qty)', LockReason::Include];
+        yield 'operator class' => ['CREATE INDEX idx_p ON %s (name text_pattern_ops)', LockReason::OperatorClass];
+        yield 'collation' => ['CREATE INDEX idx_p ON %s (name COLLATE "C")', LockReason::Collation];
+        yield 'descending' => ['CREATE INDEX idx_p ON %s (qty DESC)', LockReason::Descending];
+        yield 'nulls first' => ['CREATE INDEX idx_p ON %s (qty NULLS FIRST)', LockReason::NullsOrder];
+        yield 'expression' => ['CREATE INDEX idx_p ON %s (name, lower(note))', LockReason::Expression];
+        yield 'nulls not distinct' => ['CREATE UNIQUE INDEX idx_p ON %s (name) NULLS NOT DISTINCT', LockReason::NullsNotDistinct];
+    }
+
+    #[DataProvider('postgreSqlIndexes')]
+    public function testAPostgreSqlIndexWithAParticularityIsLockedNotRecreatedAsAPlainOne(string $create, LockReason $reason): void
+    {
+        $this->open('TARGET_POSTGRES_URL');
+        $target = $this->target;
+        \assert(null !== $target);
+        $table = $this->tables[] = 'tdb_fid_'.bin2hex(random_bytes(4));
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, name text, qty integer, note text)', $this->q($table)));
+        $this->raw(\sprintf($create, $this->q($table)));
+        $definition = fn (): string => (string) $this->scalar(\sprintf("SELECT indexdef FROM pg_indexes WHERE tablename = '%s' AND indexname = 'idx_p'", $table));
+        $before = $definition();
+
+        $current = $target->introspector()->describeTable($table);
+        $index = array_values(array_filter($current->indexes, static fn ($i): bool => 'idx_p' === $i->name))[0] ?? null;
+        self::assertNotNull($index);
+        self::assertSame($reason, $index->lock);
+
+        $service = new SchemaChangeService();
+        $draft = self::draftOf($current);
+        // Renommer et supprimer restent permis.
+        $renamed = $draft->withIndexes(array_map(static fn (IndexDraft $i): IndexDraft => 'idx_p' === $i->name ? new IndexDraft($i->originalName, 'idx_q', $i->columns, $i->unique, false, null, null) : $i, $draft->indexes));
+        self::assertNotSame([], $service->preview($target, $table, $renamed, SchemaChangePlanner::fingerprint($current))->plan->statements);
+        $dropped = $draft->withIndexes(array_values(array_filter($draft->indexes, static fn (IndexDraft $i): bool => 'idx_p' !== $i->name)));
+        self::assertNotSame([], $service->preview($target, $table, $dropped, SchemaChangePlanner::fingerprint($current))->plan->statements);
+
+        // Changer ses colonnes le recréerait en index simple : refusé avant d'écrire.
+        $changed = $draft->withIndexes(array_map(static fn (IndexDraft $i): IndexDraft => 'idx_p' === $i->name ? new IndexDraft($i->originalName, $i->name, [...$i->columns, 'note'], $i->unique, false, null, null) : $i, $draft->indexes));
+        try {
+            $service->apply($target, $table, $changed, SchemaChangePlanner::fingerprint($current), true);
+            self::fail('Recreating this index as a plain one should be refused.');
+        } catch (UnsupportedSchemaChangeException $e) {
+            self::assertSame($reason, $e->reason);
+        }
+        self::assertSame($before, $definition());
+    }
+
+    public function testAPlainPostgreSqlIndexStaysEditable(): void
+    {
+        $this->open('TARGET_POSTGRES_URL');
+        $target = $this->target;
+        \assert(null !== $target);
+        $table = $this->tables[] = 'tdb_fid_'.bin2hex(random_bytes(4));
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, name text, qty integer, note text)', $this->q($table)));
+        $this->raw(\sprintf('CREATE INDEX idx_p ON %s (name, qty)', $this->q($table)));
+        $current = $target->introspector()->describeTable($table);
+        $index = array_values(array_filter($current->indexes, static fn ($i): bool => 'idx_p' === $i->name))[0] ?? null;
+        self::assertNotNull($index);
+        self::assertNull($index->lock);
     }
 
     /**
