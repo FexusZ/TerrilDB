@@ -31,6 +31,7 @@ async function mountView(path = '/connections/abc') {
         children: [
           { path: '', name: 'workspace', component: { template: '<p class="child">éditeur</p>' } },
           { path: 'activity', name: 'server-activity', component: { template: '<p class="child">activité</p>' } },
+          { path: 'replication', name: 'replication', component: { template: '<p class="child">réplication</p>' } },
           { path: 'audit', name: 'audit', component: { template: '<p class="child">audit</p>' } },
           { path: 'key', name: 'key', component: { template: '<p class="child">clé</p>' } },
           { path: 'diagram', name: 'diagram', component: { template: '<p class="child">diagramme</p>' } },
@@ -187,15 +188,15 @@ describe('WorkspaceView', () => {
     const { wrapper } = await mountView()
 
     const links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité'])
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit', '/connections/abc/activity'])
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Réplication'])
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit', '/connections/abc/activity', '/connections/abc/replication'])
   })
 
   it('puts the connection views on one line and the open tables, like browser tabs, on the next', async () => {
     mocked.mockImplementation(answer())
     const { wrapper } = await mountView('/connections/abc/tables/orders?database=shop')
 
-    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité'])
+    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Réplication'])
     const tabs = wrapper.findAll('[role="tablist"][aria-label="Tables ouvertes"] .tab')
     expect(tabs.map((tab) => tab.get('a.label').text())).toEqual(['orders'])
     expect(tabs[0]?.classes()).toContain('on')

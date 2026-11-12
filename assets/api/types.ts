@@ -259,6 +259,45 @@ export interface LockReport {
   blockingTruncated: boolean
 }
 
+export type ReplicationRole = 'none' | 'source' | 'replica'
+export type ThreadState = 'running' | 'connecting' | 'stopped'
+
+/** Dernière erreur d'un fil de réplication : texte neutralisé par le serveur (ni hôte, ni compte, ni mot de passe). */
+export interface ReplicationError {
+  code: number | null
+  message: string
+}
+
+export interface ReplicationChannel {
+  name: string
+  receiver: ThreadState
+  applier: ThreadState
+  /** Retard annoncé par le moteur (trompeur : voir `pendingApply`). */
+  lagSeconds: number | null
+  received: string | null
+  applied: string | null
+  /** Des transactions reçues ne sont pas encore appliquées (null : inconnu). */
+  pendingApply: boolean | null
+  receiverError: ReplicationError | null
+  applierError: ReplicationError | null
+}
+
+export interface ReplicationAlert {
+  code: string
+  severity: 'warning' | 'critical'
+  channel: string
+}
+
+export interface ReplicationReport {
+  status: DiagnosticStatus
+  role: ReplicationRole
+  replicaCount: number | null
+  settings: { readOnly: boolean | null; superReadOnly: boolean | null; binlogFormat: string | null; gtid: boolean | null }
+  channels: ReplicationChannel[]
+  alerts: ReplicationAlert[]
+  thresholds: { warning: number; critical: number }
+}
+
 export type AuditOutcome = 'success' | 'refused' | 'failed'
 export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
 
