@@ -28,6 +28,11 @@ final readonly class LockReport
      */
     public function tree(): array
     {
-        return BlockingTree::build($this->waits);
+        return $this->forest()->roots;
+    }
+
+    public function forest(): BlockingForest
+    {
+        return BlockingTree::forest($this->waits);
     }
 }

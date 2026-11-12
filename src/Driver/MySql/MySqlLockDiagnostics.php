@@ -14,6 +14,7 @@ use App\Core\Diagnostics\LockWait;
 use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\TableHolder;
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -149,7 +150,7 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
             "SELECT t.trx_mysql_thread_id AS id, p.USER AS usr, t.trx_state AS state,
                     TIMESTAMPDIFF(SECOND, t.trx_started, NOW()) AS seconds,
                     t.trx_rows_locked AS rows_locked, t.trx_rows_modified AS rows_modified,
-                    COALESCE(p.COMMAND = 'Sleep', 0) AS sleeping, LEFT(t.trx_query, 256) AS query
+                    COALESCE(p.COMMAND = 'Sleep', 0) AS sleeping, LEFT(t.trx_query, 4096) AS query
                FROM information_schema.INNODB_TRX t
                LEFT JOIN information_schema.PROCESSLIST p ON p.ID = t.trx_mysql_thread_id
               WHERE t.trx_mysql_thread_id <> CONNECTION_ID()
@@ -159,7 +160,7 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
         $transactions = [];
         foreach (\array_slice($rows, 0, self::LIMIT) as $row) {
             $row = new RowReader($row);
-            $transactions[] = new OpenTransaction($row->string('id'), $row->nullableString('usr'), $row->nullableString('state'), max(0, $row->int('seconds')), $row->nullableInt('rows_locked'), $row->nullableInt('rows_modified'), $row->bool('sleeping'), $row->nullableString('query'));
+            $transactions[] = new OpenTransaction($row->string('id'), $row->nullableString('usr'), $row->nullableString('state'), max(0, $row->int('seconds')), $row->nullableInt('rows_locked'), $row->nullableInt('rows_modified'), $row->bool('sleeping'), $row->nullableString('query'), SqlDialect::MySql);
         }
 
         $waitRows = Engine::MariaDb === $this->engine ? $this->mariaDbRowWaits($c) : $this->mySqlRowWaits($c);
@@ -178,8 +179,8 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
     private static function wait(RowReader $row, LockKind $kind): LockWait
     {
         return new LockWait(
-            new LockParty($row->string('waiting'), $row->nullableString('waiting_user'), $row->nullableString('waiting_query')),
-            new LockParty($row->string('blocking'), $row->nullableString('blocking_user'), $row->nullableString('blocking_query')),
+            new LockParty($row->string('waiting'), $row->nullableString('waiting_user'), $row->nullableString('waiting_query'), SqlDialect::MySql),
+            new LockParty($row->string('blocking'), $row->nullableString('blocking_user'), $row->nullableString('blocking_query'), SqlDialect::MySql),
             null === $row->nullableInt('seconds') ? null : max(0, $row->int('seconds')),
             $kind,
             $row->nullableString('mode'),
@@ -193,8 +194,8 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
     private function mySqlRowWaits(Connection $c): array
     {
         return $c->fetchAllAssociative(
-            "SELECT DISTINCT rt.trx_mysql_thread_id AS waiting, wp.USER AS waiting_user, LEFT(rt.trx_query, 256) AS waiting_query,
-                    bt.trx_mysql_thread_id AS blocking, bp.USER AS blocking_user, LEFT(bt.trx_query, 256) AS blocking_query,
+            "SELECT DISTINCT rt.trx_mysql_thread_id AS waiting, wp.USER AS waiting_user, LEFT(rt.trx_query, 4096) AS waiting_query,
+                    bt.trx_mysql_thread_id AS blocking, bp.USER AS blocking_user, LEFT(bt.trx_query, 4096) AS blocking_query,
                     TIMESTAMPDIFF(SECOND, rt.trx_wait_started, NOW()) AS seconds,
                     rl.LOCK_MODE AS mode, CONCAT(rl.OBJECT_SCHEMA, '.', rl.OBJECT_NAME) AS object
                FROM performance_schema.data_lock_waits w
@@ -214,8 +215,8 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
     private function mariaDbRowWaits(Connection $c): array
     {
         return $c->fetchAllAssociative(
-            "SELECT DISTINCT rt.trx_mysql_thread_id AS waiting, wp.USER AS waiting_user, LEFT(rt.trx_query, 256) AS waiting_query,
-                    bt.trx_mysql_thread_id AS blocking, bp.USER AS blocking_user, LEFT(bt.trx_query, 256) AS blocking_query,
+            "SELECT DISTINCT rt.trx_mysql_thread_id AS waiting, wp.USER AS waiting_user, LEFT(rt.trx_query, 4096) AS waiting_query,
+                    bt.trx_mysql_thread_id AS blocking, bp.USER AS blocking_user, LEFT(bt.trx_query, 4096) AS blocking_query,
                     TIMESTAMPDIFF(SECOND, rt.trx_wait_started, NOW()) AS seconds,
                     l.lock_mode AS mode, REPLACE(l.lock_table, '`', '') AS object
                FROM information_schema.INNODB_LOCK_WAITS w
@@ -235,7 +236,7 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
     private function metadataWaits(Connection $c): array
     {
         return $c->fetchAllAssociative(
-            "SELECT waiting_pid AS waiting, SUBSTRING_INDEX(waiting_account, '@', 1) AS waiting_user, LEFT(waiting_query, 256) AS waiting_query,
+            "SELECT waiting_pid AS waiting, SUBSTRING_INDEX(waiting_account, '@', 1) AS waiting_user, LEFT(waiting_query, 4096) AS waiting_query,
                     blocking_pid AS blocking, SUBSTRING_INDEX(blocking_account, '@', 1) AS blocking_user, NULL AS blocking_query,
                     waiting_query_secs AS seconds, waiting_lock_type AS mode, CONCAT(object_schema, '.', object_name) AS object
                FROM sys.schema_table_lock_waits

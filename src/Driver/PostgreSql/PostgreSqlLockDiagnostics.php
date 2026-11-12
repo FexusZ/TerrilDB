@@ -13,6 +13,7 @@ use App\Core\Diagnostics\LockWait;
 use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\TableHolder;
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -49,7 +50,7 @@ final readonly class PostgreSqlLockDiagnostics implements LockDiagnostics
                 "SELECT pid::text AS id, usename AS usr, state,
                         EXTRACT(EPOCH FROM (now() - xact_start))::bigint AS seconds,
                         (state IN ('idle in transaction', 'idle in transaction (aborted)')) AS sleeping,
-                        LEFT(query, 256) AS query
+                        LEFT(query, 4096) AS query
                    FROM pg_stat_activity
                   WHERE backend_type = 'client backend' AND xact_start IS NOT NULL AND pid <> pg_backend_pid()
                   ORDER BY xact_start, pid
@@ -58,17 +59,17 @@ final readonly class PostgreSqlLockDiagnostics implements LockDiagnostics
             $transactions = [];
             foreach (\array_slice($rows, 0, self::LIMIT) as $row) {
                 $row = new RowReader($row);
-                $transactions[] = new OpenTransaction($row->string('id'), $row->nullableString('usr'), $row->nullableString('state'), max(0, $row->int('seconds')), null, null, $row->bool('sleeping'), $row->nullableString('query'));
+                $transactions[] = new OpenTransaction($row->string('id'), $row->nullableString('usr'), $row->nullableString('state'), max(0, $row->int('seconds')), null, null, $row->bool('sleeping'), $row->nullableString('query'), SqlDialect::PostgreSql);
             }
 
             // L'objet attendu : la relation du verrou en attente, sinon la table que l'attendant et le bloquant tiennent tous deux
             // (une attente de ligne se fait sur un identifiant de transaction, qui ne nomme pas de table).
             $waitRows = $c->fetchAllAssociative(
-                "SELECT a.pid::text AS waiting, a.usename AS waiting_user, LEFT(a.query, 256) AS waiting_query,
-                        b.pid::text AS blocking, b.usename AS blocking_user, LEFT(b.query, 256) AS blocking_query,
+                "SELECT a.pid::text AS waiting, a.usename AS waiting_user, LEFT(a.query, 4096) AS waiting_query,
+                        b.pid::text AS blocking, b.usename AS blocking_user, LEFT(b.query, 4096) AS blocking_query,
                         EXTRACT(EPOCH FROM (now() - COALESCE(a.state_change, a.query_start)))::bigint AS seconds,
                         l.mode, COALESCE(l.rel::regclass::text, l.locktype) AS object
-                   FROM pg_stat_activity a
+                   FROM (SELECT * FROM pg_stat_activity WHERE wait_event_type = 'Lock') a
                   CROSS JOIN LATERAL unnest(pg_blocking_pids(a.pid)) AS bp(pid)
                    JOIN pg_stat_activity b ON b.pid = bp.pid
                    LEFT JOIN LATERAL (
@@ -87,8 +88,8 @@ final readonly class PostgreSqlLockDiagnostics implements LockDiagnostics
             foreach (\array_slice($waitRows, 0, self::LIMIT) as $row) {
                 $row = new RowReader($row);
                 $waits[] = new LockWait(
-                    new LockParty($row->string('waiting'), $row->nullableString('waiting_user'), $row->nullableString('waiting_query')),
-                    new LockParty($row->string('blocking'), $row->nullableString('blocking_user'), $row->nullableString('blocking_query')),
+                    new LockParty($row->string('waiting'), $row->nullableString('waiting_user'), $row->nullableString('waiting_query'), SqlDialect::PostgreSql),
+                    new LockParty($row->string('blocking'), $row->nullableString('blocking_user'), $row->nullableString('blocking_query'), SqlDialect::PostgreSql),
                     max(0, $row->int('seconds')),
                     LockKind::Row,
                     $row->nullableString('mode'),

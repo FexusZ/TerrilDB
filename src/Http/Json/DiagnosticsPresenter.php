@@ -61,6 +61,7 @@ final class DiagnosticsPresenter
                 'state' => $s->state,
                 'seconds' => $s->seconds,
                 'query' => $s->query,
+                'queryReason' => $s->queryRedacted ? 'redacted' : null,
                 'current' => $s->current,
             ], $report->sessions),
         ];
@@ -74,6 +75,8 @@ final class DiagnosticsPresenter
      */
     public static function locks(LockReport $report): array
     {
+        $forest = $report->forest();
+
         return [
             'status' => self::status($report->status),
             'truncated' => $report->truncated,
@@ -86,8 +89,10 @@ final class DiagnosticsPresenter
                 'rowsModified' => $t->rowsModified,
                 'sleeping' => $t->sleeping,
                 'query' => $t->query,
+                'queryReason' => $t->queryRedacted ? 'redacted' : null,
             ], $report->transactions),
-            'blocking' => array_map(self::node(...), $report->tree()),
+            'blocking' => array_map(self::node(...), $forest->roots),
+            'blockingTruncated' => $forest->truncated,
         ];
     }
 
@@ -100,6 +105,7 @@ final class DiagnosticsPresenter
             'id' => $node->party->id,
             'user' => $node->party->user,
             'query' => $node->party->query,
+            'queryReason' => $node->party->queryRedacted ? 'redacted' : null,
             'seconds' => $node->seconds,
             'kind' => $node->kind?->value,
             'mode' => $node->mode,
