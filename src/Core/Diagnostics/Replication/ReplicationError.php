@@ -37,10 +37,15 @@ final readonly class ReplicationError
         $mask = '…';
         $text = (string) preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $text);
         $patterns = [
-            // Mots de passe donnés en clair par une instruction ou un réglage.
-            '/\b(?:source_password|master_password|password|passwd|pwd)\b\s*[=:]\s*\S+/i' => $mask,
+            // Adresses avec protocole : hôte, compte et mot de passe y sont tous.
+            '~\b[a-z][a-z0-9+.\-]*://\S+~i' => $mask,
+            // Réglages et chaînes de connexion (SOURCE_PASSWORD='…', host=…, user=…, token=…), valeur entre guillemets ou non.
+            '/\b(?:[a-z]+_)*(?:host|hostaddr|user|username|password|passwd|pwd|token|secret|apikey|api_key)\b\s*[=:]\s*(?:\'[^\']*\'|"[^"]*"|\S+)/i' => $mask,
+            '/\bbearer\s+\S+/i' => $mask,
+            // Un nom entre guillemets introduit par « user », « host », « on », « at »… (compte, serveur : MySQL et PostgreSQL).
+            '/\b(?:user|role|host|server|source|master|primary|replica|on|at|to|from)\s+(?:name\s+)?(?:\'[^\']*\'|"[^"]*")/i' => $mask,
             // compte@hôte, nu ou entre apostrophes.
-            "/'?[\\w.\\-]+'?@'?[\\w.\\-:\\[\\]]+'?/u" => $mask,
+            "/'?[\\w.\\-]+'?@'?[\\w.\\-:%\\[\\]]+'?/u" => $mask,
             // Adresses IPv4 (avec port éventuel) et IPv6.
             '/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/' => $mask,
             '/(?<![\w:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?![\w:])/i' => $mask,

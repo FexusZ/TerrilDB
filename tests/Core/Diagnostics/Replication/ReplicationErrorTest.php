@@ -49,6 +49,20 @@ final class ReplicationErrorTest extends TestCase
         yield 'ipv6' => ["Can't connect to server on 'fd00:1234::5' (111)", 'fd00:1234::5'];
         yield 'long host name' => ['Unknown host replica-1.internal.example.net', 'internal.example.net'];
         yield 'host with port' => ['Lost connection to source primary-eu:3306 during query', 'primary-eu'];
+        yield 'wildcard host' => ["Access denied for user 'repl'@'%' (using password: YES)", 'repl'];
+        yield 'two-label host' => ["Unknown MySQL server host 'db.corp' (-2)", 'db.corp'];
+        yield 'single-label host' => ["Can't connect to MySQL server on 'primary' (111)", 'primary'];
+        yield 'postgres user' => ['FATAL: password authentication failed for user "replicator"', 'replicator'];
+        yield 'postgres host' => ['connection to server at "db-primary.internal" (10.1.2.3), port 5432 failed', 'db-primary'];
+        yield 'url with credentials' => ['Error connecting to https://repl:s3cret@primary.example.com/path', 'repl:'];
+        yield 'url host' => ['Error connecting to https://repl:s3cret@primary.example.com/path', 'primary'];
+        yield 'password with a space' => ["SOURCE_PASSWORD='pa ss' rejected", "ss'"];
+        yield 'source host setting' => ["MASTER_HOST='primary.lan' unreachable", 'primary.lan'];
+        yield 'source user setting' => ["SOURCE_USER='repl_user' refused", 'repl_user'];
+        yield 'conninfo' => ['host=db.corp user=repl dbname=x', 'db.corp'];
+        yield 'conninfo user' => ['host=db.corp user=repl dbname=x', 'repl'];
+        yield 'token' => ['token=abcd1234efgh used for source', 'abcd1234efgh'];
+        yield 'bearer' => ['Authorization: Bearer abcd1234efgh.zz refused', 'abcd1234efgh'];
         yield 'password setting' => ['CHANGE REPLICATION SOURCE failed: SOURCE_PASSWORD=hunter2 rejected', 'hunter2'];
     }
 
