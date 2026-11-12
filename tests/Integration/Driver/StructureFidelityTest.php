@@ -61,7 +61,7 @@ final class StructureFidelityTest extends TestCase
     public static function cases(): iterable
     {
         foreach (TargetDatabase::relational() as $engine => [$env]) {
-            foreach (['generated', 'invisible', 'partitions', 'versioning', 'period_columns'] as $case) {
+            foreach (['generated', 'invisible', 'on_update', 'partitions', 'versioning', 'period_columns'] as $case) {
                 yield $engine.' / '.$case => [$env, $case];
             }
         }

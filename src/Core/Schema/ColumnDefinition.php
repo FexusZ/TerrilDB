@@ -9,6 +9,7 @@ use App\Core\Schema\Exception\InvalidSchemaException;
 /**
  * Une colonne, avec son type natif tel que le moteur l'écrit (« int unsigned », « character varying(20) »).
  * `invisible` (MySQL 8, MariaDB) : absente de `SELECT *` ; redite telle quelle quand on modifie la colonne.
+ * `onUpdate` (MySQL, MariaDB) : l'expression de « ON UPDATE CURRENT_TIMESTAMP(n) », lue dans EXTRA, redite aussi.
  */
 final readonly class ColumnDefinition
 {
@@ -20,6 +21,7 @@ final readonly class ColumnDefinition
         public bool $autoIncrement,
         public ?string $comment,
         public bool $invisible = false,
+        public ?string $onUpdate = null,
     ) {
         if ('' === $name || '' === $type) {
             throw new InvalidSchemaException('A column needs a name and a type.');

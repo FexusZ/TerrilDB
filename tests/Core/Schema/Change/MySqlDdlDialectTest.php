@@ -100,6 +100,17 @@ final class MySqlDdlDialectTest extends TestCase
         );
     }
 
+    public function testModifyingAColumnRestatesItsOnUpdateClause(): void
+    {
+        $before = new ColumnDefinition('seen_at', 'timestamp(3)', false, 'CURRENT_TIMESTAMP(3)', false, null, false, 'CURRENT_TIMESTAMP(3)');
+        $after = new ColumnDraft('seen_at', 'seen_at', 'timestamp(3)', true, 'CURRENT_TIMESTAMP(3)', false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `seen_at` timestamp(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)'],
+            self::sql([new ModifyColumn($before, $after, false, true, false, false)]),
+        );
+    }
+
     public function testPrimaryKey(): void
     {
         $old = new IndexDefinition('PRIMARY', ['id'], true, true);

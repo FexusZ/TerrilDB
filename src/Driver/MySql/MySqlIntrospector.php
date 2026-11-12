@@ -190,6 +190,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 str_contains($row->string('extra'), 'auto_increment'),
                 $row->nullableString('comment'),
                 str_contains($row->string('extra'), 'INVISIBLE'),
+                1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
             );
         }
 

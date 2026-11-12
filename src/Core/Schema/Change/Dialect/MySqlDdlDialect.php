@@ -129,6 +129,9 @@ final class MySqlDdlDialect extends AbstractDdlDialect
     {
         $definition = $this->columnDefinition($operation->after);
         // MODIFY COLUMN redit toute la définition : ce que le modèle ne dit pas doit être redit, sinon il disparaît.
+        if (null !== $operation->before->onUpdate) {
+            $definition .= ' ON UPDATE '.$operation->before->onUpdate;
+        }
         if ($operation->before->invisible) {
             $definition .= ' INVISIBLE';
         }
