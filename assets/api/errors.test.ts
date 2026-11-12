@@ -63,4 +63,20 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
   })
+
+  it('names the refused statement of a script and says nothing ran', () => {
+    const message = messageFor(new ApiError(403, 'script_refused', { reason: 'forbidden_construct', statement: 2 }))
+
+    expect(message).toContain('instruction 3')
+    expect(message).toContain('Rien n’a été exécuté')
+    expect(message).toContain('interdite')
+  })
+
+  it('explains a malformed, oversized or untestable script', () => {
+    expect(messageFor(new ApiError(422, 'invalid_script'))).toContain('chaîne')
+    expect(messageFor(new ApiError(422, 'script_too_large'))).toContain('500')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'implicit_commit' }))).toContain('valide')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'no_transaction' }))).toContain('transaction')
+    expect(reasonText('destructive_script')).toContain('confirm')
+  })
 })
