@@ -153,6 +153,18 @@ final readonly class McpTools
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function getReplication(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::replication($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
      * @template T
      *
      * @param \Closure(TargetConnection): T $action

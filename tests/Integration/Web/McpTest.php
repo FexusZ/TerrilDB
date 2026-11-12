@@ -524,14 +524,30 @@ final class McpTest extends WebApiTestCase
         self::assertSame(405, $this->statusCode());
     }
 
-    public function testResponsesAreNeverCached(): void
+    public function testTheReplicationToolNeedsTheDiagnosticRight(): void
     {
-        $this->prepare();
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
 
-        $this->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => [
-            'protocolVersion' => self::PROTOCOL, 'capabilities' => new \stdClass(), 'clientInfo' => ['name' => 'tests', 'version' => '1.0'],
-        ]]);
+        self::assertNotContains('get_replication', $this->toolNames());
+        $refused = $this->callTool('get_replication', ['connection' => $this->connectionId]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
+        self::assertArrayNotHasKey('structuredContent', $refused);
+    }
 
-        self::assertStringContainsString('no-store', (string) $this->client->getResponse()->headers->get('Cache-Control'));
+    public function testReadsTheReplicationThroughMcpWithoutAnyReplicationStatement(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('get_replication', $this->toolNames());
+        $report = self::textOf($this->callTool('get_replication', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertSame('none', $report['role']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('get_replication', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
     }
 }

@@ -115,6 +115,13 @@ final readonly class McpServerFactory
                 annotations: $readOnly,
                 inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
             );
+            $builder->addTool(
+                [$this->tools, 'getReplication'],
+                name: 'get_replication',
+                description: 'Donne l’état de la réplication du serveur de la connexion : rôle (source, réplica, aucun), fils de réception et d’application, retard annoncé, jeux de transactions reçus et appliqués, dernières erreurs (texte neutralisé) et alertes (fil arrêté, erreur, retard au-dessus de 30 s, réplica inscriptible, binlog_format différent de ROW, GTID absents). Lecture seule : aucune instruction de réplication n’est envoyée. Le retard annoncé peut être trompeur (0 alors que le receveur est en retard) : comparez les jeux reçus et appliqués. « Pas de réplication configurée » est le rôle « none », pas une erreur ; l’état dit si le compte n’a pas le droit de lire.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
+            );
         }
 
         if ($writes) {

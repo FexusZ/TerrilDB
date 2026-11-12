@@ -52,4 +52,13 @@ final readonly class DiagnosticsController
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
     }
+
+    #[Route('/web/connections/{id}/diagnostics/replication', requirements: self::ID, methods: ['GET'])]
+    public function replication(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->replication($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::replication($report));
+    }
 }
