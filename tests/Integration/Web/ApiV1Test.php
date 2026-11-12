@@ -620,4 +620,38 @@ final class ApiV1Test extends WebApiTestCase
 
         self::assertSame(404, $this->statusCode());
     }
+
+    public function testATokenWithTheDiagnosticRightListsTheAccountsAndTheEncryption(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $accounts = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/accounts');
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($accounts['status'])['availability']);
+        self::assertNotEmpty($accounts['accounts']);
+        self::assertArrayHasKey('findings', $accounts);
+
+        $encryption = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/encryption');
+        self::assertSame(200, $this->statusCode());
+        self::assertArrayHasKey('encrypted', $encryption);
+    }
+
+    public function testAccountsAndEncryptionNeedTheDiagnosticRight(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL');
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/accounts');
+        self::assertSame(403, $this->statusCode());
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/encryption');
+        self::assertSame(403, $this->statusCode());
+    }
+
+    public function testTheAccountsOfAConnectionOutsideTheListAreNotFound(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/accounts');
+
+        self::assertSame(404, $this->statusCode());
+    }
 }

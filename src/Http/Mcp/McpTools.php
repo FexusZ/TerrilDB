@@ -153,6 +153,30 @@ final readonly class McpTools
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function listAccounts(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::accounts($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function connectionEncryption(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::encryption($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
      * @template T
      *
      * @param \Closure(TargetConnection): T $action

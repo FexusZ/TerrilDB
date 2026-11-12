@@ -21,6 +21,8 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
 | GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` et `capabilities.locks` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
+| GET | `/api/v1/connections/{id}/diagnostics/accounts` | (droit `diagnostic`) comptes, rôles, privilèges et constatations de l'audit de sécurité (MySQL, MariaDB), lecture seule, jamais une empreinte de mot de passe |
+| GET | `/api/v1/connections/{id}/diagnostics/encryption` | (droit `diagnostic`) la connexion de TerrilDB vers la cible est-elle chiffrée (MySQL, MariaDB, PostgreSQL) |
 | GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
@@ -97,6 +99,18 @@ Compte de supervision minimal à donner à la connexion (documenté, pas imposé
 
 Verrous et transactions : MySQL `PROCESS` + `SELECT` sur `performance_schema` + `SELECT` et `EXECUTE` sur `sys` (verrous de métadonnées) ; MariaDB `PROCESS` ;
 PostgreSQL `pg_monitor` ; ClickHouse et Redis, sans objet.
+
+**Comptes et privilèges** (`/diagnostics/accounts`, MySQL et MariaDB ; les autres moteurs répondent 501) : `accounts` (`user`, `host`, `name`, `plugin`,
+`passwordSet` = le compte a un mot de passe, **jamais l'empreinte**, `passwordExpired`, `locked`, `tls` = `none | any | x509 | specified`, `isRole`, `current` = le
+compte que TerrilDB utilise, `roles` accordés, `defaultRoles` activés à la connexion, `globalPrivileges`, `databasePrivileges` par base, `grantOptionOn`, `limits` non nulles)
+et `findings` (`rule`, `severity` = `high | medium | low`, `account`, `detail`, `currentAccount`). Règles : `anonymous_account`, `wildcard_host`,
+`same_name_many_hosts`, `no_password`, `legacy_plugin`, `disabled_plugin`, `password_expired`, `dangerous_privilege` (`FILE`, `PROCESS`, `SUPER`, `SHUTDOWN`,
+`CREATE USER`, « via » le rôle qui les donne), `all_privileges`, `grant_option`, `role_never_active`, `no_tls_requirement`, `open_test_database` ; le compte de la
+connexion qui porte un droit dangereux est en gravité haute (le compte de la base cible est le dernier rempart de la lecture seule). Comptes verrouillés et rôles
+n'ont pas de constatation propre. Compte de la connexion sans droit de lire le catalogue : `permission_denied` avec `privilege: SELECT ON mysql` (droit `SELECT` sur
+`mysql.*` ; MySQL : `user`, `role_edges`, `default_roles` ; MariaDB : `global_priv`, `roles_mapping`). 300 comptes au plus (`truncated`).
+**Chiffrement** (`/diagnostics/encryption`) : `encrypted`, `protocol`, `cipher` (MySQL/MariaDB `Ssl_version`/`Ssl_cipher` de la session, PostgreSQL `pg_stat_ssl`) ;
+une observation, aucun droit requis, les paramètres de connexion ne changent pas ; ClickHouse et Redis : 501.
 
 ## Limites
 
