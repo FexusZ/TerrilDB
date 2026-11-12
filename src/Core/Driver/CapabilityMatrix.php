@@ -53,7 +53,10 @@ final class CapabilityMatrix
             'sequences' => [9, 0, 0],
             'enforced_check' => [9, 0, 0],
         ],
+        // Récursion et plan mesuré : constatés sur la série 26.10 de test, minimum plus ancien non vérifié.
         'clickhouse' => [
+            'recursive_cte' => [26, 10, 0],
+            'actual_plan' => [26, 10, 0],
             'window_functions' => [21, 3, 0],
             'generated_columns' => [20, 1, 0],
             'enforced_check' => [22, 1, 0],
