@@ -133,7 +133,7 @@ final class StatementGuardCorpusTest extends TestCase
         ] as $sql) {
             yield from self::rows($sql, $all, $ro, 'refuse:ForbiddenConstruct');
         }
-        yield from self::rows('SELECT a INTO @v FROM t', $all, $rw, 'allow:Read');
+        yield from self::rows('SELECT a INTO @v FROM t', [...$my, Engine::ClickHouse], $rw, 'allow:Read');
 
         // ---- Fonctions à effet de bord
         foreach ([
@@ -257,7 +257,34 @@ final class StatementGuardCorpusTest extends TestCase
         yield from self::rows('EXPLAIN DELETE FROM t', $all, $ro, 'allow:Inspect');
         yield from self::rows('SHOW TABLES', $all, $ro, 'allow:Inspect');
         yield from self::rows('ANALYZE DELETE FROM t', [Engine::MariaDb], $ro, 'refuse:NotReadOnly');
-        yield from self::rows('ANALYZE DELETE FROM t', [Engine::MariaDb], $rw, 'confirm:DestructiveStatement');
+        // ANALYZE / EXPLAIN ANALYZE exécutent vraiment l'instruction qui suit : elle est jugée comme elle.
+        yield from self::rows('ANALYZE DELETE FROM t', [Engine::MariaDb], $rw, 'confirm:DestructiveWithoutWhere');
+        yield from self::rows('ANALYZE DELETE FROM t WHERE a = 1', [Engine::MariaDb], $rw, 'allow:Write');
+        yield from self::rows('ANALYZE FORMAT=JSON UPDATE t SET a = 1 WHERE b = 2', [Engine::MariaDb], $rw, 'allow:Write');
+        yield from self::rows('ANALYZE t', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('EXPLAIN ANALYZE CREATE TABLE z AS SELECT 1', $pg, $ro, 'refuse:NotReadOnly');
+        yield from self::rows('EXPLAIN ANALYZE CREATE TABLE z AS SELECT 1', $pg, $rw, 'allow:Schema');
+        yield from self::rows('EXPLAIN (ANALYZE) CREATE TABLE z AS SELECT 1', $pg, $rw, 'allow:Schema');
+        yield from self::rows('EXPLAIN (ANALYZE, VERBOSE) CREATE OR REPLACE VIEW v AS SELECT 1', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('EXPLAIN ANALYZE REFRESH MATERIALIZED VIEW v', $pg, $rw, 'allow:Schema');
+        yield from self::rows('EXPLAIN ANALYZE DROP TABLE t', $all, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('EXPLAIN ANALYZE ALTER TABLE t ADD c int', $all, $ro, 'refuse:NotReadOnly');
+        yield from self::rows('EXPLAIN ANALYZE SELECT * INTO z FROM t', $pg, $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows('EXPLAIN ANALYZE SELECT * INTO z FROM t', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('EXPLAIN SELECT * INTO z FROM t', $pg, $rw, 'allow:Inspect');
+        yield from self::rows('EXPLAIN ANALYZE WITH x AS (SELECT 1) SELECT * INTO z FROM x', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('EXPLAIN ANALYZE EXECUTE p', $pg, $rw, 'refuse:UnsupportedStatement');
+        yield from self::rows('EXPLAIN (ANALYZE) EXECUTE p', $pg, $rw, 'refuse:UnsupportedStatement');
+        yield from self::rows('EXPLAIN ANALYZE DECLARE c CURSOR FOR SELECT 1', $pg, $rw, 'refuse:UnsupportedStatement');
+        yield from self::rows('EXPLAIN ANALYZE CALL p()', $pg, $rw, 'confirm:DestructiveStatement');
+
+        // ---- SELECT … INTO <table> (PostgreSQL) crée une table : structure, avec confirmation
+        yield from self::rows('SELECT * INTO newt FROM t', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('SELECT * INTO TEMP newt FROM t', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('SELECT * INTO UNLOGGED newt FROM t', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('WITH x AS (SELECT 1 AS a) SELECT * INTO newt FROM x', $pg, $rw, 'confirm:DestructiveStatement');
+        yield from self::rows('SELECT * INTO newt FROM t', $pg, $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows('INSERT INTO t SELECT * FROM u', $pg, $rw, 'allow:Write');
 
         // ---- Instructions propres aux moteurs : jamais prises en charge, ni en lecture seule ni en lecture-écriture
         foreach ([

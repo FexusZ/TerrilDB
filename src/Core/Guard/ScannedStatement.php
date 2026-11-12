@@ -19,6 +19,8 @@ final readonly class ScannedStatement
         'LOAD', 'COPY', 'SET', 'BEGIN', 'COMMIT', 'ROLLBACK', 'USE', 'LOCK', 'UNLOCK', 'FLUSH', 'KILL', 'SHUTDOWN',
     ];
 
+    private const EXPLAIN_OPTIONS = ['ANALYZE', 'ANALYSE', 'VERBOSE', 'FORMAT', 'JSON', 'TREE', 'TRADITIONAL', 'EXTENDED', 'PARTITIONS'];
+
     /**
      * @param non-empty-list<string> $words
      * @param list<int>              $depths    profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
@@ -91,10 +93,12 @@ final readonly class ScannedStatement
      */
     public function withHead(): ?string
     {
-        if ('WITH' !== $this->words[0]) {
-            return null;
-        }
-        for ($i = 1, $count = \count($this->words); $i < $count; ++$i) {
+        return 'WITH' === $this->words[0] ? $this->headAfterWith(0) : null;
+    }
+
+    private function headAfterWith(int $with): ?string
+    {
+        for ($i = $with + 1, $count = \count($this->words); $i < $count; ++$i) {
             $word = $this->words[$i];
             if (0 !== $this->depths[$i] || !\in_array($word, self::STATEMENT_VERBS, true)) {
                 continue;
@@ -103,6 +107,53 @@ final readonly class ScannedStatement
             if (!$named) {
                 return $word;
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * L'instruction que le moteur EXÉCUTE vraiment, pour la juger comme telle : la tête d'un WITH ; derrière
+     * EXPLAIN ANALYZE (ou EXPLAIN (ANALYZE …)), l'instruction expliquée, qui est jouée pour de bon ; derrière ANALYZE
+     * (MariaDB), une écriture qui suit. Un EXPLAIN simple n'exécute rien (EXPLAIN) ; ANALYZE TABLE reste une maintenance.
+     * Null : on ne sait pas dire ce qui sera exécuté (refus).
+     */
+    public function executedVerb(): ?string
+    {
+        $first = $this->words[0];
+        if ('WITH' === $first) {
+            return $this->headAfterWith(0);
+        }
+        if ('EXPLAIN' === $first && ($this->has('ANALYZE') || $this->has('ANALYSE'))) {
+            $inner = $this->innerStatementIndex(1);
+
+            return null === $inner ? null : ('WITH' === $this->words[$inner] ? $this->headAfterWith($inner) : $this->words[$inner]);
+        }
+        if ('ANALYZE' === $first) {
+            $inner = 'TABLE' === ($this->words[1] ?? '') ? null : $this->innerStatementIndex(1);
+            $verb = null === $inner ? null : $this->words[$inner];
+            if (null !== $inner && 'WITH' === $verb) {
+                $verb = $this->headAfterWith($inner);
+            }
+
+            return \in_array($verb, ['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE'], true) ? $verb : 'ANALYZE';
+        }
+
+        return $first;
+    }
+
+    /**
+     * Le mot qui ouvre l'instruction expliquée, après les options (ANALYZE, VERBOSE, FORMAT=JSON…) ; null si le premier mot
+     * qui n'est pas une option n'est pas un verbe connu (EXECUTE, DECLARE… : on ne sait pas juger ce qui sera joué).
+     */
+    private function innerStatementIndex(int $from): ?int
+    {
+        for ($i = $from, $count = \count($this->words); $i < $count; ++$i) {
+            if (0 !== $this->depths[$i] || \in_array($this->words[$i], self::EXPLAIN_OPTIONS, true)) {
+                continue;
+            }
+
+            return 'WITH' === $this->words[$i] || \in_array($this->words[$i], self::STATEMENT_VERBS, true) ? $i : null;
         }
 
         return null;

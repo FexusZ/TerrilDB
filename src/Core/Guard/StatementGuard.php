@@ -100,43 +100,42 @@ final class StatementGuard
 
         return QueryMode::ReadOnly === $mode
             ? $this->checkReadOnly($statement, $kind)
-            : $this->checkReadWrite($statement, $kind, $writes);
-    }
-
-    private function kind(ScannedStatement $statement): ?StatementKind
-    {
-        $first = $statement->first();
-
-        if ('WITH' === $first) {
-            return $this->withKind($statement);
-        }
-
-        return $this->kindOfVerb($first, $statement);
+            : $this->checkReadWrite($statement, $kind, $writes, $engine);
     }
 
     /**
-     * Un WITH prend la nature de son instruction de tête (WITH … DROP est une structure, WITH … UPDATE une écriture) ;
-     * une expression de table qui écrit (PostgreSQL : WITH d AS (DELETE … RETURNING *) SELECT …) en fait une écriture.
+     * La nature se juge sur l'instruction EXÉCUTÉE (ScannedStatement::executedVerb) : la tête d'un WITH, l'instruction
+     * expliquée par EXPLAIN ANALYZE, l'écriture qui suit un ANALYZE. Une expression de table qui écrit (PostgreSQL :
+     * WITH d AS (DELETE … RETURNING *) SELECT …) fait d'une lecture une écriture. Un EXPLAIN ANALYZE reste une inspection
+     * tant que ce qu'il joue ne change rien.
      */
-    private function withKind(ScannedStatement $statement): ?StatementKind
+    private function kind(ScannedStatement $statement): ?StatementKind
     {
-        $head = $statement->withHead();
-        if (null === $head) {
+        $first = $statement->first();
+        $verb = $statement->executedVerb();
+        if (null === $verb) {
             return null;
         }
-        $kind = $this->kindOfVerb($head, $statement);
 
-        return StatementKind::Read === $kind && $this->hasWriteVerb($statement) ? StatementKind::Write : $kind;
+        $kind = $this->kindOfVerb($verb);
+        if (StatementKind::Read === $kind && ($verb !== $first || 'WITH' === $first) && $this->hasWriteVerb($statement)) {
+            $kind = StatementKind::Write;
+        }
+        if ('EXPLAIN' === $first && 'EXPLAIN' !== $verb) {
+            return StatementKind::Write === $kind || StatementKind::Schema === $kind ? $kind : StatementKind::Inspect;
+        }
+
+        return $kind;
     }
 
-    private function kindOfVerb(string $first, ScannedStatement $statement): ?StatementKind
+    private function kindOfVerb(string $verb): ?StatementKind
     {
         return match (true) {
-            'EXPLAIN' === $first => ($statement->has('ANALYZE') || $statement->has('ANALYSE')) && $this->hasWriteVerb($statement) ? StatementKind::Write : StatementKind::Inspect,
-            \in_array($first, self::READ, true) => StatementKind::Read,
-            \in_array($first, self::INSPECT, true) => StatementKind::Inspect,
-            \in_array($first, self::WRITE, true) => StatementKind::Write,
-            \in_array($first, self::SCHEMA_SAFE, true), \in_array($first, self::MAINTENANCE, true), \in_array($first, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
+            'EXPLAIN' === $verb => StatementKind::Inspect,
+            \in_array($verb, self::READ, true) => StatementKind::Read,
+            \in_array($verb, self::INSPECT, true) => StatementKind::Inspect,
+            \in_array($verb, self::WRITE, true) => StatementKind::Write,
+            \in_array($verb, self::SCHEMA_SAFE, true), \in_array($verb, self::MAINTENANCE, true), \in_array($verb, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
             default => null,
         };
     }
@@ -190,10 +189,28 @@ final class StatementGuard
         return GuardVerdict::allowed($kind);
     }
 
-    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes): GuardVerdict
+    /**
+     * PostgreSQL : SELECT … INTO <table> (aussi derrière WITH, ou sous EXPLAIN ANALYZE qui le joue) CRÉE une table. Ailleurs
+     * INTO d'un SELECT ne reçoit que des variables (MySQL/MariaDB) ou des fichiers (refusés plus haut).
+     */
+    private function createsTableWithInto(ScannedStatement $statement, StatementKind $kind, Engine $engine): bool
     {
-        // Derrière un WITH, c'est l'instruction de tête qui compte (WITH … DROP TABLE se juge comme DROP TABLE).
-        $first = $statement->withHead() ?? $statement->first();
+        if (Engine::PostgreSql !== $engine || !$statement->has('INTO')) {
+            return false;
+        }
+        $explainsAndRuns = 'EXPLAIN' === $statement->first() && 'EXPLAIN' !== $statement->executedVerb();
+
+        return StatementKind::Read === $kind || (StatementKind::Inspect === $kind && $explainsAndRuns);
+    }
+
+    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes, Engine $engine): GuardVerdict
+    {
+        // C'est l'instruction exécutée qui compte (WITH … DROP TABLE se juge comme DROP TABLE, EXPLAIN ANALYZE CREATE … comme CREATE).
+        $first = $statement->executedVerb() ?? $statement->first();
+        $createsTable = $this->createsTableWithInto($statement, $kind, $engine);
+        if ($createsTable) {
+            $kind = StatementKind::Schema;
+        }
 
         // Mêmes refus définitifs qu'en lecture seule : fichiers du serveur, contrôle du serveur, verrous durables.
         if ($this->usesDangerousFunction($statement)) {
@@ -212,7 +229,7 @@ final class StatementGuard
 
         // CREATE OR REPLACE détruit l'objet existant.
         $replaces = 'CREATE' === $first && $statement->hasSequence('OR', 'REPLACE');
-        if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true) || \in_array($first, self::MAINTENANCE, true) || $replaces) {
+        if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true) || \in_array($first, self::MAINTENANCE, true) || $replaces || $createsTable) {
             return GuardVerdict::needsConfirmation($kind, GuardReason::DestructiveStatement);
         }
         if (StatementKind::Write === $kind && $this->modifiesRowsWithoutWhere($statement)) {

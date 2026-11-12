@@ -12,6 +12,7 @@ use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\WritePermissions;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlQueryRunner;
 use App\Driver\PostgreSql\PostgreSqlQueryRunner;
@@ -134,5 +135,37 @@ final class GuardEngineConcordanceTest extends TestCase
 
         self::assertSame(Decision::Refused, (new StatementGuard())->check("select `get_lock`('a', 1)", TargetDatabase::engine($envVar), QueryMode::ReadOnly)->decision);
         self::assertSame(1, $runner->run("select `get_lock`('a', 1), `release_lock`('a')", StatementKind::Read, $this->readOnly())->rowCount());
+    }
+
+    public function testPostgreSqlCreatesATableFromSelectIntoAndExplainAnalyzeSoADataOnlyGrantMustBeRefused(): void
+    {
+        $runner = $this->postgres();
+        $guard = new StatementGuard();
+        $dataOnly = new WritePermissions(true, false);
+        $write = new QueryOptions(QueryMode::ReadWrite, 30_000, 10);
+        $statements = [
+            'guard_into_a' => 'select * into guard_into_a from categories',
+            'guard_into_b' => 'explain analyze create table guard_into_b as select 1 as a',
+            'guard_into_c' => 'explain (analyze, format json) select * into guard_into_c from categories',
+            'guard_into_d' => 'with x as (select 1 as a) select * into guard_into_d from x',
+        ];
+
+        try {
+            foreach ($statements as $table => $sql) {
+                $verdict = $guard->check($sql, Engine::PostgreSql, QueryMode::ReadWrite, $dataOnly);
+                self::assertSame(Decision::Refused, $verdict->decision, $sql);
+                self::assertSame(StatementKind::Schema, $verdict->kind, $sql);
+                // Avec le droit sur la structure, elle est jugée pour ce qu'elle est : une instruction de structure.
+                self::assertSame(StatementKind::Schema, $guard->check($sql, Engine::PostgreSql, QueryMode::ReadWrite)->kind, $sql);
+
+                // Le moteur, lui, la crée bel et bien : c'est donc au garde de la refuser.
+                $runner->run($sql, StatementKind::Write, $write);
+                self::assertSame(1, $runner->run(\sprintf("select 1 from pg_tables where tablename = '%s'", $table), StatementKind::Read, $this->readOnly())->rowCount(), $sql);
+            }
+        } finally {
+            foreach (array_keys($statements) as $table) {
+                $runner->run('drop table if exists '.$table, StatementKind::Write, $write);
+            }
+        }
     }
 }
