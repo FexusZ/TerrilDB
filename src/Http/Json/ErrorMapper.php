@@ -11,7 +11,9 @@ use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Connection\Exception\InvalidConnectionOrderException;
+use App\Core\Connection\Exception\ForbiddenBastionException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Connection\Tunnel\TunnelFailedException;
 use App\Core\Data\Exception\DataChangeConflictException;
 use App\Core\Data\Exception\DataChangeFailedException;
 use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
@@ -71,6 +73,8 @@ final class ErrorMapper
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),
             $error instanceof ApiTokenPermissionException => new ErrorResponse(403, 'permission_denied'),
             $error instanceof ForbiddenTargetHostException => new ErrorResponse(403, 'forbidden_target'),
+            $error instanceof ForbiddenBastionException => new ErrorResponse(403, 'forbidden_bastion'),
+            $error instanceof TunnelFailedException => new ErrorResponse(502, 'tunnel_failed', ['reason' => $error->reason]),
             $error instanceof NotAnAdministratorException => new ErrorResponse(403, 'forbidden'),
             $error instanceof InvalidInvitationTokenException => new ErrorResponse(403, 'invalid_invitation'),
             $error instanceof InvalidUserException,
