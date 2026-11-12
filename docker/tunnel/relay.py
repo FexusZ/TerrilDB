@@ -78,7 +78,7 @@ def parse_allowed(configured):
         if not item:
             continue
         host, port = item, 22
-        match = re.match(r"^(.+):(\d{1,5})$", item)
+        match = re.fullmatch(r"(.+):(\d{1,5})", item)
         if match:
             host, port = match.group(1), int(match.group(2))
         allowed.add((normalize_host(host), port))
@@ -94,14 +94,14 @@ def parse_request(message):
     fingerprint, target = message.get("fingerprint"), message.get("target_host")
     name, idle = message.get("socket_name"), message.get("idle_seconds")
     valid = (
-        isinstance(host, str) and HOST_RE.match(host)
+        isinstance(host, str) and HOST_RE.fullmatch(host)
         and _is_port(message.get("port"))
-        and isinstance(user, str) and USER_RE.match(user)
+        and isinstance(user, str) and USER_RE.fullmatch(user)
         and isinstance(key, str) and len(key) <= KEY_MAX_BYTES and KEY_RE.match(key)
-        and (fingerprint is None or (isinstance(fingerprint, str) and FINGERPRINT_RE.match(fingerprint)))
-        and isinstance(target, str) and HOST_RE.match(target)
+        and (fingerprint is None or (isinstance(fingerprint, str) and FINGERPRINT_RE.fullmatch(fingerprint)))
+        and isinstance(target, str) and HOST_RE.fullmatch(target)
         and _is_port(message.get("target_port"))
-        and isinstance(name, str) and SOCKET_NAME_RE.match(name)
+        and isinstance(name, str) and SOCKET_NAME_RE.fullmatch(name)
         and isinstance(idle, int) and not isinstance(idle, bool) and 1 <= idle <= MAX_IDLE
     )
     if not valid:
@@ -167,7 +167,7 @@ class Relay:
         return {"ok": True, "id": entry["id"], "socket": entry["socket"]}
 
     def _close(self, tunnel_id):
-        if not isinstance(tunnel_id, str) or not ID_RE.match(tunnel_id):
+        if not isinstance(tunnel_id, str) or not ID_RE.fullmatch(tunnel_id):
             raise RelayError("invalid_request")
         with self.lock:
             entry = self.by_id.get(tunnel_id)

@@ -136,6 +136,9 @@ class RelayTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.tmp.name, reply["id"])))
         self.assertEqual({"ok": True}, r.handle({"op": "close", "id": reply["id"]}))
 
+    def test_close_refuses_an_identifier_with_a_trailing_newline(self):
+        self.assertEqual("invalid_request", self.relay().handle({"op": "close", "id": "a" * 32 + "\n"})["error"])
+
     def test_close_refuses_a_path_like_identifier(self):
         self.assertEqual("invalid_request", self.relay().handle({"op": "close", "id": "../x"})["error"])
 
@@ -146,6 +149,8 @@ class RelayTest(unittest.TestCase):
             message(target_host=""), message(target_host="-oProxyCommand=x"), message(target_port=70000),
             message(socket_name="../x"), message(socket_name="a/b"), message(host="-oProxyCommand=x"),
             message(user="-oProxyCommand=x"), {"op": "nope"}, {},
+            message(socket_name="tunnel.sock\n"), message(user="u\n"), message(target_host="db\n"), message(host="bastion.example\n"),
+            message(fingerprint=FP + "\n"),
         ]
         for item in bad:
             self.assertEqual("invalid_request", self.relay().handle(item)["error"], item)
