@@ -2,6 +2,7 @@ import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/typ
 
 const REASONS: Record<string, string> = {
   performance_schema_off: 'performance_schema est éteint sur ce serveur',
+  sys_schema_missing: 'le schéma sys est absent de ce serveur',
 }
 
 /**

@@ -23,7 +23,7 @@ use Doctrine\DBAL\Exception\DriverException;
  *
  * Transactions : information_schema.INNODB_TRX (privilège PROCESS), les deux moteurs.
  * MySQL : attentes de lignes par performance_schema.data_lock_waits / data_locks, attentes de métadonnées (la file derrière
- * un DDL) par la vue sys.schema_table_lock_waits ; sans performance_schema allumé, état « source éteinte » (jamais « aucun verrou »).
+ * un DDL) par la vue sys.schema_table_lock_waits ; sans performance_schema allumé, état « source éteinte » (jamais « aucun verrou »), de même sans schéma sys (`sys_schema_missing`).
  * MariaDB : pas de data_locks, attentes de lignes par INNODB_LOCK_WAITS / INNODB_LOCKS ; ses verrous de métadonnées ne se lisent
  * que par performance_schema, éteint par défaut : ils ne sont pas rapportés (le moteur n'a pas cette source ici).
  */
@@ -33,6 +33,8 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
     private const ER_TABLEACCESS_DENIED = 1142;
     private const ER_VIEW_INVALID = 1356;
     private const ER_SPECIFIC_ACCESS_DENIED = 1227;
+    private const ER_BAD_DB = 1049;
+    private const ER_NO_SUCH_TABLE = 1146;
 
     private DbalCatalogReader $catalog;
 
@@ -89,6 +91,10 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
             } catch (DriverException $e) {
                 if (self::isRefusal($e)) {
                     return DiagnosticStatus::denied($privilege);
+                }
+                // Pas de schéma « sys » (supprimé, ou non installé par le fournisseur) : le thème le dit, la carte des capacités tient.
+                if (str_contains($probe, 'sys.') && \in_array($e->getCode(), [self::ER_BAD_DB, self::ER_NO_SUCH_TABLE], true)) {
+                    return DiagnosticStatus::disabled('sys_schema_missing');
                 }
 
                 throw $e;

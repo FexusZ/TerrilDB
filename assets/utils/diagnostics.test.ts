@@ -22,6 +22,12 @@ describe('describeStatus', () => {
     expect(describeStatus(status('disabled', { reason: 'performance_schema_off' }), 'les verrous')).toContain('ne veut pas dire')
   })
 
+  it('explains a missing sys schema', () => {
+    const message = describeStatus(status('disabled', { reason: 'sys_schema_missing' }), 'les verrous')
+    expect(message).toContain('sys')
+    expect(message).toContain('ne veut pas dire')
+  })
+
   it('says the engine has no such source', () => {
     expect(describeStatus(status('unsupported', { reason: 'not_supported' }), 'les verrous')).toBe('Ce moteur ne fournit pas les verrous.')
   })
