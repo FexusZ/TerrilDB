@@ -431,7 +431,7 @@ série à support long, que des installations gardent des années, et la plus r�
 par moteur (`TargetDatabase::all()`/`relational()`) les parcourent toutes, et `TargetVersionTest` garde chaque cible à sa série
 (`SELECT VERSION()`). Dependabot ignore les majeures de `mysql` et `mariadb` : changer de série se fait à la main. Le pilote est le
 même pour toutes les versions (un seul `MySqlDriver` ; les variantes se lisent à la forme des réponses, ex. plan JSON v1/v2) ;
-`docker/init-env.sh` complète un `docker/dev/php.env` existant avec les variables ajoutées depuis.
+`docker/init-env.sh` complète un `docker/dev/php.env` existant avec les variables ajoutées depuis. Cible Vitess facultative (`target-vitess`, profil `vitess`, un seul `mysqld` derrière des tablets primaire/réplica/lecture seule : pas de vraie réplication, `TARGET_VITESS_URL`) : `docs/vitess-tests.md`.
 Tous les ports de `compose.yaml` ne sont publiés que sur `127.0.0.1` (HTTP clair, bases aux mots de passe jetables ; `tests/ComposePortsTest`
 le vérifie, donc une cible ajoutée doit suivre). Pour les ouvrir au réseau : `compose.override.yaml` (ignoré par git, propre à chaque machine) avec
 `ports: !override ["8000:8000"]` : sans `!override`, ses ports s'ajoutent à ceux de base au lieu de les remplacer.
