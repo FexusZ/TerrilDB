@@ -17,6 +17,7 @@ use App\Core\Data\Exception\DataChangeFailedException;
 use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
 use App\Core\Data\Exception\InvalidDataChangeException;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\Health\HealthBusyException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -68,6 +69,7 @@ final class ErrorMapper
             $error instanceof InvalidSecondFactorException => new ErrorResponse(401, 'invalid_second_factor'),
             $error instanceof LockedException, $error instanceof CryptoException => new ErrorResponse(401, 'locked'),
             $error instanceof TooManyAttemptsException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
+            $error instanceof HealthBusyException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),

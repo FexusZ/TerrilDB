@@ -117,6 +117,16 @@ final readonly class McpServerFactory
             );
         }
 
+        if ($this->access->get()->token->getPermissions()->diagnostic) {
+            $builder->addTool(
+                [$this->tools, 'serverHealth'],
+                name: 'server_health',
+                description: 'Mesure la santé du serveur de la connexion sur un intervalle : deux relevés de compteurs à `seconds` secondes d’écart (1 à 30, 5 par défaut ; l’appel dure autant), puis des taux par seconde et des repères (requêtes, connexions contre le plafond, échecs de connexion, lectures disque du cache, tables temporaires sur disque, attentes de verrous…). Les seuils sont des repères à valider, pas des verdicts ; une valeur nulle veut dire « inconnue » (compteur absent ou remis à zéro), pas zéro ; `discarded` signale un serveur redémarré entre les deux relevés. Lecture seule, rien n’est conservé.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection, 'seconds' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 30, 'description' => 'Intervalle entre les deux relevés, en secondes.']], 'required' => ['connection'], 'additionalProperties' => false],
+            );
+        }
+
         if ($writes) {
             $builder->addTool(
                 [$this->tools, 'executeStatement'],

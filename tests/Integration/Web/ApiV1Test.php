@@ -559,13 +559,43 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
-        self::assertSame(['sessions' => 'available', 'locks' => $locks], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'health' => 'available' === $locks ? 'available' : 'unsupported'], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertIsArray($body['sessions']);
         self::assertNotEmpty($body['sessions']);
+    }
+
+    public function testATokenWithTheDiagnosticRightMeasuresTheHealth(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/health?seconds=1');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertNotEmpty($body['indicators']);
+    }
+
+    public function testATokenWithoutTheDiagnosticRightCannotMeasureTheHealth(): void
+    {
+        $this->prepare();
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/health?seconds=1');
+
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $body);
+    }
+
+    public function testTheHealthIntervalIsBoundedOnTheApiToo(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/health?seconds=31');
+
+        self::assertSame(422, $this->statusCode());
     }
 
     public function testTheDiagnosticRightDoesNotOpenAConnectionOutsideTheList(): void

@@ -126,6 +126,16 @@ final class ErrorMapperTest extends TestCase
         self::assertSame(['message' => 'syntax error at or near "selec"'], $response->extra);
     }
 
+    public function testBusyHealthMeasurementsAreRetryable(): void
+    {
+        $response = (new ErrorMapper())->map(new \App\Core\Diagnostics\Health\HealthBusyException(30));
+
+        self::assertNotNull($response);
+        self::assertSame(429, $response->status);
+        self::assertSame('too_many_attempts', $response->code);
+        self::assertSame(['Retry-After' => '30'], $response->headers);
+    }
+
     public function testTooManyAttemptsTellWhenToRetry(): void
     {
         $response = (new ErrorMapper())->map(new TooManyAttemptsException(42));

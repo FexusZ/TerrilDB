@@ -6,6 +6,8 @@ namespace App\Http\Json;
 
 use App\Core\Diagnostics\BlockingNode;
 use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\Health\HealthIndicator;
+use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\ServerSession;
@@ -98,5 +100,28 @@ final class DiagnosticsPresenter
             'object' => $node->object,
             'blocked' => array_map(self::node(...), $node->blocked),
         ];
+    }
+
+    /**
+     * Santé sur l'intervalle mesuré : des taux et des repères, jamais des compteurs cumulés. Vide (avec l'état ou `discarded`)
+     * quand la source est illisible ou que le serveur a redémarré entre les deux relevés.
+     *
+     * @return array<string, mixed>
+     */
+    public static function health(HealthReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'seconds' => null === $report->seconds ? null : round($report->seconds, 3),
+            'startedAt' => self::instant($report->firstSampleAt),
+            'endedAt' => self::instant($report->secondSampleAt),
+            'discarded' => $report->discarded,
+            'indicators' => array_map(static fn (HealthIndicator $i): array => ['key' => $i->key, 'value' => $i->value, 'unit' => $i->unit, 'level' => $i->level->value, 'threshold' => $i->threshold], $report->indicators),
+        ];
+    }
+
+    private static function instant(?float $at): ?string
+    {
+        return null === $at ? null : \sprintf('%s.%03dZ', gmdate('Y-m-d\TH:i:s', (int) floor($at)), (int) (($at - floor($at)) * 1000));
     }
 }
