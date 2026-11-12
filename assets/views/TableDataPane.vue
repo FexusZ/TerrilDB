@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { applyData, previewData, type DataPreview } from '../api/data'
+import { applyData, previewData, type DataPreview, type DataWarning } from '../api/data'
 import { messageFor, reasonText } from '../api/errors'
 import type { TableDetail } from '../api/types'
 import AppButton from '../components/AppButton.vue'
@@ -63,6 +63,16 @@ const draft = ref<DataDraft>(emptyDraft())
 const pending = computed(() => pendingCount(draft.value))
 const review = ref<DataPreview | null>(null)
 const reviewing = ref(false)
+/** Le moteur de stockage de la table n'annule pas : la promesse « tout ou rien » serait fausse. */
+const rollbackless = computed(() => review.value?.warnings.some((w) => w.code === 'not_transactional') ?? false)
+
+function warningText(warning: DataWarning): string {
+  if (warning.code === 'not_transactional') {
+    return `Le moteur de stockage de cette table (${String(warning.value)}) n’annule pas : si une instruction échoue, celles déjà appliquées le restent.`
+  }
+  const count = Number(warning.value)
+  return `Cette table a ${count} ${count > 1 ? 'déclencheurs' : 'déclencheur'} : l’écriture peut avoir d’autres effets.`
+}
 const applying = ref(false)
 const problem = ref<string | null>(null)
 const applied = ref<string | null>(null)
@@ -175,7 +185,7 @@ const matchedText = (matched: number | null): string => (matched === null ? '' :
       <aside v-if="pending > 0" class="changes" role="region" aria-label="Modifications en attente">
         <div class="top">
           <strong>{{ pending }} {{ pending > 1 ? 'changements' : 'changement' }} en attente</strong>
-          <span v-if="review" class="mode">{{ review.transactional ? 'Appliqués en une seule transaction : tout ou rien.' : 'Appliqués instruction par instruction : en cas d’erreur, les précédents restent en place.' }}</span>
+          <span v-if="review" class="mode">{{ review.transactional && !rollbackless ? 'Appliqués en une seule transaction : tout ou rien.' : 'Appliqués instruction par instruction : en cas d’erreur, les précédents restent en place.' }}</span>
         </div>
         <ul v-if="review" class="sql" aria-label="SQL qui sera exécuté">
           <li v-for="(statement, position) in review.statements" :key="position" :class="{ destructive: statement.destructive, missing: statement.matched !== null && statement.matched !== 1 }">
@@ -183,6 +193,9 @@ const matchedText = (matched: number | null): string => (matched === null ? '' :
             <span v-if="statement.matched !== null" class="tag">{{ matchedText(statement.matched) }}</span>
             <span v-if="statement.destructive" class="tag danger">supprime</span>
           </li>
+        </ul>
+        <ul v-if="review && review.warnings.length > 0" class="warnings" role="status" aria-label="Avertissements">
+          <li v-for="warning in review.warnings" :key="warning.code">{{ warningText(warning) }}</li>
         </ul>
         <p v-if="review && review.asynchronous" class="async" role="status">ClickHouse applique les modifications et suppressions en arrière-plan : elles n’apparaîtront pas tout de suite dans les données.</p>
         <p v-if="review && !review.ok" class="alert" role="alert">Une ligne a été modifiée ou supprimée par ailleurs, ou ne se distingue pas d’une autre : rechargez les données avant de continuer.</p>
@@ -248,6 +261,7 @@ h1 { font: 600 36px/1.1 var(--font-display); letter-spacing: -0.02em; }
 .sql li.missing code { color: var(--bad); text-decoration: underline wavy; }
 .tag { flex: none; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); font-size: 11px; color: var(--mut); }
 .tag.danger { border-color: var(--bad-line); color: var(--bad); }
+.warnings { margin: 0; padding: 8px 10px 8px 26px; font-size: 13px; color: var(--sec-ink); border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); }
 .async { font-size: 13px; color: var(--sec-ink); padding: 8px 10px; border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); }
 .alert { padding: 8px 10px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 .buttons { display: flex; justify-content: flex-end; gap: 8px; }
