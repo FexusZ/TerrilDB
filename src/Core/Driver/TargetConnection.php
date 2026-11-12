@@ -35,6 +35,7 @@ final class TargetConnection
         private readonly ?DdlExecutor $ddl = null,
         private readonly ?DataExecutor $data = null,
         private readonly ?ServerDiagnostics $diagnostics = null,
+        private readonly ?ServerVersion $version = null,
     ) {
         $this->release = $release;
     }
@@ -79,6 +80,19 @@ final class TargetConnection
     public function diagnostics(): ServerDiagnostics
     {
         return $this->diagnostics ?? throw UnsupportedOperationException::for($this->engine, 'diagnostics');
+    }
+
+    /**
+     * La version lue à l'ouverture ; nulle si le serveur ne l'a pas donnée (ou pas de façon lisible).
+     */
+    public function version(): ?ServerVersion
+    {
+        return $this->version;
+    }
+
+    public function capabilities(): ServerCapabilities
+    {
+        return CapabilityMatrix::for($this->engine, $this->version);
     }
 
     public function runner(): QueryRunner

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Core\Driver;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\EngineCapability;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Driver\ServerVersion;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\StatementKind;
 use App\Core\KeyValue\KeyDetail;
@@ -141,5 +143,23 @@ final class TargetConnectionTest extends TestCase
         $connection->close();
 
         self::assertSame(1, $closed);
+    }
+
+    public function testItKnowsWhatTheServerItIsOpenedOnCanDo(): void
+    {
+        $connection = new TargetConnection(Engine::MariaDb, $this->introspector(), $this->runner(), static function (): void {
+        }, version: ServerVersion::parse('11.8.2-MariaDB'));
+
+        self::assertTrue($connection->capabilities()->supports(EngineCapability::Sequences));
+        self::assertSame(11, $connection->version()?->major);
+    }
+
+    public function testAnUnreadVersionClaimsNothing(): void
+    {
+        $connection = new TargetConnection(Engine::MySql, $this->introspector(), $this->runner(), static function (): void {
+        });
+
+        self::assertNull($connection->version());
+        self::assertSame([], $connection->capabilities()->supported());
     }
 }
