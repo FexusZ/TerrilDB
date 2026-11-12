@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Driver;
 
+use App\Core\Connection\Engine;
 use App\Core\Data\DataExecutor;
 use App\Core\Data\DataPlan;
 use App\Core\Data\DataStatement;
@@ -17,7 +18,7 @@ use Doctrine\DBAL\Connection;
  */
 final readonly class DbalDataExecutor implements DataExecutor
 {
-    public function __construct(private Connection $connection)
+    public function __construct(private Connection $connection, private Engine $engine)
     {
     }
 
@@ -28,7 +29,7 @@ final readonly class DbalDataExecutor implements DataExecutor
 
             return is_numeric($count) ? (int) $count : 0;
         } catch (\Throwable $e) {
-            throw new DataChangeFailedException(self::message($e), 0, $statement, $e);
+            throw new DataChangeFailedException(self::message($e), 0, $statement, $e, EngineLockConflict::of($this->engine, $e));
         }
     }
 
@@ -52,7 +53,7 @@ final readonly class DbalDataExecutor implements DataExecutor
         } catch (\Throwable $e) {
             $this->rollBack();
 
-            throw new DataChangeFailedException(self::message($e), 0, $current, $e);
+            throw new DataChangeFailedException(self::message($e), 0, $current, $e, EngineLockConflict::of($this->engine, $e));
         }
     }
 
