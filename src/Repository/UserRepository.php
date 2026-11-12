@@ -59,6 +59,18 @@ final class UserRepository extends ServiceEntityRepository
         return $this->findBy([], ['createdAt' => 'ASC', 'id' => 'ASC']);
     }
 
+    /**
+     * Verrouille (jusqu'à la fin de la transaction en cours) les administrateurs actifs, toujours dans le même
+     * ordre : deux transactions s'attendent au lieu de décider chacune sur un décompte périmé.
+     */
+    public function lockActiveAdmins(): void
+    {
+        $this->getEntityManager()->getConnection()->executeQuery(
+            'SELECT id FROM app_user WHERE role = :role AND disabled_at IS NULL ORDER BY id FOR UPDATE',
+            ['role' => Role::Admin->value],
+        )->fetchAllAssociative();
+    }
+
     public function countActiveAdmins(): int
     {
         return $this->count(['role' => Role::Admin, 'disabledAt' => null]);
