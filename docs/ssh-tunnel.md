@@ -40,7 +40,30 @@ Livré : le contrat, le conteneur, le bastion de test et la preuve de bout en bo
 | Sortie d'`ssh` qui fuit | stdout/stderr jetés ; le relais ne renvoie qu'un code (`invalid_request`, `forbidden_bastion`, `host_key_unconfirmed`, `host_key_changed`, `unavailable`). |
 | Injection dans la ligne de commande | Aucun shell ; hôtes, utilisateur et noms de socket validés par expressions strictes (rien ne commence par `-`), `-F /dev/null`, options en liste. |
 | Conteneur compromis | Utilisateur non root, `read_only`, `cap_drop: ALL`, `no-new-privileges`, aucun port publié, réseau dédié ; seul volume partagé : les sockets. |
-| Tunnels oubliés | Fermeture après 5 minutes d'inactivité (maximum accepté par le relais), renouvelée à chaque ouverture demandée ; un tunnel dont `ssh` est mort est rouvert. |
+| Tunnels oubliés | Fermeture après 5 minutes sans nouvelle demande d'ouverture (maximum accepté par le relais) ; un tunnel dont `ssh` est mort est rouvert ; les dossiers laissés par un redémarrage sont purgés au démarrage. |
+| Déni de service du relais | Le verrou ne protège que les structures (jamais tenu pendant `ssh-keyscan` ou `ssh`) ; deux ouvertures identiques simultanées n'en font qu'une ; plafonds `TUNNEL_MAX_TUNNELS` (50), `TUNNEL_MAX_PER_BASTION` (10), `TUNNEL_MAX_CONNECTIONS` (32, au-delà : `busy`), `TUNNEL_OPEN_TIMEOUT` (20 s au total par ouverture) ; `pids_limit`, `mem_limit` et `cpus` sur le service. |
+| Clé privée dans une trace d'exception | `#[\SensitiveParameter]` sur tout paramètre qui porte la clé (`SshJump`, `UnixSocketTunnelOpener::call`, lecture du JSON chiffré), avec des tests qui lisent `getTrace()`. |
+
+## Limites connues (à lire avant de brancher)
+
+- **Inactivité** : le relais ne voit pas le trafic du socket. Le délai de 5 minutes court depuis la DERNIÈRE DEMANDE d'ouverture :
+  une session de base qui dure plus longtemps sans que l'application rappelle `open()` est coupée. Le branchement de
+  `TargetOpener` doit donc rappeler `open()` à chaque usage (il retrouve le tunnel et renouvelle le délai).
+- **Propriété** : la réutilisation est liée à la clé privée (son empreinte entre dans l'identité) : deux comptes qui
+  partagent une clé partagent le tunnel. `close` ne vérifie pas de propriétaire : l'identifiant (128 bits) fait foi.
+- **Contrôle du pair** : `SO_PEERCRED` ne compare que l'uid. Aucun autre service ne doit tourner sous l'uid de `php` et de
+  `tunnel` (le dossier `0700` donne déjà cette garantie). L'uid de l'image `tunnel` est un argument de build (`UID`/`GID`,
+  passés par compose) : `ssh` refuse de tourner sous un uid sans entrée `passwd`, il doit donc être celui du conteneur.
+- **Liste de bastions** : comparaison exacte, point final ignoré, une adresse IPv6 s'écrit `[2001:db8::1]:22` ; le relais
+  est plus strict que PHP sur les noms (échec fermé). N'y mettre que de vrais bastions SSH : y inscrire un service interne
+  offrirait un `ssh-keyscan` vers lui.
+- **Cible derrière le bastion** : `TargetHostPolicy` juge le premier saut (le bastion), PAS la cible, qui est résolue côté
+  bastion (sa « boucle locale » est la sienne). Le risque de détournement repose sur la liste de bastions et sur le compte SSH.
+  Appliquer la règle d'adresses à la cible n'est pas simple (la résolution locale n'est pas celle du bastion) : à trancher.
+- **Pare-feu de sortie** : le réseau du tunnel (`bastion-net`) sort librement ; les règles de `docs/deploy.md` doivent viser
+  aussi le conteneur `tunnel`, et n'autoriser que les bastions déclarés.
+- Le service `UnixSocketTunnelOpener` ne doit pas être injecté seul : passer par l'alias `TunnelOpener` (liste) et par
+  `AuditedTunnels` (audit).
 
 ## Sockets
 
