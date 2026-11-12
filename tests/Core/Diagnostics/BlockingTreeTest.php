@@ -81,6 +81,75 @@ final class BlockingTreeTest extends TestCase
         self::assertSame(['1' => true, '2' => true], $seen);
     }
 
+    public function testManyWaitersOfOneLockStayLinear(): void
+    {
+        // Chaque attendant est bloqué par le détenteur ET par tous ceux qui sont devant lui (ce que rendent les moteurs).
+        $waits = [];
+        for ($i = 1; $i <= 45; ++$i) {
+            for ($j = 0; $j < $i; ++$j) {
+                $waits[] = self::wait((string) $i, (string) $j, 100 - $i);
+            }
+        }
+
+        $forest = BlockingTree::forest($waits);
+
+        $ids = self::all($forest->roots);
+        self::assertCount(46, $ids, 'Each session is shown once.');
+        self::assertCount(46, array_unique($ids));
+        self::assertFalse($forest->truncated);
+        self::assertSame(['0'], self::ids($forest->roots), 'The holder is the root.');
+    }
+
+    public function testASessionWaitingForSeveralIsShownOnceUnderTheHolder(): void
+    {
+        $tree = BlockingTree::build([self::wait('3', '1'), self::wait('3', '2'), self::wait('2', '1')]);
+
+        self::assertSame(['1'], self::ids($tree));
+        self::assertSame(['1', '2', '3'], (static function (array $ids): array {
+            sort($ids);
+
+            return $ids;
+        })(self::all($tree)));
+    }
+
+    public function testTheNumberOfNodesIsBounded(): void
+    {
+        $waits = [];
+        for ($i = 1; $i <= 2000; ++$i) {
+            $waits[] = self::wait((string) $i, '0');
+        }
+
+        $forest = BlockingTree::forest($waits);
+
+        self::assertCount(BlockingTree::MAX_NODES, self::all($forest->roots));
+        self::assertTrue($forest->truncated);
+    }
+
+    public function testTheDepthIsBounded(): void
+    {
+        $waits = [];
+        for ($i = 1; $i <= 60; ++$i) {
+            $waits[] = self::wait((string) $i, (string) ($i - 1));
+        }
+
+        $forest = BlockingTree::forest($waits);
+
+        self::assertCount(BlockingTree::MAX_DEPTH, self::all($forest->roots));
+        self::assertTrue($forest->truncated);
+    }
+
+    public function testALongCycleTerminates(): void
+    {
+        $waits = [];
+        for ($i = 0; $i < 15; ++$i) {
+            $waits[] = self::wait((string) $i, (string) (($i + 1) % 15));
+        }
+
+        $forest = BlockingTree::forest($waits);
+
+        self::assertCount(15, array_unique(self::all($forest->roots)));
+    }
+
     /**
      * @param list<BlockingNode> $nodes
      *

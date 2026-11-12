@@ -255,6 +255,8 @@ export interface LockReport {
   truncated: boolean
   transactions: OpenTransaction[]
   blocking: BlockingNode[]
+  /** L'arbre a été borné (nombre de sessions ou profondeur) : des sessions manquent. */
+  blockingTruncated: boolean
 }
 
 export type AuditOutcome = 'success' | 'refused' | 'failed'

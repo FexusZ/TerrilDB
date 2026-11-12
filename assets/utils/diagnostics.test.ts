@@ -4,9 +4,9 @@ import { describeStatus, flattenBlocking, formatSeconds, isLongTransaction } fro
 
 const status = (availability: DiagnosticStatus['availability'], extra: Partial<DiagnosticStatus> = {}): DiagnosticStatus => ({ availability, reason: null, privilege: null, ...extra })
 
-const transaction = (extra: Partial<OpenTransaction> = {}): OpenTransaction => ({ session: '1', user: 'app', state: 'RUNNING', seconds: 10, rowsLocked: null, rowsModified: null, sleeping: false, query: null, ...extra })
+const transaction = (extra: Partial<OpenTransaction> = {}): OpenTransaction => ({ session: '1', user: 'app', state: 'RUNNING', seconds: 10, rowsLocked: null, rowsModified: null, sleeping: false, query: null, queryReason: null, ...extra })
 
-const node = (id: string, blocked: BlockingNode[] = []): BlockingNode => ({ id, user: null, query: null, seconds: null, kind: null, mode: null, object: null, blocked })
+const node = (id: string, blocked: BlockingNode[] = []): BlockingNode => ({ id, user: null, query: null, queryReason: null, seconds: null, kind: null, mode: null, object: null, blocked })
 
 describe('describeStatus', () => {
   it('says nothing when the source is readable', () => {

@@ -61,6 +61,8 @@ final class DiagnosticsPresenter
      */
     public static function locks(LockReport $report): array
     {
+        $forest = $report->forest();
+
         return [
             'status' => self::status($report->status),
             'truncated' => $report->truncated,
@@ -75,7 +77,8 @@ final class DiagnosticsPresenter
                 'query' => $t->query,
                 'queryReason' => $t->queryRedacted ? 'redacted' : null,
             ], $report->transactions),
-            'blocking' => array_map(self::node(...), $report->tree()),
+            'blocking' => array_map(self::node(...), $forest->roots),
+            'blockingTruncated' => $forest->truncated,
         ];
     }
 
