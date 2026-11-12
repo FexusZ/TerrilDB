@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Audit;
 
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\Health\HealthBusyException;
 use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\Health\HealthSampler;
+use App\Core\Diagnostics\Health\HealthSlots;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Driver\TargetConnection;
@@ -19,7 +21,7 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class AuditedDiagnostics
 {
-    public function __construct(private AuditLog $audit, private HealthSampler $sampler)
+    public function __construct(private AuditLog $audit, private HealthSampler $sampler, private HealthSlots $slots)
     {
     }
 
@@ -67,13 +69,14 @@ final readonly class AuditedDiagnostics
      * Santé par deux relevés : le journal garde l'état, l'intervalle demandé et si la mesure a été écartée, jamais un compteur.
      *
      * @throws DiagnosticsFailedException
+     * @throws HealthBusyException        si le compte a déjà ses mesures en cours
      */
     public function health(AuditContext $context, Uuid $connectionId, TargetConnection $target, int $seconds): HealthReport
     {
         $base = ['topic' => 'health', 'engine' => $target->engine->value];
 
         try {
-            $report = $this->sampler->measure($target->diagnostics()->health(), $seconds);
+            $report = $this->slots->run($context->userId?->toRfc4122() ?? 'anonymous', fn (): HealthReport => $this->sampler->measure($target->diagnostics()->health(), $seconds));
         } catch (DiagnosticsFailedException $e) {
             $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
 

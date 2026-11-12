@@ -35,6 +35,10 @@ services:
             $from: '%env(TERRILDB_MAIL_FROM)%'
             $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
 
+    App\Core\Diagnostics\Health\HealthSlots:
+        arguments:
+            $directory: '%kernel.cache_dir%/health-slots'
+
     App\Http\Web\RegistrationPolicy:
         arguments:
             $mode: '%env(APP_REGISTRATION)%'
