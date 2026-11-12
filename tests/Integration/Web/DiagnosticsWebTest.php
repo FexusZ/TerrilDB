@@ -51,7 +51,10 @@ final class DiagnosticsWebTest extends WebApiTestCase
 
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
-        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks], $body['capabilities']);
+        $unsupported = ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null];
+        $accounts = \in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? $unsupported : ['availability' => 'available', 'reason' => null, 'privilege' => null];
+        $encryption = 'TARGET_CLICKHOUSE_URL' === $envVar ? $unsupported : ['availability' => 'available', 'reason' => null, 'privilege' => null];
+        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks, 'accounts' => $accounts, 'encryption' => $encryption], $body['capabilities']);
     }
 
     #[DataProvider('targets')]
@@ -218,5 +221,84 @@ final class DiagnosticsWebTest extends WebApiTestCase
 
         self::assertSame(501, $this->statusCode());
         self::assertSame('unsupported_operation', $body['error']);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function sqlAccountTargets(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+    }
+
+    #[DataProvider('sqlAccountTargets')]
+    public function testListsTheAccountsWithTheirFindingsAndNoPasswordHash(string $envVar): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $mariadb = 'TARGET_MARIADB_URL' === $envVar;
+        $admin = (new \App\Driver\DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+        $hashes = $mariadb
+            ? $admin->fetchFirstColumn("SELECT JSON_VALUE(Priv, '\$.authentication_string') FROM mysql.global_priv WHERE JSON_VALUE(Priv, '\$.authentication_string') <> ''")
+            : $admin->fetchFirstColumn("SELECT authentication_string FROM mysql.user WHERE authentication_string <> ''");
+        $admin->close();
+        self::assertNotSame([], $hashes);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/accounts');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'truncated', 'privilegesIncomplete', 'activatesAllRoles', 'accounts', 'findings'], array_keys($body));
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        $accounts = $body['accounts'];
+        self::assertIsArray($accounts);
+        $first = self::arrayOf($accounts[0]);
+        self::assertSame(['user', 'host', 'name', 'plugin', 'passwordSet', 'passwordExpired', 'locked', 'tls', 'isRole', 'current', 'roles', 'defaultRoles', 'globalPrivileges', 'databasePrivileges', 'grantOptionOn', 'limits'], array_keys($first));
+        $current = array_filter($accounts, static fn (mixed $a): bool => \is_array($a) && true === $a['current']);
+        self::assertCount(1, $current);
+        $findings = $body['findings'];
+        self::assertIsArray($findings);
+        self::assertNotEmpty($findings, 'The wildcard root account of the test target is a finding.');
+        self::assertSame(['rule', 'severity', 'account', 'detail', 'currentAccount'], array_keys(self::arrayOf($findings[0])));
+        $json = json_encode($body, \JSON_THROW_ON_ERROR);
+        foreach ($hashes as $hash) {
+            self::assertIsString($hash);
+            self::assertStringNotContainsString($hash, $json);
+        }
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'accounts' === ($e->getDetails()['topic'] ?? null)));
+        self::assertCount(1, $events);
+        self::assertSame('available', $events[0]->getDetails()['status']);
+        self::assertArrayHasKey('rows', $events[0]->getDetails());
+    }
+
+    public function testAccountsOfAnEngineWithoutThemAreUnsupported(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/accounts');
+
+        self::assertSame(501, $this->statusCode());
+        self::assertSame('unsupported_operation', $body['error']);
+    }
+
+    #[DataProvider('targets')]
+    public function testSaysWhetherTheConnectionIsEncrypted(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/encryption');
+
+        if ('TARGET_CLICKHOUSE_URL' === $envVar) {
+            self::assertSame(501, $this->statusCode());
+
+            return;
+        }
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'encrypted', 'protocol', 'cipher'], array_keys($body));
+        self::assertIsBool($body['encrypted']);
+        self::assertSame($body['encrypted'], null !== $body['protocol']);
     }
 }

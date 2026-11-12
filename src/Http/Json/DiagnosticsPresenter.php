@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\Core\Diagnostics\Account;
+use App\Core\Diagnostics\AccountReport;
 use App\Core\Diagnostics\BlockingNode;
+use App\Core\Diagnostics\ConnectionEncryption;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\SecurityFinding;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionReport;
 
@@ -80,6 +84,54 @@ final class DiagnosticsPresenter
             'blocking' => array_map(self::node(...), $forest->roots),
             'blockingTruncated' => $forest->truncated,
         ];
+    }
+
+    /**
+     * Les comptes d'un serveur et ce que l'audit en dit. Aucune empreinte de mot de passe : `passwordSet` n'est qu'un booléen.
+     *
+     * @return array<string, mixed>
+     */
+    public static function accounts(AccountReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'truncated' => $report->truncated,
+            'privilegesIncomplete' => $report->privilegesIncomplete,
+            'activatesAllRoles' => $report->activatesAllRoles,
+            'accounts' => array_map(static fn (Account $a): array => [
+                'user' => $a->user,
+                'host' => $a->host,
+                'name' => $a->name(),
+                'plugin' => $a->plugin,
+                'passwordSet' => $a->passwordSet,
+                'passwordExpired' => $a->passwordExpired,
+                'locked' => $a->locked,
+                'tls' => $a->tls->value,
+                'isRole' => $a->isRole,
+                'current' => $a->current,
+                'roles' => $a->roles,
+                'defaultRoles' => $a->defaultRoles,
+                'globalPrivileges' => $a->globalPrivileges,
+                'databasePrivileges' => (object) $a->databasePrivileges,
+                'grantOptionOn' => $a->grantOptionOn,
+                'limits' => (object) $a->limits,
+            ], $report->accounts),
+            'findings' => array_map(static fn (SecurityFinding $f): array => [
+                'rule' => $f->rule->value,
+                'severity' => $f->severity->value,
+                'account' => $f->account,
+                'detail' => $f->detail,
+                'currentAccount' => $f->currentAccount,
+            ], $report->findings()),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function encryption(ConnectionEncryption $encryption): array
+    {
+        return ['status' => self::status(DiagnosticStatus::available()), 'encrypted' => $encryption->encrypted, 'protocol' => $encryption->protocol, 'cipher' => $encryption->cipher];
     }
 
     /**

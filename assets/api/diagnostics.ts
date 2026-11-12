@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DiagnosticStatus, LockReport, SessionReport } from './types'
+import type { AccountReport, ConnectionEncryption, DiagnosticStatus, LockReport, SessionReport } from './types'
 
 export interface DiagnosticScope {
   database: string | null
@@ -27,3 +27,9 @@ export const fetchSessions = (id: string, scope: DiagnosticScope): Promise<Sessi
 
 /** Transactions ouvertes et arbre « qui bloque qui » : lecture seule, rien n'est arrêté. */
 export const fetchLocks = (id: string, scope: DiagnosticScope): Promise<LockReport> => api<LockReport>('GET', `/web/connections/${id}/diagnostics/locks${suffix(scope)}`)
+
+/** Comptes, rôles et privilèges du serveur et l'audit de sécurité (MySQL, MariaDB) : lecture seule, jamais une empreinte de mot de passe. */
+export const fetchAccounts = (id: string, scope: DiagnosticScope): Promise<AccountReport> => api<AccountReport>('GET', `/web/connections/${id}/diagnostics/accounts${suffix(scope)}`)
+
+/** La connexion de TerrilDB vers la cible est-elle chiffrée ? Une observation. */
+export const fetchEncryption = (id: string, scope: DiagnosticScope): Promise<ConnectionEncryption> => api<ConnectionEncryption>('GET', `/web/connections/${id}/diagnostics/encryption${suffix(scope)}`)
