@@ -134,6 +134,11 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # Un tunnel = un processus ssh : bornes de ressources (et plafonds du relais : TUNNEL_MAX_TUNNELS, TUNNEL_MAX_PER_BASTION,
+    # TUNNEL_MAX_CONNECTIONS, TUNNEL_OPEN_TIMEOUT).
+    pids_limit: 256
+    mem_limit: 256m
+    cpus: 1.0
     tmpfs:
       - /run/relay-keys:mode=0700,uid=${UID:-1000},gid=${GID:-1000}
       - /tmp
