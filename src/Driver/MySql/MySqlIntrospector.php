@@ -11,6 +11,7 @@ use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
@@ -171,7 +172,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     {
         $rows = $this->connection->fetchAllAssociative(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
-                    EXTRA AS extra, COLUMN_COMMENT AS comment
+                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation
                FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION',
@@ -197,6 +198,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 str_contains($row->string('extra'), 'INVISIBLE'),
                 1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
                 $compressed,
+                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : null,
             );
         }
 

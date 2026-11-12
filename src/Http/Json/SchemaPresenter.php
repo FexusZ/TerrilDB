@@ -59,6 +59,7 @@ final class SchemaPresenter
                 'default' => $c->default,
                 'autoIncrement' => $c->autoIncrement,
                 'comment' => $c->comment,
+                'lock' => $c->lock?->value,
             ], $table->columns),
             'indexes' => array_map(static fn (IndexDefinition $i): array => [
                 'name' => $i->name,
@@ -66,6 +67,7 @@ final class SchemaPresenter
                 'unique' => $i->unique,
                 'primary' => $i->primary,
                 'sizeBytes' => $i->sizeBytes,
+                'lock' => $i->lock?->value,
             ], $table->indexes),
             'foreignKeys' => array_map(static fn (ForeignKeyDefinition $f): array => [
                 'name' => $f->name,

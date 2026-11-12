@@ -23,7 +23,9 @@ use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Schema\Change\Exception\UnsupportedSchemaChangeException;
 use App\Core\Schema\Exception\TableNotFoundException;
+use App\Core\Schema\LockReason;
 use App\Crypto\Exception\DecryptionFailedException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
@@ -87,6 +89,16 @@ final class ErrorMapperTest extends TestCase
         self::assertNotNull($response);
         self::assertSame($status, $response->status);
         self::assertSame($code, $response->code);
+    }
+
+    public function testAnUnsupportedSchemaChangeNamesTheObjectAndTheReason(): void
+    {
+        $response = (new ErrorMapper())->map(new UnsupportedSchemaChangeException(LockReason::Generated, 'total'));
+
+        self::assertNotNull($response);
+        self::assertSame(422, $response->status);
+        self::assertSame('unsupported_schema_change', $response->code);
+        self::assertSame(['reason' => 'generated', 'subject' => 'total'], $response->extra);
     }
 
     public function testRefusedQueriesCarryTheirReason(): void

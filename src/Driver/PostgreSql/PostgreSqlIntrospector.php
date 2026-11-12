@@ -10,6 +10,7 @@ use App\Core\Schema\Exception\InvalidSchemaException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\SchemaSummary;
@@ -194,7 +195,8 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
             "SELECT a.attname AS name,
                     format_type(a.atttypid, a.atttypmod) AS type,
                     NOT a.attnotnull AS nullable,
-                    pg_get_expr(d.adbin, d.adrelid) AS col_default,
+                    CASE WHEN a.attgenerated = '' THEN pg_get_expr(d.adbin, d.adrelid) END AS col_default,
+                    (a.attgenerated <> '') AS generated,
                     (a.attidentity <> '' OR COALESCE(pg_get_expr(d.adbin, d.adrelid), '') LIKE 'nextval(%') AS auto_increment,
                     col_description(a.attrelid, a.attnum) AS comment
                FROM pg_attribute a
@@ -214,6 +216,7 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
                 $row->nullableString('col_default'),
                 $row->bool('auto_increment'),
                 $row->nullableString('comment'),
+                lock: $row->bool('generated') ? LockReason::Generated : null,
             );
         }
 

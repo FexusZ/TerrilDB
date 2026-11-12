@@ -13,6 +13,7 @@ use App\Core\Schema\Change\ColumnDraft;
 use App\Core\Schema\Change\DdlStatement;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
+use App\Core\Schema\Change\Exception\UnsupportedSchemaChangeException;
 use App\Core\Schema\Change\ForeignKeyDraft;
 use App\Core\Schema\Change\IndexDraft;
 use App\Core\Schema\Change\SchemaChangePlanner;
@@ -96,6 +97,36 @@ final class StructureFidelityTest extends TestCase
     }
 
     /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function locked(): iterable
+    {
+        foreach (TargetDatabase::relational() as $engine => [$env]) {
+            yield $engine.' / generated' => [$env, 'generated'];
+        }
+    }
+
+    /**
+     * Redéfinir ce que le modèle ne sait pas redire est refusé par TerrilDB lui-même (code stable), avant d'écrire quoi que ce soit.
+     */
+    #[DataProvider('locked')]
+    public function testRedefiningWhatCannotBeRestatedIsRefusedBeforeBeingSent(string $env, string $case): void
+    {
+        $this->open($env);
+        $table = $this->create($case);
+        \assert(null !== $this->target);
+        $before = $this->mark($table, $case);
+        $current = $this->target->introspector()->describeTable($table);
+
+        $this->expectException(UnsupportedSchemaChangeException::class);
+        try {
+            (new SchemaChangeService())->preview($this->target, $table, $this->touch(self::draftOf($current), $case), SchemaChangePlanner::fingerprint($current));
+        } finally {
+            self::assertSame($before, $this->mark($table, $case));
+        }
+    }
+
+    /**
      * Applique l'édition, ou constate un refus : de TerrilDB (InvalidSchemaChangeException), ou du moteur
      * (SchemaChangeFailedException). Le test appelant relit ensuite la particularité.
      *
@@ -109,7 +140,7 @@ final class StructureFidelityTest extends TestCase
         $draft = $edit(self::draftOf($current));
         try {
             $service->apply($this->target, $table, $draft, SchemaChangePlanner::fingerprint($current), true);
-        } catch (InvalidSchemaChangeException|SchemaChangeFailedException) {
+        } catch (InvalidSchemaChangeException|UnsupportedSchemaChangeException|SchemaChangeFailedException) {
             // Refus : rien n'a été dégradé.
             $this->addToAssertionCount(1);
         }
