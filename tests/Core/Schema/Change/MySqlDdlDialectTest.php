@@ -89,6 +89,17 @@ final class MySqlDdlDialectTest extends TestCase
         );
     }
 
+    public function testModifyingAnInvisibleColumnRestatesItAsInvisible(): void
+    {
+        $before = new ColumnDefinition('hid', 'int', true, null, false, null, true);
+        $after = new ColumnDraft('hid', 'hid', 'bigint', true, null, false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `hid` bigint NULL INVISIBLE'],
+            self::sql([new ModifyColumn($before, $after, true, false, false, false)]),
+        );
+    }
+
     public function testPrimaryKey(): void
     {
         $old = new IndexDefinition('PRIMARY', ['id'], true, true);

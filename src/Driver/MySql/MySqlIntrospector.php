@@ -189,6 +189,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 $nullable && 'NULL' === $default ? null : $default,
                 str_contains($row->string('extra'), 'auto_increment'),
                 $row->nullableString('comment'),
+                str_contains($row->string('extra'), 'INVISIBLE'),
             );
         }
 

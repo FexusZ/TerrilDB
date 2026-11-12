@@ -128,6 +128,10 @@ final class MySqlDdlDialect extends AbstractDdlDialect
     protected function modifyColumn(string $table, ModifyColumn $operation): array
     {
         $definition = $this->columnDefinition($operation->after);
+        // MODIFY COLUMN redit toute la définition : ce que le modèle ne dit pas doit être redit, sinon il disparaît.
+        if ($operation->before->invisible) {
+            $definition .= ' INVISIBLE';
+        }
         if (null !== $operation->before->comment && '' !== $operation->before->comment) {
             $definition .= ' COMMENT '.$this->stringLiteral($operation->before->comment);
         }

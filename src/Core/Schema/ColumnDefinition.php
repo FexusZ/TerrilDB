@@ -8,6 +8,7 @@ use App\Core\Schema\Exception\InvalidSchemaException;
 
 /**
  * Une colonne, avec son type natif tel que le moteur l'écrit (« int unsigned », « character varying(20) »).
+ * `invisible` (MySQL 8, MariaDB) : absente de `SELECT *` ; redite telle quelle quand on modifie la colonne.
  */
 final readonly class ColumnDefinition
 {
@@ -18,6 +19,7 @@ final readonly class ColumnDefinition
         public ?string $default,
         public bool $autoIncrement,
         public ?string $comment,
+        public bool $invisible = false,
     ) {
         if ('' === $name || '' === $type) {
             throw new InvalidSchemaException('A column needs a name and a type.');
