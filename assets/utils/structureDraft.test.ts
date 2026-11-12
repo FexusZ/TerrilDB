@@ -74,6 +74,19 @@ describe('draftFromDetail', () => {
   })
 })
 
+describe('what the editor cannot restate', () => {
+  it('carries the lock of a column and locks an index that cannot be recreated, keeping its raw columns', () => {
+    const d = detail()
+    d.columns = d.columns.map((column) => (column.name === 'status' ? { ...column, lock: 'generated' } : column))
+    d.indexes = [{ name: 'idx_status', columns: ['status'], unique: false, primary: false, lock: 'index_invisible' }]
+    const draft = draftFromDetail(d)
+
+    expect(col(draft, 'status').lock).toBe('generated')
+    expect(col(draft, 'id').lock).toBeNull()
+    expect(draft.indexes[0]).toMatchObject({ locked: true, lock: 'index_invisible', columns: ['status'] })
+  })
+})
+
 describe('addColumn', () => {
   it('starts nullable, unless the engine says otherwise', () => {
     const draft = draftFromDetail(detail())

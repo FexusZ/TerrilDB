@@ -90,6 +90,8 @@ export interface ColumnInfo {
   default: string | null
   autoIncrement: boolean
   comment: string | null
+  /** Particularité que l’éditeur ne sait pas redire (colonne générée…) : la colonne ne se redéfinit pas. */
+  lock?: string | null
 }
 
 export interface IndexInfo {
@@ -99,6 +101,8 @@ export interface IndexInfo {
   primary: boolean
   /** Place sur disque de l’index, quand le moteur la donne. */
   sizeBytes?: number | null
+  /** Particularité que l’éditeur ne sait pas redire (index invisible…) : l’index ne se recrée pas. */
+  lock?: string | null
 }
 
 export interface ForeignKeyInfo {

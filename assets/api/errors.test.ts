@@ -55,6 +55,9 @@ describe('error messages', () => {
   it('explains the refusals of the structure editor', () => {
     expect(messageFor(new ApiError(422, 'invalid_schema_change', { detail: 'A column needs a type.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_changed'))).toContain('modifiée')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'generated', subject: 'total' }))).toBe('« total » : cette colonne est générée, sa modification n’est pas prise en charge.')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'index_invisible', subject: 'idx_a' }))).toContain('invisible')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', {}))).toContain('pas prise en charge')
     expect(messageFor(new ApiError(409, 'schema_change_failed', { message: 'column "x" does not exist' }))).toBe('column "x" does not exist')
     expect(messageFor(new ApiError(409, 'data_changed', { statement: 0, matched: 0 }))).toContain('modifiée')
     expect(messageFor(new ApiError(409, 'data_change_failed', { message: 'duplicate key' }))).toBe('duplicate key')

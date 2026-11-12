@@ -1,3 +1,4 @@
+import { lockSentence } from '../utils/lock'
 import { ApiError } from './client'
 
 const REASONS: Record<string, string> = {
@@ -77,6 +78,12 @@ export function messageFor(error: unknown): string {
       return typeof error.details.message === 'string' ? error.details.message : GENERIC
     case 'invalid_schema_change':
       return 'Cette modification de la structure est invalide.'
+    case 'unsupported_schema_change': {
+      const why = lockSentence(error.details.reason)
+      const subject = typeof error.details.subject === 'string' ? `« ${error.details.subject} » : ` : ''
+
+      return why === null ? 'Cette modification n’est pas prise en charge pour une colonne ou un index à la définition particulière.' : `${subject}${why}, sa modification n’est pas prise en charge.`
+    }
     case 'schema_changed':
       return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
     case 'schema_change_failed':
