@@ -9,6 +9,7 @@ use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Guard\SqlDialect;
 use App\Driver\RowReader;
 
 /**
@@ -43,7 +44,7 @@ final readonly class ClickHouseSessionDiagnostics implements SessionDiagnostics
         $queryId = 'terrildb-'.bin2hex(random_bytes(8));
         try {
             $response = $this->http->query(
-                'SELECT query_id, user, address, current_database AS db, elapsed, substring(query, 1, 256) AS text
+                'SELECT query_id, user, address, current_database AS db, elapsed, substring(query, 1, 4096) AS text
                    FROM system.processes
                   ORDER BY elapsed DESC
                   LIMIT '.(self::LIMIT + 1),
@@ -71,6 +72,7 @@ final readonly class ClickHouseSessionDiagnostics implements SessionDiagnostics
                 (int) floor((float) $row->string('elapsed')),
                 $row->nullableString('text'),
                 $row->string('query_id') === $queryId,
+                SqlDialect::ClickHouse,
             );
         }
 

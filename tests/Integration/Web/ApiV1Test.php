@@ -615,7 +615,7 @@ final class ApiV1Test extends WebApiTestCase
 
         self::assertSame(200, $this->statusCode());
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
-        self::assertSame(['status', 'truncated', 'transactions', 'blocking'], array_keys($body));
+        self::assertSame(['status', 'truncated', 'transactions', 'blocking', 'blockingTruncated'], array_keys($body));
     }
 
     public function testTheLocksOfAConnectionOutsideTheListAreNotFound(): void

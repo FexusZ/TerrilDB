@@ -147,7 +147,7 @@ final readonly class ApiController
     }
 
     /**
-     * Les sessions en cours sur le serveur de la connexion, en lecture seule, textes de requêtes raccourcis.
+     * Les sessions en cours sur le serveur de la connexion, en lecture seule, textes de requêtes masqués puis raccourcis.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]
     public function sessions(string $id): JsonResponse

@@ -76,7 +76,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $current = array_filter($sessions, static fn (mixed $s): bool => \is_array($s) && true === $s['current']);
         self::assertCount(1, $current);
         $first = self::arrayOf(reset($current));
-        self::assertSame(['id', 'user', 'client', 'database', 'state', 'seconds', 'query', 'current'], array_keys($first));
+        self::assertSame(['id', 'user', 'client', 'database', 'state', 'seconds', 'query', 'queryReason', 'current'], array_keys($first));
     }
 
     public function testAnotherDatabaseCanBeNamed(): void
@@ -179,7 +179,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
             $roots = array_values(array_filter(self::listOf($body['blocking']), static fn (mixed $n): bool => self::arrayOf($n)['id'] === $scenario->holderId()));
             self::assertCount(1, $roots);
             $root = self::arrayOf($roots[0]);
-            self::assertSame(['id', 'user', 'query', 'seconds', 'kind', 'mode', 'object', 'blocked'], array_keys($root));
+            self::assertSame(['id', 'user', 'query', 'queryReason', 'seconds', 'kind', 'mode', 'object', 'blocked'], array_keys($root));
             self::assertNull($root['seconds']);
             $child = self::arrayOf(self::listOf($root['blocked'])[0]);
             self::assertSame($scenario->waiterId(), $child['id']);
@@ -189,7 +189,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
             $transactions = array_map(static fn (mixed $t): mixed => self::arrayOf($t)['session'], self::listOf($body['transactions']));
             self::assertContains($scenario->holderId(), $transactions);
             $first = self::arrayOf(self::listOf($body['transactions'])[0]);
-            self::assertSame(['session', 'user', 'state', 'seconds', 'rowsLocked', 'rowsModified', 'sleeping', 'query'], array_keys($first));
+            self::assertSame(['session', 'user', 'state', 'seconds', 'rowsLocked', 'rowsModified', 'sleeping', 'query', 'queryReason'], array_keys($first));
         } finally {
             $scenario->cleanup();
         }

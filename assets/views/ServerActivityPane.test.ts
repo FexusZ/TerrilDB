@@ -16,8 +16,8 @@ const sessions: SessionReport = {
   status: ok,
   truncated: false,
   sessions: [
-    { id: '10', user: 'app', client: '10.0.0.5', database: 'shop', state: 'Sleep', seconds: 300, query: null, current: false },
-    { id: '11', user: 'admin', client: '10.0.0.6', database: 'shop', state: 'Query', seconds: 2, query: 'SELECT 1', current: true },
+    { id: '10', user: 'app', client: '10.0.0.5', database: 'shop', state: 'Sleep', seconds: 300, query: null, queryReason: null, current: false },
+    { id: '11', user: 'admin', client: '10.0.0.6', database: 'shop', state: 'Query', seconds: 2, query: 'SELECT 1', queryReason: null, current: true },
   ],
 }
 
@@ -25,15 +25,16 @@ const locks: LockReport = {
   status: ok,
   truncated: false,
   transactions: [
-    { session: '10', user: 'app', state: 'RUNNING', seconds: 300, rowsLocked: 3, rowsModified: 1, sleeping: true, query: null },
-    { session: '12', user: 'app', state: 'LOCK WAIT', seconds: 5, rowsLocked: 1, rowsModified: 0, sleeping: false, query: 'UPDATE orders SET status = 1' },
+    { session: '10', user: 'app', state: 'RUNNING', seconds: 300, rowsLocked: 3, rowsModified: 1, sleeping: true, query: null, queryReason: null },
+    { session: '12', user: 'app', state: 'LOCK WAIT', seconds: 5, rowsLocked: 1, rowsModified: 0, sleeping: false, query: 'UPDATE orders SET status = 1', queryReason: null },
   ],
   blocking: [
     {
-      id: '10', user: 'app', query: null, seconds: null, kind: null, mode: null, object: null,
-      blocked: [{ id: '12', user: 'app', query: 'UPDATE orders SET status = 1', seconds: 5, kind: 'row', mode: 'X', object: 'shop.orders', blocked: [] }],
+      id: '10', user: 'app', query: null, queryReason: null, seconds: null, kind: null, mode: null, object: null,
+      blocked: [{ id: '12', user: 'app', query: 'UPDATE orders SET status = 1', queryReason: null, seconds: 5, kind: 'row', mode: 'X', object: 'shop.orders', blocked: [] }],
     },
   ],
+  blockingTruncated: false,
 }
 
 function answer(overrides: { sessions?: SessionReport | ApiError; locks?: LockReport | ApiError } = {}): void {
@@ -97,6 +98,15 @@ describe('ServerActivityPane', () => {
     expect(lines[1]?.text()).toContain('UPDATE orders SET status = 1')
   })
 
+  it('says when the tree was cut and when a text was withheld', async () => {
+    answer({ locks: { ...locks, blockingTruncated: true, blocking: [{ ...locks.blocking[0]!, queryReason: 'redacted' }] } })
+
+    const wrapper = await mountPane()
+
+    expect(wrapper.text()).toContain('L’arbre est borné')
+    expect(wrapper.text()).toContain('Texte non montré')
+  })
+
   it('never offers to stop a session', async () => {
     const wrapper = await mountPane()
 
@@ -115,7 +125,7 @@ describe('ServerActivityPane', () => {
   })
 
   it('does not call an unreadable source empty', async () => {
-    answer({ locks: { status: { availability: 'disabled', reason: 'performance_schema_off', privilege: null }, truncated: false, transactions: [], blocking: [] } })
+    answer({ locks: { status: { availability: 'disabled', reason: 'performance_schema_off', privilege: null }, truncated: false, transactions: [], blocking: [], blockingTruncated: false } })
 
     const wrapper = await mountPane()
 

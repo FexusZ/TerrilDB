@@ -71,7 +71,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
 
     <div v-if="tab === 'activity'" class="head">
       <h1>Activité du serveur</h1>
-      <p class="meta">Lecture seule, à la demande : rien n’est arrêté ni modifié depuis cette page. Les requêtes des autres sessions sont raccourcies.</p>
+      <p class="meta">Lecture seule, à la demande : rien n’est arrêté ni modifié depuis cette page. Les requêtes des autres sessions sont masquées (valeurs remplacées par ?) puis raccourcies.</p>
       <div class="tools">
         <AppButton small :busy="loading" @click="load">Actualiser</AppButton>
         <label class="threshold">Transaction longue à partir de <input v-model.number="threshold" name="threshold" type="number" min="0" step="10"> s</label>
@@ -85,6 +85,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
       <p v-else-if="locksNote" class="note" role="status">{{ locksNote }}</p>
       <template v-else>
         <p v-if="locks.truncated" class="note" role="status">Le serveur en a davantage : seules les 200 premières lignes de chaque liste sont montrées.</p>
+        <p v-if="locks.blockingTruncated" class="note" role="status">L’arbre est borné : des sessions ne sont pas montrées. Chaque session apparaît une seule fois, sous le bloqueur le plus proche.</p>
         <p v-if="blockingLines.length === 0" class="clean">Aucune attente de verrou.</p>
         <ul v-else class="tree" data-testid="blocking">
           <li v-for="(line, index) in blockingLines" :key="index" :style="{ paddingLeft: `${String(line.depth * 24)}px` }">
@@ -101,6 +102,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
               </template>
             </p>
             <pre v-if="line.node.query">{{ line.node.query }}</pre>
+            <p v-else-if="line.node.queryReason === 'redacted'" class="meta">Texte non montré (impossible à masquer sans risque).</p>
           </li>
         </ul>
       </template>
@@ -123,7 +125,7 @@ const who = (id: string, user: string | null): string => `Session ${id}${user ==
                   <td>{{ transaction.sleeping ? 'en sommeil' : (transaction.state ?? '') }}</td>
                   <td>{{ transaction.rowsLocked ?? '' }}</td>
                   <td>{{ transaction.rowsModified ?? '' }}</td>
-                  <td class="query">{{ transaction.query ?? '' }}</td>
+                  <td class="query">{{ transaction.query ?? (transaction.queryReason === 'redacted' ? 'Texte non montré' : '') }}</td>
                 </tr>
               </tbody>
             </table>
