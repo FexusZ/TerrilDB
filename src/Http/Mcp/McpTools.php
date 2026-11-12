@@ -6,6 +6,7 @@ namespace App\Http\Mcp;
 
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
+use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
@@ -17,6 +18,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
+use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
@@ -38,6 +40,7 @@ final readonly class McpTools
         private AuditedQueries $queries,
         private ErrorMapper $errors,
         private TokenConnections $created,
+        private AuditedDiagnostics $diagnostics,
     ) {
     }
 
@@ -122,6 +125,18 @@ final readonly class McpTools
             $options = $this->request->get()->writeOptions($timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options, $confirmed ?? false)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listSessions(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::sessions($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
         });
     }
 

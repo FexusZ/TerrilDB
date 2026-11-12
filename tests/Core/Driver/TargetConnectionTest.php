@@ -72,6 +72,19 @@ final class TargetConnectionTest extends TestCase
         self::assertSame($runner, $connection->runner());
     }
 
+    public function testDiagnosticsAreOptional(): void
+    {
+        $without = new TargetConnection(Engine::Redis, null, $this->runner(), static function (): void {
+        });
+        $diagnostics = new \App\Core\Diagnostics\ServerDiagnostics(Engine::MySql);
+        $with = new TargetConnection(Engine::MySql, $this->introspector(), $this->runner(), static function (): void {
+        }, diagnostics: $diagnostics);
+
+        self::assertSame($diagnostics, $with->diagnostics());
+        $this->expectException(UnsupportedOperationException::class);
+        $without->diagnostics();
+    }
+
     public function testAnEngineWithoutSchemaHasNoIntrospector(): void
     {
         $connection = new TargetConnection(Engine::Redis, null, $this->runner(), static function (): void {

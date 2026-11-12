@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Audit;
+
+use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\SessionReport;
+use App\Core\Driver\TargetConnection;
+use Symfony\Component\Uid\Uuid;
+
+/**
+ * Lit la supervision d'un serveur et en garde la trace, qui que soit la porte (interface, API, MCP) : qui a lu quelle page, sur
+ * quelle connexion, avec quel état et combien de lignes. Jamais ce que la page contenait : les textes de requêtes des autres
+ * sessions ne sont recopiés nulle part dans le journal.
+ */
+final readonly class AuditedDiagnostics
+{
+    public function __construct(private AuditLog $audit)
+    {
+    }
+
+    /**
+     * @throws DiagnosticsFailedException
+     */
+    public function sessions(AuditContext $context, Uuid $connectionId, TargetConnection $target): SessionReport
+    {
+        $base = ['topic' => 'sessions', 'engine' => $target->engine->value];
+
+        try {
+            $report = $target->diagnostics()->sessions()->sessions();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->sessions)]);
+
+        return $report;
+    }
+}

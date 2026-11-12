@@ -166,7 +166,7 @@ par défaut, connexions listées (au moins une, sauf jeton « toutes » ou autor
 de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
 (`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
 assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
-Droits d'un jeton (`TokenPermissions`, fixés à la création, tous refusés par défaut) : `writeData` (INSERT/UPDATE/DELETE),
+Droits d'un jeton (`TokenPermissions`, fixés à la création, tous refusés par défaut) : `diagnostic` (supervision, voir « Diagnostics du serveur »), `writeData` (INSERT/UPDATE/DELETE),
 `writeSchema` (CREATE/ALTER/DROP/TRUNCATE/GRANT/CALL), `createConnections`. Écrire passe par `POST /api/v1/connections/{id}/execute`
 (et l'outil MCP `execute_statement`, visible des seuls jetons qui écrivent) ; `/query` et `run_query` restent en lecture seule pour
 tous. Un destructif (UPDATE/DELETE sans WHERE, DROP, TRUNCATE…) répond 409 `confirmation_required` tant que `confirmed: true` manque ;
@@ -222,6 +222,25 @@ LRANGE, ZRANGE, XRANGE COUNT, GETRANGE 64 Kio), noms de clés non UTF-8 laissés
 de l'unicode). Front : `KeyPane` (les clés se parcourent dans l'arbre de la barre latérale), la console réutilise `QueryPane` (pas de plan : `ENGINE_HAS_PLAN`).
 Cible de test `target-redis` (`TARGET_REDIS_URL`, base 15, hôte 63791) : `RedisTarget::seeded()` vide et remplit la base 15
 (refuse toute autre base).
+
+## Diagnostics du serveur (src/Core/Diagnostics, src/Driver/*/…SessionDiagnostics, docs/api.md)
+
+Socle de la supervision (issue #70) : `TargetConnection::diagnostics()` rend un `ServerDiagnostics` (une petite interface par thème, aujourd'hui
+`SessionDiagnostics` ; absent = `UnsupportedOperationException` 501). JAMAIS par la console ni le garde : requêtes de catalogue fixes, bornées (200
+lignes + `truncated`), dans une transaction en lecture seule annulée (`DbalCatalogReader`) ; rien ne s'écrit (KILL, SET… ne sont jamais lancés).
+Un résultat porte un `DiagnosticStatus` (`Availability` : `available | unsupported | permission_denied | disabled`, `reason` = code stable,
+`privilege` = mot-clé de droit) : un droit manquant ou une source éteinte est un ÉTAT, jamais une erreur ni une liste vide ; échec imprévu =
+`DiagnosticsFailedException` (502 `diagnostics_failed`, message du moteur jamais montré). Sessions : MySQL `performance_schema.processlist` (état `disabled` / `performance_schema_off` si le serveur l'a désactivé : la table se lit alors vide, vérifié) et MariaDB `information_schema.PROCESSLIST` (sa seule source) (privilège
+`PROCESS` lu dans `USER_PRIVILEGES` d'abord, car sans lui le serveur ne montre que les threads du compte sans le dire ; un droit reçu par un rôle n'est pas vu),
+PostgreSQL `pg_stat_activity` (`pg_read_all_stats`/`pg_monitor`/superutilisateur, `backend_type = 'client backend'`), ClickHouse `system.processes`
+(`readonly=1`, `query_id` choisi pour repérer sa propre ligne, code 497 = droit refusé), Redis `ServerDiagnostics` vide (capacités `unsupported`, sessions 501).
+`ServerSession::query` passe par `QueryText::of` À LA CONSTRUCTION : littéraux (chaînes, `$$…$$`, `E'…'`, nombres) remplacés par `?` et commentaires retirés d'après `SqlScanner` (par dialecte, zones rendues par son paramètre `$spans`), PUIS raccourci à 200 caractères ; texte illisible pour le scanner (coupé au milieu d'un littéral) = `query` nul + `queryReason: redacted` (les pilotes lisent 4096 caractères pour masquer avant de couper) ; test d'intégration avec une vraie autre session sur les 5 moteurs + ClickHouse et n'entre JAMAIS dans l'audit :
+`AuditedDiagnostics` (trois portes) journalise `diagnostic.read` = sujet, `topic`, `engine`, `status`, `rows`. Droit de jeton `diagnostic`
+(`TokenPermissions`, colonne `diagnostic`, refusé par défaut, lecture seule, ne compte pas dans `canWrite`) : `ApiTokenAccess::requireDiagnostic` -> 403
+`permission_denied` ; routes `GET /web/connections/{id}/diagnostics[/sessions]` (`?database=`/`?schema=`), `GET /api/v1/connections/{id}/diagnostics[/sessions]`,
+outil MCP `list_sessions` (visible des seuls jetons `diagnostic`). Front : seulement `api/diagnostics.ts` (client typé), la case du jeton et le libellé d'audit ;
+les pages sont les issues suivantes (#71…). Tests : `tests/Core/Diagnostics`, `tests/Integration/Driver/SessionDiagnosticsTest` (6 cibles + compte réduit créé/supprimé),
+`tests/Integration/Web/DiagnosticsWebTest`.
 
 ## Optimiseur local (src/Core/Optimizer)
 

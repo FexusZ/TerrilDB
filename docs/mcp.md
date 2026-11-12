@@ -12,7 +12,7 @@ passe. Les noms d'hôte acceptés se règlent avec `TERRILDB_ALLOWED_HOSTS` (lis
 
 ## Outils
 
-Les quatre premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les deux derniers n'existent que pour
+Les quatre premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les autres n'existent que pour
 les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit pas).
 
 | Outil | Arguments | Rôle |
@@ -21,6 +21,7 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
 | `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
+| `list_sessions` | `connection` | (droit `diagnostic`, lecture seule) sessions en cours sur le serveur : utilisateur, base, état, durée, début de la requête (littéraux masqués par `?`, 200 caractères au plus ; nul avec `queryReason: redacted` si le texte ne peut pas être masqué sans risque) ; l'état dit si le compte de la base n'a pas le droit de les lire (voir docs/api.md, « Diagnostics ») |
 | `execute_statement` | `connection`, `sql`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
 | `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
 
