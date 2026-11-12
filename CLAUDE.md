@@ -139,7 +139,7 @@ lignes). MySQL/MariaDB : `SET SESSION TRANSACTION READ ONLY` (et non `START TRAN
 le DDL), `MAX_EXECUTION_TIME` / `max_statement_time`, lecture non tamponnée, instructions multiples désactivées. Une
 lecture est toujours annulée ; une écriture est validée si tout réussit. Limites connues : MySQL n'a pas de délai moteur
 pour une écriture ; un DDL MySQL en lecture-écriture valide implicitement ; l'opérateur `?` de jsonb ne passe pas dans
-EXPLAIN/SHOW sur PostgreSQL (il passe dans les SELECT).
+EXPLAIN/SHOW sur PostgreSQL (il passe dans les SELECT). Vitess (`@@version` en `-Vitess`, détecté à l'ouverture par `MySqlQueryRunner::forConnection`) ne transmet pas `SET SESSION MAX_EXECUTION_TIME` : le délai passe par la directive `/*vt+ QUERY_TIMEOUT_MS=n */` (`VitessTimeout`, après SELECT/INSERT/UPDATE/DELETE/REPLACE, écritures comprises ; sans effet sur SHOW/WITH), erreur 3024 = `query_timeout`. Cible de test `target-vitess` hors CI (`docs/vitess-tests.md`).
 
 ## Couche web (src/Http/Web)
 

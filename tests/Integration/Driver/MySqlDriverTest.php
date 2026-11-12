@@ -7,6 +7,10 @@ namespace App\Tests\Integration\Driver;
 use App\Core\Connection\Engine;
 use App\Core\Driver\Driver;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Guard\StatementKind;
+use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Query\QueryMode;
+use App\Core\Query\QueryOptions;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -65,5 +69,59 @@ final class MySqlDriverTest extends TestCase
         $this->expectException(TargetConnectionFailedException::class);
 
         (new MySqlDriver(new DbalConnector()))->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar)->withPassword('wrong-secret-value'));
+    }
+
+    /**
+     * Vitess n'applique pas SET SESSION MAX_EXECUTION_TIME : le driver le détecte (@@version) et met le délai dans la requête.
+     */
+    public function testATimeoutIsEnforcedThroughVitess(): void
+    {
+        $connection = $this->openVitess();
+        $started = microtime(true);
+
+        try {
+            $connection->runner()->run('SELECT SLEEP(10)', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 1000, 10));
+            self::fail('Expected a timeout.');
+        } catch (QueryTimeoutException) {
+            self::assertLessThan(5.0, microtime(true) - $started);
+        }
+
+        $result = $connection->runner()->run('SELECT 1', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 1000, 10));
+        self::assertSame([[1]], $result->rows, 'la connexion reste utilisable');
+        $connection->close();
+    }
+
+    public function testAWriteTimeoutIsEnforcedThroughVitess(): void
+    {
+        $connection = $this->openVitess();
+
+        $started = microtime(true);
+        try {
+            $connection->runner()->run('UPDATE categories SET name = name WHERE SLEEP(10) = 0', StatementKind::Write, new QueryOptions(QueryMode::ReadWrite, 1000, 10));
+            self::fail('Expected a timeout.');
+        } catch (QueryTimeoutException) {
+            self::assertLessThan(5.0, microtime(true) - $started);
+        } finally {
+            $connection->close();
+        }
+    }
+
+    public function testAQueryUnderTheTimeoutStillSucceedsThroughVitess(): void
+    {
+        $connection = $this->openVitess();
+
+        $result = $connection->runner()->run('SELECT SLEEP(0.2) AS s', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 3000, 10));
+
+        self::assertSame([[0]], $result->rows);
+        $connection->close();
+    }
+
+    private function openVitess(): \App\Core\Driver\TargetConnection
+    {
+        try {
+            return (new MySqlDriver(new DbalConnector()))->connect(Engine::MySql, TargetDatabase::parameters('TARGET_VITESS_URL'));
+        } catch (TargetConnectionFailedException) {
+            self::markTestSkipped('TARGET_VITESS_URL is unreachable (docker compose --profile vitess up -d --wait target-vitess).');
+        }
     }
 }
