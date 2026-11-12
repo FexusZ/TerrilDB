@@ -35,7 +35,7 @@ final readonly class PostgreSqlHealthDiagnostics implements HealthDiagnostics
 
     public function sample(): HealthSample
     {
-        return $this->catalog->read(function (Connection $c): HealthSample {
+        return $this->catalog->read(static function (Connection $c): HealthSample {
             $row = $c->fetchAssociative(
                 'SELECT '.implode(', ', self::COLUMNS).",
                         stats_reset::text AS epoch,

@@ -20,46 +20,14 @@ final class HealthSamplerTest extends TestCase
     /**
      * @param list<HealthSample> $samples
      */
-    private static function source(array $samples, ?DiagnosticStatus $status = null): HealthDiagnostics
+    private static function source(array $samples, ?DiagnosticStatus $status = null): ScriptedHealth
     {
-        return new class($samples, $status ?? DiagnosticStatus::available()) implements HealthDiagnostics {
-            public int $reads = 0;
-
-            /**
-             * @param list<HealthSample> $samples
-             */
-            public function __construct(private array $samples, private DiagnosticStatus $status)
-            {
-            }
-
-            public function status(): DiagnosticStatus
-            {
-                return $this->status;
-            }
-
-            public function sample(): HealthSample
-            {
-                return $this->samples[$this->reads++];
-            }
-
-            public function indicators(HealthWindow $window): array
-            {
-                return [new HealthIndicator('q', $window->rate('Questions'), 'per_second', HealthLevel::Ok, null)];
-            }
-        };
+        return new ScriptedHealth($samples, $status ?? DiagnosticStatus::available());
     }
 
-    private static function pause(): object
+    private static function pause(): RecordingPause
     {
-        return new class implements Pause {
-            /** @var list<float> */
-            public array $slept = [];
-
-            public function sleep(float $seconds): void
-            {
-                $this->slept[] = $seconds;
-            }
-        };
+        return new RecordingPause();
     }
 
     public function testTakesTwoSamplesAndComputesTheRates(): void
@@ -124,5 +92,43 @@ final class HealthSamplerTest extends TestCase
 
         self::assertSame('counters_reset', $report->discarded);
         self::assertSame([], $report->indicators);
+    }
+}
+
+final class RecordingPause implements Pause
+{
+    /** @var list<float> */
+    public array $slept = [];
+
+    public function sleep(float $seconds): void
+    {
+        $this->slept[] = $seconds;
+    }
+}
+
+final class ScriptedHealth implements HealthDiagnostics
+{
+    public int $reads = 0;
+
+    /**
+     * @param list<HealthSample> $samples
+     */
+    public function __construct(private readonly array $samples, private readonly DiagnosticStatus $status)
+    {
+    }
+
+    public function status(): DiagnosticStatus
+    {
+        return $this->status;
+    }
+
+    public function sample(): HealthSample
+    {
+        return $this->samples[$this->reads++];
+    }
+
+    public function indicators(HealthWindow $window): array
+    {
+        return [new HealthIndicator('q', $window->rate('Questions'), 'per_second', HealthLevel::Ok, null)];
     }
 }

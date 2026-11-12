@@ -122,6 +122,6 @@ final class DiagnosticsPresenter
 
     private static function instant(?float $at): ?string
     {
-        return null === $at ? null : \DateTimeImmutable::createFromFormat('U.u', \sprintf('%.6F', $at), new \DateTimeZone('UTC'))?->format('Y-m-d\TH:i:s.v\Z');
+        return null === $at ? null : \sprintf('%s.%03dZ', gmdate('Y-m-d\TH:i:s', (int) floor($at)), (int) (($at - floor($at)) * 1000));
     }
 }

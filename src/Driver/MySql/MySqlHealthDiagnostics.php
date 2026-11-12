@@ -57,7 +57,7 @@ final readonly class MySqlHealthDiagnostics implements HealthDiagnostics
 
     public function sample(): HealthSample
     {
-        $counters = $this->catalog->read(function (Connection $c): array {
+        $counters = $this->catalog->read(static function (Connection $c): array {
             $names = implode(', ', array_map(static fn (string $n): string => "'".$n."'", self::COUNTERS));
             $counters = [];
             foreach ($c->fetchAllAssociative('SHOW GLOBAL STATUS WHERE Variable_name IN ('.$names.')') as $row) {

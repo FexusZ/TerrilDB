@@ -22,6 +22,7 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` et `capabilities.locks` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
+| GET | `/api/v1/connections/{id}/diagnostics/health?seconds=5` | (droit `diagnostic`) santé du serveur sur un intervalle de 1 à 30 s (5 par défaut) : la requête dure l'intervalle, lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -84,6 +85,28 @@ règle de masquage que les sessions (`queryReason`) ; pour chaque attente `secon
 DDL), `mode` et `object` tels que le moteur les nomme. Aucune instruction d'arrêt n'est calculée ni exécutée. « Aucune attente » (`available` et `blocking`
 vide) se distingue de « non lisible » (`permission_denied`, `disabled` avec `reason: performance_schema_off`). MariaDB ne rapporte que les verrous de
 lignes (ses verrous de métadonnées demandent `performance_schema`, éteint par défaut) ; ClickHouse et Redis : `unsupported`, route 501.
+
+### Santé du serveur (`/diagnostics/health`, outil MCP `server_health`)
+
+Les compteurs de MySQL et de MariaDB (`SHOW GLOBAL STATUS`) sont **cumulés depuis le démarrage** : un compteur seul ne prouve rien. TerrilDB prend donc
+DEUX relevés à `seconds` secondes d'écart (entier de 1 à 30, 5 par défaut, sinon 422 `invalid_input`) et ne rapporte que des écarts, jamais un taux calculé sur un
+relevé unique. L'attente se fait dans la requête (pas de boucle, rien n'est conservé : pas de série temporelle) ; sans le droit de lecture, aucun relevé n'est
+pris. Les taux se calculent sur la durée RÉELLE entre les relevés (`seconds` de la réponse). Un serveur qui a redémarré (`Uptime` qui diminue) ou dont les statistiques ont été
+remises à zéro (`stats_reset` de PostgreSQL qui change) donne `discarded: counters_reset` et aucun indicateur ; un compteur seul qui repart à zéro, absent de cette série ou
+non numérique donne un indicateur `unknown` (`value` nul), jamais zéro. Réponse : `status`, `seconds`, `startedAt`, `endedAt`, `discarded`, `indicators`
+(`key`, `value`, `unit` = `per_second`, `percent` ou `count`, `level` = `ok`, `warning` ou `unknown`, `threshold`).
+
+Les seuils d'avertissement sont des REPÈRES à valider sur une charge représentative, pas des optimums ; un pourcentage n'est jugé que si l'intervalle a assez d'activité.
+MySQL / MariaDB : `queries_per_second` (Questions), `connections_used_percent` (`Threads_connected` / `max_connections`, 80 %), `threads_running` (50),
+`aborted_connects_percent` (5 %, dès 10 tentatives), `buffer_pool_hit_percent` (sous 99 %, dès 1000 demandes), `tmp_disk_tables_percent` (25 %, dès 100 tables),
+`row_lock_waits_per_second` (avertissement si l'attente moyenne atteint 1 s), `slow_queries_per_second` (1), `redo_log_waits` (au moins 1). PostgreSQL (`pg_stat_database`
+de la base de la connexion) : `transactions_per_second`, `rollback_percent` (10 %, dès 100 transactions), `cache_hit_percent` (sous 99 %, dès 1000 blocs),
+`connections_used_percent` (80 %), `temp_files_per_second` (1), `deadlocks` (au moins 1), `rows_returned_per_second`. Aucun droit particulier n'est attendu (un refus du
+serveur sur la lecture des compteurs est rendu `permission_denied`). PostgreSQL publie les statistiques d'une session avec un léger retard (de l'ordre de la seconde, jusqu'à
+10 s pour une session inactive) : sur un intervalle très court, une activité récente peut ne pas encore y figurer. ClickHouse et Redis : `unsupported`, route 501. À
+suivre (non livré) : longueur de l'historique d'annulation InnoDB, journaux (requêtes lentes, journal général, journal d'erreurs SQL), préparation à la reprise. L'audit
+(`diagnostic.read`, `topic: health`) garde l'état, l'intervalle demandé et si la mesure a été écartée, jamais un compteur. Un délai maximal de requête côté serveur web inférieur
+à l'intervalle choisi (plus 2 s) interrompt la mesure : laissez la marge.
 
 Compte de supervision minimal à donner à la connexion (documenté, pas imposé : sans le droit, l'état le dit) :
 

@@ -21,8 +21,8 @@ final class Indicators
     }
 
     /**
-     * @param float|null $enough activité minimale (dénominateur) pour juger ; en deçà, le pourcentage est montré sans avertissement
-     * @param bool       $higher vrai : avertissement quand la valeur atteint le seuil ; faux : quand elle passe sous le seuil
+     * @param float $enough activité minimale (dénominateur) pour juger ; en deçà, le pourcentage est montré sans avertissement
+     * @param bool  $higher vrai : avertissement quand la valeur atteint le seuil ; faux : quand elle passe sous le seuil
      */
     public static function percent(string $key, ?float $numerator, ?float $denominator, ?float $warnAt, float $enough = 1.0, bool $higher = true, bool $complement = false): HealthIndicator
     {
