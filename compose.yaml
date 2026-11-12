@@ -101,10 +101,11 @@ services:
       interval: 3s
       retries: 40
 
-  # Vitess (profil "vitess", hors "targets" : ~1,5 Go de mémoire et plus d'une minute de démarrage). vttestserver lance dans UN
-  # conteneur un keyspace "shop" non partagé avec un tablet PRIMARY et un tablet REPLICA (vrais mysqld, réplication réelle), plus un
-  # vtgate qui parle le protocole MySQL (sans mot de passe, root). Même jeu de données que les autres cibles ; `shop@replica`
-  # (ou `USE \`shop@replica\``) route vers le réplica. Voir docs/vitess-tests.md.
+  # Vitess (profil "vitess", hors "targets" : ~1,5 Go de mémoire). vttestserver lance dans UN conteneur un keyspace "shop" non
+  # partagé avec des tablets PRIMARY, REPLICA et RDONLY, plus un vtgate qui parle le protocole MySQL (sans mot de passe, root).
+  # ATTENTION : les trois tablets partagent UN SEUL mysqld (vtcombo) : ni réplication réelle, ni retard, ni réplica en lecture
+  # seule côté moteur. `shop@replica` (ou `USE \`shop@replica\``) change seulement la cible de routage de vtgate. Même jeu de
+  # données que les autres cibles. Voir docs/vitess-tests.md.
   target-vitess:
     profiles: [vitess]
     image: vitess/vttestserver:mysql80
