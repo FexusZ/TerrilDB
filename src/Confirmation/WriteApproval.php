@@ -122,7 +122,7 @@ final readonly class WriteApproval
     public function prepareScript(ApiTokenAccess $access, AuditContext $context, Uuid $connectionId, TargetConnection $target, string $script): PreparedScript
     {
         $writes = $access->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes;
-        $preview = $this->scripts->preview($script, $target->engine, $writes);
+        $preview = $this->scripts->previewFor($target, $script, $writes);
         $report = $preview->report;
         if ([] === $report->steps) {
             throw new QueryRefusedException(GuardReason::EmptyStatement);
@@ -165,12 +165,21 @@ final readonly class WriteApproval
         }
 
         $writes = $access->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes;
-        $report = $this->scripts->preview($script, $target->engine, $writes)->report;
+        $report = $this->scripts->previewFor($target, $script, $writes)->report;
+        $refusal = ['script' => true, 'engine' => $target->engine->value, 'purpose' => 'execute'];
         if ([] === $report->steps) {
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $refusal + ['reason' => GuardReason::EmptyStatement->value]);
+
             throw new QueryRefusedException(GuardReason::EmptyStatement);
         }
         if (null !== $report->firstRefused) {
-            throw new ScriptRefusedException($report->firstRefused->verdict->reason ?? GuardReason::UnsupportedStatement, $report->firstRefused->index);
+            $reason = $report->firstRefused->verdict->reason ?? GuardReason::UnsupportedStatement;
+            // Le droit a pu changer entre prepare et execute : le refus laisse une trace, comme à la préparation (texte de l'instruction fautive seulement).
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $refusal + [
+                'sql' => $report->firstRefused->sql, 'reason' => $reason->value, 'rank' => $report->firstRefused->index + 1, 'total' => \count($report->steps),
+            ]);
+
+            throw new ScriptRefusedException($reason, $report->firstRefused->index);
         }
         if ($report->needsConfirmation() && !$confirmed) {
             throw new ScriptNeedsConfirmationException($report->destructiveCount());

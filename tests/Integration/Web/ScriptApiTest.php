@@ -231,4 +231,23 @@ final class ScriptApiTest extends WebApiTestCase
         self::assertSame($executed[0]->getDetails()['executionId'], $executed[1]->getDetails()['executionId']);
         self::assertContains('query.prepared', array_map(static fn ($e): string => $e->getAction()->value, $events));
     }
+
+    public function testAScriptTheTokenMayNoLongerRunIsRefusedAtExecutionAndAudited(): void
+    {
+        $this->setUpToken(['writeData' => true]);
+        $ticket = $this->ticket($this->script());
+
+        $this->api('script/execute', ['script' => 'CREATE TABLE sneaky (a int)', 'confirmationToken' => $ticket]);
+        self::assertSame(403, $this->statusCode());
+
+        self::assertNotNull($this->owner);
+        $refusals = array_values(array_filter(
+            $this->auditEvents($this->owner, 'query'),
+            static fn ($e): bool => 'query.refused' === $e->getAction()->value,
+        ));
+        self::assertCount(1, $refusals);
+        self::assertSame('write_not_permitted', $refusals[0]->getDetails()['reason']);
+        self::assertTrue($refusals[0]->getDetails()['script']);
+        self::assertSame('execute', $refusals[0]->getDetails()['purpose']);
+    }
 }
