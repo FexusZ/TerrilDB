@@ -79,7 +79,8 @@ Compte de supervision minimal à donner à la connexion (documenté, pas imposé
 
 | Moteur | Source | Droit |
 | --- | --- | --- |
-| MySQL, MariaDB | `information_schema.PROCESSLIST` | `PROCESS` (accordé au compte lui-même : un droit reçu par un rôle n'est pas vu) |
+| MySQL | `performance_schema.processlist` (`information_schema.PROCESSLIST` est déprécié) ; état `disabled` (`performance_schema_off`) si `performance_schema` est désactivé : la table se lit alors VIDE | `PROCESS` (accordé au compte lui-même : un droit reçu par un rôle n'est pas vu) |
+| MariaDB | `information_schema.PROCESSLIST` (sa seule source) | `PROCESS`, comme ci-dessus |
 | PostgreSQL | `pg_stat_activity` | rôle `pg_monitor` ou `pg_read_all_stats` |
 | ClickHouse | `system.processes` | `SELECT ON system.processes` |
 | Redis | – | non pris en charge |
