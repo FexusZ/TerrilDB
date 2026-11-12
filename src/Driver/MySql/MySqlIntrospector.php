@@ -179,6 +179,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             [$table],
         );
 
+        $checked = $this->columnsWithACheck($table);
         $columns = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
@@ -198,11 +199,38 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 str_contains($row->string('extra'), 'INVISIBLE'),
                 1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
                 $compressed,
-                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : null,
+                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : (isset($checked[$row->string('name')]) ? LockReason::ColumnCheck : null),
             );
         }
 
         return $columns;
+    }
+
+    /**
+     * MariaDB : les colonnes qui portent une contrainte CHECK écrite sur la colonne (niveau « Column », nommée comme elle) ;
+     * MODIFY COLUMN la ferait disparaître. MySQL la garde, et son catalogue n'a pas ce niveau : rien à verrouiller.
+     *
+     * @return array<string, true>
+     */
+    private function columnsWithACheck(string $table): array
+    {
+        $levels = $this->connection->fetchOne(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'CHECK_CONSTRAINTS' AND COLUMN_NAME = 'LEVEL'",
+        );
+        if (!is_numeric($levels) || (int) $levels < 1) {
+            return [];
+        }
+
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND LEVEL = 'Column'",
+            [$table],
+        );
+        $checked = [];
+        foreach ($names as $name) {
+            $checked[(new RowReader(['name' => $name]))->string('name')] = true;
+        }
+
+        return $checked;
     }
 
     /**

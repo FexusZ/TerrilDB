@@ -62,7 +62,7 @@ final class StructureFidelityTest extends TestCase
     public static function cases(): iterable
     {
         foreach (TargetDatabase::relational() as $engine => [$env]) {
-            foreach (['generated', 'invisible', 'on_update', 'compressed', 'invisible_index', 'index_options', 'partitions', 'versioning', 'period_columns'] as $case) {
+            foreach (['generated', 'invisible', 'on_update', 'compressed', 'invisible_index', 'index_options', 'check', 'partitions', 'versioning', 'period_columns'] as $case) {
                 yield $engine.' / '.$case => [$env, $case];
             }
         }
@@ -106,6 +106,10 @@ final class StructureFidelityTest extends TestCase
             if (!str_contains($engine, 'Postgre')) {
                 yield $engine.' / invisible_index' => [$env, 'invisible_index'];
                 yield $engine.' / index_options' => [$env, 'index_options'];
+            }
+            if (str_contains($engine, 'MariaDB')) {
+                // MySQL garde la contrainte d'une colonne au MODIFY ; MariaDB la perd.
+                yield $engine.' / check' => [$env, 'check'];
             }
         }
     }
