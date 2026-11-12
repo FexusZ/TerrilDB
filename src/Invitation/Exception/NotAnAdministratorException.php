@@ -8,6 +8,6 @@ final class NotAnAdministratorException extends \DomainException
 {
     public static function create(): self
     {
-        return new self('Only an administrator manages invitations.');
+        return new self('Only an administrator manages invitations and accounts.');
     }
 }

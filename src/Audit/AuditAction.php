@@ -10,6 +10,8 @@ namespace App\Audit;
 enum AuditAction: string
 {
     case AccountRegistered = 'account.registered';
+    case AccountDisabled = 'account.disabled';
+    case AccountEnabled = 'account.enabled';
     case LoginSuccess = 'login.success';
     case LoginFailure = 'login.failure';
     case LoginThrottled = 'login.throttled';

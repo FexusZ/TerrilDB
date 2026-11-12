@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\Role;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -37,5 +38,20 @@ final class UserRepository extends ServiceEntityRepository
         }
 
         return $this->findOneBy(str_contains($login, '@') ? ['email' => $login] : ['username' => $login]);
+    }
+
+    /**
+     * Tous les comptes, du plus ancien au plus récent (l'identifiant UUID v7 départage).
+     *
+     * @return list<User>
+     */
+    public function findAllByAge(): array
+    {
+        return $this->findBy([], ['createdAt' => 'ASC', 'id' => 'ASC']);
+    }
+
+    public function countActiveAdmins(): int
+    {
+        return $this->count(['role' => Role::Admin, 'disabledAt' => null]);
     }
 }
