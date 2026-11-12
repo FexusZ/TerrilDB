@@ -15,6 +15,8 @@ export interface DraftColumn {
   default: string
   autoIncrement: boolean
   removed: boolean
+  /** Colonne dont le moteur porte une particularité que le serveur ne sait pas redire (générée…) : montrée, jamais redéfinie. */
+  lock?: string | null
 }
 
 export interface DraftIndex {
@@ -28,8 +30,10 @@ export interface DraftIndex {
   kind: string | null
   granularity: number | null
   removed: boolean
-  /** Lecture seule (clé de tri de ClickHouse) : montré, jamais modifié. */
+  /** Lecture seule (clé de tri de ClickHouse, ou index que le serveur ne sait pas recréer) : montré, jamais modifié. */
   locked: boolean
+  /** Pourquoi, pour un index que le serveur ne sait pas recréer (invisible, FULLTEXT…). */
+  lock?: string | null
 }
 
 export interface DraftForeignKey {
@@ -83,6 +87,7 @@ export function draftFromDetail(detail: TableDetail, clickhouse = false): Draft 
     default: column.default ?? '',
     autoIncrement: column.autoIncrement,
     removed: false,
+    lock: column.lock ?? null,
   }))
   const uidOf = (name: string): string => columns.find((column) => column.originalName === name)?.uid ?? name
   const primaryIndex = detail.indexes.find((index) => index.primary) ?? null
@@ -93,7 +98,8 @@ export function draftFromDetail(detail: TableDetail, clickhouse = false): Draft 
     indexes: detail.indexes
       .filter((index) => !index.primary)
       .map((index) => {
-        const locked = clickhouse && SORT_KEYS.includes(index.name)
+        const lock = index.lock ?? null
+        const locked = (clickhouse && SORT_KEYS.includes(index.name)) || lock !== null
 
         return {
           uid: nextUid(),
@@ -105,6 +111,7 @@ export function draftFromDetail(detail: TableDetail, clickhouse = false): Draft 
           granularity: null,
           removed: false,
           locked,
+          lock,
         }
       }),
     foreignKeys: detail.foreignKeys.map((key) => ({

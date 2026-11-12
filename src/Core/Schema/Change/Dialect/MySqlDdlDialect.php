@@ -127,7 +127,14 @@ final class MySqlDdlDialect extends AbstractDdlDialect
 
     protected function modifyColumn(string $table, ModifyColumn $operation): array
     {
-        $definition = $this->columnDefinition($operation->after);
+        $definition = $this->columnDefinition($operation->after, $operation->before->compressed);
+        // MODIFY COLUMN redit toute la définition : ce que le modèle ne dit pas doit être redit, sinon il disparaît.
+        if (null !== $operation->before->onUpdate) {
+            $definition .= ' ON UPDATE '.$operation->before->onUpdate;
+        }
+        if ($operation->before->invisible) {
+            $definition .= ' INVISIBLE';
+        }
         if (null !== $operation->before->comment && '' !== $operation->before->comment) {
             $definition .= ' COMMENT '.$this->stringLiteral($operation->before->comment);
         }
@@ -203,9 +210,9 @@ final class MySqlDdlDialect extends AbstractDdlDialect
         return [$this->statement(\sprintf('DROP TABLE %s', $this->quote($operation->name)), 'drop_table', $operation->name, true)];
     }
 
-    private function columnDefinition(ColumnDraft $column): string
+    private function columnDefinition(ColumnDraft $column, bool $compressed = false): string
     {
-        $sql = \sprintf('%s %s %s', $this->quote($column->name), $column->validatedType(), $column->nullable ? 'NULL' : 'NOT NULL');
+        $sql = \sprintf('%s %s%s %s', $this->quote($column->name), $column->validatedType(), $compressed ? ' COMPRESSED' : '', $column->nullable ? 'NULL' : 'NOT NULL');
         $default = $column->defaultValue();
         if (null !== $default) {
             $sql .= ' DEFAULT '.$this->defaultSql($default);

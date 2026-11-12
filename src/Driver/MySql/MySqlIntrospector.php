@@ -11,6 +11,7 @@ use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
@@ -33,6 +34,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     public function __construct(private Connection $connection)
     {
     }
+
+    private const COMPRESSED = '~\s*/\*M?!\d+\s+COMPRESSED(?:=\w+)?\s*\*/~i';
 
     private const SYSTEM_DATABASES = ['information_schema', 'mysql', 'performance_schema', 'sys'];
 
@@ -169,30 +172,65 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     {
         $rows = $this->connection->fetchAllAssociative(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
-                    EXTRA AS extra, COLUMN_COMMENT AS comment
+                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation
                FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION',
             [$table],
         );
 
+        $checked = $this->columnsWithACheck($table);
         $columns = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $nullable = $row->bool('nullable');
             $default = $row->nullableString('col_default');
+            // MariaDB écrit la compression en commentaire exécutable dans le type : on la lit à part.
+            $type = $row->string('type');
+            $compressed = 1 === preg_match(self::COMPRESSED, $type);
             $columns[] = new ColumnDefinition(
                 $row->string('name'),
-                $row->string('type'),
+                $compressed ? trim((string) preg_replace(self::COMPRESSED, '', $type)) : $type,
                 $nullable,
                 // MariaDB écrit le littéral NULL pour « pas de défaut » sur une colonne nullable.
                 $nullable && 'NULL' === $default ? null : $default,
                 str_contains($row->string('extra'), 'auto_increment'),
                 $row->nullableString('comment'),
+                str_contains($row->string('extra'), 'INVISIBLE'),
+                1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
+                $compressed,
+                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : (isset($checked[$row->string('name')]) ? LockReason::ColumnCheck : null),
             );
         }
 
         return $columns;
+    }
+
+    /**
+     * MariaDB : les colonnes qui portent une contrainte CHECK écrite sur la colonne (niveau « Column », nommée comme elle) ;
+     * MODIFY COLUMN la ferait disparaître. MySQL la garde, et son catalogue n'a pas ce niveau : rien à verrouiller.
+     *
+     * @return array<string, true>
+     */
+    private function columnsWithACheck(string $table): array
+    {
+        $levels = $this->connection->fetchOne(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'CHECK_CONSTRAINTS' AND COLUMN_NAME = 'LEVEL'",
+        );
+        if (!is_numeric($levels) || (int) $levels < 1) {
+            return [];
+        }
+
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND LEVEL = 'Column'",
+            [$table],
+        );
+        $checked = [];
+        foreach ($names as $name) {
+            $checked[(new RowReader(['name' => $name]))->string('name')] = true;
+        }
+
+        return $checked;
     }
 
     /**
@@ -227,28 +265,65 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     }
 
     /**
+     * Les colonnes de information_schema.STATISTICS selon la version : MySQL 8 a IS_VISIBLE et EXPRESSION, MariaDB a IGNORED.
+     *
+     * @return array<string, true>
+     */
+    private function statisticsColumns(): array
+    {
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'STATISTICS'",
+        );
+
+        $available = [];
+        foreach ($names as $name) {
+            $available[strtoupper((new RowReader(['name' => $name]))->string('name'))] = true;
+        }
+
+        return $available;
+    }
+
+    /**
      * @return list<IndexDefinition>
      */
     private function indexes(string $table): array
     {
+        $available = $this->statisticsColumns();
+        $hidden = match (true) {
+            isset($available['IS_VISIBLE']) => "IS_VISIBLE = 'NO'",
+            isset($available['IGNORED']) => "IGNORED = 'YES'",
+            default => '0',
+        };
+        $expression = isset($available['EXPRESSION']) ? 'EXPRESSION IS NOT NULL' : '0';
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col
+            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col, ('.$hidden.') AS hidden,
+                    COLLATION AS direction, SUB_PART AS prefix, INDEX_TYPE AS method, ('.$expression.') AS expression
                FROM information_schema.STATISTICS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY INDEX_NAME, SEQ_IN_INDEX',
             [$table],
         );
 
-        /** @var array<string, array{unique: bool, columns: list<string>}> $grouped */
+        /** @var array<string, array{unique: bool, columns: list<string>, lock: ?LockReason}> $grouped */
         $grouped = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $name = $row->string('name');
-            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => []];
+            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => [], 'lock' => null];
             $column = $row->nullableString('col');
             if (null !== $column) {
                 $grouped[$name]['columns'][] = $column;
             }
+            // Ce que `CREATE INDEX (colonnes)` ne dit pas : recréer l'index sur ces seules colonnes le dégraderait.
+            $grouped[$name]['lock'] ??= match (true) {
+                $row->bool('hidden') => isset($available['IS_VISIBLE']) ? LockReason::IndexInvisible : LockReason::IndexIgnored,
+                'FULLTEXT' === strtoupper($row->string('method')) => LockReason::Fulltext,
+                \in_array(strtoupper($row->string('method')), ['SPATIAL', 'RTREE'], true) => LockReason::Spatial,
+                $row->bool('expression') => LockReason::Expression,
+                null !== $row->nullableString('prefix') => LockReason::Prefix,
+                'D' === $row->nullableString('direction') => LockReason::Descending,
+                default => null,
+            };
         }
 
         $sizes = $this->indexSizes($table);
@@ -258,7 +333,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 continue;
             }
             // La clé primaire InnoDB est la table elle-même : sa place est déjà dans les données.
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null));
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null), $index['lock']);
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 
