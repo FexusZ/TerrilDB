@@ -393,9 +393,10 @@ final class SchemaAuditor
             DefinerKind::Event => ['événement', 'créé', 'EVENT', 'DROP EVENT'],
         };
         $name = self::quote($engine, $object->name);
-        // Seul un événement se corrige en place ; le reste se recrée à partir de sa définition relue : rien d'exécutable ici.
+        // Rien d'exécutable : la définition se relit d'abord. Seul un événement se corrige en place (ALTER exige une clause : celle de
+        // son état, que SHOW CREATE EVENT dit) ; le reste se recrée.
         $suggestion = DefinerKind::Event === $object->kind
-            ? \sprintf('ALTER DEFINER = CURRENT_USER EVENT %s;', $name)
+            ? \sprintf("-- relire d'abord : SHOW CREATE EVENT %s;\n-- puis, en gardant son état (ENABLE ou DISABLE selon ce qu'elle indique) : ALTER DEFINER = CURRENT_USER EVENT %s ENABLE;", $name, $name)
             : \sprintf("-- relire d'abord : SHOW CREATE %s %s;\n-- puis %s %s; et le recréer avec DEFINER = un compte qui existe.", $show, $name, $drop, $name);
 
         return new Finding(

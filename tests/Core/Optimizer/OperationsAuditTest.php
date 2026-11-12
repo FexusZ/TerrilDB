@@ -137,7 +137,8 @@ final class OperationsAuditTest extends TestCase
         self::assertSame(Severity::Warning, $findings[0]->severity);
         self::assertSame('nightly', $findings[0]->table);
         self::assertSame('événement créé par « gone@% », compte inexistant', $findings[0]->detail);
-        self::assertSame('ALTER DEFINER = CURRENT_USER EVENT `nightly`;', $findings[0]->suggestion);
+        self::assertStringContainsString('SHOW CREATE EVENT `nightly`;', (string) $findings[0]->suggestion);
+        self::assertStringContainsString('ALTER DEFINER = CURRENT_USER EVENT `nightly` ENABLE;', (string) $findings[0]->suggestion);
         // Un déclencheur se range sous sa table.
         self::assertSame('orders', $findings[3]->table);
         self::assertStringContainsString('déclencheur', (string) $findings[3]->detail);
@@ -146,7 +147,11 @@ final class OperationsAuditTest extends TestCase
         self::assertStringContainsString('SHOW CREATE VIEW `v_totals`;', (string) $findings[4]->suggestion);
         self::assertStringContainsString('SHOW CREATE PROCEDURE `refresh`;', (string) $findings[1]->suggestion);
         self::assertStringContainsString('SHOW CREATE FUNCTION `total`;', (string) $findings[2]->suggestion);
-        self::assertStringNotContainsString("\n".'ALTER', (string) $findings[4]->suggestion, 'nothing executable but comments to review');
+        foreach ($findings as $finding) {
+            foreach (explode("\n", (string) $finding->suggestion) as $line) {
+                self::assertStringStartsWith('--', $line, 'nothing executable, only comments to review');
+            }
+        }
     }
 
     public function testDefinersAreNotJudgedOnPostgreSql(): void
