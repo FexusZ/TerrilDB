@@ -137,6 +137,83 @@ final class SessionDiagnosticsTest extends TestCase
         }
     }
 
+    #[DataProvider('targets')]
+    public function testTheLiteralsOfAnotherSessionAreNeverShown(string $envVar): void
+    {
+        $engine = TargetDatabase::engine($envVar);
+        $secret = 'tdb-secret-'.bin2hex(random_bytes(6));
+        $sql = Engine::PostgreSql === $engine
+            ? \sprintf("SELECT pg_sleep(6), '%s', 4242", $secret)
+            : \sprintf("SELECT SLEEP(6), '%s', 4242", $secret);
+
+        $this->observeOtherSession($envVar, $sql, $secret, Engine::PostgreSql === $engine ? 'pg_sleep' : 'SLEEP');
+    }
+
+    public function testClickHouseNeverShowsTheLiteralsOfAnotherSession(): void
+    {
+        $secret = 'tdb-secret-'.bin2hex(random_bytes(6));
+
+        $this->observeOtherSession('TARGET_CLICKHOUSE_URL', \sprintf("SELECT sleep(3), '%s', 4242", $secret), $secret, 'sleep');
+    }
+
+    /**
+     * Une AUTRE session (un processus PHP à part, qui exécute vraiment la requête) est observée pendant qu'elle tourne.
+     */
+    private function observeOtherSession(string $envVar, string $sql, string $secret, string $marker): void
+    {
+        $target = $this->open($envVar);
+        $parameters = TargetDatabase::parameters($envVar);
+        $engine = TargetDatabase::engine($envVar);
+        $child = proc_open(
+            [\PHP_BINARY, '-r', <<<'PHP'
+                $c = json_decode((string) getenv('TDB_CHILD'), true);
+                if ('clickhouse' === $c['engine']) {
+                    $context = stream_context_create(['http' => ['method' => 'POST', 'content' => $c['sql'], 'header' => 'X-ClickHouse-User: '.$c['user']."\r\nX-ClickHouse-Key: ".$c['password']."\r\n", 'ignore_errors' => true]]);
+                    file_get_contents('http://'.$c['host'].':'.$c['port'].'/', false, $context);
+                } else {
+                    $dsn = ('pgsql' === $c['engine'] ? 'pgsql' : 'mysql').':host='.$c['host'].';port='.$c['port'].';dbname='.$c['database'];
+                    (new PDO($dsn, $c['user'], $c['password']))->query($c['sql']);
+                }
+                PHP],
+            [['file', '/dev/null', 'r'], ['file', '/dev/null', 'w'], ['file', '/dev/null', 'w']],
+            $pipes,
+            null,
+            ['TDB_CHILD' => json_encode([
+                'engine' => match ($engine) {
+                    Engine::PostgreSql => 'pgsql', Engine::ClickHouse => 'clickhouse', default => 'mysql'
+                },
+                'host' => $parameters->host,
+                'port' => $parameters->port,
+                'database' => $parameters->database,
+                'user' => $parameters->username,
+                'password' => $parameters->password(),
+                'sql' => $sql,
+            ], \JSON_THROW_ON_ERROR)] + getenv(),
+        );
+        self::assertIsResource($child);
+
+        try {
+            $seen = null;
+            for ($attempt = 0; $attempt < 40 && null === $seen; ++$attempt) {
+                usleep(150_000);
+                foreach ($target->diagnostics()->sessions()->sessions()->sessions as $session) {
+                    self::assertStringNotContainsString($secret, $session->query ?? '');
+                    self::assertStringNotContainsString('4242', $session->query ?? '');
+                    if (!$session->current && str_contains($session->query ?? '', $marker)) {
+                        $seen = $session;
+                    }
+                }
+            }
+
+            self::assertNotNull($seen, 'The other session was not observed while it ran.');
+            self::assertStringContainsString('?', $seen->query ?? '');
+        } finally {
+            proc_terminate($child);
+            proc_close($child);
+            $target->close();
+        }
+    }
+
     public function testClickHouseListsTheRunningQueryAsTheCurrentSession(): void
     {
         $target = $this->open('TARGET_CLICKHOUSE_URL');

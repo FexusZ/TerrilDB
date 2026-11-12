@@ -208,8 +208,10 @@ export interface ServerSession {
   database: string | null
   state: string | null
   seconds: number | null
-  /** Début de la requête en cours, toujours raccourci par le serveur. */
+  /** Début de la requête en cours, littéraux masqués par `?` puis raccourci par le serveur. */
   query: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  queryReason: 'redacted' | null
   /** La session de TerrilDB lui-même. */
   current: boolean
 }

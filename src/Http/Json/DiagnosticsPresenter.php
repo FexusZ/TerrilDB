@@ -44,6 +44,7 @@ final class DiagnosticsPresenter
                 'state' => $s->state,
                 'seconds' => $s->seconds,
                 'query' => $s->query,
+                'queryReason' => $s->queryRedacted ? 'redacted' : null,
                 'current' => $s->current,
             ], $report->sessions),
         ];

@@ -8,6 +8,7 @@ use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -43,7 +44,7 @@ final readonly class PostgreSqlSessionDiagnostics implements SessionDiagnostics
             $rows = $c->fetchAllAssociative(
                 "SELECT pid::text AS id, usename AS usr, client_addr::text AS client, datname AS db, state,
                         EXTRACT(EPOCH FROM (now() - COALESCE(state_change, backend_start)))::bigint AS seconds,
-                        LEFT(query, 256) AS query, (pid = pg_backend_pid()) AS me
+                        LEFT(query, 4096) AS query, (pid = pg_backend_pid()) AS me
                    FROM pg_stat_activity
                   WHERE backend_type = 'client backend'
                   ORDER BY pid
@@ -62,6 +63,7 @@ final readonly class PostgreSqlSessionDiagnostics implements SessionDiagnostics
                     $row->nullableInt('seconds'),
                     $row->nullableString('query'),
                     $row->bool('me'),
+                    SqlDialect::PostgreSql,
                 );
             }
 

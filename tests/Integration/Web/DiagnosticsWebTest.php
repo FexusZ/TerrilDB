@@ -68,7 +68,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $current = array_filter($sessions, static fn (mixed $s): bool => \is_array($s) && true === $s['current']);
         self::assertCount(1, $current);
         $first = self::arrayOf(reset($current));
-        self::assertSame(['id', 'user', 'client', 'database', 'state', 'seconds', 'query', 'current'], array_keys($first));
+        self::assertSame(['id', 'user', 'client', 'database', 'state', 'seconds', 'query', 'queryReason', 'current'], array_keys($first));
     }
 
     public function testAnotherDatabaseCanBeNamed(): void
