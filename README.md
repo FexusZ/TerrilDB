@@ -31,7 +31,7 @@ Trois entrées partagent le même cœur : une **interface web**, une **API REST*
 PHP, Composer et Node ne sont pas requis sur la machine : tout passe par Docker.
 
 ```bash
-sh docker/init-env.sh                                  # mots de passe locaux aléatoires (docker/dev/, ignoré par git)
+sh docker/init-env.sh                                  # mots de passe locaux et APP_SECRET aléatoires (docker/dev/, ignoré par git)
 docker compose up -d db                                # base interne (PostgreSQL)
 docker compose run --rm --no-deps php composer install
 docker compose run --rm --no-deps node npm install
@@ -61,7 +61,7 @@ La liste complète des commandes (qualité, front, migrations) et l'architecture
 ## Sécurité
 
 TerrilDB manipule des identifiants de bases de données : ne l'exposez que derrière HTTPS. Renseignez un `APP_SECRET`
-propre et `TERRILDB_ALLOWED_HOSTS` en production. Les valeurs de développement du dépôt ne protègent rien.
+propre et `TERRILDB_ALLOWED_HOSTS` en production. Les valeurs de développement (générées localement, ou de test) ne protègent rien.
 
 ## Licence
 

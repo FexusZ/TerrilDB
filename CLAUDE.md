@@ -369,7 +369,7 @@ Chaque job a un délai maximum (le déploiement occupe l'unique runner de produc
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash
-sh docker/init-env.sh                                     # une fois : mots de passe locaux aléatoires (docker/dev/, ignoré)
+sh docker/init-env.sh                                     # une fois : mots de passe locaux et APP_SECRET aléatoires (docker/dev/, ignoré)
 docker compose up -d db                                   # base interne
 docker compose --profile targets up -d                    # MySQL 8.4+26 / MariaDB 11.8+13 / PG 18 / ClickHouse / Redis de test
 R="docker compose run --rm --no-deps php"
@@ -393,7 +393,7 @@ $R php bin/console doctrine:migrations:migrate --env=test # schéma de test (tes
 $R php bin/console doctrine:migrations:diff               # nouvelle migration après un changement d'entité
 ```
 
-Les mots de passe des bases locales ne sont dans aucun fichier versionné : `sh docker/init-env.sh` (une fois après le clonage) les tire au hasard dans `docker/dev/*.env` (ignoré par git, lu par `compose.yaml` via `env_file`). L'URL de la base interne (`DATABASE_URL`) vient de là, jamais de `.env`. Changer ces fichiers après un premier démarrage impose `docker compose down -v` (les volumes gardent l'ancien mot de passe). Les tests d'intégration de
+Les mots de passe des bases locales et l'`APP_SECRET` de développement ne sont dans aucun fichier versionné (plus de `.env.dev` ; `.env.test` garde une valeur de test non secrète) : `sh docker/init-env.sh` (une fois après le clonage) les tire au hasard (`APP_SECRET` = 64 caractères hexadécimaux dans `docker/dev/php.env`, ajouté sans rien changer à une installation existante qui n'en a pas, jamais réécrit ; `tests/InitEnvScriptTest`) dans `docker/dev/*.env` (ignoré par git, lu par `compose.yaml` via `env_file`). L'URL de la base interne (`DATABASE_URL`) vient de là, jamais de `.env`. Changer ces fichiers après un premier démarrage impose `docker compose down -v` (les volumes gardent l'ancien mot de passe). Les tests d'intégration de
 persistance (`tests/Integration/Persistence`) tournent dans une transaction annulée à chaque test.
 
 ## Bases cibles de test
