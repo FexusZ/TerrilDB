@@ -60,6 +60,9 @@ final class ApiToken
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
     private bool $createConnections;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $singleStep;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -115,6 +118,7 @@ final class ApiToken
         $this->writeData = $permissions->writeData;
         $this->writeSchema = $permissions->writeSchema;
         $this->createConnections = $permissions->createConnections;
+        $this->singleStep = $permissions->singleStep;
         $this->createdAt = $createdAt;
         $this->expiresAt = $expiresAt;
     }
@@ -186,7 +190,7 @@ final class ApiToken
 
     public function getPermissions(): TokenPermissions
     {
-        return new TokenPermissions($this->writeData, $this->writeSchema, $this->createConnections);
+        return new TokenPermissions($this->writeData, $this->writeSchema, $this->createConnections, $this->singleStep);
     }
 
     public function getCreatedAt(): \DateTimeImmutable
