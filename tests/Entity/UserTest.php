@@ -46,6 +46,32 @@ final class UserTest extends TestCase
         self::assertTrue($admin->isAdmin());
     }
 
+    public function testAnAccountIsActiveUntilDisabledAndCanBeEnabledAgain(): void
+    {
+        $user = $this->user();
+        self::assertFalse($user->isDisabled());
+        self::assertNull($user->getDisabledAt());
+
+        $user->disable(new \DateTimeImmutable('2026-11-12T10:00:00+01:00'));
+
+        self::assertTrue($user->isDisabled());
+        self::assertSame('2026-11-12T09:00:00+00:00', $user->getDisabledAt()?->format(\DATE_ATOM));
+
+        $user->enable();
+
+        self::assertFalse($user->isDisabled());
+        self::assertNull($user->getDisabledAt());
+    }
+
+    public function testDisablingTwiceKeepsTheFirstDate(): void
+    {
+        $user = $this->user();
+        $user->disable(new \DateTimeImmutable('2026-11-12T09:00:00Z'));
+        $user->disable(new \DateTimeImmutable('2026-11-13T09:00:00Z'));
+
+        self::assertSame('2026-11-12T09:00:00+00:00', $user->getDisabledAt()?->format(\DATE_ATOM));
+    }
+
     public function testEmailAndUsernameAreNormalizedToLowercase(): void
     {
         $user = $this->user('  Alice@Example.TEST ', 'Alice_01');

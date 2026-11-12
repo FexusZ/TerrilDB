@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Entity\Role;
 use App\Entity\User;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -25,6 +26,15 @@ final class UserRepository extends ServiceEntityRepository
         $entityManager->flush();
     }
 
+    /** UPDATE direct : ni la version ni l'entité ne bougent, une connexion simultanée ne se heurte à rien. */
+    public function recordLogin(User $user, \DateTimeImmutable $at): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE app_user SET last_login_at = :at WHERE id = :id',
+            ['at' => $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'), 'id' => $user->getId()->toRfc4122()],
+        );
+    }
+
     /**
      * Connexion par e-mail ou nom d'utilisateur. Un identifiant contenant « @ » est toujours un e-mail :
      * les noms d'utilisateur n'en contiennent pas, il n'y a donc aucune ambiguïté.
@@ -37,5 +47,32 @@ final class UserRepository extends ServiceEntityRepository
         }
 
         return $this->findOneBy(str_contains($login, '@') ? ['email' => $login] : ['username' => $login]);
+    }
+
+    /**
+     * Tous les comptes, du plus ancien au plus récent (l'identifiant UUID v7 départage).
+     *
+     * @return list<User>
+     */
+    public function findAllByAge(): array
+    {
+        return $this->findBy([], ['createdAt' => 'ASC', 'id' => 'ASC']);
+    }
+
+    /**
+     * Verrouille (jusqu'à la fin de la transaction en cours) les administrateurs actifs, toujours dans le même
+     * ordre : deux transactions s'attendent au lieu de décider chacune sur un décompte périmé.
+     */
+    public function lockActiveAdmins(): void
+    {
+        $this->getEntityManager()->getConnection()->executeQuery(
+            'SELECT id FROM app_user WHERE role = :role AND disabled_at IS NULL ORDER BY id FOR UPDATE',
+            ['role' => Role::Admin->value],
+        )->fetchAllAssociative();
+    }
+
+    public function countActiveAdmins(): int
+    {
+        return $this->count(['role' => Role::Admin, 'disabledAt' => null]);
     }
 }

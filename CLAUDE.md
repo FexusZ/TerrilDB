@@ -259,6 +259,8 @@ sont renseignés (avec `MAILER_DSN`) ; le lien vient de l'adresse publique confi
 conservée nulle part (ni base, ni audit, ni journal) ; un échec de transport garde l'invitation (`emailSent: false`, le lien
 reste à transmettre à la main) ; envoi non configuré = 409 `mail_disabled`. `GET /web/invitations` dit `emailEnabled`.
 
+Administration des comptes (`AccountAdministration`, `AccountsController`, `AccountPresenter`, vue `AccountsView`, `/security/accounts`) : `GET /web/accounts`, `POST /web/accounts/{id}/disable|enable`, administrateur seulement (403 `forbidden`). La liste ne donne que identifiant, nom d'utilisateur, rôle, second facteur, dernière connexion (`last_login_at`, posée par `LoginService`), état et « c'est vous » : jamais l'e-mail ni rien de chiffré (connexions, jetons). Désactiver pose `disabled_at` et ne supprime rien : connexion refusée avec la réponse d'un mauvais mot de passe (`invalid_credentials`, après le même calcul), session ouverte non reconnue (`SecurityUserProvider`, `WebSession::user`), jeton d'API refusé comme un jeton inconnu (401 `invalid_token`, `ApiTokenService::authenticate`), phrase de récupération refusée (`invalid_recovery`) ; la réactivation rétablit tout, jetons compris. Refus 409 `cannot_disable_self` (son propre compte) et `last_administrator` (le dernier administrateur actif). Répéter l'action ne change ni ne journalise rien ; sinon audit `account.disabled` / `account.enabled` (acteur, cible en `subject`, aucun détail).
+
 ## Édition de structure (src/Core/Schema/Change, TableStructureController)
 
 Modifier colonnes, index, clé primaire, clés étrangères, nom ou suppression d'une table SQL. Le client n'envoie JAMAIS de SQL : il envoie

@@ -86,7 +86,7 @@ final readonly class ApiTokenService
         $secret = ApiTokenSecret::parse($presented);
         $token = $this->tokens->find($secret->id);
         $now = \DateTimeImmutable::createFromInterface($this->clock->now());
-        if (null === $token || !$token->matches($secret->verifier()) || $token->isExpired($now)) {
+        if (null === $token || !$token->matches($secret->verifier()) || $token->isExpired($now) || $token->getOwner()->isDisabled()) {
             throw InvalidApiTokenException::create();
         }
 

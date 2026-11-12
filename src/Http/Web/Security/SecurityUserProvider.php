@@ -26,7 +26,8 @@ final readonly class SecurityUserProvider implements UserProviderInterface
             throw new UserNotFoundException();
         }
         $user = $this->users->find(Uuid::fromString($identifier));
-        if (null === $user) {
+        // Compte désactivé : la session ouverte n'est plus reconnue à sa prochaine requête.
+        if (null === $user || $user->isDisabled()) {
             throw new UserNotFoundException();
         }
 

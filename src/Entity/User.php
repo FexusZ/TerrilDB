@@ -68,6 +68,13 @@ final class User
     #[ORM\Column(length: 10, enumType: Role::class, options: ['default' => 'member'])]
     private Role $role;
 
+    // Compte désactivé par un administrateur : plus de connexion, sessions et jetons refusés, rien n'est supprimé.
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $disabledAt = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $lastLoginAt = null;
+
     // Verrou optimiste : deux écritures concurrentes sur le même compte ne s'écrasent pas en silence
     // (notamment pour qu'un code TOTP présenté deux fois en même temps ne passe qu'une fois).
     #[ORM\Version]
@@ -159,6 +166,31 @@ final class User
     public function getRole(): Role
     {
         return $this->role;
+    }
+
+    public function isDisabled(): bool
+    {
+        return null !== $this->disabledAt;
+    }
+
+    public function getDisabledAt(): ?\DateTimeImmutable
+    {
+        return $this->disabledAt;
+    }
+
+    public function disable(\DateTimeImmutable $at): void
+    {
+        $this->disabledAt ??= $at->setTimezone(new \DateTimeZone('UTC'));
+    }
+
+    public function enable(): void
+    {
+        $this->disabledAt = null;
+    }
+
+    public function getLastLoginAt(): ?\DateTimeImmutable
+    {
+        return $this->lastLoginAt;
     }
 
     public function isAdmin(): bool

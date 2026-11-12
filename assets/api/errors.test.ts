@@ -11,6 +11,11 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(401, 'locked'))).toContain('reconnect')
   })
 
+  it('explains why an account cannot be disabled', () => {
+    expect(messageFor(new ApiError(409, 'cannot_disable_self'))).toContain('votre propre compte')
+    expect(messageFor(new ApiError(409, 'last_administrator'))).toContain('dernier administrateur')
+  })
+
   it('explains a refused invitation and a forbidden action', () => {
     expect(messageFor(new ApiError(403, 'invalid_invitation'))).toContain('invitation')
     expect(messageFor(new ApiError(403, 'forbidden'))).toContain('administrateur')

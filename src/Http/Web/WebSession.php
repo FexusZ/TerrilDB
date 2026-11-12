@@ -35,7 +35,7 @@ final readonly class WebSession
         $identifier = $this->security->getUser()?->getUserIdentifier();
         $user = null === $identifier ? null : $this->users->find(Uuid::fromString($identifier));
 
-        return $user ?? throw new LockedException();
+        return null === $user || $user->isDisabled() ? throw new LockedException() : $user;
     }
 
     /**
