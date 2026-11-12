@@ -31,6 +31,7 @@ export function createAppRouter(history: RouterHistory): Router {
         children: [
           { path: '', name: 'workspace', component: () => import('./views/QueryPane.vue') },
           { path: 'activity', name: 'server-activity', component: () => import('./views/ServerActivityPane.vue'), props: true },
+          { path: 'replication', name: 'replication', component: () => import('./views/ReplicationPane.vue'), props: true },
           { path: 'audit', name: 'audit', component: () => import('./views/AuditPane.vue'), props: true },
           { path: 'diagram', name: 'diagram', component: () => import('./views/DiagramPane.vue'), props: true },
           { path: 'key', name: 'key', component: () => import('./views/KeyPane.vue'), props: (route) => ({ id: route.params.id, name: route.query.name }) },

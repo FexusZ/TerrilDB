@@ -8,6 +8,11 @@ use App\Core\Diagnostics\BlockingNode;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\Replication\ReplicationAlert;
+use App\Core\Diagnostics\Replication\ReplicationAlerts;
+use App\Core\Diagnostics\Replication\ReplicationChannel;
+use App\Core\Diagnostics\Replication\ReplicationError;
+use App\Core\Diagnostics\Replication\ReplicationReport;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionReport;
 
@@ -98,5 +103,48 @@ final class DiagnosticsPresenter
             'object' => $node->object,
             'blocked' => array_map(self::node(...), $node->blocked),
         ];
+    }
+
+    /**
+     * Rôle, canaux (fils, retard, jeux de transactions, dernières erreurs neutralisées), réglages et alertes. « Pas de réplication
+     * configurée » est le rôle `none` avec une source `available` ; une source illisible le dit dans `status`. Rien ici n'est une
+     * instruction à exécuter (ni START, ni STOP, ni CHANGE).
+     *
+     * @return array<string, mixed>
+     */
+    public static function replication(ReplicationReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'role' => $report->role->value,
+            'replicaCount' => $report->replicaCount,
+            'settings' => [
+                'readOnly' => $report->settings->readOnly,
+                'superReadOnly' => $report->settings->superReadOnly,
+                'binlogFormat' => $report->settings->binlogFormat,
+                'gtid' => $report->settings->gtid,
+            ],
+            'channels' => array_map(static fn (ReplicationChannel $c): array => [
+                'name' => $c->name,
+                'receiver' => $c->receiver->value,
+                'applier' => $c->applier->value,
+                'lagSeconds' => $c->lagSeconds,
+                'received' => $c->received,
+                'applied' => $c->applied,
+                'pendingApply' => $c->pendingApply,
+                'receiverError' => self::replicationError($c->receiverError),
+                'applierError' => self::replicationError($c->applierError),
+            ], $report->channels),
+            'alerts' => array_map(static fn (ReplicationAlert $a): array => ['code' => $a->code->value, 'severity' => $a->severity->value, 'channel' => $a->channel], $report->alerts()),
+            'thresholds' => ['warning' => ReplicationAlerts::LAG_WARNING_SECONDS, 'critical' => ReplicationAlerts::LAG_CRITICAL_SECONDS],
+        ];
+    }
+
+    /**
+     * @return array{code: int|null, message: string}|null
+     */
+    private static function replicationError(?ReplicationError $error): ?array
+    {
+        return null === $error ? null : ['code' => $error->code, 'message' => $error->message];
     }
 }

@@ -51,7 +51,8 @@ final class DiagnosticsWebTest extends WebApiTestCase
 
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
-        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks], $body['capabilities']);
+        $replication = 'TARGET_CLICKHOUSE_URL' === $envVar ? $locks : ['availability' => 'available', 'reason' => null, 'privilege' => null];
+        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks, 'replication' => $replication], $body['capabilities']);
     }
 
     #[DataProvider('targets')]

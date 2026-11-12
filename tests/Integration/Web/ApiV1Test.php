@@ -559,7 +559,8 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
-        self::assertSame(['sessions' => 'available', 'locks' => $locks], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+        $replication = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'replication' => $replication], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
@@ -616,6 +617,40 @@ final class ApiV1Test extends WebApiTestCase
         $this->prepare(rights: ['diagnostic' => true]);
 
         $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/locks');
+
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testATokenWithoutTheDiagnosticRightCannotReadTheReplication(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/replication');
+
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $body);
+    }
+
+    public function testATokenWithTheDiagnosticRightReadsTheReplication(): void
+    {
+        $user = $this->prepare(rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/replication');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('none', $body['role']);
+        self::assertSame([], $body['alerts']);
+        $events = $this->auditEvents($user, 'diagnostic');
+        self::assertCount(1, $events);
+        self::assertSame('api', $events[0]->getActor()->value);
+        self::assertSame('replication', $events[0]->getDetails()['topic']);
+    }
+
+    public function testTheReplicationOfAConnectionOutsideTheListIsNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/replication');
 
         self::assertSame(404, $this->statusCode());
     }
