@@ -21,6 +21,13 @@ export function reasonText(reason: unknown): string {
 }
 
 /** Message à montrer à l'utilisateur pour une erreur de l'API. */
+const PARTLY_APPLIED =
+  'Un verrou a interrompu la modification : certaines instructions sont déjà appliquées (voir la liste). Ne la rejouez pas telle quelle : relisez la table, puis refaites ce qui manque.'
+
+function partlyApplied(error: ApiError): boolean {
+  return error.details.retryable === false && Array.isArray(error.details.applied) && error.details.applied.length > 0
+}
+
 export function messageFor(error: unknown): string {
   if (!(error instanceof ApiError)) {
     return GENERIC
@@ -88,8 +95,10 @@ export function messageFor(error: unknown): string {
     case 'invalid_data_change':
       return 'Cette modification de données est invalide.'
     case 'deadlock':
+      if (partlyApplied(error)) return PARTLY_APPLIED
       return 'La base a détecté un interblocage avec une autre transaction et a annulé cette opération. Relancez-la telle quelle.'
     case 'lock_timeout':
+      if (partlyApplied(error)) return PARTLY_APPLIED
       return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'

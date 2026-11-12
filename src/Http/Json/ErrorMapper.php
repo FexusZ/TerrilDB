@@ -109,7 +109,7 @@ final class ErrorMapper
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
             $error instanceof SchemaChangeFailedException => null !== $error->lock
-                ? new ErrorResponse(409, $error->lock->code(), ['retryable' => true, 'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied), 'failed' => ChangePlanPresenter::statement($error->failed)])
+                ? new ErrorResponse(409, $error->lock->code(), ['retryable' => [] === $error->applied, 'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied), 'failed' => ChangePlanPresenter::statement($error->failed)])
                 : new ErrorResponse(409, 'schema_change_failed', [
                     'message' => $error->getMessage(),
                     'retryable' => false,

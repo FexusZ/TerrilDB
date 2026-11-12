@@ -73,4 +73,11 @@ describe('error messages', () => {
     expect(timeout).toContain('verrou')
     expect(timeout).not.toBe(deadlock)
   })
+
+  it('does not advise replaying when part of the change is already applied', () => {
+    const message = messageFor(new ApiError(409, 'lock_timeout', { retryable: false, applied: [{ sql: 'ALTER TABLE t ADD c int' }] }))
+    expect(message).toContain('déjà appliquées')
+    expect(message).not.toContain('Relancez')
+    expect(messageFor(new ApiError(409, 'deadlock', { retryable: false, applied: [{ sql: 'x' }] }))).toContain('déjà appliquées')
+  })
 })

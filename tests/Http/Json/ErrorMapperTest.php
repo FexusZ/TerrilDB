@@ -204,4 +204,17 @@ final class ErrorMapperTest extends TestCase
         self::assertArrayNotHasKey('message', $response->extra);
         self::assertSame('schema_change_failed', (new ErrorMapper())->map(new SchemaChangeFailedException('x', [], $statement))?->code);
     }
+
+    public function testSchemaChangeBlockedByALockAfterAppliedStatementsIsNotRetryable(): void
+    {
+        $done = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $failed = new DdlStatement('ALTER TABLE t ADD d int', 'add_column', 't', false);
+
+        $response = (new ErrorMapper())->map(new SchemaChangeFailedException('Lock wait timeout', [$done], $failed, null, LockConflict::LockTimeout));
+
+        self::assertSame('lock_timeout', $response?->code);
+        self::assertFalse($response->extra['retryable']);
+        self::assertIsArray($response->extra['applied']);
+        self::assertCount(1, $response->extra['applied']);
+    }
 }

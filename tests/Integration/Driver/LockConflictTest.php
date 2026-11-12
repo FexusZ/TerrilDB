@@ -21,6 +21,7 @@ use App\Driver\DbalConnector;
 use App\Driver\DbalDdlExecutor;
 use App\Driver\MySql\MySqlDriver;
 use App\Driver\PostgreSql\PostgreSqlDriver;
+use App\Http\Json\ErrorMapper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -53,6 +54,7 @@ final class LockConflictTest extends TestCase
         $this->target?->close();
         if ('' !== $this->table) {
             LockPeer::connect($this->env)->exec(\sprintf('DROP TABLE IF EXISTS %s', $this->q()));
+            LockPeer::connect($this->env)->exec(\sprintf('DROP TABLE IF EXISTS %s', $this->q('_side')));
         }
     }
 
@@ -85,9 +87,9 @@ final class LockConflictTest extends TestCase
         return $this->target ?? throw new \LogicException('Not opened.');
     }
 
-    private function q(): string
+    private function q(string $suffix = ''): string
     {
-        return Engine::PostgreSql === $this->engine ? '"'.$this->table.'"' : '`'.$this->table.'`';
+        return Engine::PostgreSql === $this->engine ? '"'.$this->table.$suffix.'"' : '`'.$this->table.$suffix.'`';
     }
 
     /** Une transaction ouverte qui tient la ligne 1. */
@@ -194,6 +196,45 @@ final class LockConflictTest extends TestCase
         } catch (SchemaChangeFailedException $e) {
             self::assertSame(LockConflict::LockTimeout, $e->lock);
             self::assertSame([], $e->applied);
+        } finally {
+            $connection->close();
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function stepByStepEngines(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
+    }
+
+    /** Un DDL joué instruction par instruction : la première reste en place, la réponse ne dit donc pas de rejouer. */
+    #[DataProvider('stepByStepEngines')]
+    public function testALockWaitAfterAnAppliedStatementIsNotRetryable(string $env): void
+    {
+        $this->open($env);
+        LockPeer::connect($env)->exec(\sprintf('CREATE TABLE %s (id int NOT NULL PRIMARY KEY)', $this->q('_side')));
+        $this->holdRowOne();
+
+        $connection = (new DbalConnector())->connect($this->engine, TargetDatabase::parameters($env));
+        try {
+            (new DbalDdlExecutor($connection, $this->engine, 1))->execute([
+                new DdlStatement(\sprintf('ALTER TABLE %s ADD COLUMN extra int NULL', $this->q('_side')), 'add_column', $this->table.'_side', false),
+                new DdlStatement(\sprintf('ALTER TABLE %s ADD COLUMN extra int NULL', $this->q()), 'add_column', $this->table, false),
+            ], false);
+            self::fail('The second statement should have timed out.');
+        } catch (SchemaChangeFailedException $e) {
+            self::assertSame(LockConflict::LockTimeout, $e->lock);
+            self::assertCount(1, $e->applied);
+            $response = (new ErrorMapper())->map($e);
+            self::assertSame('lock_timeout', $response?->code);
+            self::assertFalse($response->extra['retryable']);
+            self::assertIsArray($response->extra['applied']);
+            self::assertCount(1, $response->extra['applied']);
         } finally {
             $connection->close();
         }

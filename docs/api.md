@@ -30,7 +30,7 @@ Toujours `{"error": "<code>", …}`. Codes : `invalid_token` (401, en-tête `WWW
 connexion hors jeton comprise), `query_refused` (403, avec `reason`), `query_failed` (400, avec `message` du moteur),
 `query_timeout` (408), `invalid_input` (422), `bad_request` (400), `too_many_attempts` (429, avec `Retry-After`),
 `target_unreachable` (502), `permission_denied` (403, le jeton n'a pas le droit), `confirmation_required` (409, avec `reason`),
-`deadlock` et `lock_timeout` (409, `retryable: true`, jamais le message du moteur).
+`deadlock` et `lock_timeout` (409, `retryable`, jamais le message du moteur).
 
 Motifs de refus (`reason`) : `empty_statement`, `multiple_statements`, `incomplete_sql`, `too_long`, `not_read_only`,
 `forbidden_construct`, `unsupported_statement`, `write_not_permitted` (le jeton n'a pas le droit de cette sorte d'écriture).
@@ -40,7 +40,11 @@ Motifs de refus (`reason`) : `empty_statement`, `multiple_statements`, `incomple
 Classés d'après le CODE du moteur (MySQL/MariaDB 1213 et 1205, PostgreSQL SQLSTATE 40P01/40001 et 55P03), jamais d'après son texte, pour
 `/execute` comme pour les écritures de l'interface. `deadlock` : le moteur a annulé toute la transaction, l'opération entière se rejoue.
 `lock_timeout` : l'instruction a cessé d'attendre un verrou tenu par une autre transaction ; on regarde qui bloque, puis on réessaie. Le
-corps porte `retryable: true` ; TerrilDB ne rejoue jamais seul. Un délai d'exécution reste `query_timeout`. Les autres échecs d'écriture
+corps porte `retryable: true` ; TerrilDB ne rejoue jamais seul. Exception : une modification de structure MySQL/MariaDB/ClickHouse se joue
+instruction par instruction ; si certaines sont DÉJÀ appliquées (`applied` non vide), `retryable` vaut `false` et il ne faut pas rejouer
+l'opération entière : relire la table, puis refaire ce qui manque. `retryable: true` n'est rendu que si rien n'a été appliqué (transaction
+annulée en entier). Précision : le SQLSTATE PostgreSQL 40001 (`serialization_failure`) est publié sous le code `deadlock` (même
+conduite : la transaction est annulée, on la rejoue) ; il n'a pas de code propre. Un délai d'exécution reste `query_timeout`. Les autres échecs d'écriture
 (`data_change_failed`, `schema_change_failed`) portent `retryable: false`.
 
 ## Écrire
