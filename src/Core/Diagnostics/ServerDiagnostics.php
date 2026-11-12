@@ -17,6 +17,7 @@ final readonly class ServerDiagnostics
         private Engine $engine,
         private ?SessionDiagnostics $sessions = null,
         private ?LockDiagnostics $locks = null,
+        private ?ReplicationDiagnostics $replication = null,
     ) {
     }
 
@@ -37,6 +38,14 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function replication(): ReplicationDiagnostics
+    {
+        return $this->replication ?? throw UnsupportedOperationException::for($this->engine, 'replication');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données.
      *
      * @return array<string, DiagnosticStatus>
@@ -46,6 +55,7 @@ final readonly class ServerDiagnostics
         return [
             'sessions' => $this->sessions?->status() ?? DiagnosticStatus::unsupported(),
             'locks' => $this->locks?->status() ?? DiagnosticStatus::unsupported(),
+            'replication' => $this->replication?->status() ?? DiagnosticStatus::unsupported(),
         ];
     }
 }

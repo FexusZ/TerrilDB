@@ -24,6 +24,8 @@ final class TargetDatabase
         'TARGET_POSTGRES_URL' => Engine::PostgreSql,
         'TARGET_CLICKHOUSE_URL' => Engine::ClickHouse,
         'TARGET_REDIS_URL' => Engine::Redis,
+        'TARGET_REPLICA_MYSQL_URL' => Engine::MySql,
+        'TARGET_REPLICA_MARIADB_URL' => Engine::MariaDb,
     ];
 
     /**

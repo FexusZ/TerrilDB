@@ -27,6 +27,14 @@ final readonly class ReplicationReport
     }
 
     /**
+     * Une source qu'on ne peut pas lire : l'état dit pourquoi, rien d'autre n'est affirmé.
+     */
+    public static function unreadable(DiagnosticStatus $status): self
+    {
+        return new self($status, ReplicationRole::None, [], new ReplicationSettings(null, null, null, null), null);
+    }
+
+    /**
      * @return list<ReplicationAlert>
      */
     public function alerts(): array

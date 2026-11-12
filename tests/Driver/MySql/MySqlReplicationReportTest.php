@@ -29,13 +29,24 @@ final class MySqlReplicationReportTest extends TestCase
     }
 
     /**
+     * @param array<string, mixed> $row
+     */
+    private static function text(array $row, string $key): string
+    {
+        $value = $row[$key] ?? null;
+        self::assertIsScalar($value);
+
+        return (string) $value;
+    }
+
+    /**
      * @return array<string, string>
      */
     private static function variables(string $name): array
     {
         $variables = [];
         foreach (self::rows($name) as $row) {
-            $variables[(string) $row['Variable_name']] = (string) $row['Value'];
+            $variables[self::text($row, 'Variable_name')] = self::text($row, 'Value');
         }
 
         return $variables;
@@ -107,7 +118,7 @@ final class MySqlReplicationReportTest extends TestCase
 
     public function testTheWorkerErrorExplainsAnApplierFailureBetter(): void
     {
-        $worker = ReplicationError::from(1062, (string) self::rows('my-worker-error')[0]['LAST_ERROR_MESSAGE']);
+        $worker = ReplicationError::from(1062, self::text(self::rows('my-worker-error')[0], 'LAST_ERROR_MESSAGE'));
         self::assertNotNull($worker);
 
         $without = MySqlReplicationReport::build(Engine::MySql, self::rows('my-applier-error'), [], null, [], [])->channels[0];
