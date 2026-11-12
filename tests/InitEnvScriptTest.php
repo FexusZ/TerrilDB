@@ -90,9 +90,10 @@ final class InitEnvScriptTest extends TestCase
 
     private function secret(): string
     {
-        self::assertSame(1, preg_match('/^APP_SECRET=(.*)$/m', (string) file_get_contents($this->root.'/docker/dev/php.env'), $m));
-
-        self::assertArrayHasKey(1, $m);
+        $found = preg_match('/^APP_SECRET=(.*)$/m', (string) file_get_contents($this->root.'/docker/dev/php.env'), $m);
+        if (1 !== $found || !isset($m[1])) {
+            self::fail('APP_SECRET absent de php.env.');
+        }
 
         return $m[1];
     }
