@@ -108,4 +108,31 @@ final class GuardEngineConcordanceTest extends TestCase
         self::assertSame(Decision::Refused, (new StatementGuard())->check('select pg_advisory_lock(7)', Engine::PostgreSql, QueryMode::ReadOnly)->decision);
         self::assertSame(1, $runner->run('select pg_advisory_lock(7), 1', StatementKind::Read, $this->readOnly())->rowCount());
     }
+
+    public function testPostgreSqlCallsAFunctionWrittenBetweenQuotesSoTheGuardMustRefuseIt(): void
+    {
+        $runner = $this->postgres();
+        $guard = new StatementGuard();
+        $write = new QueryOptions(QueryMode::ReadWrite, 30_000, 10);
+
+        foreach (['select "nextval"(\'categories_id_seq\')', 'select "pg_advisory_lock"(7)'] as $sql) {
+            self::assertSame(Decision::Refused, $guard->check($sql, Engine::PostgreSql, QueryMode::ReadOnly)->decision, $sql);
+        }
+        // Le moteur appelle bien la fonction : la séquence avance, c'est donc une écriture.
+        $first = $runner->run('select "nextval"(\'categories_id_seq\') as v', StatementKind::Write, $write)->rows[0][0];
+        $second = $runner->run('select "nextval"(\'categories_id_seq\') as v', StatementKind::Write, $write)->rows[0][0];
+        self::assertGreaterThan((int) $first, (int) $second);
+        // Même verdict du moteur en lecture seule : refus d'écrire, pas « fonction inconnue ».
+        $this->expectException(QueryFailedException::class);
+        $runner->run('select "nextval"(\'categories_id_seq\')', StatementKind::Read, $this->readOnly());
+    }
+
+    #[DataProvider('mysqlTargets')]
+    public function testMySqlCallsAFunctionWrittenBetweenBackticksSoTheGuardMustRefuseIt(string $envVar): void
+    {
+        $runner = $this->mysql($envVar);
+
+        self::assertSame(Decision::Refused, (new StatementGuard())->check("select `get_lock`('a', 1)", TargetDatabase::engine($envVar), QueryMode::ReadOnly)->decision);
+        self::assertSame(1, $runner->run("select `get_lock`('a', 1), `release_lock`('a')", StatementKind::Read, $this->readOnly())->rowCount());
+    }
 }

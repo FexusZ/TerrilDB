@@ -22,7 +22,7 @@ final readonly class ScannedStatement
     /**
      * @param non-empty-list<string> $words
      * @param list<int>              $depths    profondeur de parenthèses de chaque mot (0 = niveau de l'instruction)
-     * @param list<string>           $called    mots directement suivis d'une parenthèse ouvrante (appels de fonction)
+     * @param list<string>           $called    noms directement suivis d'une parenthèse ouvrante (appels de fonction), identifiants entre guillemets compris
      * @param list<bool>             $callFlags pour chaque mot : directement suivi d'une parenthèse ouvrante
      * @param list<int>              $groups    pour chaque mot : la paire de parenthèses qui le contient (0 = hors de toute paire, chaque paire a son numéro)
      */
@@ -119,6 +119,16 @@ final readonly class ScannedStatement
     public function calls(string $word): bool
     {
         return \in_array($word, $this->called, true);
+    }
+
+    /**
+     * Les noms écrits comme un appel de fonction, y compris ceux entre guillemets (déquotés, en majuscules) qui ne sont pas des mots.
+     *
+     * @return list<string>
+     */
+    public function calledNames(): array
+    {
+        return $this->called;
     }
 
     public function has(string $word): bool

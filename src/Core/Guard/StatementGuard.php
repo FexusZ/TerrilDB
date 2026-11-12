@@ -244,7 +244,8 @@ final class StatementGuard
 
     private function usesDangerousFunction(ScannedStatement $statement): bool
     {
-        foreach ($statement->words as $word) {
+        // Les noms appelés comptent aussi quand ils sont écrits entre guillemets (« "pg_read_file"(…) » : le moteur les appelle).
+        foreach ([...$statement->words, ...$statement->calledNames()] as $word) {
             if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || \in_array($word, self::LOCK_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {
                 return true;
             }

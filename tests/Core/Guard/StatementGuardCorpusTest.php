@@ -168,6 +168,38 @@ final class StatementGuardCorpusTest extends TestCase
         yield from self::rows('SELECT a, nextval FROM t', $pg, $ro, 'allow:Read');
         yield from self::rows('SELECT lock_name FROM t', $my, $ro, 'allow:Read');
 
+        // ---- Nom de fonction entre guillemets : le moteur l'appelle tout de même, le garde le lit déquoté
+        foreach ([
+            'SELECT "pg_read_file"(\'/etc/passwd\')', 'SELECT "pg_catalog"."pg_read_file"(\'/etc/passwd\')',
+            'SELECT pg_catalog . "pg_read_file" /* x */ (\'/etc/passwd\')', 'SELECT pg_read_file /* x */ (\'/etc/passwd\')',
+            'SELECT pg_read_file -- x'."\n".'(\'/etc/passwd\')', 'SELECT "pg_terminate_backend"(1)', 'SELECT "set_config"(\'a.b\', \'c\', false)',
+            'SELECT "pg_advisory_lock"(1)', 'SELECT "PG_ADVISORY_LOCK"(1)', 'SELECT "pg_try_advisory_lock"(1)',
+        ] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $pg, $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach (['SELECT "nextval"(\'s\')', 'SELECT s."nextval" (\'s\')', 'SELECT "pg_catalog"."setval"(\'s\', 10)'] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $pg, $rw, 'allow:Write');
+        }
+        foreach (['SELECT `get_lock`(\'a\', 1)', 'SELECT `RELEASE_LOCK`(\'a\')', 'SELECT x.`get_lock` (\'a\', 1)', 'SELECT get_lock /* x */ (\'a\', 1)', 'SELECT `load_file`(\'/etc/passwd\')'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $my, $rw, 'refuse:ForbiddenConstruct');
+        }
+        // ANSI_QUOTES : le guillemet double devient un identifiant en MySQL, donc une fonction avant « ( ».
+        yield from self::rows('SELECT "get_lock"(\'a\', 1)', $my, $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows('SELECT `file`(\'x\')', [Engine::ClickHouse], $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows('SELECT * FROM "url"(\'http://x/\', CSV)', [Engine::ClickHouse], $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows('SELECT * FROM `s3`(\'http://x/\')', [Engine::ClickHouse], $ro, 'refuse:ForbiddenConstruct');
+        // Un identifiant entre guillemets qui n'est pas un appel (colonne, table, chaîne) n'est pas refusé.
+        yield from self::rows('SELECT "nextval", "pg_read_file" FROM "pg_advisory_lock"', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT "nextval" FROM t WHERE "pg_read_file" = 1', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT `get_lock`, `load_file` FROM `sleep`', $my, $ro, 'allow:Read');
+        yield from self::rows('SELECT "pg_read_file(", \'pg_read_file(\' FROM t', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT "x (" FROM t WHERE a IN (1)', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT \'pg_read_file(\', "a" (1)', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT "url" FROM t', [Engine::ClickHouse], $ro, 'allow:Read');
+
         // ---- Écritures
         foreach ([
             'INSERT INTO t VALUES (1) ON CONFLICT (id) DO UPDATE SET a = 1 RETURNING *',
