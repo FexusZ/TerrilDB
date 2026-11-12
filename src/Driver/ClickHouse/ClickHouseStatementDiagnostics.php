@@ -11,6 +11,7 @@ use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\StatementDiagnostics;
 use App\Core\Diagnostics\StatementDigest;
+use App\Core\Guard\SqlDialect;
 use App\Driver\RowReader;
 
 /**
@@ -53,13 +54,14 @@ final readonly class ClickHouseStatementDiagnostics implements StatementDiagnost
 
         try {
             $response = $this->http->query(
-                "SELECT substring(normalizeQuery(any(query)), 1, 256) AS text, any(current_database) AS db, count() AS calls,
+                "SELECT substring(normalizeQuery(any(query)), 1, 4096) AS text, any(current_database) AS db, count() AS calls,
                         sum(query_duration_ms) AS total_ms, avg(query_duration_ms) AS mean_ms, max(query_duration_ms) AS max_ms,
                         sum(read_rows) AS examined, sum(result_rows) AS returned,
                         formatDateTime(min(event_time), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS first_seen,
                         formatDateTime(max(event_time), '%Y-%m-%dT%H:%i:%SZ', 'UTC') AS last_seen
                    FROM system.query_log
                   WHERE type = 'QueryFinish' AND is_initial_query
+                    AND event_date >= toDate(now() - INTERVAL {$query->hours} HOUR) AND event_time >= now() - INTERVAL {$query->hours} HOUR
                     AND NOT (notEmpty(databases) AND arrayAll(d -> d IN ('system', 'information_schema', 'INFORMATION_SCHEMA'), databases))
                   GROUP BY normalized_query_hash
                   ORDER BY {$order} DESC, normalized_query_hash
@@ -92,10 +94,11 @@ final readonly class ClickHouseStatementDiagnostics implements StatementDiagnost
                 null,
                 $row->nullableString('first_seen'),
                 $row->nullableString('last_seen'),
+                SqlDialect::ClickHouse,
             );
         }
 
-        return new DigestReport(DiagnosticStatus::available(), $query->order, $digests);
+        return new DigestReport(DiagnosticStatus::available(), $query->order, $digests, $query->hours);
     }
 
     private function state(ClickHouseException $e): ?DiagnosticStatus

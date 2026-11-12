@@ -17,6 +17,8 @@ final readonly class DigestReport
         public DiagnosticStatus $status,
         public DigestOrder $order,
         public array $digests,
+        /** Fenêtre de temps lue, en heures, quand la source en a une (ClickHouse) ; nulle quand elle cumule depuis sa remise à zéro. */
+        public ?int $windowHours = null,
     ) {
     }
 }

@@ -9,7 +9,7 @@ use App\Core\Diagnostics\Exception\InvalidDigestQueryException;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * `?order=&limit=` des routes d'empreintes : la validation est celle du cœur, ici on ne fait que refuser ce qui n'est pas un texte.
+ * `?order=&limit=&hours=` des routes d'empreintes : la validation est celle du cœur, ici on ne fait que refuser ce qui n'est pas un texte.
  */
 final class DigestQueryParam
 {
@@ -20,7 +20,7 @@ final class DigestQueryParam
     {
         $all = $request->query->all();
 
-        return DigestQuery::fromInput(self::text($all['order'] ?? null), self::text($all['limit'] ?? null));
+        return DigestQuery::fromInput(self::text($all['order'] ?? null), self::text($all['limit'] ?? null), self::text($all['hours'] ?? null));
     }
 
     private static function text(mixed $value): ?string

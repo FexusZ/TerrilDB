@@ -10,6 +10,7 @@ use App\Core\Diagnostics\DigestQuery;
 use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\StatementDiagnostics;
 use App\Core\Diagnostics\StatementDigest;
+use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -86,7 +87,7 @@ final readonly class PostgreSqlStatementDiagnostics implements StatementDiagnost
         $since = $c->fetchOne("SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid WHERE c.relname = 'pg_stat_statements' AND a.attname = 'stats_since' AND NOT a.attisdropped");
         $firstSeen = false === $since ? 'NULL' : "to_char(s.stats_since AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')";
         $rows = $c->fetchAllAssociative(
-            'SELECT LEFT(s.query, 256) AS text, d.datname AS db, s.calls, s.total_exec_time AS total_ms, s.mean_exec_time AS mean_ms,
+            'SELECT LEFT(s.query, 4096) AS text, d.datname AS db, s.calls, s.total_exec_time AS total_ms, s.mean_exec_time AS mean_ms,
                     s.max_exec_time AS max_ms, s.rows AS returned, '.$firstSeen.' AS first_seen
                FROM pg_stat_statements s
                JOIN pg_database d ON d.oid = s.dbid AND d.datname = current_database()
@@ -112,6 +113,7 @@ final readonly class PostgreSqlStatementDiagnostics implements StatementDiagnost
                 null,
                 $row->nullableString('first_seen'),
                 null,
+                SqlDialect::PostgreSql,
             );
         }
 

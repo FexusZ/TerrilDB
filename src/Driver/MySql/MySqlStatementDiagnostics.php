@@ -10,6 +10,7 @@ use App\Core\Diagnostics\DigestQuery;
 use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\StatementDiagnostics;
 use App\Core\Diagnostics\StatementDigest;
+use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -96,7 +97,7 @@ final readonly class MySqlStatementDiagnostics implements StatementDiagnostics
             DigestOrder::Calls => 'COUNT_STAR',
         };
         $rows = $c->fetchAllAssociative(
-            'SELECT LEFT(DIGEST_TEXT, 256) AS text, SCHEMA_NAME AS db, COUNT_STAR AS calls,
+            'SELECT LEFT(DIGEST_TEXT, 4096) AS text, SCHEMA_NAME AS db, COUNT_STAR AS calls,
                     SUM_TIMER_WAIT AS total_ps, AVG_TIMER_WAIT AS mean_ps, MAX_TIMER_WAIT AS max_ps,
                     SUM_ROWS_EXAMINED AS examined, SUM_ROWS_SENT AS sent, SUM_NO_INDEX_USED AS no_index,
                     SUM_CREATED_TMP_DISK_TABLES AS tmp_disk, SUM_SORT_MERGE_PASSES AS merge_passes,
@@ -125,6 +126,7 @@ final readonly class MySqlStatementDiagnostics implements StatementDiagnostics
                 $row->int('merge_passes'),
                 $row->nullableString('first_seen'),
                 $row->nullableString('last_seen'),
+                SqlDialect::MySql,
             );
         }
 

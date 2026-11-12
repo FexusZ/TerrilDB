@@ -634,7 +634,7 @@ final class ApiV1Test extends WebApiTestCase
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries?order=total_time&limit=3');
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['status', 'order', 'digests'], array_keys($body));
+        self::assertSame(['status', 'order', 'windowHours', 'digests'], array_keys($body));
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertNotEmpty($body['digests']);
         self::assertLessThanOrEqual(3, \count(self::listOf($body['digests'])));

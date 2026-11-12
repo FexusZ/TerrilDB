@@ -73,8 +73,8 @@ DDL), `mode` et `object` tels que le moteur les nomme. Aucune instruction d'arr�
 vide) se distingue de « non lisible » (`permission_denied`, `disabled` avec `reason: performance_schema_off`). MariaDB ne rapporte que les verrous de
 lignes (ses verrous de métadonnées demandent `performance_schema`, éteint par défaut) ; ClickHouse et Redis : `unsupported`, route 501.
 
-**Requêtes coûteuses** (`/diagnostics/queries?order=total_time|mean_time|calls&limit=1..100`, 20 par défaut, `total_time` par défaut ; autre valeur :
-422 `invalid_input`) : `digests`, une ligne par empreinte, avec `text` (normalisé par le moteur : les valeurs y sont masquées ; raccourci à 200 caractères),
+**Requêtes coûteuses** (`/diagnostics/queries?order=total_time|mean_time|calls&limit=1..100&hours=1..168`, 20 par défaut ; `hours` = fenêtre de temps (24 par défaut) lue par ClickHouse seulement et rendue dans `windowHours`, nulle ailleurs : les autres sources cumulent depuis leur remise à zéro ; `total_time` par défaut ; autre valeur :
+422 `invalid_input`) : `digests`, une ligne par empreinte, avec `text` (normalisé par le moteur, PUIS littéraux masqués par `?` ici, car `pg_stat_statements` ne normalise pas les instructions utilitaires comme `ALTER ROLE … PASSWORD '…'` ; raccourci à 200 caractères ; nul avec `textReason: redacted` si le texte ne se laisse pas lire sans risque),
 `database`, `calls`, `totalMs` / `meanMs` / `maxMs` (TOUJOURS en millisecondes : `performance_schema` compte en picosecondes, converties côté serveur),
 `rowsExamined` / `rowsReturned` / `ratio` (examinées pour une renvoyée ; nuls quand la source ne compte pas les lignes lues, c'est le cas de
 `pg_stat_statements`), `noIndexUsed`, `tmpDiskTables`, `sortMergePasses` (MySQL/MariaDB), `firstSeen` / `lastSeen` (ISO 8601 UTC, selon la source). Le classement par temps

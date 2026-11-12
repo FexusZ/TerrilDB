@@ -45,7 +45,7 @@ describe('diagnostics API', () => {
   })
 
   it('reads the costliest queries with the order, the limit and the explored database', async () => {
-    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, order: 'calls', digests: [] })
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, order: 'calls', windowHours: null, digests: [] })
 
     const report = await fetchTopQueries('abc', { database: 'shop', schema: null }, 'calls', 50)
 

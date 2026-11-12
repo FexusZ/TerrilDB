@@ -254,13 +254,13 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries?order=calls&limit=5');
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['status', 'order', 'digests'], array_keys($body));
+        self::assertSame(['status', 'order', 'windowHours', 'digests'], array_keys($body));
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertSame('calls', $body['order']);
         $digests = self::listOf($body['digests']);
         self::assertNotEmpty($digests);
         self::assertLessThanOrEqual(5, \count($digests));
-        self::assertSame(['text', 'database', 'calls', 'totalMs', 'meanMs', 'maxMs', 'rowsExamined', 'rowsReturned', 'ratio', 'noIndexUsed', 'tmpDiskTables', 'sortMergePasses', 'firstSeen', 'lastSeen'], array_keys(self::arrayOf($digests[0])));
+        self::assertSame(['text', 'textReason', 'database', 'calls', 'totalMs', 'meanMs', 'maxMs', 'rowsExamined', 'rowsReturned', 'ratio', 'noIndexUsed', 'tmpDiskTables', 'sortMergePasses', 'firstSeen', 'lastSeen'], array_keys(self::arrayOf($digests[0])));
     }
 
     public function testTopQueriesRefuseAnOrderOrALimitOutOfBounds(): void

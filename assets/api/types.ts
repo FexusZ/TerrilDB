@@ -261,9 +261,11 @@ export interface LockReport {
 
 export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
 
-/** Une famille de requêtes du serveur, regroupées par empreinte : le texte est normalisé par le moteur (valeurs masquées). */
+/** Une famille de requêtes du serveur, regroupées par empreinte : le texte est normalisé par le moteur et ses littéraux masqués. */
 export interface StatementDigest {
   text: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  textReason: 'redacted' | null
   database: string | null
   calls: number
   /** Durées en millisecondes, quelle que soit l'unité de la source. */
@@ -284,6 +286,8 @@ export interface StatementDigest {
 export interface DigestReport {
   status: DiagnosticStatus
   order: DigestOrder
+  /** Fenêtre lue, en heures (ClickHouse) ; nulle quand la source cumule depuis sa remise à zéro. */
+  windowHours: number | null
   digests: StatementDigest[]
 }
 

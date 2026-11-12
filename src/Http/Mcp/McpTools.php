@@ -156,11 +156,11 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
-    public function topQueries(string $connection, ?string $order = null, ?int $limit = null): array
+    public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null): array
     {
-        return $this->guard(function () use ($connection, $order, $limit): array {
+        return $this->guard(function () use ($connection, $order, $limit, $hours): array {
             $this->request->get()->requireDiagnostic();
-            $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit);
+            $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
 
             return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
         });

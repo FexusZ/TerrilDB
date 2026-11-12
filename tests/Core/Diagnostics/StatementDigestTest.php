@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Tests\Core\Diagnostics;
 
 use App\Core\Diagnostics\StatementDigest;
+use App\Core\Guard\SqlDialect;
 use PHPUnit\Framework\TestCase;
 
 final class StatementDigestTest extends TestCase
 {
-    private function digest(?int $examined, ?int $returned, string $text = 'SELECT * FROM `t` WHERE `a` = ?'): StatementDigest
+    private function digest(?int $examined, ?int $returned, string $text = 'SELECT * FROM `t` WHERE `a` = ?', SqlDialect $dialect = SqlDialect::MySql): StatementDigest
     {
-        return new StatementDigest($text, 'shop', 10, 1500.0, 150.0, 400.0, $examined, $returned, null, null, null, null, null);
+        return new StatementDigest($text, 'shop', 10, 1500.0, 150.0, 400.0, $examined, $returned, null, null, null, null, null, $dialect);
     }
 
     public function testTheRatioIsExaminedOverReturned(): void
@@ -39,10 +40,27 @@ final class StatementDigestTest extends TestCase
         self::assertSame(200, mb_strlen($text));
     }
 
+    public function testUtilityStatementsOfPostgreSqlAreMaskedLikeAnyText(): void
+    {
+        // pg_stat_statements ne normalise pas les instructions utilitaires : le mot de passe y figure tel quel.
+        $digest = $this->digest(null, null, "ALTER ROLE x PASSWORD 'secret'", SqlDialect::PostgreSql);
+
+        self::assertSame('ALTER ROLE x PASSWORD ?', $digest->text);
+        self::assertFalse($digest->textRedacted);
+    }
+
+    public function testATextThatCannotBeScannedIsNotShown(): void
+    {
+        $digest = $this->digest(null, null, "ALTER ROLE x PASSWORD 'sec", SqlDialect::PostgreSql);
+
+        self::assertNull($digest->text);
+        self::assertTrue($digest->textRedacted);
+    }
+
     public function testACallIsAtLeastOne(): void
     {
         $this->expectException(\InvalidArgumentException::class);
 
-        new StatementDigest('SELECT 1', null, 0, 0.0, 0.0, null, null, null, null, null, null, null, null);
+        new StatementDigest('SELECT 1', null, 0, 0.0, 0.0, null, null, null, null, null, null, null, null, SqlDialect::MySql);
     }
 }

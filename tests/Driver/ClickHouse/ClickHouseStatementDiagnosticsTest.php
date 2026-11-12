@@ -64,6 +64,22 @@ final class ClickHouseStatementDiagnosticsTest extends TestCase
         $this->diagnostics(self::failure(999))->status();
     }
 
+    public function testTheQueryLogIsReadOverABoundedTimeWindow(): void
+    {
+        $meta = array_map(static fn (string $n): array => ['name' => $n, 'type' => 'String'], ['text', 'db', 'calls', 'total_ms', 'mean_ms', 'max_ms', 'examined', 'returned', 'first_seen', 'last_seen']);
+        $diagnostics = $this->diagnostics(new MockResponse(json_encode(['meta' => $meta, 'data' => []], \JSON_THROW_ON_ERROR)));
+
+        $default = $diagnostics->top(new DigestQuery());
+        $sentDefault = $this->lastBody;
+        $week = $diagnostics->top(new DigestQuery(DigestOrder::TotalTime, 20, 168));
+
+        self::assertStringContainsString('event_time >= now() - INTERVAL 24 HOUR', $sentDefault);
+        self::assertStringContainsString('event_date >= toDate(now() - INTERVAL 24 HOUR)', $sentDefault);
+        self::assertSame(24, $default->windowHours);
+        self::assertStringContainsString('INTERVAL 168 HOUR', $this->lastBody);
+        self::assertSame(168, $week->windowHours);
+    }
+
     public function testReadsDigestsWithTheEngineEnforcingReadOnly(): void
     {
         $rows = [['SELECT count() FROM t WHERE a = ?', 'shop', '12', 3600.0, 300.0, '900', '5000000', '12', '2026-11-11T10:00:00Z', '2026-11-11T11:30:00Z']];

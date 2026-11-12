@@ -54,7 +54,7 @@ watch([order, limit], load)
   <section class="panel" aria-labelledby="top-queries-title">
     <h2 id="top-queries-title">Requêtes coûteuses par empreinte</h2>
     <p class="meta">
-      Les requêtes que le serveur a vues, regroupées par empreinte : le texte est normalisé par le moteur, les valeurs y sont masquées (« ? »).
+      Les requêtes que le serveur a vues, regroupées par empreinte : le texte est normalisé par le moteur et ses valeurs masquées (« ? », y compris pour les instructions que le moteur ne normalise pas).
       Le bon classement est le temps total (fréquence × durée), et un rapport lignes examinées / lignes renvoyées très élevé trahit souvent un index manquant.
       Lecture seule : rien n’est remis à zéro depuis cette page ; les statistiques du moteur ne couvrent que sa fenêtre de collecte.
     </p>
@@ -79,6 +79,7 @@ watch([order, limit], load)
       <p v-if="hint" class="hint" data-testid="hint">{{ hint }}</p>
     </template>
     <template v-else-if="readable && report">
+      <p v-if="report.windowHours !== null" class="note" role="status" data-testid="window">Fenêtre lue : les {{ report.windowHours }} dernières heures.</p>
       <p v-if="report.digests.length === 0" class="clean">Aucune requête enregistrée pour l’instant.</p>
       <div v-else class="scroll">
         <table data-testid="digests">
@@ -87,7 +88,7 @@ watch([order, limit], load)
           </thead>
           <tbody>
             <tr v-for="(digest, index) in report.digests" :key="index" :class="{ scan: digest.ratio !== null && digest.ratio >= SCAN_RATIO }">
-              <td class="query">{{ digest.text ?? '' }}</td>
+              <td class="query">{{ digest.text ?? (digest.textReason === 'redacted' ? 'Texte non montré' : '') }}</td>
               <td>{{ digest.database ?? '' }}</td>
               <td>{{ digest.calls }}</td>
               <td>{{ formatMs(digest.totalMs) }}</td>

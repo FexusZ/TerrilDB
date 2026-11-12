@@ -70,7 +70,7 @@ final readonly class AuditedDiagnostics
      */
     public function statements(AuditContext $context, Uuid $connectionId, TargetConnection $target, DigestQuery $query): DigestReport
     {
-        $base = ['topic' => 'top_queries', 'engine' => $target->engine->value, 'order' => $query->order->value, 'limit' => $query->limit];
+        $base = ['topic' => 'top_queries', 'engine' => $target->engine->value, 'order' => $query->order->value, 'limit' => $query->limit, 'hours' => $query->hours];
 
         try {
             $report = $target->diagnostics()->statements()->top($query);

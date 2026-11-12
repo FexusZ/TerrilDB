@@ -113,8 +113,10 @@ final class DiagnosticsPresenter
         return [
             'status' => self::status($report->status),
             'order' => $report->order->value,
+            'windowHours' => $report->windowHours,
             'digests' => array_map(static fn (StatementDigest $d): array => [
                 'text' => $d->text,
+                'textReason' => $d->textRedacted ? 'redacted' : null,
                 'database' => $d->database,
                 'calls' => $d->calls,
                 'totalMs' => $d->totalMs,

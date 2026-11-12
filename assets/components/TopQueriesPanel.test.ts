@@ -12,9 +12,10 @@ const ok = { availability: 'available', reason: null, privilege: null } as const
 const report: DigestReport = {
   status: ok,
   order: 'total_time',
+  windowHours: null,
   digests: [
-    { text: 'SELECT * FROM `orders` WHERE `status` = ?', database: 'shop', calls: 5000, totalMs: 90000, meanMs: 18, maxMs: 700, rowsExamined: 50000000, rowsReturned: 5000, ratio: 10000, noIndexUsed: 5000, tmpDiskTables: 0, sortMergePasses: 0, firstSeen: '2026-11-10T08:00:00Z', lastSeen: '2026-11-11T09:00:00Z' },
-    { text: 'SELECT 1', database: null, calls: 3, totalMs: 0.4, meanMs: 0.13, maxMs: 0.2, rowsExamined: null, rowsReturned: null, ratio: null, noIndexUsed: null, tmpDiskTables: null, sortMergePasses: null, firstSeen: null, lastSeen: null },
+    { text: 'SELECT * FROM `orders` WHERE `status` = ?', textReason: null, database: 'shop', calls: 5000, totalMs: 90000, meanMs: 18, maxMs: 700, rowsExamined: 50000000, rowsReturned: 5000, ratio: 10000, noIndexUsed: 5000, tmpDiskTables: 0, sortMergePasses: 0, firstSeen: '2026-11-10T08:00:00Z', lastSeen: '2026-11-11T09:00:00Z' },
+    { text: 'SELECT 1', textReason: null, database: null, calls: 3, totalMs: 0.4, meanMs: 0.13, maxMs: 0.2, rowsExamined: null, rowsReturned: null, ratio: null, noIndexUsed: null, tmpDiskTables: null, sortMergePasses: null, firstSeen: null, lastSeen: null },
   ],
 }
 
@@ -26,6 +27,16 @@ describe('TopQueriesPanel', () => {
   beforeEach(() => {
     mocked.mockReset()
     mocked.mockResolvedValue(report)
+  })
+
+  it('says the window it read and withholds a text it could not mask', async () => {
+    mocked.mockResolvedValue({ ...report, windowHours: 24, digests: [{ ...report.digests[0]!, text: null, textReason: 'redacted' }] })
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="window"]').text()).toContain('24 dernières heures')
+    expect(wrapper.text()).toContain('Texte non montré')
   })
 
   it('reads the costliest digests by total time on mount', async () => {
@@ -74,7 +85,7 @@ describe('TopQueriesPanel', () => {
   })
 
   it('explains a switched-off source with the command to read, and does not call it an empty list', async () => {
-    mocked.mockResolvedValue({ status: { availability: 'disabled', reason: 'extension_missing', privilege: null }, order: 'total_time', digests: [] })
+    mocked.mockResolvedValue({ status: { availability: 'disabled', reason: 'extension_missing', privilege: null }, order: 'total_time', windowHours: null, digests: [] })
 
     const wrapper = mountPanel()
     await flushPromises()
@@ -86,7 +97,7 @@ describe('TopQueriesPanel', () => {
   })
 
   it('names the missing privilege', async () => {
-    mocked.mockResolvedValue({ status: { availability: 'permission_denied', reason: 'insufficient_privilege', privilege: 'SELECT ON performance_schema' }, order: 'total_time', digests: [] })
+    mocked.mockResolvedValue({ status: { availability: 'permission_denied', reason: 'insufficient_privilege', privilege: 'SELECT ON performance_schema' }, order: 'total_time', windowHours: null, digests: [] })
 
     const wrapper = mountPanel()
     await flushPromises()
@@ -95,7 +106,7 @@ describe('TopQueriesPanel', () => {
   })
 
   it('says when a readable source has nothing yet', async () => {
-    mocked.mockResolvedValue({ status: ok, order: 'total_time', digests: [] })
+    mocked.mockResolvedValue({ status: ok, order: 'total_time', windowHours: null, digests: [] })
 
     const wrapper = mountPanel()
     await flushPromises()
