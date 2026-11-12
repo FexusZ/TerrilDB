@@ -10,6 +10,7 @@ use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
 use App\Core\Data\Exception\InvalidDataChangeException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\Exception\TableNotFoundException;
+use App\Core\Schema\TableDefinition;
 
 /**
  * Point d'entrée de l'édition de données : relit la table réelle, construit les instructions du brouillon, les montre
@@ -29,9 +30,29 @@ final class DataChangeService
      */
     public function preview(TargetConnection $target, string $table, DataDraft $draft): DataPreview
     {
-        $plan = $this->planner->plan($target->engine, $target->introspector()->describeTable($table), $draft);
+        $definition = $target->introspector()->describeTable($table);
+        $plan = $this->planner->plan($target->engine, $definition, $draft);
 
-        return new DataPreview($plan, $this->matches($target, $plan));
+        return new DataPreview($plan, $this->matches($target, $plan), self::warnings($definition, $plan));
+    }
+
+    /**
+     * @return list<DataWarning>
+     */
+    private static function warnings(TableDefinition $table, DataPlan $plan): array
+    {
+        if ([] === $plan->statements) {
+            return [];
+        }
+        $warnings = [];
+        if (false === $table->transactional) {
+            $warnings[] = new DataWarning('not_transactional', $table->storageEngine);
+        }
+        if (null !== $table->triggerCount && $table->triggerCount > 0) {
+            $warnings[] = new DataWarning('triggers', $table->triggerCount);
+        }
+
+        return $warnings;
     }
 
     /**

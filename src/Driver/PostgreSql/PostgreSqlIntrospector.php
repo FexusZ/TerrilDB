@@ -159,7 +159,18 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
             self::estimate($kind, $header),
             $header->nullableInt('data_bytes'),
             $header->nullableInt('index_bytes'),
+            null,
+            null,
+            TableKind::Table === $kind ? $this->triggerCount($oid) : null,
         );
+    }
+
+    /** Les déclencheurs écrits par l'utilisateur : ceux des clés étrangères (internes) ne comptent pas. */
+    private function triggerCount(int $oid): int
+    {
+        $count = $this->connection->fetchOne('SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = ? AND NOT tgisinternal', [$oid]);
+
+        return is_numeric($count) ? (int) $count : 0;
     }
 
     private static function kind(string $relkind): TableKind
