@@ -69,7 +69,9 @@ console : des requêtes de catalogue fixes, écrites par TerrilDB, en lecture se
 `permission_denied`. Moteur sans supervision (Redis) : `capabilities` dit `unsupported`, la route des sessions répond 501 `unsupported_operation`.
 
 Chaque source rend un **état** et non une erreur : `availability` = `available`, `unsupported`, `permission_denied` (avec `privilege`, le droit
-manquant) ou `disabled` (source éteinte ; `reason` en donne le code stable). Une liste vide d'une source illisible n'est jamais rendue comme
+manquant), `disabled` (source éteinte ou absente ; `reason` en donne le code stable) ou `error` (`reason: check_failed` : la vérification a échoué
+pour une cause imprévue ; on ne sait pas, on le dit, et le détail n'est jamais montré). Dans la carte des capacités (`GET …/diagnostics`) un thème en échec rend
+`error` sans masquer les autres ; la route d'un thème précis (`…/diagnostics/sessions`) répond alors 502 `diagnostics_failed`. Une liste vide d'une source illisible n'est jamais rendue comme
 « personne ». Sessions : `id`, `user`, `client` (sans port), `database`, `state`, `seconds`, `query`, `queryReason`, `current` (la session de TerrilDB) ; 200 au
 plus (`truncated`). Le texte de la requête est **masqué puis raccourci à 200 caractères** : les littéraux (chaînes, nombres) sont remplacés par `?` et les commentaires
 retirés avant la troncature (d'après le scanner lexical du garde, par dialecte), donc `ALTER ROLE x PASSWORD 'secret'` ressort `ALTER ROLE x PASSWORD ?`. Un texte que

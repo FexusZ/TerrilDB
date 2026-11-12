@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Driver\TargetConnection;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -17,8 +20,21 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class AuditedDiagnostics
 {
-    public function __construct(private AuditLog $audit)
+    public function __construct(private AuditLog $audit, private LoggerInterface $logger = new NullLogger())
     {
+    }
+
+    /**
+     * Ce que chaque thème peut lire. Un thème dont la vérification échoue rend l'état « erreur » sans masquer les autres ; la
+     * cause est consignée (nom du thème et classe de l'exception), jamais le message du moteur, qui peut citer un hôte ou un compte.
+     *
+     * @return array<string, DiagnosticStatus>
+     */
+    public function capabilities(TargetConnection $target): array
+    {
+        return $target->diagnostics()->capabilities(function (string $theme, DiagnosticsFailedException $failure): void {
+            $this->logger->error('A diagnostics theme could not be checked.', ['theme' => $theme, 'reason' => ($failure->getPrevious() ?? $failure)::class]);
+        });
     }
 
     /**
