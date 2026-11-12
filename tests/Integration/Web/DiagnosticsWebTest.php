@@ -248,7 +248,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/accounts');
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['status', 'truncated', 'activatesAllRoles', 'accounts', 'findings'], array_keys($body));
+        self::assertSame(['status', 'truncated', 'privilegesIncomplete', 'activatesAllRoles', 'accounts', 'findings'], array_keys($body));
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         $accounts = $body['accounts'];
         self::assertIsArray($accounts);

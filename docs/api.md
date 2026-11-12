@@ -108,7 +108,7 @@ et `findings` (`rule`, `severity` = `high | medium | low`, `account`, `detail`, 
 `CREATE USER`, « via » le rôle qui les donne), `all_privileges`, `grant_option`, `role_never_active`, `no_tls_requirement`, `open_test_database` ; le compte de la
 connexion qui porte un droit dangereux est en gravité haute (le compte de la base cible est le dernier rempart de la lecture seule). Comptes verrouillés et rôles
 n'ont pas de constatation propre. Compte de la connexion sans droit de lire le catalogue : `permission_denied` avec `privilege: SELECT ON mysql` (droit `SELECT` sur
-`mysql.*` ; MySQL : `user`, `role_edges`, `default_roles` ; MariaDB : `global_priv`, `roles_mapping`). 300 comptes au plus (`truncated`).
+`mysql.*` ; MySQL : `user`, `role_edges`, `default_roles` ; MariaDB : `global_priv`, `roles_mapping`). 300 comptes au plus (`truncated`) et 20 000 lignes de droits par source ; `privilegesIncomplete` dit que des droits ont pu être manqués (liste coupée, ou deux comptes dont le nom s'écrit pareil dans `information_schema` : aucun droit ne leur est attribué) ; l'audit ajoute alors la constatation `incomplete_check` (gravité moyenne, `detail` = `accounts` ou `privileges`) au lieu d'un silence.
 **Chiffrement** (`/diagnostics/encryption`) : `encrypted`, `protocol`, `cipher` (MySQL/MariaDB `Ssl_version`/`Ssl_cipher` de la session, PostgreSQL `pg_stat_ssl`) ;
 une observation, aucun droit requis, les paramètres de connexion ne changent pas ; ClickHouse et Redis : 501.
 

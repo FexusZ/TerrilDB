@@ -20,6 +20,7 @@ const account = (overrides: Partial<AccountEntry>): AccountEntry => ({
 const report: AccountReport = {
   status: ok,
   truncated: false,
+  privilegesIncomplete: false,
   activatesAllRoles: false,
   accounts: [
     account({ user: 'admin', host: 'localhost', name: 'admin@localhost', current: true, globalPrivileges: ['FILE', 'SELECT'] }),
@@ -110,6 +111,15 @@ describe('AccountsPane', () => {
 
     expect(wrapper.findAll('[data-testid="accounts"] tbody tr')).toHaveLength(2)
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('says the check is incomplete instead of clean when the privileges were cut', async () => {
+    answer({ accounts: { ...report, privilegesIncomplete: true, findings: [] } })
+
+    const wrapper = await mountPane()
+
+    expect(wrapper.text()).toContain('incomplète')
+    expect(wrapper.text()).not.toContain('Aucune constatation')
   })
 
   it('says so when there is nothing to report', async () => {

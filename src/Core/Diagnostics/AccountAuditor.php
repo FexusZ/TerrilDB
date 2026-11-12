@@ -32,6 +32,9 @@ final class AccountAuditor
         }
 
         $findings = [];
+        if ($report->truncated || $report->privilegesIncomplete) {
+            $findings[] = new SecurityFinding(AccountRule::IncompleteCheck, Severity::Medium, null, $report->truncated ? 'accounts' : 'privileges', false);
+        }
         $hosts = [];
         foreach ($report->accounts as $account) {
             if ($account->isRole || $account->locked) {

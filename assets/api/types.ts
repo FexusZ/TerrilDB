@@ -292,6 +292,8 @@ export interface SecurityFinding {
 export interface AccountReport {
   status: DiagnosticStatus
   truncated: boolean
+  /** Les droits lus sont incomplets : l'absence d'un droit n'est pas prouvée. */
+  privilegesIncomplete: boolean
   activatesAllRoles: boolean
   accounts: AccountEntry[]
   findings: SecurityFinding[]

@@ -72,10 +72,12 @@ onMounted(load)
     <template v-else>
       <p v-if="report.truncated" class="note" role="status">Le serveur en a davantage : seuls les 300 premiers comptes sont montrés, l’audit est partiel.</p>
 
+      <p v-if="report.privilegesIncomplete" class="note" role="status">Lecture incomplète des droits : certains droits manquent peut-être ci-dessous, ne concluez pas qu’un compte n’a pas un droit.</p>
+
       <section class="group" aria-labelledby="findings-title">
         <h2 id="findings-title">Audit de sécurité<template v-if="report.findings.length > 0"> · {{ report.findings.length }}</template></h2>
-        <p v-if="report.findings.length === 0" class="clean">Aucune constatation.</p>
-        <ul v-else class="findings" data-testid="findings">
+        <p v-if="report.findings.length === 0 && !report.privilegesIncomplete && !report.truncated" class="clean">Aucune constatation.</p>
+        <ul v-else-if="report.findings.length > 0" class="findings" data-testid="findings">
           <li v-for="(finding, index) in report.findings" :key="index" :class="finding.severity">
             <span class="sev">{{ severityLabel(finding.severity) }}</span>
             <strong v-if="finding.account">{{ finding.account }}</strong>

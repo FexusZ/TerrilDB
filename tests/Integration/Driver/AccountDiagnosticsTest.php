@@ -276,4 +276,47 @@ final class AccountDiagnosticsTest extends TestCase
         self::assertContains('SELECT', $seen->databasePrivileges['shop']);
         self::assertTrue(self::find($report->accounts, $name, '%')->current);
     }
+
+    #[DataProvider('targets')]
+    public function testCutPrivilegeListsAreSignalledAndTheAuditSaysItIsIncomplete(string $envVar): void
+    {
+        $engine = TargetDatabase::engine($envVar);
+        $connection = (new DbalConnector())->connect($engine, TargetDatabase::parameters($envVar));
+        try {
+            $report = (new \App\Driver\MySql\MySqlAccountDiagnostics($connection, $engine, privilegeLimit: 3))->accounts();
+        } finally {
+            $connection->close();
+        }
+
+        self::assertTrue($report->privilegesIncomplete);
+        self::assertContains('incomplete_check', array_map(static fn (SecurityFinding $f): string => $f->rule->value, $report->findings()));
+        self::assertFalse($this->report($envVar)->privilegesIncomplete, 'The normal limit is far above what a test server holds.');
+    }
+
+    #[DataProvider('targets')]
+    public function testANameThatLooksLikeTwoAccountsKeepsItsOwnPrivileges(string $envVar): void
+    {
+        $admin = $this->admin($envVar);
+        $name = self::unique();
+        $odd = \sprintf("'%s''@''x'@'h'", $name);
+        $plain = $this->user($name, 'x');
+        try {
+            $admin->executeStatement(\sprintf('CREATE USER %s', $odd));
+        } catch (\Throwable) {
+            self::markTestSkipped('This server refuses a user name containing quotes and an at sign.');
+        }
+        $this->users[] = $odd;
+        $admin->executeStatement(\sprintf('CREATE USER %s', $plain));
+        $admin->executeStatement(\sprintf('GRANT FILE ON *.* TO %s', $odd));
+        $admin->executeStatement(\sprintf('GRANT PROCESS ON *.* TO %s', $plain));
+
+        $report = $this->report($envVar);
+
+        $oddAccount = self::find($report->accounts, $name."'@'x", 'h');
+        self::assertContains('FILE', $oddAccount->globalPrivileges);
+        self::assertNotContains('PROCESS', $oddAccount->globalPrivileges);
+        $plainAccount = self::find($report->accounts, $name, 'x');
+        self::assertContains('PROCESS', $plainAccount->globalPrivileges);
+        self::assertNotContains('FILE', $plainAccount->globalPrivileges);
+    }
 }

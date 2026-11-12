@@ -24,6 +24,8 @@ final readonly class AccountReport
         public bool $activatesAllRoles = false,
         public array $mandatoryRoles = [],
         public array $disabledPlugins = [],
+        /** Les droits lus sont incomplets (liste coupée ou compte ambigu) : l'absence d'un droit n'est pas prouvée. */
+        public bool $privilegesIncomplete = false,
     ) {
     }
 

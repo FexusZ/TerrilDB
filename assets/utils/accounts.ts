@@ -36,6 +36,8 @@ export function describeFinding(finding: SecurityFinding): string {
       return 'Joignable par le réseau sans exigence de chiffrement (TLS).'
     case 'open_test_database':
       return `Base « ${detail} » ouverte à un compte anonyme.`
+    case 'incomplete_check':
+      return detail === 'accounts' ? 'Vérification incomplète : le serveur a plus de comptes que la limite lue.' : 'Vérification incomplète : une partie des droits n’a pas pu être lue (liste coupée ou nom de compte ambigu), l’absence d’un droit n’est donc pas prouvée.'
     default:
       return `Constatation ${finding.rule}${detail === '' ? '' : ` (${detail})`}.`
   }

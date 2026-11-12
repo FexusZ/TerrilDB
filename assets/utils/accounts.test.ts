@@ -14,7 +14,7 @@ describe('describeFinding', () => {
   })
 
   it('has a sentence for every rule the server can send', () => {
-    const rules = ['anonymous_account', 'wildcard_host', 'same_name_many_hosts', 'no_password', 'legacy_plugin', 'disabled_plugin', 'password_expired', 'dangerous_privilege', 'all_privileges', 'grant_option', 'role_never_active', 'no_tls_requirement', 'open_test_database']
+    const rules = ['anonymous_account', 'wildcard_host', 'same_name_many_hosts', 'no_password', 'legacy_plugin', 'disabled_plugin', 'password_expired', 'dangerous_privilege', 'all_privileges', 'grant_option', 'role_never_active', 'no_tls_requirement', 'open_test_database', 'incomplete_check']
     for (const rule of rules) {
       expect(describeFinding(finding({ rule, detail: 'x' }))).not.toBe('')
       expect(describeFinding(finding({ rule, detail: 'x' }))).not.toContain(rule)

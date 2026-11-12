@@ -45,7 +45,7 @@ describe('diagnostics API', () => {
   })
 
   it('reads the accounts and the encryption of the explored database', async () => {
-    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, activatesAllRoles: false, accounts: [], findings: [] })
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, privilegesIncomplete: false, activatesAllRoles: false, accounts: [], findings: [] })
     mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, encrypted: true, protocol: 'TLSv1.3', cipher: 'c' })
 
     await fetchAccounts('abc', { database: 'shop', schema: null })

@@ -20,4 +20,6 @@ enum AccountRule: string
     case RoleNeverActive = 'role_never_active';
     case NoTlsRequirement = 'no_tls_requirement';
     case OpenTestDatabase = 'open_test_database';
+    /** La lecture est coupée : l'audit n'a pas tout vu, « rien à signaler » ne serait pas vrai. */
+    case IncompleteCheck = 'incomplete_check';
 }

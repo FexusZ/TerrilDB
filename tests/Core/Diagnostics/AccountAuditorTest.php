@@ -207,4 +207,17 @@ final class AccountAuditorTest extends TestCase
     {
         self::assertSame([], (new AccountAuditor())->audit(new AccountReport(DiagnosticStatus::denied('SELECT ON mysql'), Engine::MySql, [], false)));
     }
+
+    public function testACutListIsSaidToBeIncompleteInsteadOfClean(): void
+    {
+        $cutPrivileges = (new AccountAuditor())->audit(new AccountReport(DiagnosticStatus::available(), Engine::MySql, [self::account()], false, privilegesIncomplete: true));
+        $cutAccounts = (new AccountAuditor())->audit(new AccountReport(DiagnosticStatus::available(), Engine::MySql, [self::account()], true));
+
+        self::assertSame(['incomplete_check'], self::rules($cutPrivileges));
+        self::assertSame('privileges', $cutPrivileges[0]->detail);
+        self::assertSame(Severity::Medium, $cutPrivileges[0]->severity);
+        self::assertNull($cutPrivileges[0]->account);
+        self::assertSame(['incomplete_check'], self::rules($cutAccounts));
+        self::assertSame('accounts', $cutAccounts[0]->detail);
+    }
 }

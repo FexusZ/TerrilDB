@@ -28,11 +28,10 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
     private const LIMIT = 300;
     private const PRIVILEGE_ROWS = 20000;
     private const REFUSALS = [1044, 1142, 1143, 1227];
-    private const IDENTITY = "CONCAT('''', User, '''@''', Host, '''')";
 
     private DbalCatalogReader $catalog;
 
-    public function __construct(Connection $connection, private Engine $engine)
+    public function __construct(Connection $connection, private Engine $engine, private int $privilegeLimit = self::PRIVILEGE_ROWS)
     {
         $this->catalog = DbalCatalogReader::mysql($connection);
     }
@@ -96,7 +95,9 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
         [$roles, $defaults, $isRole] = $mariadb ? $this->mariaDbRoles($c) : $this->mySqlRoles($c);
         $global = [];
         $grantable = [];
-        foreach ($c->fetchAllAssociative("SELECT GRANTEE AS g, PRIVILEGE_TYPE AS p, IS_GRANTABLE AS gr FROM information_schema.USER_PRIVILEGES WHERE PRIVILEGE_TYPE <> 'USAGE' ORDER BY GRANTEE, PRIVILEGE_TYPE LIMIT ".self::PRIVILEGE_ROWS) as $row) {
+        $userRows = $c->fetchAllAssociative("SELECT GRANTEE AS g, PRIVILEGE_TYPE AS p, IS_GRANTABLE AS gr FROM information_schema.USER_PRIVILEGES WHERE PRIVILEGE_TYPE <> 'USAGE' ORDER BY GRANTEE, PRIVILEGE_TYPE LIMIT ".($this->privilegeLimit + 1));
+        $incomplete = \count($userRows) > $this->privilegeLimit;
+        foreach (\array_slice($userRows, 0, $this->privilegeLimit) as $row) {
             $row = new RowReader($row);
             $global[$row->string('g')][] = strtoupper($row->string('p'));
             if ($row->bool('gr')) {
@@ -104,7 +105,9 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
             }
         }
         $schemas = [];
-        foreach ($c->fetchAllAssociative("SELECT GRANTEE AS g, TABLE_SCHEMA AS s, PRIVILEGE_TYPE AS p, IS_GRANTABLE AS gr FROM information_schema.SCHEMA_PRIVILEGES WHERE PRIVILEGE_TYPE <> 'USAGE' ORDER BY GRANTEE, TABLE_SCHEMA, PRIVILEGE_TYPE LIMIT ".self::PRIVILEGE_ROWS) as $row) {
+        $schemaRows = $c->fetchAllAssociative("SELECT GRANTEE AS g, TABLE_SCHEMA AS s, PRIVILEGE_TYPE AS p, IS_GRANTABLE AS gr FROM information_schema.SCHEMA_PRIVILEGES WHERE PRIVILEGE_TYPE <> 'USAGE' ORDER BY GRANTEE, TABLE_SCHEMA, PRIVILEGE_TYPE LIMIT ".($this->privilegeLimit + 1));
+        $incomplete = $incomplete || \count($schemaRows) > $this->privilegeLimit;
+        foreach (\array_slice($schemaRows, 0, $this->privilegeLimit) as $row) {
             $row = new RowReader($row);
             $schemas[$row->string('g')][$row->string('s')][] = strtoupper($row->string('p'));
             if ($row->bool('gr')) {
@@ -112,12 +115,16 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
             }
         }
 
+        $keys = array_map(static fn (array $row): string => AccountKeys::of((new RowReader($row))->string('usr'), (new RowReader($row))->string('host')), $rows);
+        $ambiguous = AccountKeys::ambiguous($keys);
+        $incomplete = $incomplete || [] !== $ambiguous;
         $accounts = [];
         $plugins = [];
-        foreach ($rows as $row) {
+        foreach ($rows as $index => $row) {
             $row = new RowReader($row);
             $name = '' === $row->string('host') ? $row->string('usr') : $row->string('usr').'@'.$row->string('host');
-            $grantee = $row->string('grantee');
+            $grantee = $keys[$index];
+            $known = !isset($ambiguous[$grantee]);
             $plugins[$row->string('plugin')] = true;
             $accounts[] = new Account(
                 user: $row->string('usr'),
@@ -131,9 +138,9 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
                 current: $row->bool('current_account'),
                 roles: $roles[$name] ?? [],
                 defaultRoles: $defaults[$name] ?? [],
-                globalPrivileges: array_values(array_unique($global[$grantee] ?? [])),
-                databasePrivileges: array_map(static fn (array $p): array => array_values(array_unique($p)), $schemas[$grantee] ?? []),
-                grantOptionOn: array_keys($grantable[$grantee] ?? []),
+                globalPrivileges: $known ? array_values(array_unique($global[$grantee] ?? [])) : [],
+                databasePrivileges: array_map(static fn (array $p): array => array_values(array_unique($p)), $known ? ($schemas[$grantee] ?? []) : []),
+                grantOptionOn: $known ? array_keys($grantable[$grantee] ?? []) : [],
                 limits: array_filter([
                     'max_questions' => $row->int('max_questions'),
                     'max_updates' => $row->int('max_updates'),
@@ -150,7 +157,7 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
             $mandatory = array_values(array_filter(array_map('trim', explode(',', (new RowReader(['v' => $c->fetchOne('SELECT @@mandatory_roles')]))->nullableString('v') ?? ''))));
         }
 
-        return new AccountReport(DiagnosticStatus::available(), $this->engine, $accounts, $truncated, $activateAll, $mandatory, $this->disabledPlugins($c, array_keys($plugins)));
+        return new AccountReport(DiagnosticStatus::available(), $this->engine, $accounts, $truncated, $activateAll, $mandatory, $this->disabledPlugins($c, array_keys($plugins)), $incomplete);
     }
 
     /**
@@ -187,7 +194,7 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
     private function mySqlAccounts(Connection $c): array
     {
         return $c->fetchAllAssociative(
-            'SELECT User AS usr, Host AS host, '.self::IDENTITY." AS grantee, plugin, authentication_string = '' AS no_secret,
+            "SELECT User AS usr, Host AS host, plugin, authentication_string = '' AS no_secret,
                     COALESCE(password_expired = 'Y' OR (COALESCE(password_lifetime, @@default_password_lifetime) > 0 AND password_last_changed + INTERVAL COALESCE(password_lifetime, @@default_password_lifetime) DAY < NOW()), 0) AS expired, account_locked = 'Y' AS locked, ssl_type AS tls,
                     max_questions, max_updates, max_connections, max_user_connections,
                     CONCAT(User, '@', Host) = CURRENT_USER() AS current_account
@@ -203,7 +210,7 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
     private function mariaDbAccounts(Connection $c): array
     {
         return $c->fetchAllAssociative(
-            'SELECT User AS usr, Host AS host, '.self::IDENTITY." AS grantee,
+            "SELECT User AS usr, Host AS host,
                     COALESCE(JSON_VALUE(Priv, '\$.plugin'), '') AS plugin,
                     COALESCE(JSON_VALUE(Priv, '\$.authentication_string'), '') = '' AS no_secret,
                     COALESCE(COALESCE(JSON_VALUE(Priv, '\$.password_expired'), '0') IN ('1', 'true')

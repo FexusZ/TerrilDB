@@ -96,6 +96,7 @@ final class DiagnosticsPresenter
         return [
             'status' => self::status($report->status),
             'truncated' => $report->truncated,
+            'privilegesIncomplete' => $report->privilegesIncomplete,
             'activatesAllRoles' => $report->activatesAllRoles,
             'accounts' => array_map(static fn (Account $a): array => [
                 'user' => $a->user,
