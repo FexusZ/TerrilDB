@@ -1,0 +1,18 @@
+[
+    {
+        "Variable_name": "binlog_format",
+        "Value": "ROW"
+    },
+    {
+        "Variable_name": "gtid_mode",
+        "Value": "ON"
+    },
+    {
+        "Variable_name": "read_only",
+        "Value": "OFF"
+    },
+    {
+        "Variable_name": "super_read_only",
+        "Value": "OFF"
+    }
+]
