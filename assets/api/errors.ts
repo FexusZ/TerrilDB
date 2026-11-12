@@ -43,6 +43,10 @@ export function messageFor(error: unknown): string {
       return 'Les inscriptions sont fermées : il faut une invitation.'
     case 'invalid_invitation':
       return 'Cette invitation n’est pas valable : elle a peut-être déjà servi, expiré ou été révoquée.'
+    case 'cannot_disable_self':
+      return 'Vous ne pouvez pas désactiver votre propre compte.'
+    case 'last_administrator':
+      return 'Impossible : ce compte est le dernier administrateur actif.'
     case 'invalid_recovery':
       return 'La phrase de récupération n’est pas valable, ou ce compte n’en a pas.'
     case 'mail_disabled':

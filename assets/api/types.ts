@@ -285,6 +285,17 @@ export interface SchemaDiagram {
   relations: DiagramRelation[]
 }
 
+/** Un compte tel que le voit un administrateur : rien de chiffré, pas d’e-mail. */
+export interface AccountInfo {
+  id: string
+  username: string
+  role: 'admin' | 'member'
+  totpEnabled: boolean
+  lastLoginAt: string | null
+  disabled: boolean
+  current: boolean
+}
+
 export interface InvitationInfo {
   id: string
   note: string
