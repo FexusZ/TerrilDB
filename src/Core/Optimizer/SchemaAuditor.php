@@ -45,7 +45,7 @@ final class SchemaAuditor
 
         // Par table, puis les constats graves d'abord.
         $rank = static fn (Finding $f): array => [$f->table, match ($f->severity) {
-            Severity::Critical => 0, Severity::Warning => 1, Severity::Info => 2
+            Severity::Critical => 0, Severity::Warning => 1, Severity::Info => 2,
         }, $f->rule->value, $f->index ?? implode(',', $f->columns)];
         usort($findings, static fn (Finding $a, Finding $b): int => $rank($a) <=> $rank($b));
 
