@@ -32,7 +32,8 @@ final readonly class PostgreSqlOperations
                         to_char(GREATEST(last_vacuum, last_autovacuum) AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS vacuumed
                    FROM pg_stat_user_tables
                   WHERE schemaname = current_schema()
-                  ORDER BY relname COLLATE \"C\"",
+                  ORDER BY relname COLLATE \"C\"
+                  LIMIT 1000",
             );
         } catch (Exception $failure) {
             return UpkeepReport::unavailable(OperationsFailure::reason($failure));

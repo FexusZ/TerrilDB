@@ -30,6 +30,8 @@ final readonly class MySqlOperations
     public function upkeep(): UpkeepReport
     {
         try {
+            // Borné : l'audit ne juge que 300 tables, dans l'ordre des octets (comme l'introspection) ; sur un schéma de dizaines de
+            // milliers de tables, lire tout, statistiques rafraîchies une à une, ne servirait à rien.
             // MySQL 8 garde ces chiffres en cache jusqu'à 24 h (information_schema_stats_expiry) : on veut ceux du moment.
             // MariaDB n'a pas cette variable et lit toujours à jour.
             try {
@@ -42,7 +44,8 @@ final readonly class MySqlOperations
                 "SELECT TABLE_NAME AS tbl, ENGINE AS engine, TABLE_ROWS AS live, DATA_LENGTH AS data, INDEX_LENGTH AS idx, DATA_FREE AS free
                    FROM information_schema.TABLES
                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
-                  ORDER BY TABLE_NAME",
+                  ORDER BY BINARY TABLE_NAME
+                  LIMIT 1000",
             );
         } catch (Exception $failure) {
             return UpkeepReport::unavailable(OperationsFailure::reason($failure));
