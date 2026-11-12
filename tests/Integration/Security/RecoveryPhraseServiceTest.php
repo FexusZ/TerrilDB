@@ -30,6 +30,7 @@ use App\Security\TotpService;
 use App\Security\UserRegistrar;
 use App\Tests\Integration\Persistence\DatabaseTestCase;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Uid\Uuid;
 
@@ -66,7 +67,7 @@ final class RecoveryPhraseServiceTest extends DatabaseTestCase
         $this->manager = new ConnectionManager(new SecretCipher(), $repository, $clock);
         $this->changer = new PasswordChanger(new PasswordPolicy(), $hasher, new SecretRotator($this->derivation, new SecretCipher()), $users, $repository, new ApiTokenService(new SessionKeyWrapper(), $tokens, $this->manager, $clock));
         $this->service = new RecoveryPhraseService(new SessionKeyWrapper(), $this->changer, $users, $clock);
-        $this->login = new LoginService($hasher, $this->derivation, $users, new TotpService(), new SecretCipher(), new RecoveryCodeService(), $clock);
+        $this->login = new LoginService($hasher, $this->derivation, $users, new TotpService(), new SecretCipher(), new RecoveryCodeService(), $clock, new NullLogger());
 
         $this->user = (new UserRegistrar(new PasswordPolicy(), $hasher, $this->derivation, $users, $clock))->register('alice@example.test', 'alice', self::OLD);
         $key = $this->derivation->derive(self::OLD, $this->user->getKdfParameters());

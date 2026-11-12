@@ -72,16 +72,6 @@ final class UserTest extends TestCase
         self::assertSame('2026-11-12T09:00:00+00:00', $user->getDisabledAt()?->format(\DATE_ATOM));
     }
 
-    public function testTheLastLoginIsRecordedInUtc(): void
-    {
-        $user = $this->user();
-        self::assertNull($user->getLastLoginAt());
-
-        $user->recordLogin(new \DateTimeImmutable('2026-11-12T10:00:00+01:00'));
-
-        self::assertSame('2026-11-12T09:00:00+00:00', $user->getLastLoginAt()?->format(\DATE_ATOM));
-    }
-
     public function testEmailAndUsernameAreNormalizedToLowercase(): void
     {
         $user = $this->user('  Alice@Example.TEST ', 'Alice_01');

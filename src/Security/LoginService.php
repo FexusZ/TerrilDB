@@ -13,6 +13,7 @@ use App\Security\Exception\InvalidCredentialsException;
 use App\Security\Exception\InvalidSecondFactorException;
 use App\Security\Exception\SecondFactorRequiredException;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Connexion : vérifie le hash d'authentification, dérive la clé de chiffrement depuis le mot de passe, puis,
@@ -39,6 +40,7 @@ final readonly class LoginService
         private SecretCipher $cipher,
         private RecoveryCodeService $recoveryCodes,
         private ClockInterface $clock,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -72,8 +74,7 @@ final readonly class LoginService
             if ($this->hasher->needsRehash($user->getPasswordHash())) {
                 $user->rehashPassword($this->hasher->hash($password));
             }
-            $user->recordLogin(\DateTimeImmutable::createFromInterface($this->clock->now()));
-            // Un seul enregistrement : période TOTP consommée (ou code de récupération), hash mis à niveau et dernière connexion.
+            // Un seul enregistrement : période TOTP consommée (ou code de récupération) et hash mis à niveau.
             $this->users->save($user);
         } catch (\Throwable $e) {
             $key->wipe();
@@ -81,7 +82,21 @@ final readonly class LoginService
             throw $e;
         }
 
+        $this->recordLastLogin($user);
+
         return new LoginResult($user, $key, $usedRecoveryCode);
+    }
+
+    /**
+     * La date est informative : jamais une raison de refuser la connexion ni de heurter le verrou de version.
+     */
+    private function recordLastLogin(User $user): void
+    {
+        try {
+            $this->users->recordLogin($user, \DateTimeImmutable::createFromInterface($this->clock->now()));
+        } catch (\Throwable $failure) {
+            $this->logger->warning('Last login date not recorded.', ['reason' => $failure::class]);
+        }
     }
 
     /**

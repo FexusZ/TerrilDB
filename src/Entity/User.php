@@ -193,11 +193,6 @@ final class User
         return $this->lastLoginAt;
     }
 
-    public function recordLogin(\DateTimeImmutable $at): void
-    {
-        $this->lastLoginAt = $at->setTimezone(new \DateTimeZone('UTC'));
-    }
-
     public function isAdmin(): bool
     {
         return Role::Admin === $this->role;

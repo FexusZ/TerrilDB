@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Web;
 
 use App\Repository\UserRepository;
+use App\Security\LoginService;
+use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Uid\Uuid;
 
@@ -91,8 +93,27 @@ final class DisabledAccountWebTest extends WebApiTestCase
 
         $this->login('alice');
 
-        $users = self::getContainer()->get(UserRepository::class);
-        self::assertInstanceOf(UserRepository::class, $users);
-        self::assertNotNull($users->find($user->getId())?->getLastLoginAt());
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        self::assertNotNull($entityManager->getConnection()->fetchOne('SELECT last_login_at FROM app_user WHERE id = ?', [$user->getId()->toRfc4122()]));
+    }
+
+    public function testALoginRacingAnotherWriteOnTheSameAccountStillSucceeds(): void
+    {
+        $user = $this->seedUser('alice');
+        $login = self::getContainer()->get(LoginService::class);
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        self::assertInstanceOf(LoginService::class, $login);
+        self::assertInstanceOf(EntityManagerInterface::class, $entityManager);
+        // Une autre connexion simultanée a déjà fait avancer la version de la ligne que celle-ci a lue.
+        $entityManager->getConnection()->executeStatement('UPDATE app_user SET version = version + 1 WHERE id = ?', [$user->getId()->toRfc4122()]);
+
+        $result = $login->authenticate('alice', self::PASSWORD);
+        $result->key->wipe();
+
+        $row = $entityManager->getConnection()->fetchAssociative('SELECT last_login_at, version FROM app_user WHERE id = ?', [$user->getId()->toRfc4122()]);
+        self::assertIsArray($row);
+        self::assertNotNull($row['last_login_at']);
+        self::assertSame(2, $row['version']);
     }
 }

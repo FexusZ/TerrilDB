@@ -26,6 +26,15 @@ final class UserRepository extends ServiceEntityRepository
         $entityManager->flush();
     }
 
+    /** UPDATE direct : ni la version ni l'entité ne bougent, une connexion simultanée ne se heurte à rien. */
+    public function recordLogin(User $user, \DateTimeImmutable $at): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE app_user SET last_login_at = :at WHERE id = :id',
+            ['at' => $at->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s'), 'id' => $user->getId()->toRfc4122()],
+        );
+    }
+
     /**
      * Connexion par e-mail ou nom d'utilisateur. Un identifiant contenant « @ » est toujours un e-mail :
      * les noms d'utilisateur n'en contiennent pas, il n'y a donc aucune ambiguïté.
