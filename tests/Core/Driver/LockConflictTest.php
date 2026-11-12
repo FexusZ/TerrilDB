@@ -21,7 +21,7 @@ final class LockConflictTest extends TestCase
         yield 'MySQL lock wait timeout' => [Engine::MySql, 'HY000', 1205, LockConflict::LockTimeout];
         yield 'MariaDB lock wait timeout' => [Engine::MariaDb, 'HY000', 1205, LockConflict::LockTimeout];
         yield 'PostgreSQL deadlock' => [Engine::PostgreSql, '40P01', 7, LockConflict::Deadlock];
-        yield 'PostgreSQL serialization failure' => [Engine::PostgreSql, '40001', 7, LockConflict::Deadlock];
+        yield 'PostgreSQL serialization failure is its own code' => [Engine::PostgreSql, '40001', 7, LockConflict::SerializationFailure];
         yield 'PostgreSQL lock not available' => [Engine::PostgreSql, '55P03', 7, LockConflict::LockTimeout];
         yield 'PostgreSQL query canceled stays a plain timeout' => [Engine::PostgreSql, '57014', 7, null];
         yield 'MySQL execution time stays a plain timeout' => [Engine::MySql, 'HY000', 3024, null];
@@ -40,6 +40,7 @@ final class LockConflictTest extends TestCase
     public function testStableCodes(): void
     {
         self::assertSame('deadlock', LockConflict::Deadlock->code());
+        self::assertSame('serialization_failure', LockConflict::SerializationFailure->code());
         self::assertSame('lock_timeout', LockConflict::LockTimeout->code());
     }
 }

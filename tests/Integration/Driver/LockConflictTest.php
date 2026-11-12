@@ -19,6 +19,7 @@ use App\Core\Schema\Change\DdlStatement;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Driver\DbalConnector;
 use App\Driver\DbalDdlExecutor;
+use App\Driver\EngineLockConflict;
 use App\Driver\MySql\MySqlDriver;
 use App\Driver\PostgreSql\PostgreSqlDriver;
 use App\Http\Json\ErrorMapper;
@@ -165,6 +166,27 @@ final class LockConflictTest extends TestCase
         }
         // Seule la pair a validé : rien de la session victime n'a survécu.
         self::assertSame([1, 1, 1, 1], $this->values());
+    }
+
+    public function testASerializationFailureOnPostgreSqlIsClassifiedUnderItsOwnCode(): void
+    {
+        $this->open('TARGET_POSTGRES_URL');
+
+        // Deux transactions en lecture répétable qui modifient la même ligne : la seconde reçoit 40001, pas un interblocage.
+        $first = LockPeer::connect($this->env);
+        $first->exec('BEGIN ISOLATION LEVEL REPEATABLE READ');
+        $read = $first->query(\sprintf('SELECT v FROM %s WHERE id = 1', $this->q()));
+        self::assertInstanceOf(\PDOStatement::class, $read);
+        $read->fetchAll();
+        LockPeer::connect($this->env)->exec(\sprintf('UPDATE %s SET v = 5 WHERE id = 1', $this->q()));
+        try {
+            $first->exec(\sprintf('UPDATE %s SET v = 6 WHERE id = 1', $this->q()));
+            self::fail('PostgreSQL should refuse the update with a serialization failure.');
+        } catch (\PDOException $e) {
+            self::assertSame(LockConflict::SerializationFailure, EngineLockConflict::of(Engine::PostgreSql, $e));
+        } finally {
+            $first->exec('ROLLBACK');
+        }
     }
 
     #[DataProvider('engines')]

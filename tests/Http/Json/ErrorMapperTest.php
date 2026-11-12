@@ -168,6 +168,16 @@ final class ErrorMapperTest extends TestCase
         self::assertSame('lock_timeout', (new ErrorMapper())->map(new LockConflictException(LockConflict::LockTimeout))?->code);
     }
 
+    public function testASerializationFailureIsReportedUnderItsOwnRetryableCode(): void
+    {
+        $response = (new ErrorMapper())->map(new LockConflictException(LockConflict::SerializationFailure, new \PDOException("could not serialize access; value 'jean@example.org'")));
+
+        self::assertNotNull($response);
+        self::assertSame(409, $response->status);
+        self::assertSame('serialization_failure', $response->code);
+        self::assertSame(['retryable' => true], $response->extra);
+    }
+
     public function testDataChangeBlockedByALockKeepsItsStatementButNotTheMessage(): void
     {
         $statement = new DataStatement('UPDATE t SET a = ? WHERE id = ?', ['x', 1], 'UPDATE t SET a = \'x\'', 'update', 't', false, null, []);

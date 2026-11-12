@@ -15,11 +15,12 @@ use App\Core\Connection\Engine;
 enum LockConflict: string
 {
     case Deadlock = 'deadlock';
+    case SerializationFailure = 'serialization_failure';
     case LockTimeout = 'lock_timeout';
 
     /**
-     * MySQL / MariaDB : 1213 (interblocage), 1205 (délai de verrou). PostgreSQL : SQLSTATE 40P01 et 40001 (échec de
-     * sérialisation, à rejouer comme un interblocage), 55P03 (lock_not_available, posé par `lock_timeout`).
+     * MySQL / MariaDB : 1213 (interblocage), 1205 (délai de verrou). PostgreSQL : SQLSTATE 40P01 (interblocage), 40001 (échec de
+     * sérialisation : la transaction est annulée et se rejoue, mais ce n'est pas un interblocage), 55P03 (lock_not_available, posé par `lock_timeout`).
      */
     public static function fromEngineError(Engine $engine, ?string $sqlState, ?int $code): ?self
     {
@@ -30,7 +31,8 @@ enum LockConflict: string
                 default => null,
             },
             Engine::PostgreSql => match ($sqlState) {
-                '40P01', '40001' => self::Deadlock,
+                '40P01' => self::Deadlock,
+                '40001' => self::SerializationFailure,
                 '55P03' => self::LockTimeout,
                 default => null,
             },
