@@ -24,6 +24,7 @@ final class TargetDatabase
         'TARGET_POSTGRES_URL' => Engine::PostgreSql,
         'TARGET_CLICKHOUSE_URL' => Engine::ClickHouse,
         'TARGET_REDIS_URL' => Engine::Redis,
+        'TARGET_VITESS_URL' => Engine::MySql,
     ];
 
     /**
@@ -73,16 +74,16 @@ final class TargetDatabase
             (int) self::part($parts, 'port'),
             self::part($parts, 'dbname'),
             self::part($parts, 'user'),
-            self::part($parts, 'password'),
+            self::part($parts, 'password', ''),
         );
     }
 
     /**
      * @param array<string, mixed> $parts
      */
-    private static function part(array $parts, string $key): string
+    private static function part(array $parts, string $key, ?string $default = null): string
     {
-        $value = $parts[$key] ?? null;
+        $value = $parts[$key] ?? $default;
         Assert::assertTrue(\is_scalar($value), \sprintf('The target URL has no "%s".', $key));
 
         return (string) $value;

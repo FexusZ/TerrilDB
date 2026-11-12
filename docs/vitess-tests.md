@@ -18,7 +18,9 @@ docker compose --profile vitess down                        # arrêt (les donné
 
 ## Constats déjà vérifiés sur cette cible
 
-- #38 : `SET SESSION MAX_EXECUTION_TIME` est accepté mais pas transmis (`@@session.max_execution_time` reste 0, `SELECT SLEEP(2)` n'est
-  pas coupé) ; `/*vt+ QUERY_TIMEOUT_MS=1000 */` coupe bien (erreur 3024).
+- #38 (corrigé) : `SET SESSION MAX_EXECUTION_TIME` est accepté mais pas transmis, et l'indication `/*+ MAX_EXECUTION_TIME(n) */` coupe sans
+  erreur (`SLEEP` rend 1). Le driver détecte Vitess (`@@version`) et injecte `/*vt+ QUERY_TIMEOUT_MS=n */` après le premier mot-clé
+  (SELECT, INSERT, UPDATE, DELETE, REPLACE : lectures et écritures) ; vtgate répond par l'erreur 3024, déjà rattachée à `query_timeout`.
+  Sans effet sur SHOW, WITH et les autres instructions (elles partent telles quelles).
 - #39 : sur le tablet réplica, `@@read_only` vaut 0 : le moteur n'impose pas la lecture seule, seul le filtre protège.
 - Une écriture faite sur le primaire est visible sur le réplica au bout d'un instant.

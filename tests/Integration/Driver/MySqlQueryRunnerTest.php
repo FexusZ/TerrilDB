@@ -43,7 +43,7 @@ final class MySqlQueryRunnerTest extends TestCase
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }
-        $this->runner = new MySqlQueryRunner($this->connection, $engine);
+        $this->runner = MySqlQueryRunner::forConnection($this->connection, $engine);
     }
 
     protected function tearDown(): void
