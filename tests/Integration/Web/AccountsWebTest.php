@@ -23,7 +23,7 @@ final class AccountsWebTest extends WebApiTestCase
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<mixed>
      */
     private function accountNamed(string $username): array
     {
@@ -83,7 +83,7 @@ final class AccountsWebTest extends WebApiTestCase
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param array<mixed> $row
      *
      * @return list<string>
      */
