@@ -7,6 +7,7 @@ namespace App\Tests\Integration\Driver;
 use App\Core\Connection\Engine;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\ScriptAnalyzer;
+use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\ScriptOptions;
 use App\Core\Query\Script\ScriptResult;
 use App\Core\Query\Script\ScriptService;
@@ -273,7 +274,7 @@ final class ScriptExecutorTest extends TestCase
     {
         $this->open('TARGET_CLICKHOUSE_URL');
 
-        $this->expectException(\App\Core\Query\Script\Exception\ScriptDryRunUnavailableException::class);
+        $this->expectException(ScriptDryRunUnavailableException::class);
 
         $this->script('SELECT 1', dryRun: true);
     }
@@ -303,5 +304,66 @@ final class ScriptExecutorTest extends TestCase
         self::assertSame(ScriptStepStatus::Failed, $result->steps[1]->status);
         self::assertSame(ScriptStepStatus::NotRun, $result->steps[2]->status);
         self::assertSame([1], $this->ids($table));
+    }
+
+    /** Table MyISAM jetable (le moteur ne sait pas l'annuler). */
+    private function myIsamTable(string $name): string
+    {
+        $table = 'tdb_scr_'.$name.'_'.bin2hex(random_bytes(3));
+        $this->tables[] = $table;
+        $this->raw?->executeStatement(\sprintf('CREATE TABLE %s (id int NOT NULL PRIMARY KEY, v varchar(20)) ENGINE=MyISAM', $table));
+
+        return $table;
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testADryRunOnANonTransactionalTableIsRefusedBecauseTheRowWouldStay(string $envVar): void
+    {
+        $this->open($envVar);
+        $table = $this->myIsamTable('dry');
+
+        try {
+            $this->script(\sprintf("INSERT INTO %s VALUES (1, 'a')", $table), dryRun: true);
+            self::fail('A dry run on a MyISAM table cannot be honest.');
+        } catch (ScriptDryRunUnavailableException $e) {
+            self::assertSame('non_transactional_tables', $e->reason);
+        }
+        self::assertSame([], $this->ids($table));
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testAnErrorAfterAWriteToANonTransactionalTableReportsItAsKept(string $envVar): void
+    {
+        $this->open($envVar);
+        $table = $this->myIsamTable('err');
+
+        $result = $this->script(\sprintf("INSERT INTO %1\$s VALUES (1, 'a'); INSERT INTO %1\$s VALUES (1, 'dup'); INSERT INTO %1\$s VALUES (2, 'b');", $table));
+
+        // La ligne MyISAM est restée : on ne dit pas « annulé » (le moteur peut aussi refuser lui-même la suite, GTID).
+        self::assertSame(ScriptStatus::Partial, $result->status);
+        self::assertSame(['applied', 'failed', 'not_run'], self::statuses($result));
+        self::assertSame([1], $this->ids($table));
+    }
+
+    public function testPostgreSqlBoundsTheRowsOfABigSelectInsteadOfBufferingThemAll(): void
+    {
+        $this->open('TARGET_POSTGRES_URL');
+        @file_put_contents('/proc/self/clear_refs', '5');
+        $before = self::peakResidentKb();
+
+        $result = $this->script('SELECT i, md5(i::text) FROM generate_series(1, 3000000) i');
+
+        $grew = self::peakResidentKb() - $before;
+        // 3 millions de lignes tamponnées coûtent environ 290 Mo hors de la mémoire PHP : la borne doit tenir sans.
+        self::assertLessThan(60_000, $grew, 'The result must not be buffered in full.');
+        self::assertSame(1000, $result->steps[0]->returnedRows);
+        self::assertTrue($result->steps[0]->truncated);
+    }
+
+    private static function peakResidentKb(): int
+    {
+        $status = (string) @file_get_contents('/proc/self/status');
+
+        return 1 === preg_match('/^VmHWM:\s+(\d+) kB/m', $status, $m) ? (int) $m[1] : 0;
     }
 }

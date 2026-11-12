@@ -8,7 +8,8 @@ use App\Core\Guard\StatementKind;
 
 /**
  * Une instruction d'un script déjà jugée par le garde, telle que l'exécuteur du moteur la reçoit. `commitsImplicitly`
- * dit que le moteur valide tout ce qui précède avant de l'exécuter (DDL, CALL, DO sur MySQL et MariaDB).
+ * dit que le moteur valide tout ce qui précède avant de l'exécuter (DDL, CALL, DO sur MySQL et MariaDB) ; `writesNonTransactional`,
+ * qu'elle écrit dans une table que le moteur ne sait pas annuler (MyISAM, MEMORY, Aria…) : son effet reste même après un ROLLBACK.
  */
 final readonly class ScriptStatement
 {
@@ -17,6 +18,7 @@ final readonly class ScriptStatement
         public string $sql,
         public StatementKind $kind,
         public bool $commitsImplicitly = false,
+        public bool $writesNonTransactional = false,
     ) {
     }
 }

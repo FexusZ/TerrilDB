@@ -25,6 +25,11 @@ final readonly class ClickHouseScriptExecutor implements ScriptExecutor
     {
     }
 
+    public function nonTransactionalTables(): array
+    {
+        return [];
+    }
+
     public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult
     {
         if ($dryRun) {

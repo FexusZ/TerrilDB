@@ -21,14 +21,20 @@ const STATUSES: Record<ScriptStepStatus, string> = { applied: 'Appliquée', roll
 const WARNINGS: Record<ScriptPreview['warnings'][number], string> = {
   mixed_data_and_ddl: 'Ce script mêle données et structure : ce moteur valide tout ce qui précède à chaque instruction de structure, il n’est donc pas annulable en entier.',
   ddl_not_transactional: 'Les instructions de structure sont validées une à une par ce moteur : en cas d’erreur, celles qui ont réussi restent appliquées.',
+  non_transactional_tables: 'Ce script écrit dans une table sans transaction (MyISAM, MEMORY, Aria…) : ce que le moteur y a écrit reste, même après une erreur, et un test sans valider est impossible.',
   no_transaction: 'Ce moteur n’a pas de transaction : en cas d’erreur, les instructions déjà passées restent appliquées.',
 }
 
-const canRun = computed(() => preview.value?.canRun === true && !busy.value)
+// Après un succès réel, un second clic rejouerait un script qui n'est pas forcément idempotent : il faut le modifier ou le réexaminer.
+const done = computed(() => run.value?.status === 'committed')
+const canRun = computed(() => preview.value?.canRun === true && !busy.value && !done.value)
 const dryRunReason = computed(() => {
   const reason = preview.value?.dryRun.reason
   if (reason === 'implicit_commit') {
     return 'Indisponible : ce moteur valide la transaction à chaque instruction de structure.'
+  }
+  if (reason === 'non_transactional_tables') {
+    return 'Indisponible : le script écrit dans une table sans transaction, rien ne s’y annule.'
   }
   return reason === 'no_transaction' ? 'Indisponible : ce moteur n’a pas de transaction.' : null
 })

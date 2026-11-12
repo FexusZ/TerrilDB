@@ -240,7 +240,11 @@ final class ScriptWebTest extends WebApiTestCase
         self::assertSame("INSERT INTO $table VALUES (1, 'a')", $first['sql']);
         self::assertSame('rolled_back', $first['status']);
         self::assertTrue($first['script']);
-        self::assertIsString($events[1]->getDetails()['error']);
+        // Le texte du moteur peut citer une valeur : l'audit n'en garde que le code.
+        self::assertArrayNotHasKey('error', $events[1]->getDetails());
+        $sqlstate = $events[1]->getDetails()['sqlstate'];
+        self::assertIsString($sqlstate);
+        self::assertMatchesRegularExpression('/^[0-9A-Z]{5}/', $sqlstate);
         self::assertSame(AuditAction::QueryFailed, $events[1]->getAction());
     }
 

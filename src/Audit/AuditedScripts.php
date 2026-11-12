@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Driver\TargetConnection;
+use App\Core\Guard\Exception\ScriptTooLargeException;
+use App\Core\Guard\Exception\UnsplittableScriptException;
+use App\Core\Query\Exception\QueryRefusedException;
+use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
+use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
 use App\Core\Query\Script\Exception\ScriptRefusedException;
 use App\Core\Query\Script\ScriptOptions;
 use App\Core\Query\Script\ScriptService;
@@ -20,8 +26,6 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class AuditedScripts
 {
-    private const MAX_ERROR_LENGTH = 500;
-
     public function __construct(
         private ScriptService $scripts,
         private AuditLog $audit,
@@ -48,6 +52,14 @@ final readonly class AuditedScripts
             ]);
 
             throw $e;
+        } catch (ScriptNeedsConfirmationException|ScriptDryRunUnavailableException|UnsplittableScriptException|ScriptTooLargeException|QueryRefusedException|UnsupportedOperationException $e) {
+            // Refusés AVANT toute exécution : rien n'est parti, rien à consigner de plus.
+            throw $e;
+        } catch (\Throwable $e) {
+            // Ce que le moteur a pu valider avant l'accident est inconnu : la trace dit seulement que l'exécution a échoué, sans le texte de l'erreur.
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['sql' => $script, 'reason' => 'executor_error']);
+
+            throw $e;
         }
 
         $total = \count($result->steps);
@@ -68,7 +80,7 @@ final readonly class AuditedScripts
     {
         $details += ['sql' => $step->sql, 'durationMs' => $step->durationMs];
         if (ScriptStepStatus::Failed === $step->status) {
-            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $details + ['reason' => $failureReason ?? 'engine_error', 'error' => mb_substr($step->error ?? '', 0, self::MAX_ERROR_LENGTH)]);
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $details + ['reason' => $failureReason ?? 'engine_error', 'sqlstate' => $step->errorCode]);
 
             return;
         }

@@ -83,6 +83,9 @@ export function messageFor(error: unknown): string {
     case 'script_too_large':
       return 'Le script est trop long (500 instructions et 1 Mo au plus).'
     case 'dry_run_unavailable':
+      if (error.details.reason === 'non_transactional_tables') {
+        return 'Ce script écrit dans une table sans transaction (MyISAM, MEMORY…) : rien ne s’y annule, il ne peut pas être testé sans valider.'
+      }
       return error.details.reason === 'implicit_commit'
         ? 'Ce moteur valide la transaction à chaque instruction de structure : ce script ne peut pas être testé sans valider.'
         : 'Ce moteur n’a pas de transaction : un script ne peut pas être testé sans valider.'

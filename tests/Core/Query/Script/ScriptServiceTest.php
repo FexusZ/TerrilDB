@@ -31,16 +31,31 @@ final class ScriptServiceTest extends TestCase
     }
 
     /**
-     * @return array{TargetConnection, object{statements: list<ScriptStatement>, timeoutMs: int, dryRun: bool, calls: int}}
+     * @param list<string> $nonTransactional
+     *
+     * @return array{TargetConnection, object{statements: list<ScriptStatement>, timeoutMs: int, dryRun: bool, calls: int, tableLookups: int, nonTransactional: list<string>}}
      */
-    private function target(Engine $engine): array
+    private function target(Engine $engine, array $nonTransactional = []): array
     {
-        $spy = new class implements ScriptExecutor {
+        $spy = new class($nonTransactional) implements ScriptExecutor {
             /** @var list<ScriptStatement> */
             public array $statements = [];
             public int $timeoutMs = 0;
             public bool $dryRun = false;
             public int $calls = 0;
+            public int $tableLookups = 0;
+
+            /** @param list<string> $nonTransactional */
+            public function __construct(public array $nonTransactional)
+            {
+            }
+
+            public function nonTransactionalTables(): array
+            {
+                ++$this->tableLookups;
+
+                return $this->nonTransactional;
+            }
 
             public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult
             {
@@ -230,5 +245,57 @@ final class ScriptServiceTest extends TestCase
         $this->expectException(QueryRefusedException::class);
 
         $this->service()->execute($target, '  ;  ', new ScriptOptions(WritePermissions::all()), true);
+    }
+
+    public function testAWriteToANonTransactionalTableIsNotAtomicAndHasNoDryRun(): void
+    {
+        foreach (['INSERT INTO m VALUES (1)', 'UPDATE `M` SET a = 1 WHERE id = 1', 'DELETE FROM db.m WHERE id = 1', 'INSERT INTO t SELECT * FROM m'] as $sql) {
+            $preview = $this->service()->preview($sql, Engine::MySql, WritePermissions::all(), ['m']);
+
+            self::assertFalse($preview->capabilities->atomic, $sql);
+            self::assertFalse($preview->capabilities->dryRunAvailable, $sql);
+            self::assertSame('non_transactional_tables', $preview->capabilities->dryRunUnavailableReason, $sql);
+            self::assertSame(['non_transactional_tables'], $preview->capabilities->warnings, $sql);
+        }
+    }
+
+    public function testOnlyAWriteToANonTransactionalTableCountsNotAReadNorALookalikeName(): void
+    {
+        foreach (['SELECT * FROM m', 'INSERT INTO t VALUES (1)', 'INSERT INTO m2 VALUES (1)', "INSERT INTO t VALUES ('x')", 'INSERT INTO my_m VALUES (1)'] as $sql) {
+            $preview = $this->service()->preview($sql, Engine::MariaDb, WritePermissions::all(), ['m']);
+
+            self::assertTrue($preview->capabilities->dryRunAvailable, $sql);
+            self::assertSame([], $preview->capabilities->warnings, $sql);
+        }
+    }
+
+    public function testADryRunOnANonTransactionalTableIsRefusedBeforeAnythingRuns(): void
+    {
+        [$target, $spy] = $this->target(Engine::MySql, ['m']);
+
+        try {
+            $this->service()->execute($target, 'INSERT INTO m VALUES (1)', new ScriptOptions(WritePermissions::all(), dryRun: true), true);
+            self::fail('A dry run was refused.');
+        } catch (ScriptDryRunUnavailableException $e) {
+            self::assertSame('non_transactional_tables', $e->reason);
+        }
+        self::assertSame(0, $spy->calls);
+
+        $this->service()->execute($target, 'INSERT INTO m VALUES (1)', new ScriptOptions(WritePermissions::all()), true);
+        self::assertSame([true], array_map(static fn (ScriptStatement $s): bool => $s->writesNonTransactional, $spy->statements));
+    }
+
+    public function testTheTablesAreOnlyLookedUpWhenAMySqlScriptWrites(): void
+    {
+        [$target, $spy] = $this->target(Engine::MySql);
+        $this->service()->execute($target, 'SELECT 1', new ScriptOptions(WritePermissions::all()), true);
+        self::assertSame(0, $spy->tableLookups);
+
+        [$pg, $pgSpy] = $this->target(Engine::PostgreSql);
+        $this->service()->execute($pg, 'INSERT INTO t VALUES (1)', new ScriptOptions(WritePermissions::all()), true);
+        self::assertSame(0, $pgSpy->tableLookups);
+
+        $this->service()->execute($target, 'INSERT INTO t VALUES (1)', new ScriptOptions(WritePermissions::all()), true);
+        self::assertSame(1, $spy->tableLookups);
     }
 }
