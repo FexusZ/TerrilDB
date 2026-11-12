@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Query\Script;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\Exception\ScriptTooLargeException;
 use App\Core\Guard\Exception\UnsplittableScriptException;
@@ -17,6 +18,7 @@ use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
+use App\Core\Query\Script\Exception\ScriptRefusedException;
 use App\Core\Query\WritePermissions;
 
 /**
@@ -36,17 +38,22 @@ final readonly class ScriptService
     /**
      * @throws UnsplittableScriptException
      * @throws ScriptTooLargeException
-     * @throws \InvalidArgumentException   moteur sans SQL (Redis)
+     * @throws UnsupportedOperationException moteur sans SQL (Redis)
      */
     public function preview(string $script, Engine $engine, WritePermissions $writes): ScriptPreview
     {
+        if (!$engine->speaksSql()) {
+            throw UnsupportedOperationException::for($engine, 'script');
+        }
+
         $report = $this->analyzer->analyze($script, $engine, $writes);
 
         return new ScriptPreview($report, ScriptCapabilities::for($engine, $this->statements($report, $engine)));
     }
 
     /**
-     * @throws QueryRefusedException
+     * @throws QueryRefusedException            script vide
+     * @throws ScriptRefusedException
      * @throws ScriptNeedsConfirmationException
      * @throws ScriptDryRunUnavailableException
      * @throws UnsplittableScriptException
@@ -62,7 +69,7 @@ final readonly class ScriptService
             throw new QueryRefusedException(GuardReason::EmptyStatement);
         }
         if (null !== $report->firstRefused) {
-            throw new QueryRefusedException($report->firstRefused->verdict->reason ?? GuardReason::UnsupportedStatement);
+            throw new ScriptRefusedException($report->firstRefused->verdict->reason ?? GuardReason::UnsupportedStatement, $report->firstRefused->index);
         }
         if ($report->needsConfirmation() && !$confirmed) {
             throw new ScriptNeedsConfirmationException($report->destructiveCount());

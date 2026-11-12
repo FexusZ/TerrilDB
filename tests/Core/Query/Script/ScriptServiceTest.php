@@ -13,6 +13,7 @@ use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\QueryRunner;
 use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
+use App\Core\Query\Script\Exception\ScriptRefusedException;
 use App\Core\Query\Script\ScriptExecutor;
 use App\Core\Query\Script\ScriptOptions;
 use App\Core\Query\Script\ScriptResult;
@@ -127,7 +128,7 @@ final class ScriptServiceTest extends TestCase
 
     public function testRedisIsNotConcerned(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(UnsupportedOperationException::class);
 
         $this->service()->preview('GET a', Engine::Redis, WritePermissions::all());
     }
@@ -139,8 +140,9 @@ final class ScriptServiceTest extends TestCase
         try {
             $this->service()->execute($target, "INSERT INTO t VALUES (1);\nCOPY t TO '/tmp/x';", new ScriptOptions(WritePermissions::all()), true);
             self::fail('A refusal was expected.');
-        } catch (QueryRefusedException $e) {
+        } catch (ScriptRefusedException $e) {
             self::assertSame(GuardReason::ForbiddenConstruct, $e->reason);
+            self::assertSame(1, $e->statementIndex);
         }
         self::assertSame(0, $spy->calls);
     }
@@ -152,8 +154,9 @@ final class ScriptServiceTest extends TestCase
         try {
             $this->service()->execute($target, 'INSERT INTO t VALUES (1); CREATE TABLE u (id int);', new ScriptOptions(new WritePermissions(data: true)), true);
             self::fail('A refusal was expected.');
-        } catch (QueryRefusedException $e) {
+        } catch (ScriptRefusedException $e) {
             self::assertSame(GuardReason::WriteNotPermitted, $e->reason);
+            self::assertSame(1, $e->statementIndex);
         }
         self::assertSame(0, $spy->calls);
     }
