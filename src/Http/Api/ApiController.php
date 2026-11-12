@@ -7,6 +7,7 @@ namespace App\Http\Api;
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedQueries;
+use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Driver\TargetConnection;
@@ -16,6 +17,7 @@ use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
+use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
@@ -41,6 +43,7 @@ final readonly class ApiController
         private TargetSession $targets,
         private AuditedQueries $queries,
         private TokenConnections $created,
+        private WriteApproval $approval,
     ) {
     }
 
@@ -125,9 +128,30 @@ final readonly class ApiController
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
-        $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options, $confirmed));
+        $confirmation = $input->optionalString('confirmationToken');
+
+        $result = $this->open($id, function (TargetConnection $target) use ($id, $sql, $options, $confirmed, $confirmation) {
+            $context = $this->request->auditContext(AuditActor::Api);
+            $this->approval->authorize($this->request->get(), $context, Uuid::fromString($id), $target, $sql, $confirmation, $confirmed);
+
+            return $this->queries->execute($context, Uuid::fromString($id), $target, $sql, $options, $confirmed);
+        });
 
         return new JsonResponse(ResultPresenter::present($result));
+    }
+
+    /**
+     * Première étape d'une écriture : juge l'instruction sans l'exécuter et rend un jeton de confirmation, lié à ce texte exact,
+     * à cette connexion et à ce jeton d'API, à usage unique et valable cinq minutes.
+     */
+    #[Route('/api/v1/connections/{id}/prepare', requirements: self::ID, methods: ['POST'])]
+    public function prepare(string $id, Request $request): JsonResponse
+    {
+        $sql = JsonInput::fromRequest($request)->string('sql');
+
+        $prepared = $this->open($id, fn (TargetConnection $target) => $this->approval->prepare($this->request->get(), $this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql));
+
+        return new JsonResponse(PreparedWritePresenter::present($prepared));
     }
 
     /**
