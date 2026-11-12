@@ -18,7 +18,8 @@ lui-même (transaction en lecture seule). Trois droits se cochent à la créatio
 | GET | `/api/v1/connections/{id}/tables` | tables et vues, avec une estimation du nombre de lignes |
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
 | POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` |
-| POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
+| POST | `/api/v1/connections/{id}/prepare` | (droit d'écriture) juge UNE instruction d'écriture SANS l'exécuter : `decision` (`allowed` / `needs_confirmation`), `kind`, `danger`, `reason` et un `confirmationToken` lié au texte exact, à la connexion et au jeton d'API, à usage unique, valable 300 s |
+| POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmationToken` (obligatoire, voir ci-dessous) et `confirmed` |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -35,6 +36,13 @@ Motifs de refus (`reason`) : `empty_statement`, `multiple_statements`, `incomple
 `forbidden_construct`, `unsupported_statement`, `write_not_permitted` (le jeton n'a pas le droit de cette sorte d'écriture).
 
 ## Écrire
+
+**Deux temps par défaut** : sans `confirmationToken` valide, `/execute` ne part pas (409 `preparation_required`). Un jeton rejoué, expiré,
+inconnu ou présenté pour un texte qui diffère d'un octet (ou une autre connexion, un autre jeton d'API, un autre verdict) est refusé
+(403 `invalid_confirmation`) et brûlé. Un destructif exige en plus `confirmed: true` (409 `confirmation_required` sans consommer le jeton).
+Un jeton d'API créé avec `singleStep: true` (choix du propriétaire, refusé par défaut) garde l'écriture directe ; un `confirmationToken`
+présenté est alors tout de même vérifié. Chaque préparation (`query.prepared`) et chaque rejet est journalisé, jamais le jeton.
+Limite : l'aperçu ne donne ni tables touchées ni lignes estimées.
 
 `/execute` n'accepte que ce que les droits du jeton permettent : `writeData` = INSERT, UPDATE, DELETE ; `writeSchema` = CREATE, ALTER,
 DROP, TRUNCATE, GRANT, CALL… Le refus faute de droit est définitif. Une instruction destructrice (UPDATE ou DELETE sans WHERE, DROP,

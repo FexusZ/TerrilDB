@@ -168,6 +168,8 @@ export interface ApiTokenInfo {
   writeData: boolean
   writeSchema: boolean
   createConnections: boolean
+  /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
+  singleStep: boolean
   createdAt: string
   /** Nul : le jeton n'expire jamais. */
   expiresAt: string | null
@@ -185,6 +187,7 @@ export interface ApiTokenInput {
   writeData?: boolean
   writeSchema?: boolean
   createConnections?: boolean
+  singleStep?: boolean
 }
 
 export type AuditOutcome = 'success' | 'refused' | 'failed'

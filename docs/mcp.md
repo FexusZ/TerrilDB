@@ -21,7 +21,8 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
 | `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
-| `execute_statement` | `connection`, `sql`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
+| `prepare_statement` | `connection`, `sql` | (droit d'écriture) juge une écriture SANS l'exécuter, rend un `confirmationToken` à usage unique lié au texte exact (300 s) |
+| `execute_statement` | `connection`, `sql`, `confirmationToken?`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton, avec le `confirmationToken` de `prepare_statement` (sauf jeton « une seule étape ») ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
 | `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
