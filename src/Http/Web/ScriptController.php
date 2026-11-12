@@ -39,7 +39,7 @@ final readonly class ScriptController
 
         $preview = $this->targets->withSaved(
             Uuid::fromString($id),
-            fn (TargetConnection $target) => $this->scripts->preview($script, $target->engine, WritePermissions::all()),
+            fn (TargetConnection $target) => $this->scripts->previewFor($target, $script, WritePermissions::all()),
             $input->optionalString('database'),
             $input->optionalString('schema'),
         );

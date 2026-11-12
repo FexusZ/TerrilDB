@@ -58,6 +58,7 @@ final class ScriptPresenter
                 'status' => $step->status->value,
                 'affectedRows' => $step->affectedRows,
                 'returnedRows' => $step->returnedRows,
+                'truncated' => $step->truncated,
                 'error' => $step->error,
                 'durationMs' => $step->durationMs,
             ], $result->steps),

@@ -10,7 +10,8 @@ use App\Core\Query\WritePermissions;
 
 final readonly class ScriptOptions
 {
-    public const DEFAULT_TIMEOUT_MS = 300_000;
+    /** Sous les 120 s du proxy de production : au-delà, le client recevrait un 504 pendant que le script continue. */
+    public const DEFAULT_TIMEOUT_MS = 100_000;
 
     public function __construct(
         public WritePermissions $writes,

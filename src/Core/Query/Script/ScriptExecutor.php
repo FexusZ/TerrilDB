@@ -12,6 +12,14 @@ namespace App\Core\Query\Script;
 interface ScriptExecutor
 {
     /**
+     * Les noms des tables que le moteur ne sait pas annuler (MySQL/MariaDB : tout moteur de stockage sans transaction) ; vide
+     * quand le moteur annule tout (PostgreSQL) ou n'a pas de transaction du tout (ClickHouse, géré à part).
+     *
+     * @return list<string>
+     */
+    public function nonTransactionalTables(): array;
+
+    /**
      * @param list<ScriptStatement> $statements
      */
     public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult;

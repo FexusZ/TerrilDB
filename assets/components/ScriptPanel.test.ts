@@ -33,8 +33,8 @@ const run = (over: Partial<ScriptRun> = {}): ScriptRun => ({
   failed: null,
   notRun: [],
   steps: [
-    { index: 0, sql: 'INSERT INTO t VALUES (1)', status: 'applied', affectedRows: 1, returnedRows: null, error: null, durationMs: 1 },
-    { index: 1, sql: 'DELETE FROM t', status: 'applied', affectedRows: 1, returnedRows: null, error: null, durationMs: 1 },
+    { index: 0, sql: 'INSERT INTO t VALUES (1)', status: 'applied', affectedRows: 1, returnedRows: null, truncated: false, error: null, durationMs: 1 },
+    { index: 1, sql: 'DELETE FROM t', status: 'applied', affectedRows: 1, returnedRows: null, truncated: false, error: null, durationMs: 1 },
   ],
   ...over,
 })
@@ -152,9 +152,9 @@ describe('ScriptPanel', () => {
       failed: 1,
       notRun: [2],
       steps: [
-        { index: 0, sql: 'CREATE TABLE a (id int)', status: 'applied', affectedRows: 0, returnedRows: null, error: null, durationMs: 1 },
-        { index: 1, sql: 'INSERT INTO a VALUES (1, 2)', status: 'failed', affectedRows: null, returnedRows: null, error: 'column count mismatch', durationMs: 1 },
-        { index: 2, sql: 'SELECT 1', status: 'not_run', affectedRows: null, returnedRows: null, error: null, durationMs: 0 },
+        { index: 0, sql: 'CREATE TABLE a (id int)', status: 'applied', affectedRows: 0, returnedRows: null, truncated: false, error: null, durationMs: 1 },
+        { index: 1, sql: 'INSERT INTO a VALUES (1, 2)', status: 'failed', affectedRows: null, returnedRows: null, truncated: false, error: 'column count mismatch', durationMs: 1 },
+        { index: 2, sql: 'SELECT 1', status: 'not_run', affectedRows: null, returnedRows: null, truncated: false, error: null, durationMs: 0 },
       ],
     }))
 
@@ -171,8 +171,8 @@ describe('ScriptPanel', () => {
   it('says everything was cancelled when a transaction rolled back', async () => {
     const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
     mocked.mockResolvedValueOnce(run({ status: 'rolled_back', failureReason: 'engine_error', applied: [], failed: 1, notRun: [], steps: [
-      { index: 0, sql: 'INSERT INTO t VALUES (1)', status: 'rolled_back', affectedRows: 1, returnedRows: null, error: null, durationMs: 1 },
-      { index: 1, sql: 'INSERT INTO t VALUES (1)', status: 'failed', affectedRows: null, returnedRows: null, error: 'duplicate key', durationMs: 1 },
+      { index: 0, sql: 'INSERT INTO t VALUES (1)', status: 'rolled_back', affectedRows: 1, returnedRows: null, truncated: false, error: null, durationMs: 1 },
+      { index: 1, sql: 'INSERT INTO t VALUES (1)', status: 'failed', affectedRows: null, returnedRows: null, truncated: false, error: 'duplicate key', durationMs: 1 },
     ] }))
 
     await wrapper.get('button.execute').trigger('click')
@@ -200,6 +200,39 @@ describe('ScriptPanel', () => {
 
     expect(wrapper.findAll('li.step')).toHaveLength(0)
     expect(wrapper.get('button.execute').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('keeps the run button off after a success so a second click cannot replay the script', async () => {
+    const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
+    mocked.mockResolvedValueOnce(run())
+
+    await wrapper.get('button.execute').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('button.execute').attributes('disabled')).toBeDefined()
+    await wrapper.get('button.execute').trigger('click')
+    expect(mocked).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('lets a dry run be followed by the real run', async () => {
+    const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
+    await wrapper.get('input.dry-run').setValue(true)
+    mocked.mockResolvedValueOnce(run({ status: 'dry_run', dryRun: true, applied: [] }))
+    await wrapper.get('button.execute').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('button.execute').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('explains that a table without transactions cannot be tested or rolled back', async () => {
+    const wrapper = await previewed({ atomic: false, dryRun: { available: false, reason: 'non_transactional_tables' }, warnings: ['non_transactional_tables'] })
+
+    expect(wrapper.get('.dry-run-reason').text()).toContain('sans transaction')
+    expect(wrapper.get('.warnings').text()).toContain('MyISAM')
+    expect(wrapper.get('input.dry-run').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 })

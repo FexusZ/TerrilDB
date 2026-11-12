@@ -22,6 +22,22 @@ final class MySqlScriptExecutor extends PdoScriptExecutor
         parent::__construct($connection);
     }
 
+    /** Au-delà, la liste est tronquée : un serveur n'a pas des milliers de tables sans transaction. */
+    private const MAX_TABLES = 5000;
+    private const TRANSACTIONAL_ENGINES = ['INNODB', 'NDB', 'NDBCLUSTER', 'ROCKSDB', 'TOKUDB', 'XTRADB'];
+
+    public function nonTransactionalTables(): array
+    {
+        $names = $this->connection->fetchFirstColumn(\sprintf(
+            "SELECT DISTINCT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_TYPE = 'BASE TABLE' AND ENGINE IS NOT NULL AND UPPER(ENGINE) NOT IN ('%s') "
+            ."AND TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys') LIMIT %d",
+            implode("', '", self::TRANSACTIONAL_ENGINES),
+            self::MAX_TABLES,
+        ));
+
+        return array_values(array_filter(array_map(static fn (mixed $name): string => \is_string($name) ? $name : '', $names), static fn (string $name): bool => '' !== $name));
+    }
+
     protected function begin(\PDO $pdo): void
     {
         $pdo->exec('SET SESSION TRANSACTION READ WRITE');

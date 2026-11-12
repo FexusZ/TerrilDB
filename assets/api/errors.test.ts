@@ -77,6 +77,7 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(422, 'script_too_large'))).toContain('500')
     expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'implicit_commit' }))).toContain('valide')
     expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'no_transaction' }))).toContain('transaction')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'non_transactional_tables' }))).toContain('sans transaction')
     expect(reasonText('destructive_script')).toContain('confirm')
   })
 })

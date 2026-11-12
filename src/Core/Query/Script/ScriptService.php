@@ -40,7 +40,10 @@ final readonly class ScriptService
      * @throws ScriptTooLargeException
      * @throws UnsupportedOperationException moteur sans SQL (Redis)
      */
-    public function preview(string $script, Engine $engine, WritePermissions $writes): ScriptPreview
+    /**
+     * @param list<string> $nonTransactionalTables voir ScriptExecutor::nonTransactionalTables (MySQL/MariaDB)
+     */
+    public function preview(string $script, Engine $engine, WritePermissions $writes, array $nonTransactionalTables = []): ScriptPreview
     {
         if (!$engine->speaksSql()) {
             throw UnsupportedOperationException::for($engine, 'script');
@@ -48,7 +51,21 @@ final readonly class ScriptService
 
         $report = $this->analyzer->analyze($script, $engine, $writes);
 
-        return new ScriptPreview($report, ScriptCapabilities::for($engine, $this->statements($report, $engine)));
+        return new ScriptPreview($report, ScriptCapabilities::for($engine, $this->statements($report, $engine, $nonTransactionalTables)));
+    }
+
+    /**
+     * Comme `preview`, avec ce que la cible dit d'elle-même (tables sans transaction de MySQL/MariaDB touchées par le script).
+     *
+     * @throws UnsplittableScriptException
+     * @throws ScriptTooLargeException
+     * @throws UnsupportedOperationException
+     */
+    public function previewFor(TargetConnection $target, string $script, WritePermissions $writes): ScriptPreview
+    {
+        $report = $this->preview($script, $target->engine, $writes)->report;
+
+        return $this->preview($script, $target->engine, $writes, $this->nonTransactionalTables($target->script(), $target->engine, $report));
     }
 
     /**
@@ -58,12 +75,14 @@ final readonly class ScriptService
      * @throws ScriptDryRunUnavailableException
      * @throws UnsplittableScriptException
      * @throws ScriptTooLargeException
+     * @throws UnsupportedOperationException
      */
     public function execute(TargetConnection $target, string $script, ScriptOptions $options, bool $confirmed = false): ScriptResult
     {
         $executor = $target->script();
-        $preview = $this->preview($script, $target->engine, $options->writes);
-        $report = $preview->report;
+        $report = $this->preview($script, $target->engine, $options->writes)->report;
+        $unsafe = $this->nonTransactionalTables($executor, $target->engine, $report);
+        $preview = $this->preview($script, $target->engine, $options->writes, $unsafe);
 
         if ([] === $report->steps) {
             throw new QueryRefusedException(GuardReason::EmptyStatement);
@@ -78,21 +97,59 @@ final readonly class ScriptService
             throw new ScriptDryRunUnavailableException($preview->capabilities->dryRunUnavailableReason ?? 'no_transaction');
         }
 
-        return $executor->execute($this->statements($report, $target->engine), $options->timeoutMs, $options->dryRun);
+        return $executor->execute($this->statements($report, $target->engine, $unsafe), $options->timeoutMs, $options->dryRun);
     }
 
     /**
+     * Seulement quand cela compte : MySQL/MariaDB et au moins une instruction qui écrit.
+     *
+     * @return list<string>
+     */
+    private function nonTransactionalTables(ScriptExecutor $executor, Engine $engine, ScriptReport $report): array
+    {
+        if (Engine::MySql !== $engine && Engine::MariaDb !== $engine) {
+            return [];
+        }
+        foreach ($report->steps as $step) {
+            if (StatementKind::Write === $step->verdict->kind) {
+                return $executor->nonTransactionalTables();
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @param list<string> $nonTransactionalTables
+     *
      * @return list<ScriptStatement>
      */
-    private function statements(ScriptReport $report, Engine $engine): array
+    private function statements(ScriptReport $report, Engine $engine, array $nonTransactionalTables = []): array
     {
         $statements = [];
         foreach ($report->steps as $step) {
             $kind = $step->verdict->kind ?? StatementKind::Write;
-            $statements[] = new ScriptStatement($step->index, $step->sql, $kind, $this->commitsImplicitly($step->sql, $kind, $engine));
+            $statements[] = new ScriptStatement($step->index, $step->sql, $kind, $this->commitsImplicitly($step->sql, $kind, $engine), StatementKind::Write === $kind && self::mentionsAny($step->sql, $nonTransactionalTables));
         }
 
         return $statements;
+    }
+
+    /**
+     * Le nom d'une table apparaît dans l'instruction (sans casse, comme mot entier, guillemets ou non, qualifié ou non). Large
+     * à dessein : mieux vaut refuser un jeu à blanc de trop qu'en promettre un faux.
+     *
+     * @param list<string> $names
+     */
+    private static function mentionsAny(string $sql, array $names): bool
+    {
+        foreach ($names as $name) {
+            if (1 === preg_match('/(?<![\w$])'.preg_quote($name, '/').'(?![\w$])/iu', $sql)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function commitsImplicitly(string $sql, StatementKind $kind, Engine $engine): bool

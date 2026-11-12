@@ -21,8 +21,8 @@ export interface ScriptPreview {
   transactional: boolean
   /** Une erreur annule le script ENTIER. */
   atomic: boolean
-  dryRun: { available: boolean; reason: 'no_transaction' | 'implicit_commit' | null }
-  warnings: Array<'mixed_data_and_ddl' | 'ddl_not_transactional' | 'no_transaction'>
+  dryRun: { available: boolean; reason: 'no_transaction' | 'implicit_commit' | 'non_transactional_tables' | null }
+  warnings: Array<'mixed_data_and_ddl' | 'ddl_not_transactional' | 'no_transaction' | 'non_transactional_tables'>
 }
 
 export type ScriptStepStatus = 'applied' | 'rolled_back' | 'failed' | 'not_run'
@@ -33,6 +33,8 @@ export interface ScriptStepResult {
   status: ScriptStepStatus
   affectedRows: number | null
   returnedRows: number | null
+  /** La lecture avait plus de lignes que la limite par instruction (1000) : le surplus n'est pas rendu. */
+  truncated: boolean
   error: string | null
   durationMs: number
 }

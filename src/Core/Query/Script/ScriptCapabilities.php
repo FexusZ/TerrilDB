@@ -10,7 +10,8 @@ use App\Core\Guard\StatementKind;
 /**
  * Ce que le moteur peut garantir pour CE script. `transactional` : il est exécuté dans une transaction ; `atomic` : une
  * erreur annule tout. MySQL et MariaDB valident implicitement avant un DDL : un script qui en contient n'est pas
- * annulable en entier, et son jeu à blanc est impossible. ClickHouse n'a pas de transaction.
+ * annulable en entier, et son jeu à blanc est impossible ; une écriture dans une table sans transaction (MyISAM, MEMORY, Aria…)
+ * ne s'annule pas non plus. ClickHouse n'a pas de transaction.
  */
 final readonly class ScriptCapabilities
 {
@@ -39,11 +40,20 @@ final readonly class ScriptCapabilities
         }
 
         $ddl = array_filter($statements, static fn (ScriptStatement $s): bool => $s->commitsImplicitly);
+        $unsafeTables = array_filter($statements, static fn (ScriptStatement $s): bool => $s->writesNonTransactional);
         if ([] === $ddl) {
-            return new self(true, true, true, null, []);
+            // Une table sans transaction garde ce qu'on y écrit, même après ROLLBACK : ni annulation ni jeu à blanc honnêtes.
+            return [] === $unsafeTables
+                ? new self(true, true, true, null, [])
+                : new self(true, false, false, 'non_transactional_tables', ['non_transactional_tables']);
         }
         $data = array_filter($statements, static fn (ScriptStatement $s): bool => !$s->commitsImplicitly && StatementKind::Write === $s->kind);
 
-        return new self(true, false, false, 'implicit_commit', [[] === $data ? 'ddl_not_transactional' : 'mixed_data_and_ddl']);
+        $warnings = [[] === $data ? 'ddl_not_transactional' : 'mixed_data_and_ddl'];
+        if ([] !== $unsafeTables) {
+            $warnings[] = 'non_transactional_tables';
+        }
+
+        return new self(true, false, false, 'implicit_commit', $warnings);
     }
 }
