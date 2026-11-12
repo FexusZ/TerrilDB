@@ -19,9 +19,10 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
 | POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` |
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
-| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` et `capabilities.locks` = `{availability, reason, privilege}` |
+| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions`, `capabilities.locks` et `capabilities.replication` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
+| GET | `/api/v1/connections/{id}/diagnostics/replication` | (droit `diagnostic`) état de la réplication du serveur : rôle, fils, retard, jeux reçu / appliqué, dernières erreurs, alertes ; lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -84,6 +85,14 @@ règle de masquage que les sessions (`queryReason`) ; pour chaque attente `secon
 DDL), `mode` et `object` tels que le moteur les nomme. Aucune instruction d'arrêt n'est calculée ni exécutée. « Aucune attente » (`available` et `blocking`
 vide) se distingue de « non lisible » (`permission_denied`, `disabled` avec `reason: performance_schema_off`). MariaDB ne rapporte que les verrous de
 lignes (ses verrous de métadonnées demandent `performance_schema`, éteint par défaut) ; ClickHouse et Redis : `unsupported`, route 501.
+
+**Réplication** (`/diagnostics/replication`) : `role` (`none` = « pas de réplication configurée », `source`, `replica`), `replicaCount` (null = le compte ne peut pas
+les lister), `channels` (une entrée par canal : `receiver` et `applier` = `running`, `connecting` ou `stopped`, `lagSeconds` annoncé par le moteur, `received` et `applied`
+= jeux de GTID ou positions WAL, `pendingApply`, `receiverError` et `applierError` = `{code, message}` au texte neutralisé : ni hôte, ni compte, ni mot de passe), `settings`
+(`readOnly`, `superReadOnly`, `binlogFormat`, `gtid`), `alerts` (`code`, `severity` = `warning` ou `critical`, `channel`) et `thresholds` (30 s et 300 s, non réglables).
+Le retard annoncé est trompeur : 0 peut cacher un receveur en retard, d'où `received` / `applied` / `pendingApply`. MySQL et MariaDB (syntaxe `REPLICA`, MySQL >= 8.0.22,
+MariaDB >= 10.5.1, sinon `unsupported` / `version_not_supported`) et PostgreSQL ; ClickHouse et Redis : `unsupported`, route 501. Aucune instruction de réplication n'est envoyée.
+Droit à donner à la connexion : MySQL `REPLICATION CLIENT` (et `REPLICATION SLAVE` pour compter les réplicas), MariaDB `SLAVE MONITOR` (et `REPLICATION MASTER ADMIN`), PostgreSQL `pg_read_all_stats`.
 
 Compte de supervision minimal à donner à la connexion (documenté, pas imposé : sans le droit, l'état le dit) :
 
