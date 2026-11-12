@@ -30,7 +30,7 @@ final readonly class ServerVariable
         /** Unité de la valeur et du défaut quand le moteur en donne une (`8kB`, `ms`). */
         public ?string $unit = null,
     ) {
-        $this->masked = SecretVariables::matches($name);
+        $this->masked = SecretVariables::matches($name) || (null !== $value && SecretVariables::valueLooksSecret($value)) || (null !== $default && SecretVariables::valueLooksSecret($default));
         $this->value = $this->masked ? null : self::shorten($value);
         $this->default = $this->masked ? null : self::shorten($default);
     }

@@ -166,6 +166,15 @@ final class VariableDiagnosticsTest extends TestCase
         yield 'MariaDB' => ['TARGET_MARIADB_URL', 'ssl_key'];
         yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'ssl_key'];
         yield 'PostgreSQL' => ['TARGET_POSTGRES_URL', 'ssl_key_file'];
+        // Des valeurs qui portent des identifiants sans que le nom dise « mot de passe ».
+        yield 'MySQL init_connect' => ['TARGET_MYSQL_URL', 'init_connect'];
+        yield 'MySQL 26 init_connect' => ['TARGET_MYSQL26_URL', 'init_connect'];
+        yield 'MariaDB init_connect' => ['TARGET_MARIADB_URL', 'init_connect'];
+        yield 'MariaDB 13 init_connect' => ['TARGET_MARIADB13_URL', 'init_connect'];
+        yield 'MariaDB 13 wsrep_notify_cmd' => ['TARGET_MARIADB13_URL', 'wsrep_notify_cmd'];
+        yield 'PostgreSQL primary_conninfo' => ['TARGET_POSTGRES_URL', 'primary_conninfo'];
+        yield 'PostgreSQL archive_command' => ['TARGET_POSTGRES_URL', 'archive_command'];
+        yield 'PostgreSQL restore_command' => ['TARGET_POSTGRES_URL', 'restore_command'];
     }
 
     #[DataProvider('secretNames')]
