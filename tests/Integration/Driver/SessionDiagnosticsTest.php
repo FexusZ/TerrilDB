@@ -180,7 +180,7 @@ final class SessionDiagnosticsTest extends TestCase
             null,
             ['TDB_CHILD' => json_encode([
                 'engine' => match ($engine) {
-                    Engine::PostgreSql => 'pgsql', Engine::ClickHouse => 'clickhouse', default => 'mysql'
+                    Engine::PostgreSql => 'pgsql', Engine::ClickHouse => 'clickhouse', default => 'mysql',
                 },
                 'host' => $parameters->host,
                 'port' => $parameters->port,
