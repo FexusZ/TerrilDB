@@ -1,6 +1,9 @@
 """Tests du relais (stdlib seulement) : python3 -m unittest discover -s /opt -p 'test_*.py'."""
+import json
 import os
+import socket
 import tempfile
+import threading
 import unittest
 
 import relay
@@ -60,8 +63,8 @@ class RelayTest(unittest.TestCase):
         self.factory = FakeFactory()
         self.clock = Clock()
 
-    def relay(self, allowed="bastion.example"):
-        return relay.Relay(self.tmp.name, relay.parse_allowed(allowed), self.factory, self.clock)
+    def relay(self, allowed="bastion.example", **limits):
+        return relay.Relay(self.tmp.name, relay.parse_allowed(allowed), self.factory, self.clock, **limits)
 
     def test_empty_allow_list_refuses_everything(self):
         for configured in ("", "  ", ", ,"):
@@ -169,6 +172,117 @@ class RelayTest(unittest.TestCase):
     def test_replies_never_contain_the_key(self):
         reply = self.relay().handle(message())
         self.assertNotIn("AAAAfaux", repr(reply))
+
+    def test_a_slow_opening_does_not_block_the_others(self):
+        gate = threading.Event()
+        started = threading.Event()
+        slow = self.factory
+
+        def factory(directory, request):
+            if request.target_port == 1111:
+                started.set()
+                gate.wait(10)
+            return slow(directory, request)
+
+        r = relay.Relay(self.tmp.name, relay.parse_allowed("bastion.example"), factory, self.clock)
+        results = []
+        thread = threading.Thread(target=lambda: results.append(r.handle(message(target_port=1111))))
+        thread.start()
+        self.assertTrue(started.wait(5))
+        done = []
+        other = threading.Thread(target=lambda: done.append((r.handle(message(target_port=2222)), r.handle({"op": "close", "id": "0" * 32}), r.sweep())))
+        other.start()
+        other.join(3)
+        self.assertFalse(other.is_alive(), "le verrou est tenu pendant l'ouverture lente")
+        gate.set()
+        thread.join(5)
+        self.assertTrue(results[0]["ok"])
+
+    def test_two_simultaneous_identical_openings_make_one_tunnel(self):
+        gate = threading.Event()
+        started = threading.Event()
+        base = self.factory
+
+        def factory(directory, request):
+            started.set()
+            gate.wait(10)
+            return base(directory, request)
+
+        r = relay.Relay(self.tmp.name, relay.parse_allowed("bastion.example"), factory, self.clock)
+        results = []
+        threads = [threading.Thread(target=lambda: results.append(r.handle(message()))) for _ in range(2)]
+        threads[0].start()
+        self.assertTrue(started.wait(5))
+        threads[1].start()
+        gate.set()
+        for thread in threads:
+            thread.join(5)
+        self.assertEqual(1, len(base.created))
+        self.assertEqual(results[0], results[1])
+
+    def test_the_total_number_of_tunnels_is_capped(self):
+        r = self.relay(max_tunnels=2)
+        self.assertTrue(r.handle(message(target_port=1))["ok"])
+        self.assertTrue(r.handle(message(target_port=2))["ok"])
+        self.assertEqual({"ok": False, "error": "too_many_tunnels"}, r.handle(message(target_port=3)))
+        self.assertEqual(2, len(self.factory.created))
+
+    def test_the_number_of_tunnels_per_bastion_is_capped(self):
+        r = self.relay("a.example,b.example", max_per_bastion=1)
+        self.assertTrue(r.handle(message(host="a.example", target_port=1))["ok"])
+        self.assertEqual("too_many_tunnels", r.handle(message(host="a.example", target_port=2))["error"])
+        self.assertTrue(r.handle(message(host="b.example", target_port=2))["ok"])
+
+    def test_a_failed_opening_frees_its_slot(self):
+        r = self.relay(max_tunnels=1)
+        self.factory.error = "unavailable"
+        r.handle(message(target_port=1))
+        self.factory.error = None
+        self.assertTrue(r.handle(message(target_port=2))["ok"])
+
+    def test_leftover_directories_are_removed_at_startup(self):
+        stale = os.path.join(self.tmp.name, "a" * 32)
+        os.mkdir(stale)
+        open(os.path.join(stale, "known_hosts"), "w").close()
+        keep = os.path.join(self.tmp.name, "control.sock")
+        open(keep, "w").close()
+
+        self.relay().purge_stale()
+
+        self.assertFalse(os.path.exists(stale))
+        self.assertTrue(os.path.exists(keep))
+
+    def test_connections_beyond_the_cap_are_answered_busy(self):
+        gate = threading.Event()
+        started = threading.Event()
+        base = self.factory
+
+        def factory(directory, request):
+            started.set()
+            gate.wait(10)
+            return base(directory, request)
+
+        r = relay.Relay(self.tmp.name, relay.parse_allowed("bastion.example"), factory, self.clock)
+        path = os.path.join(self.tmp.name, "control.sock")
+        server = relay.make_server(path, r, max_connections=1)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        def ask(payload):
+            client = socket.socket(socket.AF_UNIX)
+            client.connect(path)
+            client.sendall((json.dumps(payload) + "\n").encode())
+            return client
+
+        first = ask(message())
+        self.assertTrue(started.wait(5))
+        second = ask(message(target_port=9))
+        second.settimeout(5)
+        self.assertEqual({"ok": False, "error": "busy"}, json.loads(second.makefile().readline()))
+        gate.set()
+        first.settimeout(5)
+        self.assertTrue(json.loads(first.makefile().readline())["ok"])
 
 
 if __name__ == "__main__":
