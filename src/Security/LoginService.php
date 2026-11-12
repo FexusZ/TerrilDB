@@ -55,6 +55,11 @@ final readonly class LoginService
             throw InvalidCredentialsException::create();
         }
 
+        // Un compte désactivé répond comme un mauvais mot de passe (après le même calcul) : rien ne dit qu'il existe.
+        if ($user->isDisabled()) {
+            throw InvalidCredentialsException::create();
+        }
+
         if ($user->isTotpEnabled() && '' === trim($secondFactor ?? '')) {
             throw SecondFactorRequiredException::create();
         }
@@ -67,7 +72,8 @@ final readonly class LoginService
             if ($this->hasher->needsRehash($user->getPasswordHash())) {
                 $user->rehashPassword($this->hasher->hash($password));
             }
-            // Un seul enregistrement : période TOTP consommée (ou code de récupération) et hash mis à niveau.
+            $user->recordLogin(\DateTimeImmutable::createFromInterface($this->clock->now()));
+            // Un seul enregistrement : période TOTP consommée (ou code de récupération), hash mis à niveau et dernière connexion.
             $this->users->save($user);
         } catch (\Throwable $e) {
             $key->wipe();
