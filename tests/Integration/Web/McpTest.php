@@ -294,7 +294,7 @@ final class McpTest extends WebApiTestCase
         $message = $this->post(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
         foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
             $tool = self::obj($tool);
-            if ('execute_statement' === $tool['name']) {
+            if (\in_array($tool['name'], ['execute_statement', 'execute_script'], true)) {
                 self::assertFalse(self::obj($tool['annotations'])['readOnlyHint']);
                 self::assertTrue(self::obj($tool['annotations'])['destructiveHint']);
             } else {
@@ -390,6 +390,57 @@ final class McpTest extends WebApiTestCase
         self::assertStringContainsString('confirmation_required', self::str(self::obj(self::first($asked['content']))['text']));
         $confirmed = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $wide, 'confirmationToken' => $prepared['confirmationToken'], 'confirmed' => true]));
         self::assertGreaterThan(0, $confirmed['affectedRows']);
+    }
+
+    public function testScriptToolsAreOnlyForWritingTokens(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('prepare_script', $this->toolNames());
+        self::assertNotContains('execute_script', $this->toolNames());
+    }
+
+    public function testAWritingTokenSeesTheScriptTools(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => true]);
+        $this->initialize();
+
+        self::assertContains('prepare_script', $this->toolNames());
+        self::assertContains('execute_script', $this->toolNames());
+    }
+
+    public function testAScriptNeedsATicketEvenForASingleStepToken(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => true]);
+        $this->initialize();
+        $script = 'update categories set name = name where id = 1; update categories set name = name where id = 2';
+
+        $direct = $this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script]);
+        self::assertTrue($direct['isError']);
+        self::assertStringContainsString('preparation_required', self::str(self::obj(self::first($direct['content']))['text']));
+
+        $prepared = self::textOf($this->callTool('prepare_script', ['connection' => $this->connectionId, 'script' => $script]));
+        self::assertSame(['allowed', 2], [$prepared['decision'], \count(self::list($prepared['steps']))]);
+        $done = self::textOf($this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken']]));
+        self::assertSame('committed', $done['status']);
+
+        $replay = $this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken']]);
+        self::assertTrue($replay['isError']);
+        self::assertStringContainsString('invalid_confirmation', self::str(self::obj(self::first($replay['content']))['text']));
+    }
+
+    public function testAScriptWithAStatementTheTokenMayNotRunIsRefusedWhole(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+
+        $refused = $this->callTool('prepare_script', ['connection' => $this->connectionId, 'script' => 'update categories set name = name where id = 1; create table sneaky (a int)']);
+
+        self::assertTrue($refused['isError']);
+        $text = self::str(self::obj(self::first($refused['content']))['text']);
+        self::assertStringContainsString('script_refused', $text);
+        self::assertStringContainsString('write_not_permitted', $text);
     }
 
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void

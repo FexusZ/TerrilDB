@@ -7,6 +7,7 @@ namespace App\Http\Mcp;
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedQueries;
+use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
@@ -16,12 +17,14 @@ use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\ErrorMapper;
 use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
+use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
 use Mcp\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
@@ -41,6 +44,7 @@ final readonly class McpTools
         private ErrorMapper $errors,
         private TokenConnections $created,
         private WriteApproval $approval,
+        private AuditedScripts $scripts,
     ) {
     }
 
@@ -141,6 +145,39 @@ final readonly class McpTools
         return $this->guard(fn (): array => PreparedWritePresenter::present(
             $this->open($connection, fn (TargetConnection $target) => $this->approval->prepare($this->request->get(), $this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql)),
         ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function prepareScript(string $connection, string $script): array
+    {
+        return $this->guard(fn (): array => PreparedWritePresenter::script(
+            $this->open($connection, fn (TargetConnection $target) => $this->approval->prepareScript($this->request->get(), $this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $script)),
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function executeScript(string $connection, string $script, ?string $confirmationToken = null, ?bool $confirmed = null, ?bool $dryRun = null, ?int $timeoutMs = null): array
+    {
+        return $this->guard(function () use ($connection, $script, $confirmationToken, $confirmed, $dryRun, $timeoutMs): array {
+            $options = new ScriptOptions(
+                $this->request->get()->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes,
+                $timeoutMs ?? ScriptOptions::DEFAULT_TIMEOUT_MS,
+                $dryRun ?? false,
+            );
+
+            $run = $this->open($connection, function (TargetConnection $target) use ($connection, $script, $options, $confirmationToken, $confirmed) {
+                $context = $this->request->auditContext(AuditActor::Mcp);
+                $this->approval->authorizeScript($this->request->get(), $context, Uuid::fromString($connection), $target, $script, $confirmationToken, $confirmed ?? false);
+
+                return $this->scripts->execute($context, Uuid::fromString($connection), $target, $script, $options, $confirmed ?? false);
+            });
+
+            return ScriptPresenter::result($run->result, $run->executionId->toRfc4122());
+        });
     }
 
     /**

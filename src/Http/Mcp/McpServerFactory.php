@@ -117,6 +117,40 @@ final readonly class McpServerFactory
                 ],
             );
             $builder->addTool(
+                [$this->tools, 'prepareScript'],
+                name: 'prepare_script',
+                description: 'Première étape d’un SCRIPT SQL (plusieurs instructions séparées par des points-virgules, 500 au plus) : chaque instruction est jugée avec les droits de ce jeton, rien n’est exécuté. Rend le verdict par instruction, ce que le moteur garantit (transaction, annulation d’ensemble, jeu à blanc) et UN confirmationToken à usage unique lié au texte exact du script. Une seule instruction refusée refuse tout le script.',
+                annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true),
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'script' => ['type' => 'string', 'description' => 'Le script SQL, dans le dialecte du moteur (la directive client DELIMITER n’est pas gérée).'],
+                    ],
+                    'required' => ['connection', 'script'],
+                    'additionalProperties' => false,
+                ],
+            );
+            $builder->addTool(
+                [$this->tools, 'executeScript'],
+                name: 'execute_script',
+                description: 'Exécute un script préparé par prepare_script, avec son confirmationToken et le MÊME texte (obligatoire, même pour un jeton « une seule étape »). S’arrête à la première erreur ; là où le moteur a une transaction, tout est annulé, sinon le compte rendu (applied, failed, notRun) dit ce qui est resté appliqué. dryRun=true exécute puis annule (PostgreSQL ; MySQL/MariaDB pour des données seulement). Si le script contient du destructif, confirmed=true n’est à envoyer que sur demande expresse de l’utilisateur.',
+                annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true),
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'script' => ['type' => 'string', 'description' => 'Le script, identique octet pour octet à celui préparé.'],
+                        'confirmationToken' => ['type' => 'string', 'description' => 'Jeton rendu par prepare_script pour CE script.'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Vrai pour confirmer d’un coup toutes les instructions destructrices demandées expressément par l’utilisateur.'],
+                        'dryRun' => ['type' => 'boolean', 'description' => 'Vrai pour tout exécuter puis tout annuler (test).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => 600000, 'description' => 'Durée maximale du script entier en millisecondes (300000 par défaut).'],
+                    ],
+                    'required' => ['connection', 'script'],
+                    'additionalProperties' => false,
+                ],
+            );
+            $builder->addTool(
                 [$this->tools, 'executeStatement'],
                 name: 'execute_statement',
                 description: 'Exécute UNE instruction SQL qui modifie (INSERT, UPDATE, DELETE, et selon les droits du jeton CREATE, ALTER, DROP…), validée si elle réussit. Les droits du jeton bornent ce qui passe ; un refus dit « write_not_permitted ». Sans confirmationToken valide, rien n’est écrit (« preparation_required » ou « invalid_confirmation »). Une instruction destructrice (UPDATE ou DELETE sans WHERE, DROP, TRUNCATE…) répond « confirmation_required » : ne renvoyez-la avec confirmed=true que si l’utilisateur l’a demandé expressément.',

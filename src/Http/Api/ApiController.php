@@ -7,6 +7,7 @@ namespace App\Http\Api;
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedQueries;
+use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
@@ -14,12 +15,14 @@ use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
+use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
 use App\Http\Web\TokenPresenter;
 use App\Http\Web\UserPresenter;
@@ -44,6 +47,7 @@ final readonly class ApiController
         private AuditedQueries $queries,
         private TokenConnections $created,
         private WriteApproval $approval,
+        private AuditedScripts $scripts,
     ) {
     }
 
@@ -152,6 +156,43 @@ final readonly class ApiController
         $prepared = $this->open($id, fn (TargetConnection $target) => $this->approval->prepare($this->request->get(), $this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql));
 
         return new JsonResponse(PreparedWritePresenter::present($prepared));
+    }
+
+    /**
+     * Un script entier, en deux temps TOUJOURS (même pour un jeton « une seule étape ») : `script/prepare` juge chaque instruction
+     * avec les droits du jeton et rend UN jeton de confirmation lié au texte exact ; `script/execute` l'exige.
+     */
+    #[Route('/api/v1/connections/{id}/script/prepare', requirements: self::ID, methods: ['POST'])]
+    public function prepareScript(string $id, Request $request): JsonResponse
+    {
+        $script = JsonInput::fromRequest($request)->string('script');
+
+        $prepared = $this->open($id, fn (TargetConnection $target) => $this->approval->prepareScript($this->request->get(), $this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $script));
+
+        return new JsonResponse(PreparedWritePresenter::script($prepared));
+    }
+
+    #[Route('/api/v1/connections/{id}/script/execute', requirements: self::ID, methods: ['POST'])]
+    public function executeScript(string $id, Request $request): JsonResponse
+    {
+        $input = JsonInput::fromRequest($request);
+        $script = $input->string('script');
+        $confirmed = $input->bool('confirmed', false);
+        $confirmation = $input->optionalString('confirmationToken');
+        $options = new ScriptOptions(
+            $this->request->get()->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes,
+            $input->optionalInt('timeoutMs', ScriptOptions::DEFAULT_TIMEOUT_MS) ?? ScriptOptions::DEFAULT_TIMEOUT_MS,
+            $input->bool('dryRun', false),
+        );
+
+        $run = $this->open($id, function (TargetConnection $target) use ($id, $script, $options, $confirmed, $confirmation) {
+            $context = $this->request->auditContext(AuditActor::Api);
+            $this->approval->authorizeScript($this->request->get(), $context, Uuid::fromString($id), $target, $script, $confirmation, $confirmed);
+
+            return $this->scripts->execute($context, Uuid::fromString($id), $target, $script, $options, $confirmed);
+        });
+
+        return new JsonResponse(ScriptPresenter::result($run->result, $run->executionId->toRfc4122()));
     }
 
     /**
