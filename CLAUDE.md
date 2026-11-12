@@ -400,7 +400,7 @@ persistance (`tests/Integration/Persistence`) tournent dans une transaction annu
 
 Scripts d'init déterministes (SQL pur, sans aléatoire) dans `docker/targets/` : `mysql/` (partagé par
 MySQL 8.4 et 26, MariaDB 11.8 et 13, même dialecte), `postgres/` et `clickhouse/` (même jeu, tables MergeTree sans clés étrangères). Schéma `shop` : `categories` (auto-FK),
-`customers`, `products`, `orders`, `order_items` (11 420 lignes), index simples/composites/uniques et
+`customers`, `products`, `orders`, `order_items` (7 000 lignes), index simples/composites/uniques et
 vues `v_order_totals`, `v_product_sales`. Les tests d'intégration lisent `TARGET_MYSQL_URL`,
 `TARGET_MYSQL26_URL`, `TARGET_MARIADB_URL`, `TARGET_MARIADB13_URL`, `TARGET_POSTGRES_URL`, `TARGET_CLICKHOUSE_URL`, `TARGET_REDIS_URL` (définies dans `docker/dev/php.env`, lu par le service `php`) et sont
 sautés si la base est injoignable. Un changement de script impose `down -v` pour être rejoué.
