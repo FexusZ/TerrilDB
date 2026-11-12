@@ -89,6 +89,27 @@ final class TableDataWebTest extends WebApiTestCase
         self::assertSame([[1, 'alpha', null], [2, 'beta', 'b']], $this->rows($table));
     }
 
+    public function testPreviewWarnsAboutTheTriggersOfTheTableAndOtherwiseSaysNothing(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        $payload = ['updates' => [['original' => ['id' => 1, 'name' => 'alpha', 'note' => null], 'changes' => ['name' => 'one']]]];
+
+        $quiet = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/preview', $payload);
+        self::assertSame([], $quiet['warnings']);
+
+        $this->target()->executeStatement(\sprintf('CREATE FUNCTION "%s_f"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$', $table));
+        $this->target()->executeStatement(\sprintf('CREATE TRIGGER "%1$s_t" BEFORE UPDATE ON "%1$s" FOR EACH ROW EXECUTE FUNCTION "%1$s_f"()', $table));
+        try {
+            $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/preview', $payload);
+            self::assertSame([['code' => 'triggers', 'value' => 1]], $body['warnings']);
+        } finally {
+            $this->target()->executeStatement(\sprintf('DROP TABLE IF EXISTS "%s"', $table));
+            $this->target()->executeStatement(\sprintf('DROP FUNCTION IF EXISTS "%s_f"()', $table));
+        }
+    }
+
     public function testPreviewFlagsARowThatIsNoLongerThere(): void
     {
         $this->seedAndLogin();

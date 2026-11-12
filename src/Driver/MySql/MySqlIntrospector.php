@@ -130,9 +130,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     public function describeTable(string $name): TableDefinition
     {
         $header = $this->connection->fetchAssociative(
-            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate, DATA_LENGTH AS data_bytes, INDEX_LENGTH AS index_bytes
-               FROM information_schema.TABLES
-              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            'SELECT t.TABLE_NAME AS name, t.TABLE_TYPE AS kind, t.TABLE_ROWS AS estimate, t.DATA_LENGTH AS data_bytes, t.INDEX_LENGTH AS index_bytes,
+                    t.ENGINE AS storage_engine, e.TRANSACTIONS AS engine_transactions
+               FROM information_schema.TABLES t
+               LEFT JOIN information_schema.ENGINES e ON e.ENGINE = t.ENGINE
+              WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = ?',
             [$name],
         );
         if (false === $header) {
@@ -154,7 +156,23 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             TableKind::View === $kind ? null : $header->nullableInt('estimate'),
             TableKind::View === $kind ? null : $header->nullableInt('data_bytes'),
             TableKind::View === $kind ? null : $header->nullableInt('index_bytes'),
+            TableKind::View === $kind ? null : $header->nullableString('storage_engine'),
+            TableKind::View === $kind ? null : self::transactional($header->nullableString('engine_transactions')),
+            TableKind::View === $kind ? null : $this->triggerCount($name),
         );
+    }
+
+    private static function transactional(?string $flag): ?bool
+    {
+        return null === $flag ? null : 'YES' === strtoupper($flag);
+    }
+
+    private function triggerCount(string $table): int
+    {
+        return self::count($this->connection->fetchOne(
+            'SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?',
+            [$table],
+        ));
     }
 
     private static function kind(string $type): TableKind
