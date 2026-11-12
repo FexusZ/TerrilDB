@@ -62,7 +62,7 @@ final class StructureFidelityTest extends TestCase
     public static function cases(): iterable
     {
         foreach (TargetDatabase::relational() as $engine => [$env]) {
-            foreach (['generated', 'invisible', 'on_update', 'compressed', 'invisible_index', 'partitions', 'versioning', 'period_columns'] as $case) {
+            foreach (['generated', 'invisible', 'on_update', 'compressed', 'invisible_index', 'index_options', 'partitions', 'versioning', 'period_columns'] as $case) {
                 yield $engine.' / '.$case => [$env, $case];
             }
         }
@@ -105,6 +105,7 @@ final class StructureFidelityTest extends TestCase
             yield $engine.' / generated' => [$env, 'generated'];
             if (!str_contains($engine, 'Postgre')) {
                 yield $engine.' / invisible_index' => [$env, 'invisible_index'];
+                yield $engine.' / index_options' => [$env, 'index_options'];
             }
         }
     }
@@ -187,6 +188,7 @@ final class StructureFidelityTest extends TestCase
                     'ft_title' => new IndexDraft($i->originalName, $i->name, ['title', 'name'], false, false, null, null),
                     'idx_pref', 'idx_desc' => new IndexDraft($i->originalName, $i->name, [...$i->columns, 'id'], false, false, null, null),
                     'idx_fn' => new IndexDraft($i->originalName, $i->name, [...$i->columns, 'id'], false, false, null, null),
+                    'idx_sp' => new IndexDraft($i->originalName, $i->name, [...$i->columns, 'id'], false, false, null, null),
                     default => $i,
                 }, $draft->indexes);
 
@@ -253,7 +255,7 @@ final class StructureFidelityTest extends TestCase
                 break;
             case 'index_options':
                 $this->onlyMySqlFamily();
-                $this->raw(\sprintf('CREATE TABLE %s (id int NOT NULL PRIMARY KEY, name varchar(40) NOT NULL, title varchar(60) NULL, qty int NULL, FULLTEXT KEY ft_title (title), KEY idx_pref (name(10)), KEY idx_desc (qty DESC)%s) ENGINE=InnoDB', $t, $maria ? '' : ', KEY idx_fn ((qty + 1))'));
+                $this->raw(\sprintf('CREATE TABLE %s (id int NOT NULL PRIMARY KEY, name varchar(40) NOT NULL, title varchar(60) NULL, qty int NULL, geo geometry NOT NULL, SPATIAL KEY idx_sp (geo), FULLTEXT KEY ft_title (title), KEY idx_pref (name(10)), KEY idx_desc (qty DESC)%s) ENGINE=InnoDB', $t, $maria ? '' : ', KEY idx_fn ((qty + 1))'));
                 break;
             case 'check':
                 $this->onlyMySqlFamily();
@@ -316,7 +318,7 @@ final class StructureFidelityTest extends TestCase
         };
 
         if ('index_options' === $case) {
-            return substr_count($create, $needle) + substr_count($create, '(10)') + substr_count($create, ' DESC') + substr_count($create, '+ 1))');
+            return substr_count($create, $needle) + substr_count($create, '(10)') + substr_count($create, ' DESC') + substr_count($create, '+ 1))') + substr_count($create, 'SPATIAL KEY');
         }
 
         return substr_count($create, $needle);

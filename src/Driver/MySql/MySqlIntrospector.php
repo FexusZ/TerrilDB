@@ -266,8 +266,10 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             isset($available['IGNORED']) => "IGNORED = 'YES'",
             default => '0',
         };
+        $expression = isset($available['EXPRESSION']) ? 'EXPRESSION IS NOT NULL' : '0';
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col, ('.$hidden.') AS hidden
+            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col, ('.$hidden.') AS hidden,
+                    COLLATION AS direction, SUB_PART AS prefix, INDEX_TYPE AS method, ('.$expression.') AS expression
                FROM information_schema.STATISTICS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY INDEX_NAME, SEQ_IN_INDEX',
@@ -284,10 +286,16 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             if (null !== $column) {
                 $grouped[$name]['columns'][] = $column;
             }
-            if ($row->bool('hidden')) {
-                // MySQL : INVISIBLE ; MariaDB : IGNORED. Recréer l'index le rendrait de nouveau actif.
-                $grouped[$name]['lock'] = isset($available['IS_VISIBLE']) ? LockReason::IndexInvisible : LockReason::IndexIgnored;
-            }
+            // Ce que `CREATE INDEX (colonnes)` ne dit pas : recréer l'index sur ces seules colonnes le dégraderait.
+            $grouped[$name]['lock'] ??= match (true) {
+                $row->bool('hidden') => isset($available['IS_VISIBLE']) ? LockReason::IndexInvisible : LockReason::IndexIgnored,
+                'FULLTEXT' === strtoupper($row->string('method')) => LockReason::Fulltext,
+                \in_array(strtoupper($row->string('method')), ['SPATIAL', 'RTREE'], true) => LockReason::Spatial,
+                $row->bool('expression') => LockReason::Expression,
+                null !== $row->nullableString('prefix') => LockReason::Prefix,
+                'D' === $row->nullableString('direction') => LockReason::Descending,
+                default => null,
+            };
         }
 
         $sizes = $this->indexSizes($table);
