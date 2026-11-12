@@ -220,6 +220,10 @@ de l'unicode). Front : `KeyPane` (les clés se parcourent dans l'arbre de la bar
 Cible de test `target-redis` (`TARGET_REDIS_URL`, base 15, hôte 63791) : `RedisTarget::seeded()` vide et remplit la base 15
 (refuse toute autre base).
 
+## Tunnel SSH (src/Core/Connection/Tunnel, src/Tunnel, docker/tunnel, docs/ssh-tunnel.md)
+
+Rebond par bastion (#13), ssh seulement (SOCKS5 attend le compagnon VPN). Le tunnel vit dans un CONTENEUR À PART (`tunnel`, seul à embarquer `ssh`, non root, `read_only`, `cap_drop: ALL`) ; l'application parle à son relais (`docker/tunnel/relay.py`) par un socket Unix de contrôle (`UnixSocketTunnelOpener`, volume `0700`). Clé ed25519 seulement, chiffrée avec la clé de l'utilisateur, jamais écrite sur disque persistant (tmpfs le temps de l'authentification). Bastions : `TERRILDB_SSH_ALLOWED_BASTIONS`, VIDE = tout refusé (403 `forbidden_bastion`, audit `target.forbidden`), vérifié par l'application ET le relais. Empreinte de l'hôte OBLIGATOIRE (`host_key_unconfirmed` / `host_key_changed`, jamais de confiance à la première utilisation silencieuse). Inactivité 5 min. Cible de test : `tunnel` + `target-bastion` + `target-behind-bastion` (profil `targets`), `tests/Integration/Tunnel`. `TargetOpener` n'est PAS encore branché sur le tunnel (une connexion à rebond reste refusée) ; le reste est listé dans `docs/ssh-tunnel.md`.
+
 ## Optimiseur local (src/Core/Optimizer)
 
 Sans PMM ni service externe : tout part de l'introspection et de `EXPLAIN`. `SchemaAuditor` (règles pures : table sans

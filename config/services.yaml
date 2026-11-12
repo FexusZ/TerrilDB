@@ -16,6 +16,12 @@ parameters:
 
     # Envoi des invitations par e-mail : actif seulement si l'expéditeur ET l'adresse publique sont renseignés
     # (avec MAILER_DSN). Sans cela, l'administrateur transmet le lien lui-même.
+    # Bastions SSH autorisés (« hôte » ou « hôte:port », séparés par des virgules). VIDE par défaut : tout rebond est refusé
+    # tant que l'administrateur n'en déclare pas. Le conteneur du tunnel lit la même variable.
+    env(TERRILDB_SSH_ALLOWED_BASTIONS): ''
+    # Socket de contrôle du conteneur du tunnel (dossier partagé par un volume, en 0700)
+    env(TERRILDB_TUNNEL_CONTROL): '/run/tunnels/control.sock'
+
     env(TERRILDB_MAIL_FROM): ''
     env(TERRILDB_PUBLIC_URL): ''
 
@@ -38,6 +44,21 @@ services:
     App\Http\Web\RegistrationPolicy:
         arguments:
             $mode: '%env(APP_REGISTRATION)%'
+
+    App\Tunnel\UnixSocketTunnelOpener:
+        arguments:
+            $controlSocket: '%env(TERRILDB_TUNNEL_CONTROL)%'
+
+    App\Core\Connection\Tunnel\BastionAllowList:
+        factory: ['App\Core\Connection\Tunnel\BastionAllowList', 'fromString']
+        arguments: ['%env(TERRILDB_SSH_ALLOWED_BASTIONS)%']
+
+    App\Core\Connection\Tunnel\AllowedBastionTunnelOpener:
+        arguments:
+            $inner: '@App\Tunnel\UnixSocketTunnelOpener'
+
+    App\Core\Connection\Tunnel\TunnelOpener:
+        alias: App\Core\Connection\Tunnel\AllowedBastionTunnelOpener
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
