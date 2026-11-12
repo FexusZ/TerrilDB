@@ -91,7 +91,10 @@ final readonly class WriteApproval
         $options = $access->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1);
         $verdict = $this->guard->check($sql, $target->engine, QueryMode::ReadWrite, $options->writes);
         if (Decision::Refused === $verdict->decision || null === $verdict->kind) {
-            throw new QueryRefusedException($verdict->reason ?? GuardReason::UnsupportedStatement);
+            $reason = $verdict->reason ?? GuardReason::UnsupportedStatement;
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $base + ['reason' => $reason->value]);
+
+            throw new QueryRefusedException($reason);
         }
         if (Decision::NeedsConfirmation === $verdict->decision && !$confirmed) {
             throw new QueryNeedsConfirmationException($verdict->reason ?? GuardReason::DestructiveStatement);

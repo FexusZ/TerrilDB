@@ -248,4 +248,22 @@ final class WriteApprovalApiTest extends WebApiTestCase
             }
         }
     }
+
+    public function testARefusalOfTheGuardAtExecutionIsAudited(): void
+    {
+        $this->setUpToken();
+        self::assertNotNull($this->owner);
+        $ticket = $this->ticket($this->update());
+
+        $this->api('execute', ['sql' => 'CREATE TABLE sneaky (a int)', 'confirmationToken' => $ticket]);
+        self::assertSame(403, $this->statusCode());
+
+        $reasons = [];
+        foreach ($this->auditEvents($this->owner, 'query') as $event) {
+            if ('query.refused' === $event->getAction()->value) {
+                $reasons[] = $event->getDetails()['reason'] ?? null;
+            }
+        }
+        self::assertContains('write_not_permitted', $reasons);
+    }
 }
