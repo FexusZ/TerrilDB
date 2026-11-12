@@ -114,6 +114,47 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame('ALTER TABLE "audit_probe_small" ALTER COLUMN "num_id" TYPE numeric;', $findings[0]['suggestion']);
     }
 
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function counterTargets(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL', 'CREATE TABLE audit_counter (id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY) AUTO_INCREMENT = 62000'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL', 'CREATE TABLE audit_counter (id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY) AUTO_INCREMENT = 62000'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL', 'CREATE TABLE audit_counter (id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY) AUTO_INCREMENT = 62000'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'CREATE TABLE audit_counter (id SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY) AUTO_INCREMENT = 62000'];
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL', 'CREATE TABLE audit_counter (id smallint GENERATED ALWAYS AS IDENTITY (START WITH 31000) PRIMARY KEY)'];
+    }
+
+    #[DataProvider('counterTargets')]
+    public function testFlagsACounterCloseToTheLimitOfItsType(string $envVar, string $create): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $connection = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_counter');
+            $connection->executeStatement($create);
+            $connection->executeStatement(str_contains($create, 'IDENTITY') ? 'INSERT INTO audit_counter DEFAULT VALUES' : 'INSERT INTO audit_counter VALUES (NULL)');
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_counter');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'counter_near_limit' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_counter', $findings[0]['table']);
+        self::assertSame(['id'], $findings[0]['columns']);
+        self::assertSame('critical', $findings[0]['severity']);
+        self::assertIsString($findings[0]['suggestion']);
+        self::assertStringContainsString('ALTER TABLE', $findings[0]['suggestion']);
+        self::assertIsString($findings[0]['detail']);
+        self::assertStringContainsString('(9', $findings[0]['detail']);
+    }
+
     public function testAnotherAccountsConnectionIsNotFound(): void
     {
         $this->seedAndLogin('alice');

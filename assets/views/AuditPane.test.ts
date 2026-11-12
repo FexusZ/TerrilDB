@@ -77,6 +77,22 @@ describe('AuditPane', () => {
     expect(wrapper.text()).toContain('cascade')
   })
 
+  it('puts a nearly saturated counter in an urgent group above the others', async () => {
+    const { wrapper } = await mountPane({
+      ...audit,
+      findings: [
+        ...audit.findings,
+        { rule: 'counter_near_limit', severity: 'critical', table: 'events', columns: ['id'], index: null, coveredBy: null, suggestion: 'ALTER TABLE `events` MODIFY `id` BIGINT NOT NULL AUTO_INCREMENT;', detail: 'int : 2100000000 sur 2147483647 (97 %)' },
+      ],
+    })
+
+    const sections = wrapper.findAll('section.group')
+    expect(sections[0]?.get('h2').text()).toContain('Urgent')
+    expect(sections[0]?.get('li.finding').classes()).toContain('critical')
+    expect(sections[1]?.get('h2').text()).toContain('À corriger')
+    expect(wrapper.text()).toContain('approche de la limite')
+  })
+
   it('shows the suggested statement and what it was checked against', async () => {
     const { wrapper } = await mountPane()
 

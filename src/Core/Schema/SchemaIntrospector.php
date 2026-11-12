@@ -46,6 +46,15 @@ interface SchemaIntrospector
     public function listTablesPage(TablePageRequest $request): TablePage;
 
     /**
+     * Les compteurs automatiques des tables (AUTO_INCREMENT, identités, serial), lus au catalogue sans compter ni chercher de
+     * maximum dans les tables : la dernière valeur attribuée de chacun, jamais celle d'un compteur encore inutilisé. Vide quand le
+     * moteur n'a pas de compteur de ce genre (ClickHouse, Redis).
+     *
+     * @return list<AutoCounter>
+     */
+    public function autoCounters(): array;
+
+    /**
      * @throws TableNotFoundException
      */
     public function describeTable(string $name): TableDefinition;

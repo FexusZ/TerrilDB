@@ -20,6 +20,11 @@ describe('optimizer wording', () => {
     const mismatch = describeSchemaFinding(finding({ rule: 'foreign_key_type_mismatch', table: 'orders', columns: ['customer_id'], detail: 'integer → numeric' }))
     expect(mismatch.title).toBe('La clé étrangère de « orders » sur customer_id n’a pas le type de la colonne qu’elle référence (integer → numeric).')
     expect(mismatch.help).toContain('convertit')
+
+    const counter = describeSchemaFinding(finding({ rule: 'counter_near_limit', severity: 'critical', table: 'events', columns: ['id'], detail: 'int : 2100000000 sur 2147483647 (97 %)' }))
+    expect(counter.title).toBe('Le compteur de « events » sur id approche de la limite de son type (int : 2100000000 sur 2147483647 (97 %)).')
+    expect(counter.help).toContain('doublon')
+    expect(counter.help).toContain('réécrit')
   })
 
   it('words a big full scan, with its condition when there is one', () => {
