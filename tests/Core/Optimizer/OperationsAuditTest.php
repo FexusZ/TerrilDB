@@ -14,6 +14,7 @@ use App\Core\Schema\DefinerObject;
 use App\Core\Schema\DefinerReport;
 use App\Core\Schema\TableUpkeep;
 use App\Core\Schema\UpkeepReport;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -151,6 +152,33 @@ final class OperationsAuditTest extends TestCase
             foreach (explode("\n", (string) $finding->suggestion) as $line) {
                 self::assertStringStartsWith('--', $line, 'nothing executable, only comments to review');
             }
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function hostileNames(): iterable
+    {
+        yield 'line feed' => ["x`\nDROP DATABASE shop; --"];
+        yield 'carriage return' => ["x`\rDROP DATABASE shop; --"];
+        yield 'next line' => ["x`\u{85}DROP DATABASE shop; --"];
+        yield 'line separator' => ["x`\u{2028}DROP DATABASE shop; --"];
+        yield 'invalid utf-8' => ["x\xff\nDROP DATABASE shop; --"];
+    }
+
+    #[DataProvider('hostileNames')]
+    public function testASuggestionNeverLetsAHostileNameLeaveItsSqlComment(string $name): void
+    {
+        foreach (DefinerKind::cases() as $kind) {
+            $findings = (new SchemaAuditor())->operations(Engine::MySql, null, DefinerReport::of([new DefinerObject($kind, $name, null, 'gone@%')]));
+
+            self::assertCount(1, $findings);
+            $suggestion = (string) $findings[0]->suggestion;
+            foreach (preg_split('/\R|\x{85}|\x{2028}|\x{2029}/u', $suggestion) ?: [] as $line) {
+                self::assertStringStartsWith('--', $line, 'Every line of the suggestion must stay a comment.');
+            }
+            self::assertStringNotContainsString('DROP DATABASE', $suggestion);
         }
     }
 

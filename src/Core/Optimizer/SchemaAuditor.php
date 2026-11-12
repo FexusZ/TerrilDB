@@ -395,9 +395,12 @@ final class SchemaAuditor
         $name = self::quote($engine, $object->name);
         // Rien d'exécutable : la définition se relit d'abord. Seul un événement se corrige en place (ALTER exige une clause : celle de
         // son état, que SHOW CREATE EVENT dit) ; le reste se recrée.
-        $suggestion = DefinerKind::Event === $object->kind
+        // Les noms ne sont ici que dans des lignes de commentaire : un saut de ligne dans le nom en ferait du SQL actif à coller.
+        $suggestion = !self::isSingleLine($object->name)
+            ? \sprintf("-- le nom de cet objet (%s) contient un saut de ligne ou un caractère illisible : à traiter à la main, d'après son nom exact dans le catalogue.", $show)
+            : (DefinerKind::Event === $object->kind
             ? \sprintf("-- relire d'abord : SHOW CREATE EVENT %s;\n-- puis, en gardant son état (ENABLE ou DISABLE selon ce qu'elle indique) : ALTER DEFINER = CURRENT_USER EVENT %s ENABLE;", $name, $name)
-            : \sprintf("-- relire d'abord : SHOW CREATE %s %s;\n-- puis %s %s; et le recréer avec DEFINER = un compte qui existe.", $show, $name, $drop, $name);
+            : \sprintf("-- relire d'abord : SHOW CREATE %s %s;\n-- puis %s %s; et le recréer avec DEFINER = un compte qui existe.", $show, $name, $drop, $name));
 
         return new Finding(
             FindingRule::OrphanDefiner,
@@ -407,6 +410,14 @@ final class SchemaAuditor
             suggestion: $suggestion,
             detail: \sprintf('%s %s par « %s », compte inexistant', $label, $created, $object->definer),
         );
+    }
+
+    /**
+     * Faux si le texte a un saut de ligne (LF, CR, NEL, séparateurs Unicode), un caractère de contrôle ou n'est pas de l'UTF-8.
+     */
+    private static function isSingleLine(string $text): bool
+    {
+        return 0 === preg_match('/[\x00-\x1f\x7f\x{85}\x{2028}\x{2029}]/u', $text);
     }
 
     private static function quote(Engine $engine, string $identifier): string
