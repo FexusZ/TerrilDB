@@ -101,6 +101,34 @@ services:
       interval: 3s
       retries: 40
 
+  # Vitess (profil "vitess", hors "targets" : ~1,5 Go de mémoire et plus d'une minute de démarrage). vttestserver lance dans UN
+  # conteneur un keyspace "shop" non partagé avec un tablet PRIMARY et un tablet REPLICA (vrais mysqld, réplication réelle), plus un
+  # vtgate qui parle le protocole MySQL (sans mot de passe, root). Même jeu de données que les autres cibles ; `shop@replica`
+  # (ou `USE \`shop@replica\``) route vers le réplica. Voir docs/vitess-tests.md.
+  target-vitess:
+    profiles: [vitess]
+    image: vitess/vttestserver:mysql80
+    command:
+      - /vt/bin/vttestserver
+      - --port=33574
+      - --keyspaces=shop
+      - --num-shards=1
+      - --replica-count=2
+      - --rdonly-count=0
+      - --mysql-bind-host=0.0.0.0
+      - --mysql-server-version=8.0.35-Vitess
+      - --schema-dir=/schema
+      - --foreign-key-mode=allow
+      - --enable-system-settings
+      - --tablet-hostname=localhost
+    ports: ["127.0.0.1:33577:33577"]
+    volumes:
+      - ./docker/targets/mysql:/schema/shop:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P33577 -uroot -N -e 'select count(*) from shop.order_items' | grep -q 7000"]
+      interval: 5s
+      retries: 60
+
   target-postgres:
     profiles: [targets]
     image: postgres:18-alpine
