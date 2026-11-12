@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './client'
-import { fetchDiagnosticCapabilities, fetchLocks, fetchSessions } from './diagnostics'
+import { fetchAccounts, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions } from './diagnostics'
 
 vi.mock('./client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./client')>()), api: vi.fn() }))
 
@@ -42,5 +42,17 @@ describe('diagnostics API', () => {
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/locks?database=shop&schema=public')
     expect(report.blocking).toEqual([])
+  })
+
+  it('reads the accounts and the encryption of the explored database', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, activatesAllRoles: false, accounts: [], findings: [] })
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, encrypted: true, protocol: 'TLSv1.3', cipher: 'c' })
+
+    await fetchAccounts('abc', { database: 'shop', schema: null })
+    const encryption = await fetchEncryption('abc', { database: null, schema: null })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/accounts?database=shop')
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/encryption')
+    expect(encryption.protocol).toBe('TLSv1.3')
   })
 })

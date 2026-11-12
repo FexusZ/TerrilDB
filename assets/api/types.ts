@@ -259,6 +259,51 @@ export interface LockReport {
   blockingTruncated: boolean
 }
 
+/** Un compte (ou un rôle) d'un serveur SQL. Jamais d'empreinte de mot de passe : `passwordSet` n'est qu'un booléen. */
+export interface AccountEntry {
+  user: string
+  host: string
+  name: string
+  plugin: string
+  passwordSet: boolean
+  passwordExpired: boolean
+  locked: boolean
+  tls: 'none' | 'any' | 'x509' | 'specified'
+  isRole: boolean
+  /** Le compte que TerrilDB utilise pour cette connexion. */
+  current: boolean
+  roles: string[]
+  defaultRoles: string[]
+  globalPrivileges: string[]
+  databasePrivileges: Record<string, string[]>
+  grantOptionOn: string[]
+  limits: Record<string, number>
+}
+
+/** Une constatation de l'audit de sécurité des comptes ; `rule` est un code stable. */
+export interface SecurityFinding {
+  rule: string
+  severity: 'high' | 'medium' | 'low'
+  account: string | null
+  detail: string | null
+  currentAccount: boolean
+}
+
+export interface AccountReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  activatesAllRoles: boolean
+  accounts: AccountEntry[]
+  findings: SecurityFinding[]
+}
+
+export interface ConnectionEncryption {
+  status: DiagnosticStatus
+  encrypted: boolean
+  protocol: string | null
+  cipher: string | null
+}
+
 export type AuditOutcome = 'success' | 'refused' | 'failed'
 export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
 
