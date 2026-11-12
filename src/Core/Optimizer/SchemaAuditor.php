@@ -5,10 +5,15 @@ declare(strict_types=1);
 namespace App\Core\Optimizer;
 
 use App\Core\Connection\Engine;
+use App\Core\Schema\DefinerKind;
+use App\Core\Schema\DefinerObject;
+use App\Core\Schema\DefinerReport;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Schema\TableUpkeep;
+use App\Core\Schema\UpkeepReport;
 
 /**
  * Audit d'un schéma par règles simples et sûres, à partir de ce que l'introspection sait déjà : tables sans clé
@@ -256,6 +261,151 @@ final class SchemaAuditor
         }
 
         return $name;
+    }
+
+    // ---- Audit d'exploitation (#80, suite). Bloc séparé : seuils fixes, chacun au moins deux fois ce que le moteur tolère seul. ----
+
+    private const STALE_MIN_ROWS = 10000;
+    private const STALE_PERCENT = 20;
+    private const DEAD_MIN_ROWS = 10000;
+    private const DEAD_PERCENT = 40;
+    private const FREE_MIN_BYTES = 67108864;
+    private const FREE_PERCENT = 30;
+
+    /**
+     * Les règles d'exploitation, lues dans des rapports déjà faits : statistiques périmées et tuples morts (PostgreSQL), place
+     * libre dans le fichier d'une table et créateur disparu (MySQL, MariaDB). Un rapport illisible ne donne rien ici (voir
+     * operationsChecks). Les suggestions sont du texte à relire ; les remèdes lourds disent leur coût.
+     *
+     * @return list<Finding>
+     */
+    public function operations(Engine $engine, ?UpkeepReport $upkeep, ?DefinerReport $definers): array
+    {
+        $findings = [];
+        if (null !== $upkeep && $upkeep->available) {
+            $tables = $upkeep->tables;
+            usort($tables, static fn (TableUpkeep $a, TableUpkeep $b): int => strcmp($a->table, $b->table));
+            foreach ($tables as $table) {
+                array_push($findings, ...$this->upkeepFindings($engine, $table));
+            }
+        }
+        if (null !== $definers && $definers->available && $this->isMySqlFamily($engine)) {
+            $objects = $definers->objects;
+            usort($objects, static fn (DefinerObject $a, DefinerObject $b): int => strcmp($a->name, $b->name));
+            foreach ($objects as $object) {
+                $findings[] = $this->orphan($engine, $object);
+            }
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Les règles d'exploitation qui n'ont pas pu juger parce que leur source est illisible (droit manquant, compteur absent) :
+     * à montrer comme « non vérifié », jamais à confondre avec « rien à signaler ». `not_supported` n'en est pas un.
+     *
+     * @return list<OperationsCheck>
+     */
+    public function operationsChecks(Engine $engine, ?UpkeepReport $upkeep, ?DefinerReport $definers): array
+    {
+        $checks = [];
+        if (null !== $upkeep && !$upkeep->available && 'not_supported' !== $upkeep->reason) {
+            $rules = match ($engine) {
+                Engine::PostgreSql => [FindingRule::StaleStatistics, FindingRule::DeadTuples],
+                Engine::MySql, Engine::MariaDb => [FindingRule::ReclaimableSpace],
+                default => [],
+            };
+            foreach ($rules as $rule) {
+                $checks[] = new OperationsCheck($rule, $upkeep->reason ?? 'unreadable');
+            }
+        }
+        if (null !== $definers && !$definers->available && 'not_supported' !== $definers->reason && $this->isMySqlFamily($engine)) {
+            $checks[] = new OperationsCheck(FindingRule::OrphanDefiner, $definers->reason ?? 'unreadable');
+        }
+
+        return $checks;
+    }
+
+    private function isMySqlFamily(Engine $engine): bool
+    {
+        return Engine::MySql === $engine || Engine::MariaDb === $engine;
+    }
+
+    /**
+     * @return list<Finding>
+     */
+    private function upkeepFindings(Engine $engine, TableUpkeep $table): array
+    {
+        $findings = [];
+        if (Engine::PostgreSql === $engine) {
+            $live = $table->liveRows;
+            $modified = $table->modifiedSinceAnalyze;
+            // Au moins deux fois le seuil de l'autoanalyze par défaut (10 % + 50) : l'autovacuum en retard, pas en cours de route.
+            if (null !== $live && null !== $modified && $modified >= self::STALE_MIN_ROWS && $modified * 100 >= self::STALE_PERCENT * $live) {
+                $findings[] = new Finding(
+                    FindingRule::StaleStatistics,
+                    Severity::Info,
+                    $table->table,
+                    suggestion: \sprintf('ANALYZE %s;', self::quote($engine, $table->table)),
+                    detail: \sprintf('%d lignes modifiées depuis la dernière analyse (%s)', $modified, $table->lastAnalyze ?? 'jamais analysée depuis le début des compteurs'),
+                );
+            }
+            $dead = $table->deadRows;
+            // Au moins deux fois le seuil du vacuum par défaut (20 % + 50).
+            if (null !== $live && null !== $dead && $dead >= self::DEAD_MIN_ROWS && $dead * 100 >= self::DEAD_PERCENT * $live) {
+                $quoted = self::quote($engine, $table->table);
+                $findings[] = new Finding(
+                    FindingRule::DeadTuples,
+                    Severity::Info,
+                    $table->table,
+                    suggestion: \sprintf("VACUUM (ANALYZE) %s;\n-- VACUUM FULL rend l'espace au système mais pose un verrou exclusif pendant toute la réécriture : à réserver à une fenêtre de maintenance.", $quoted),
+                    detail: \sprintf('%d tuples morts pour %d vivants (%s)', $dead, $live, null === $table->lastVacuum ? 'jamais vacuumée depuis le début des compteurs' : 'dernier vacuum : '.$table->lastVacuum),
+                );
+            }
+
+            return $findings;
+        }
+
+        $free = $table->freeBytes;
+        if ($this->isMySqlFamily($engine) && null !== $free && $free >= self::FREE_MIN_BYTES) {
+            $total = ($table->dataBytes ?? 0) + ($table->indexBytes ?? 0) + $free;
+            if ($free * 100 >= self::FREE_PERCENT * $total) {
+                $findings[] = new Finding(
+                    FindingRule::ReclaimableSpace,
+                    Severity::Info,
+                    $table->table,
+                    suggestion: \sprintf("OPTIMIZE TABLE %s;\n-- reconstruit la table : lit et réécrit toutes ses données, demande autant d'espace disque temporaire que la table et beaucoup d'E/S, avec une courte attente de verrou au début et à la fin ; à lancer hors pointe, jamais un remède universel.", self::quote($engine, $table->table)),
+                    detail: \sprintf('environ %d Mio libres dans le fichier de la table (%d %% de sa taille)', (int) round($free / 1048576), (int) round($free * 100 / $total)),
+                );
+            }
+        }
+
+        return $findings;
+    }
+
+    private function orphan(Engine $engine, DefinerObject $object): Finding
+    {
+        [$label, $created, $show, $drop] = match ($object->kind) {
+            DefinerKind::View => ['vue', 'créée', 'VIEW', 'DROP VIEW'],
+            DefinerKind::Procedure => ['procédure', 'créée', 'PROCEDURE', 'DROP PROCEDURE'],
+            DefinerKind::Function => ['fonction', 'créée', 'FUNCTION', 'DROP FUNCTION'],
+            DefinerKind::Trigger => ['déclencheur', 'créé', 'TRIGGER', 'DROP TRIGGER'],
+            DefinerKind::Event => ['événement', 'créé', 'EVENT', 'DROP EVENT'],
+        };
+        $name = self::quote($engine, $object->name);
+        // Seul un événement se corrige en place ; le reste se recrée à partir de sa définition relue : rien d'exécutable ici.
+        $suggestion = DefinerKind::Event === $object->kind
+            ? \sprintf('ALTER DEFINER = CURRENT_USER EVENT %s;', $name)
+            : \sprintf("-- relire d'abord : SHOW CREATE %s %s;\n-- puis %s %s; et le recréer avec DEFINER = un compte qui existe.", $show, $name, $drop, $name);
+
+        return new Finding(
+            FindingRule::OrphanDefiner,
+            Severity::Warning,
+            $object->table ?? $object->name,
+            index: $object->name,
+            suggestion: $suggestion,
+            detail: \sprintf('%s %s par « %s », compte inexistant', $label, $created, $object->definer),
+        );
     }
 
     private static function quote(Engine $engine, string $identifier): string
