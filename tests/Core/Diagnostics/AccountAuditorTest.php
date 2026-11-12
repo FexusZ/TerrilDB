@@ -19,6 +19,7 @@ final class AccountAuditorTest extends TestCase
 {
     /**
      * @param list<Account> $accounts
+     * @param list<string>  $disabledPlugins
      *
      * @return list<SecurityFinding>
      */
@@ -27,8 +28,12 @@ final class AccountAuditorTest extends TestCase
         return (new AccountAuditor())->audit(new AccountReport(DiagnosticStatus::available(), $engine, $accounts, false, $activateAll, [], $disabledPlugins));
     }
 
+    /**
+     * @param array<string, mixed> $with
+     */
     private static function account(string $user = 'app', string $host = 'localhost', array $with = []): Account
     {
+        // @phpstan-ignore argument.type
         return new Account(...($with + ['user' => $user, 'host' => $host, 'plugin' => 'caching_sha2_password', 'passwordSet' => true]));
     }
 

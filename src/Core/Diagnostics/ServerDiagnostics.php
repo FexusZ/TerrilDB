@@ -17,6 +17,8 @@ final readonly class ServerDiagnostics
         private Engine $engine,
         private ?SessionDiagnostics $sessions = null,
         private ?LockDiagnostics $locks = null,
+        private ?AccountDiagnostics $accounts = null,
+        private ?EncryptionDiagnostics $encryption = null,
     ) {
     }
 
@@ -37,6 +39,22 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function accounts(): AccountDiagnostics
+    {
+        return $this->accounts ?? throw UnsupportedOperationException::for($this->engine, 'accounts');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function encryption(): EncryptionDiagnostics
+    {
+        return $this->encryption ?? throw UnsupportedOperationException::for($this->engine, 'encryption');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données.
      *
      * @return array<string, DiagnosticStatus>
@@ -46,6 +64,8 @@ final readonly class ServerDiagnostics
         return [
             'sessions' => $this->sessions?->status() ?? DiagnosticStatus::unsupported(),
             'locks' => $this->locks?->status() ?? DiagnosticStatus::unsupported(),
+            'accounts' => $this->accounts?->status() ?? DiagnosticStatus::unsupported(),
+            'encryption' => $this->encryption?->status() ?? DiagnosticStatus::unsupported(),
         ];
     }
 }

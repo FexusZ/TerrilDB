@@ -559,7 +559,8 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
-        self::assertSame(['sessions' => 'available', 'locks' => $locks], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+        $accounts = \in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? 'unsupported' : 'available';
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'accounts' => $accounts, 'encryption' => 'unsupported'], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
