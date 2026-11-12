@@ -8,6 +8,7 @@ use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
@@ -41,9 +42,9 @@ final readonly class MySqlSessionDiagnostics implements SessionDiagnostics
                 return new SessionReport(DiagnosticStatus::denied(self::PRIVILEGE), [], false);
             }
 
-            // LEFT(INFO) : le texte d'une requête géante ne traverse pas le réseau pour être raccourci ensuite.
+            // LEFT(INFO) : le texte d'une requête géante ne traverse pas le réseau ; 4096 caractères suffisent à masquer puis raccourcir (un texte coupé au milieu d'un littéral n'est pas rendu).
             $rows = $c->fetchAllAssociative(
-                'SELECT ID AS id, USER AS usr, HOST AS client, DB AS db, COMMAND AS command, TIME AS seconds, LEFT(INFO, 256) AS info, (ID = CONNECTION_ID()) AS me
+                'SELECT ID AS id, USER AS usr, HOST AS client, DB AS db, COMMAND AS command, TIME AS seconds, LEFT(INFO, 4096) AS info, (ID = CONNECTION_ID()) AS me
                    FROM information_schema.PROCESSLIST
                   ORDER BY ID
                   LIMIT '.(self::LIMIT + 1),
@@ -62,6 +63,7 @@ final readonly class MySqlSessionDiagnostics implements SessionDiagnostics
                     $row->nullableInt('seconds'),
                     $row->nullableString('info'),
                     $row->bool('me'),
+                    SqlDialect::MySql,
                 );
             }
 
