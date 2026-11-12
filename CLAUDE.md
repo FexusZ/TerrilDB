@@ -141,6 +141,8 @@ lecture est toujours annulée ; une écriture est validée si tout réussit. Lim
 pour une écriture ; un DDL MySQL en lecture-écriture valide implicitement ; l'opérateur `?` de jsonb ne passe pas dans
 EXPLAIN/SHOW sur PostgreSQL (il passe dans les SELECT).
 
+Verrous : `LockConflict` (Core/Driver, `fromEngineError(Engine, sqlState, code)`, codes du moteur seulement : MySQL/MariaDB 1213 = `deadlock`, 1205 = `lock_timeout` ; PostgreSQL 40P01 = `deadlock`, 40001 = `serialization_failure` (réessayable, code propre : ce n'est pas un interblocage), 55P03 = `lock_timeout` ; 57014 et 3024 restent `query_timeout`) ; les runners lèvent `LockConflictException`, `DbalDataExecutor` / `DbalDdlExecutor` posent `lock` sur `DataChangeFailedException` / `SchemaChangeFailedException` (`EngineLockConflict` lit PDO). `ErrorMapper` : 409 `deadlock` / `serialization_failure` / `lock_timeout` avec `retryable` (vrai SEULEMENT si `applied` est vide : un DDL MySQL/MariaDB/ClickHouse joué instruction par instruction qui a déjà appliqué quelque chose répond `retryable: false`, et le front dit de ne pas rejouer), sans message du moteur (il peut citer une valeur), `applied` et `failed` conservés ; `data_change_failed` / `schema_change_failed` portent `retryable: false` ; TerrilDB ne rejoue jamais seul ; journal `query.failed` avec `reason` = le code. Tests : `tests/Integration/Driver/LockConflictTest` (vrais verrous et vrai interblocage, pair en sous-processus `lock_peer.php`). Restent (#73) : conseils pour 1040/53300/1044/1142/1062 et `auth_requires_tls`.
+
 ## Couche web (src/Http/Web)
 
 API JSON de la SPA, routes `/web/*` (l'API REST à jetons sera `/api/v1/*`). Contrôleurs minces : `AccountController`

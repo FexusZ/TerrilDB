@@ -16,6 +16,7 @@ use App\Core\Data\Exception\DataChangeConflictException;
 use App\Core\Data\Exception\DataChangeFailedException;
 use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
 use App\Core\Data\Exception\InvalidDataChangeException;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
@@ -95,19 +96,26 @@ final class ErrorMapper
             $error instanceof InvalidDataChangeException => new ErrorResponse(422, 'invalid_data_change', ['detail' => $error->getMessage()]),
             $error instanceof DataChangeConflictException => new ErrorResponse(409, 'data_changed', ['statement' => $error->statementIndex, 'matched' => $error->matched]),
             $error instanceof DataChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'delete_rows'] + DataPlanPresenter::plan($error->plan)),
-            $error instanceof DataChangeFailedException => new ErrorResponse(409, 'data_change_failed', [
-                'message' => $error->getMessage(),
-                'applied' => $error->applied,
-                'failed' => DataPlanPresenter::statement($error->failed, null),
-            ]),
+            $error instanceof LockConflictException => new ErrorResponse(409, $error->conflict->code(), ['retryable' => true]),
+            $error instanceof DataChangeFailedException => null !== $error->lock
+                ? new ErrorResponse(409, $error->lock->code(), ['retryable' => true, 'applied' => $error->applied, 'failed' => DataPlanPresenter::statement($error->failed, null)])
+                : new ErrorResponse(409, 'data_change_failed', [
+                    'message' => $error->getMessage(),
+                    'retryable' => false,
+                    'applied' => $error->applied,
+                    'failed' => DataPlanPresenter::statement($error->failed, null),
+                ]),
             $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
-            $error instanceof SchemaChangeFailedException => new ErrorResponse(409, 'schema_change_failed', [
-                'message' => $error->getMessage(),
-                'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
-                'failed' => ChangePlanPresenter::statement($error->failed),
-            ]),
+            $error instanceof SchemaChangeFailedException => null !== $error->lock
+                ? new ErrorResponse(409, $error->lock->code(), ['retryable' => [] === $error->applied, 'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied), 'failed' => ChangePlanPresenter::statement($error->failed)])
+                : new ErrorResponse(409, 'schema_change_failed', [
+                    'message' => $error->getMessage(),
+                    'retryable' => false,
+                    'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
+                    'failed' => ChangePlanPresenter::statement($error->failed),
+                ]),
             $error instanceof UnsupportedOperationException => new ErrorResponse(501, 'unsupported_operation'),
             $error instanceof PlanNotAvailableException => new ErrorResponse(501, 'plan_unavailable'),
             $error instanceof UnreadablePlanException => new ErrorResponse(502, 'unreadable_plan'),
