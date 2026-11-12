@@ -8,6 +8,9 @@ services:
     volumes:
       - .:/app
       - composer-cache:/tmp/composer
+      # Sockets des tunnels SSH (conteneur `tunnel`) et matériel du bastion de test (lecture seule) : voir docs/ssh-tunnel.md
+      - tunnel-sockets:/run/tunnels
+      - bastion-keys:/run/bastion-keys:ro
     environment:
       COMPOSER_HOME: /tmp/composer
     # DATABASE_URL (base interne, suffixe _test ajouté en environnement de test) et TARGET_*_URL (bases cibles de test,
@@ -112,6 +115,73 @@ services:
       interval: 3s
       retries: 20
 
+  # Tunnel SSH (#13) : seul conteneur qui embarque `ssh` et qui sort vers les bastions. Pas de port publié ; système de
+  # fichiers en lecture seule, aucune capacité, pas d'élévation ; les clés privées n'existent que dans un tmpfs.
+  # Il tourne sous le MÊME uid que `php` : le dossier des sockets est en 0700.
+  tunnel-init:
+    profiles: [targets]
+    image: alpine:3
+    user: root
+    command: ["sh", "-c", "chown ${UID:-1000}:${GID:-1000} /run/tunnels && chmod 700 /run/tunnels"]
+    volumes:
+      - tunnel-sockets:/run/tunnels
+
+  tunnel:
+    profiles: [targets]
+    build: docker/tunnel
+    image: terrildb-tunnel
+    user: "${UID:-1000}:${GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /run/relay-keys:mode=0700,uid=${UID:-1000},gid=${GID:-1000}
+      - /tmp
+    volumes:
+      - tunnel-sockets:/run/tunnels
+    environment:
+      # Liste d'autorisation (vide = tout refusé) : ici le seul bastion de test.
+      TERRILDB_SSH_ALLOWED_BASTIONS: target-bastion:22
+    networks: [bastion-net]
+    depends_on:
+      tunnel-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/tunnels/control.sock"]
+      interval: 2s
+      retries: 20
+
+  # Bastion de test : joint seul la base `target-behind-bastion`, qui n'est sur aucun réseau joignable par `php`.
+  target-bastion:
+    profiles: [targets]
+    build: docker/targets/bastion
+    image: terrildb-test-bastion
+    volumes:
+      - bastion-keys:/keys
+    networks: [bastion-net, bastion-inner]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /keys/host_fingerprint && nc -z 127.0.0.1 22"]
+      interval: 2s
+      retries: 20
+
+  target-behind-bastion:
+    profiles: [targets]
+    image: postgres:18-alpine
+    env_file: docker/dev/target-postgres.env
+    networks: [bastion-inner]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d shop"]
+      interval: 3s
+      retries: 40
+
+networks:
+  bastion-net: {}
+  # Sans route vers l'extérieur ni vers `php` : seule la base cachée y vit, avec le bastion.
+  bastion-inner:
+    internal: true
+
 volumes:
+  tunnel-sockets:
+  bastion-keys:
   composer-cache:
   db-data:
