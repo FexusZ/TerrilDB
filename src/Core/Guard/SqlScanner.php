@@ -18,8 +18,13 @@ namespace App\Core\Guard;
  */
 final class SqlScanner
 {
-    public function scan(string $sql, SqlDialect $dialect): ScannedSql
+    /**
+     * @param list<array{int, int, string}> $spans si fourni, reçoit les zones (début, fin exclue, « literal » ou « comment », en octets) des
+     *                                             chaînes, nombres et commentaires lus, pour les masquer (diagnostics) ; sans effet sur le verdict
+     */
+    public function scan(string $sql, SqlDialect $dialect, array &$spans = []): ScannedSql
     {
+        $spans = [];
         $mysql = SqlDialect::MySql === $dialect;
         $clickhouse = SqlDialect::ClickHouse === $dialect;
         // MySQL et ClickHouse : antislash dans les chaînes, « # » commentaire. Le guillemet double est une chaîne en MySQL,
@@ -60,9 +65,9 @@ final class SqlScanner
                 $depth = max(0, $depth - 1);
                 ++$i;
             } elseif ('-' === $char && '-' === $next && (!$mysql || $this->endsOrSpaces($sql, $i + 2))) {
-                $i = $this->endOfLine($sql, $i);
+                $spans[] = [$i, $i = $this->endOfLine($sql, $i), 'comment'];
             } elseif ($backslash && '#' === $char) {
-                $i = $this->endOfLine($sql, $i);
+                $spans[] = [$i, $i = $this->endOfLine($sql, $i), 'comment'];
             } elseif ('/' === $char && '*' === $next) {
                 if ($mysql && ('!' === ($sql[$i + 2] ?? '') || ('M' === ($sql[$i + 2] ?? '') && '!' === ($sql[$i + 3] ?? '')))) {
                     // MySQL et MariaDB exécutent le contenu de ces commentaires.
@@ -72,18 +77,22 @@ final class SqlScanner
                         ++$i;
                     }
                 } else {
+                    $commentStart = $i;
                     $i = $this->endOfBlockComment($sql, $i, SqlDialect::PostgreSql === $dialect);
                     if (null === $i) {
                         $complete = false;
                         break;
                     }
+                    $spans[] = [$commentStart, $i, 'comment'];
                 }
             } elseif ("'" === $char || ($mysql && '"' === $char)) {
+                $literalStart = $i;
                 $i = $this->endOfQuoted($sql, $i, $char, $backslash);
                 if (null === $i) {
                     $complete = false;
                     break;
                 }
+                $spans[] = [$literalStart, $i, 'literal'];
             } elseif (($backslash && '`' === $char) || (!$mysql && '"' === $char)) {
                 $i = $this->endOfQuoted($sql, $i, $char, $clickhouse);
                 if (null === $i) {
@@ -96,6 +105,7 @@ final class SqlScanner
                     $complete = false;
                     break;
                 }
+                $spans[] = [$i, $end + \strlen($tag[0]), 'literal'];
                 $i = $end + \strlen($tag[0]);
             } elseif (ctype_alpha($char) || '_' === $char || \ord($char) >= 0x80) {
                 $start = $i;
@@ -111,6 +121,7 @@ final class SqlScanner
                         $complete = false;
                         break;
                     }
+                    $spans[] = [$start, $i, 'literal'];
                 } else {
                     $words[] = strtoupper($word);
                     $depths[] = $depth;
@@ -119,9 +130,11 @@ final class SqlScanner
                     }
                 }
             } elseif (ctype_digit($char)) {
+                $numberStart = $i;
                 while ($i < $length && (ctype_alnum($sql[$i]) || '_' === $sql[$i] || '.' === $sql[$i])) {
                     ++$i;
                 }
+                $spans[] = [$numberStart, $i, 'literal'];
             } else {
                 ++$i;
             }

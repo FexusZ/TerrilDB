@@ -232,7 +232,7 @@ Un résultat porte un `DiagnosticStatus` (`Availability` : `available | unsuppor
 `PROCESS` lu dans `USER_PRIVILEGES` d'abord, car sans lui le serveur ne montre que les threads du compte sans le dire ; un droit reçu par un rôle n'est pas vu),
 PostgreSQL `pg_stat_activity` (`pg_read_all_stats`/`pg_monitor`/superutilisateur, `backend_type = 'client backend'`), ClickHouse `system.processes`
 (`readonly=1`, `query_id` choisi pour repérer sa propre ligne, code 497 = droit refusé), Redis `ServerDiagnostics` vide (capacités `unsupported`, sessions 501).
-`ServerSession::query` est raccourci à 200 caractères À LA CONSTRUCTION (aucune valeur liée n'existe côté moteur) et n'entre JAMAIS dans l'audit :
+`ServerSession::query` passe par `QueryText::of` À LA CONSTRUCTION : littéraux (chaînes, `$$…$$`, `E'…'`, nombres) remplacés par `?` et commentaires retirés d'après `SqlScanner` (par dialecte, zones rendues par son paramètre `$spans`), PUIS raccourci à 200 caractères ; texte illisible pour le scanner (coupé au milieu d'un littéral) = `query` nul + `queryReason: redacted` (les pilotes lisent 4096 caractères pour masquer avant de couper) ; test d'intégration avec une vraie autre session sur les 5 moteurs + ClickHouse et n'entre JAMAIS dans l'audit :
 `AuditedDiagnostics` (trois portes) journalise `diagnostic.read` = sujet, `topic`, `engine`, `status`, `rows`. Droit de jeton `diagnostic`
 (`TokenPermissions`, colonne `diagnostic`, refusé par défaut, lecture seule, ne compte pas dans `canWrite`) : `ApiTokenAccess::requireDiagnostic` -> 403
 `permission_denied` ; routes `GET /web/connections/{id}/diagnostics[/sessions]` (`?database=`/`?schema=`), `GET /api/v1/connections/{id}/diagnostics[/sessions]`,

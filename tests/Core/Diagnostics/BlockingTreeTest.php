@@ -9,13 +9,14 @@ use App\Core\Diagnostics\BlockingTree;
 use App\Core\Diagnostics\LockKind;
 use App\Core\Diagnostics\LockParty;
 use App\Core\Diagnostics\LockWait;
+use App\Core\Guard\SqlDialect;
 use PHPUnit\Framework\TestCase;
 
 final class BlockingTreeTest extends TestCase
 {
     private static function wait(string $waiting, string $blocking, int $seconds = 5): LockWait
     {
-        return new LockWait(new LockParty($waiting, 'u'.$waiting, 'UPDATE '.$waiting), new LockParty($blocking, 'u'.$blocking, null), $seconds, LockKind::Row, 'X', 'shop.orders');
+        return new LockWait(new LockParty($waiting, 'u'.$waiting, 'UPDATE t'.$waiting, SqlDialect::MySql), new LockParty($blocking, 'u'.$blocking, null, SqlDialect::MySql), $seconds, LockKind::Row, 'X', 'shop.orders');
     }
 
     /**
@@ -44,7 +45,7 @@ final class BlockingTreeTest extends TestCase
         self::assertSame('X', $tree[0]->blocked[0]->mode);
         self::assertSame('shop.orders', $tree[0]->blocked[0]->object);
         self::assertSame(LockKind::Row, $tree[0]->blocked[0]->kind);
-        self::assertSame('UPDATE 2', $tree[0]->blocked[0]->party->query);
+        self::assertSame('UPDATE t2', $tree[0]->blocked[0]->party->query);
     }
 
     public function testAChainIsNested(): void
