@@ -100,7 +100,14 @@ final readonly class UnixSocketTunnelOpener implements TunnelOpener
         }
         $decoded = json_decode($line, true);
 
-        /* @var array<string, mixed> */
-        return \is_array($decoded) ? $decoded : throw new TunnelFailedException();
+        if (!\is_array($decoded)) {
+            throw new TunnelFailedException();
+        }
+        $reply = [];
+        foreach ($decoded as $key => $value) {
+            $reply[(string) $key] = $value;
+        }
+
+        return $reply;
     }
 }
