@@ -7,6 +7,7 @@ namespace App\Http\Web;
 use App\Audit\AuditedDiagnostics;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
+use App\Http\Json\HealthInterval;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
@@ -51,5 +52,15 @@ final readonly class DiagnosticsController
         $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->locks($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
+
+    #[Route('/web/connections/{id}/diagnostics/health', requirements: self::ID, methods: ['GET'])]
+    public function health(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $seconds = HealthInterval::parse($request->query->get('seconds'));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->health($this->session->auditContext(), $uuid, $target, $seconds), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::health($report));
     }
 }

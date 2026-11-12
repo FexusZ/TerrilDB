@@ -6,6 +6,7 @@ namespace App\Core\Diagnostics\Health;
 
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\HealthDiagnostics;
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 
 /**
  * Prend deux relevés à quelques secondes d'intervalle et en tire les indicateurs. L'attente est bornée (1 à 30 s) et se fait
@@ -22,13 +23,13 @@ final readonly class HealthSampler
     }
 
     /**
-     * @throws \InvalidArgumentException  si l'intervalle sort de 1 à 30 secondes
+     * @throws InvalidQueryOptionsException si l'intervalle sort de 1 à 30 secondes
      * @throws DiagnosticsFailedException
      */
     public function measure(HealthDiagnostics $source, int $seconds = self::DEFAULT_SECONDS): HealthReport
     {
         if ($seconds < self::MIN_SECONDS || $seconds > self::MAX_SECONDS) {
-            throw new \InvalidArgumentException(\sprintf('The interval is %d to %d seconds.', self::MIN_SECONDS, self::MAX_SECONDS));
+            throw new InvalidQueryOptionsException(\sprintf('The interval is %d to %d seconds.', self::MIN_SECONDS, self::MAX_SECONDS));
         }
 
         $status = $source->status();

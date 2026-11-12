@@ -12,6 +12,7 @@ use App\Core\Diagnostics\Health\HealthSampler;
 use App\Core\Diagnostics\Health\HealthWindow;
 use App\Core\Diagnostics\Health\Pause;
 use App\Core\Diagnostics\HealthDiagnostics;
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 use PHPUnit\Framework\TestCase;
 
 final class HealthSamplerTest extends TestCase
@@ -79,7 +80,7 @@ final class HealthSamplerTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('badIntervals')]
     public function testTheIntervalIsBounded(int $seconds): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidQueryOptionsException::class);
 
         (new HealthSampler(self::pause()))->measure(self::source([]), $seconds);
     }

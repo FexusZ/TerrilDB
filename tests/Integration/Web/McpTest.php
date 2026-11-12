@@ -372,6 +372,29 @@ final class McpTest extends WebApiTestCase
         self::assertTrue($other['isError']);
     }
 
+    public function testTheHealthToolIsForTokensWithTheDiagnosticRightOnly(): void
+    {
+        $this->prepare();
+        $this->initialize();
+        self::assertNotContains('server_health', $this->toolNames());
+    }
+
+    public function testMeasuresTheHealthThroughMcp(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('server_health', $this->toolNames());
+        $report = self::textOf($this->callTool('server_health', ['connection' => $this->connectionId, 'seconds' => 1]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertNotEmpty($report['indicators']);
+
+        $tooLong = $this->callTool('server_health', ['connection' => $this->connectionId, 'seconds' => 99]);
+        self::assertTrue(isset($tooLong['error']) || true === ($tooLong['isError'] ?? false), 'An interval beyond 30 seconds must be refused.');
+        self::assertArrayNotHasKey('structuredContent', $tooLong);
+    }
+
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void
     {
         $this->prepare();
