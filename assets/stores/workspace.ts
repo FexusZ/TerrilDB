@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { ApiError, api, apiDownload } from '../api/client'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
 import { useConnectionsStore } from './connections'
 
 export interface QueryTab {
@@ -18,9 +18,12 @@ export interface QueryTab {
   pendingConfirmation: string | null
   exporting: boolean
   /** Ce que la zone de résultat montre : le résultat de l'exécution, ou le plan estimé. */
-  view: 'result' | 'plan'
+  view: 'result' | 'plan' | 'lint'
   plan: PlanResult | null
   planning: boolean
+  /** Les conseils tirés du texte seul (le linter ne lance rien). */
+  lint: LintResult | null
+  linting: boolean
   /** Précision à montrer après un export (fichier coupé à la limite de lignes). */
   exportNotice: string | null
   /** Table dont cet onglet montre les données (vue « Données »), nul pour un onglet de console. */
@@ -91,7 +94,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null, tableKey: null, lastSql: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, lint: null, linting: false, table: null, tableKey: null, lastSql: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -481,6 +484,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       target.sql = sql
       target.pendingConfirmation = null
       target.plan = null
+      target.lint = null
       target.view = 'result'
     }
   }
@@ -560,6 +564,30 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       target.error = messageFor(error)
     } finally {
       target.planning = false
+    }
+  }
+
+  /** Demande des conseils sur le texte de l'instruction de l'onglet : rien n'est exécuté, rien n'est bloqué. */
+  async function lintTab(id: number): Promise<void> {
+    const target = tab(id)
+    if (!target || connectionId.value === null) {
+      return
+    }
+    if (target.sql.trim() === '') {
+      target.error = 'Saisissez une instruction.'
+      return
+    }
+
+    target.linting = true
+    target.error = null
+    try {
+      target.lint = await api<LintResult>('POST', `/web/connections/${connectionId.value}/lint`, { sql: target.sql })
+      target.view = 'lint'
+    } catch (error) {
+      target.lint = null
+      target.error = messageFor(error)
+    } finally {
+      target.linting = false
     }
   }
 
@@ -650,5 +678,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, exportTab, confirmPending, cancelPending, describe }
 })

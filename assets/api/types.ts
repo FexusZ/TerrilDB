@@ -314,6 +314,18 @@ export interface PlanResult {
   findings: PlanFindingInfo[]
 }
 
+export interface LintFindingInfo {
+  rule: string
+  severity: 'warning' | 'info'
+  message: string
+  suggestion: string | null
+  columns: string[]
+}
+
+export interface LintResult {
+  findings: LintFindingInfo[]
+}
+
 export interface SchemaFinding {
   rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch'
   severity: 'warning' | 'info'
