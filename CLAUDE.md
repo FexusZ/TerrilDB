@@ -255,6 +255,21 @@ d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête.
 avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
 1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
 
+### Linter de requête (QueryLinter, QueryLintController)
+
+Conseils tirés du TEXTE d'une lecture, avant toute exécution (issue #77, premier lot) : `QueryLinter::lint(Engine, sql)` rend des
+`LintFinding` (règle `LintRule`, gravité, message français, suggestion en texte, colonnes). Il relit le texte par `SqlScanner` (chaînes et
+commentaires ne comptent pas) puis un petit lexeur (`LintToken`), sans parseur : zéro faux positif plutôt que couverture, donc rien pour un texte
+incomplet, à plusieurs instructions, ou qui n'est pas un SELECT / WITH menant à un SELECT, et une condition n'est jugée que si elle COMMENCE par
+la fonction ou la colonne. Règles : `function_on_column` (YEAR, DATE, LOWER… sur une colonne comparée, dans WHERE ou ON), `arithmetic_on_column`,
+`leading_wildcard_like` (`LIKE '%x'`), `select_star` (niveau supérieur seulement), `large_offset` (10 000 ou plus, y compris `LIMIT a, b` MySQL),
+`not_in_subquery`, `row_lock` (FOR UPDATE / SHARE, que le garde refuse : explique l'autocommit), `recursive_cte`. ClickHouse ne garde que
+`select_star` et `large_offset`. Sans introspection, jamais « cet index ne sert pas » : « s'il y en a un, il ne servira pas » (le croisement avec les index réels reste à faire).
+`POST /web/connections/{id}/lint` `{sql}` -> `{findings}` : aucune instruction envoyée à la base (la cible n'est ouverte que pour connaître le moteur, même
+règle d'adresses), jamais de refus, audit `query.linted` (instruction, moteur, nombre et règles). Front : bouton « Conseils » dans `QueryPane`
+(`workspace.lintTab`, vue `lint`, `LintList`), les conseils s'effacent à la modification du texte. Indépendant de `PlanAnalyzer` (deux étages : le texte, puis le plan).
+Tests : `tests/Core/Optimizer/QueryLinterTest` (positifs, négatifs), `tests/Integration/Web/QueryLintWebTest`.
+
 ## Diagramme ER (SchemaDiagramController, assets/utils/erLayout.ts, DiagramPane)
 
 `GET /web/connections/{id}/diagram` : tables (pas les vues, 300 au plus) avec colonnes (type, nullable, clé primaire) et

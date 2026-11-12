@@ -40,6 +40,11 @@ describe('audit labels', () => {
     expect(describeEvent(entry('query.failed', { reason: 'engine_error' }, { outcome: 'failed' }))).toContain('erreur')
   })
 
+  it('describes a lint request', () => {
+    expect(describeEvent(entry('query.linted', { findings: 2 }))).toBe('Conseils de requête demandés (2)')
+    expect(describeEvent(entry('query.linted', { findings: 0 }))).toBe('Conseils de requête demandés (aucun)')
+  })
+
   it('describes a change of structure, and what went wrong', () => {
     expect(describeEvent(entry('schema.changed', { table: 'orders', statements: 2 }))).toBe('Structure de « orders » modifiée (2 instructions)')
     expect(describeEvent(entry('schema.changed', { table: 'orders', statements: 1 }))).toBe('Structure de « orders » modifiée (1 instruction)')

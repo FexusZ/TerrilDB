@@ -5,6 +5,7 @@ import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import LintList from '../components/LintList.vue'
 import PlanTree from '../components/PlanTree.vue'
 import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
@@ -62,6 +63,7 @@ function toggleMode(): void {
           Exécuter
         </AppButton>
         <span class="shortcut">Ctrl + Entrée</span>
+        <AppButton v-if="hasPlan" class="lint" small :busy="tab.linting" @click="workspace.lintTab(tab.id)">Conseils</AppButton>
         <AppButton v-if="hasPlan" class="plan" small :busy="tab.planning" @click="workspace.planTab(tab.id)">Plan d’exécution</AppButton>
       </div>
       <div class="export" role="group" aria-label="Exporter le résultat">
@@ -92,6 +94,7 @@ function toggleMode(): void {
     <div v-if="!showHistory" class="output">
       <p v-if="tab.running" class="state" role="status">Exécution…</p>
       <p v-else-if="tab.error" class="error" role="alert">{{ tab.error }}</p>
+      <LintList v-else-if="tab.view === 'lint' && tab.lint" :result="tab.lint" />
       <PlanTree v-else-if="tab.view === 'plan' && tab.plan" :result="tab.plan" />
       <ResultTable v-else-if="tab.result" :result="tab.result" />
       <p v-else class="state">Exécutez une requête pour voir son résultat.</p>
