@@ -399,8 +399,9 @@ final class TableStructureWebTest extends WebApiTestCase
         }
 
         self::assertSame(409, $this->statusCode());
-        self::assertSame('schema_change_failed', $body['error']);
+        self::assertSame('lock_timeout', $body['error']);
         self::assertTrue($body['lockTimeout']);
+        self::assertTrue($body['retryable']);
         self::assertSame([], $body['applied']);
         $holders = self::arrayOf(self::arrayOf($body['lockCheck'])['holders']);
         self::assertSame($holderPid, self::arrayOf($holders[0])['session']);

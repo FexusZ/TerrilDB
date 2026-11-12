@@ -279,7 +279,7 @@ describe('TableEditor', () => {
         return Promise.resolve(preview())
       }
 
-      return Promise.reject(new ApiError(409, 'schema_change_failed', { message: 'Lock wait timeout exceeded', applied: [], failed: { sql: 'y', operation: 'add_column', subject: 'x', destructive: false }, lockTimeout: true, lockCheck: { status: available, holders: [holder] } }))
+      return Promise.reject(new ApiError(409, 'lock_timeout', { retryable: true, applied: [], failed: { sql: 'y', operation: 'add_column', subject: 'x', destructive: false }, lockTimeout: true, lockCheck: { status: available, holders: [holder] } }))
     })
     const wrapper = mountEditor('mysql')
     await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')

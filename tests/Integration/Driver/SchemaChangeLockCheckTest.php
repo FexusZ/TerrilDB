@@ -7,6 +7,7 @@ namespace App\Tests\Integration\Driver;
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\Availability;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Driver\LockConflict;
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\Change\ColumnDraft;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
@@ -128,7 +129,7 @@ final class SchemaChangeLockCheckTest extends TestCase
         } catch (SchemaChangeFailedException $e) {
             self::assertLessThan(15, microtime(true) - $started);
             self::assertSame([], $e->applied);
-            self::assertTrue($e->lockTimeout);
+            self::assertSame(LockConflict::LockTimeout, $e->lock);
             self::assertNotNull($e->holders);
             if (Engine::MariaDb !== TargetDatabase::engine($envVar)) {
                 self::assertContains($scenario->holderId(), array_map(static fn ($h): string => $h->session, $e->holders->holders));
@@ -151,7 +152,7 @@ final class SchemaChangeLockCheckTest extends TestCase
             (new SchemaChangeService())->apply($target, $scenario->table, $draft, SchemaChangePlanner::fingerprint($before), true);
             self::fail('The engine should refuse an unknown type.');
         } catch (SchemaChangeFailedException $e) {
-            self::assertFalse($e->lockTimeout);
+            self::assertNull($e->lock);
             self::assertNull($e->holders);
         } finally {
             $target->close();

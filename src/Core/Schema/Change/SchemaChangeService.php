@@ -7,6 +7,7 @@ namespace App\Core\Schema\Change;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\TableHolders;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Driver\LockConflict;
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
@@ -67,7 +68,7 @@ final class SchemaChangeService
         try {
             $target->ddl()->execute($plan->statements, $plan->transactional);
         } catch (SchemaChangeFailedException $e) {
-            $holders = $e->lockTimeout ? self::holders($target, $table) : null;
+            $holders = LockConflict::LockTimeout === $e->lock ? self::holders($target, $table) : null;
 
             throw null === $holders ? $e : $e->withHolders($holders);
         }
@@ -78,6 +79,8 @@ final class SchemaChangeService
     /**
      * Qui tient la table, pour avertir. Lecture seule et facultative : un moteur sans diagnostic, un droit manquant ou une panne
      * de lecture rendent « non lisible » (nul, ou un état), jamais une erreur qui gênerait l'aperçu ou masquerait l'échec réel.
+     * Cette lecture n'écrit pas de ligne `diagnostic.read` (AuditedDiagnostics) : le cœur ne connaît pas le contexte d'audit, et
+     * l'aperçu comme l'échec sont déjà journalisés par AuditedSchemaChanges, pour le propriétaire de la connexion seulement.
      */
     private static function holders(TargetConnection $target, string $table): ?TableHolders
     {
