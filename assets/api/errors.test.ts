@@ -3,6 +3,10 @@ import { ApiError } from './client'
 import { messageFor, reasonText } from './errors'
 
 describe('error messages', () => {
+  it('does not show the engine message when a diagnostic read fails', () => {
+    expect(messageFor(new ApiError(502, 'diagnostics_failed', { message: 'secret host' }))).toBe('La lecture de l’activité du serveur a échoué. Réessayez.')
+  })
+
   it('speaks French for the stable codes', () => {
     expect(messageFor(new ApiError(401, 'invalid_credentials'))).toBe('Identifiant ou mot de passe incorrect.')
     expect(messageFor(new ApiError(401, 'invalid_second_factor'))).toContain('Code')

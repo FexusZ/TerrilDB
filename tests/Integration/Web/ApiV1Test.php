@@ -545,6 +545,10 @@ final class ApiV1Test extends WebApiTestCase
         $sessions = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(403, $this->statusCode());
         self::assertSame(['error' => 'permission_denied'], $sessions);
+
+        $locks = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/locks');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $locks);
     }
 
     #[DataProvider('targets')]
@@ -554,7 +558,8 @@ final class ApiV1Test extends WebApiTestCase
 
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null]], $capabilities['capabilities']);
+        $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
+        self::assertSame(['sessions' => 'available', 'locks' => $locks], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
@@ -593,5 +598,25 @@ final class ApiV1Test extends WebApiTestCase
         self::assertSame($this->tokenId, $events[0]->getTokenId()?->toRfc4122());
         self::assertArrayNotHasKey('sql', $events[0]->getDetails());
         self::assertArrayNotHasKey('query', $events[0]->getDetails());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheLocks(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/locks');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertSame(['status', 'truncated', 'transactions', 'blocking', 'blockingTruncated'], array_keys($body));
+    }
+
+    public function testTheLocksOfAConnectionOutsideTheListAreNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/locks');
+
+        self::assertSame(404, $this->statusCode());
     }
 }

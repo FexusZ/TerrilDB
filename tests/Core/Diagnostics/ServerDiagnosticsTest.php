@@ -6,6 +6,8 @@ namespace App\Tests\Core\Diagnostics;
 
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\LockDiagnostics;
+use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
@@ -42,7 +44,7 @@ final class ServerDiagnosticsTest extends TestCase
     {
         $diagnostics = new ServerDiagnostics(Engine::Redis);
 
-        self::assertSame(['sessions' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
+        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
     }
 
     public function testCapabilitiesAskTheThemeForItsStatus(): void
@@ -62,5 +64,27 @@ final class ServerDiagnosticsTest extends TestCase
         $status = (new ServerDiagnostics(Engine::MySql, $sessions))->capabilities()['sessions'];
 
         self::assertSame('PROCESS', $status->privilege);
+    }
+
+    public function testLocksAreServedOrUnsupported(): void
+    {
+        $locks = new class implements LockDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::disabled('performance_schema_off');
+            }
+
+            public function locks(): LockReport
+            {
+                return new LockReport(DiagnosticStatus::available(), [], [], false);
+            }
+        };
+
+        $diagnostics = new ServerDiagnostics(Engine::MySql, locks: $locks);
+
+        self::assertSame($locks, $diagnostics->locks());
+        self::assertSame('disabled', $diagnostics->capabilities()['locks']->availability->value);
+        $this->expectException(UnsupportedOperationException::class);
+        (new ServerDiagnostics(Engine::ClickHouse))->locks();
     }
 }

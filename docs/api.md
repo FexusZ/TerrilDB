@@ -19,8 +19,9 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
 | POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` |
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
-| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` = `{availability, reason, privilege}` |
+| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions` et `capabilities.locks` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
+| GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -75,6 +76,15 @@ retirés avant la troncature (d'après le scanner lexical du garde, par dialecte
 le scanner ne sait pas lire jusqu'au bout (coupé par le moteur au milieu d'un littéral) n'est pas rendu : `query` est nul et `queryReason` vaut `redacted`. Il ne figure jamais dans le journal d'audit de TerrilDB
 (`diagnostic.read` note qui a lu quelle page, le nombre de lignes et l'état).
 
+**Verrous** (`/diagnostics/locks`) : `transactions` (les plus anciennes d'abord : `session`, `user`, `state`, `seconds` = âge, `rowsLocked` et
+`rowsModified` quand le moteur les donne, `sleeping` = la session n'exécute rien, `query`) et `blocking`, l'arbre « qui bloque qui » : chaque racine
+bloque sans attendre, ses `blocked` attendent après elle ; chaque session n'apparaît qu'UNE fois, sous un seul bloqueur (le détenteur de préférence, sinon
+le dernier devant elle dans la file), et l'arbre est borné à 500 sessions et 20 niveaux : `blockingTruncated` dit que des sessions manquent ; `query` suit la même
+règle de masquage que les sessions (`queryReason`) ; pour chaque attente `seconds` (depuis quand), `kind` (`row` ou `metadata` : la file derrière un
+DDL), `mode` et `object` tels que le moteur les nomme. Aucune instruction d'arrêt n'est calculée ni exécutée. « Aucune attente » (`available` et `blocking`
+vide) se distingue de « non lisible » (`permission_denied`, `disabled` avec `reason: performance_schema_off`). MariaDB ne rapporte que les verrous de
+lignes (ses verrous de métadonnées demandent `performance_schema`, éteint par défaut) ; ClickHouse et Redis : `unsupported`, route 501.
+
 Compte de supervision minimal à donner à la connexion (documenté, pas imposé : sans le droit, l'état le dit) :
 
 | Moteur | Source | Droit |
@@ -84,6 +94,9 @@ Compte de supervision minimal à donner à la connexion (documenté, pas imposé
 | PostgreSQL | `pg_stat_activity` | rôle `pg_monitor` ou `pg_read_all_stats` |
 | ClickHouse | `system.processes` | `SELECT ON system.processes` |
 | Redis | – | non pris en charge |
+
+Verrous et transactions : MySQL `PROCESS` + `SELECT` sur `performance_schema` + `SELECT` et `EXECUTE` sur `sys` (verrous de métadonnées) ; MariaDB `PROCESS` ;
+PostgreSQL `pg_monitor` ; ClickHouse et Redis, sans objet.
 
 ## Limites
 

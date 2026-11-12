@@ -83,7 +83,7 @@ final readonly class MySqlSessionDiagnostics implements SessionDiagnostics
 
     private function state(Connection $connection): DiagnosticStatus
     {
-        if (!$this->hasProcessPrivilege($connection)) {
+        if (!MySqlPrivileges::hasProcess($connection)) {
             return DiagnosticStatus::denied(self::PRIVILEGE);
         }
         if (Engine::MariaDb !== $this->engine && 0 === (new RowReader(['on' => $connection->fetchOne('SELECT @@performance_schema')]))->int('on')) {
@@ -91,14 +91,5 @@ final readonly class MySqlSessionDiagnostics implements SessionDiagnostics
         }
 
         return DiagnosticStatus::available();
-    }
-
-    private function hasProcessPrivilege(Connection $connection): bool
-    {
-        $count = $connection->fetchOne(
-            "SELECT COUNT(*) FROM information_schema.USER_PRIVILEGES WHERE PRIVILEGE_TYPE = 'PROCESS' AND REPLACE(GRANTEE, '''', '') = CURRENT_USER()",
-        );
-
-        return 0 < (new RowReader(['count' => $count]))->int('count');
     }
 }

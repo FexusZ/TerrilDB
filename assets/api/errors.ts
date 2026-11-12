@@ -75,6 +75,8 @@ export function messageFor(error: unknown): string {
       return 'Cette adresse désigne le serveur de TerrilDB lui-même : seul un administrateur peut la viser.'
     case 'unsupported_operation':
       return 'Cette opération n’existe pas pour ce moteur.'
+    case 'diagnostics_failed':
+      return 'La lecture de l’activité du serveur a échoué. Réessayez.'
     case 'plan_unavailable':
       return 'Le plan d’exécution n’est pas disponible pour ce moteur.'
     case 'query_refused':

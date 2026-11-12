@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Web;
 
 use App\Audit\AuditAction;
+use App\Tests\Integration\Driver\LockScenario;
 use App\Tests\Integration\Driver\RedisTarget;
 use App\Tests\Integration\Driver\TargetDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -49,7 +50,8 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics');
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null]], $body['capabilities']);
+        $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
+        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks], $body['capabilities']);
     }
 
     #[DataProvider('targets')]
@@ -93,6 +95,10 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $capabilities = $this->call('GET', '/web/connections/'.$id.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['sessions'])['availability']);
+        self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['locks'])['availability']);
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/locks');
+        self::assertSame(501, $this->statusCode());
 
         $this->call('GET', '/web/connections/'.$id.'/diagnostics/sessions');
         self::assertSame(501, $this->statusCode());
@@ -130,5 +136,87 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertGreaterThanOrEqual(1, $details['rows']);
         self::assertStringNotContainsString('pg_stat_activity', json_encode($details, \JSON_THROW_ON_ERROR));
         self::assertSame($id, $events[0]->getSubjectId()?->toRfc4122());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relational(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
+    public function testLocksRequireASession(): void
+    {
+        $this->call('GET', '/web/connections/00000000-0000-7000-8000-000000000000/diagnostics/locks');
+
+        self::assertSame(401, $this->statusCode());
+    }
+
+    #[DataProvider('relational')]
+    public function testShowsWhoBlocksWhomAndTheOpenTransactions(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $scenario = LockScenario::begin($envVar);
+        try {
+            $scenario->startWaiter();
+            $body = LockScenario::until(
+                fn (): array => $this->call('GET', '/web/connections/'.$id.'/diagnostics/locks'),
+                static fn (array $b): bool => [] !== $b['blocking'],
+            );
+
+            self::assertSame(200, $this->statusCode());
+            self::assertSame('available', self::arrayOf($body['status'])['availability']);
+            self::assertFalse($body['truncated']);
+            $roots = array_values(array_filter(self::listOf($body['blocking']), static fn (mixed $n): bool => self::arrayOf($n)['id'] === $scenario->holderId()));
+            self::assertCount(1, $roots);
+            $root = self::arrayOf($roots[0]);
+            self::assertSame(['id', 'user', 'query', 'queryReason', 'seconds', 'kind', 'mode', 'object', 'blocked'], array_keys($root));
+            self::assertNull($root['seconds']);
+            $child = self::arrayOf(self::listOf($root['blocked'])[0]);
+            self::assertSame($scenario->waiterId(), $child['id']);
+            self::assertSame('row', $child['kind']);
+            self::assertIsInt($child['seconds']);
+            self::assertStringContainsString($scenario->table, self::stringOf($child['object']));
+            $transactions = array_map(static fn (mixed $t): mixed => self::arrayOf($t)['session'], self::listOf($body['transactions']));
+            self::assertContains($scenario->holderId(), $transactions);
+            $first = self::arrayOf(self::listOf($body['transactions'])[0]);
+            self::assertSame(['session', 'user', 'state', 'seconds', 'rowsLocked', 'rowsModified', 'sleeping', 'query', 'queryReason'], array_keys($first));
+        } finally {
+            $scenario->cleanup();
+        }
+    }
+
+    public function testLocksAreAuditedWithoutAnyQueryText(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+        $scenario = LockScenario::begin('TARGET_POSTGRES_URL');
+        try {
+            $scenario->startWaiter();
+            LockScenario::until(fn (): array => $this->call('GET', '/web/connections/'.$id.'/diagnostics/locks'), static fn (array $b): bool => [] !== $b['blocking']);
+        } finally {
+            $scenario->cleanup();
+        }
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'locks' === ($e->getDetails()['topic'] ?? null)));
+        self::assertNotEmpty($events);
+        $details = $events[0]->getDetails();
+        self::assertSame('available', $details['status']);
+        self::assertArrayHasKey('transactions', $details);
+        self::assertArrayHasKey('waits', $details);
+        self::assertStringNotContainsString('UPDATE', json_encode($details, \JSON_THROW_ON_ERROR));
+    }
+
+    public function testClickHouseHasNoLocks(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/locks');
+
+        self::assertSame(501, $this->statusCode());
+        self::assertSame('unsupported_operation', $body['error']);
     }
 }

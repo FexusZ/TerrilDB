@@ -222,6 +222,43 @@ export interface SessionReport {
   sessions: ServerSession[]
 }
 
+export interface OpenTransaction {
+  /** Identifiant de la session qui la tient. */
+  session: string
+  user: string | null
+  state: string | null
+  /** Âge de la transaction, en secondes. */
+  seconds: number
+  rowsLocked: number | null
+  rowsModified: number | null
+  /** La session n'exécute rien : la transaction est oubliée (elle garde ses verrous). */
+  sleeping: boolean
+  query: string | null
+  queryReason: 'redacted' | null
+}
+
+/** Une session de l'arbre de blocage ; durée, mode et objet sont ceux de SON attente vis-à-vis de son parent (nuls pour une racine). */
+export interface BlockingNode {
+  id: string
+  user: string | null
+  query: string | null
+  queryReason: 'redacted' | null
+  seconds: number | null
+  kind: 'row' | 'metadata' | null
+  mode: string | null
+  object: string | null
+  blocked: BlockingNode[]
+}
+
+export interface LockReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  transactions: OpenTransaction[]
+  blocking: BlockingNode[]
+  /** L'arbre a été borné (nombre de sessions ou profondeur) : des sessions manquent. */
+  blockingTruncated: boolean
+}
+
 export type AuditOutcome = 'success' | 'refused' | 'failed'
 export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
 

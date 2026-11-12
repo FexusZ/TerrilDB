@@ -158,6 +158,18 @@ final readonly class ApiController
     }
 
     /**
+     * Les transactions ouvertes et qui bloque qui sur le serveur de la connexion, en lecture seule : aucune instruction d'arrêt.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/locks', requirements: self::ID, methods: ['GET'])]
+    public function locks(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
+
+    /**
      * @template T
      *
      * @param \Closure(TargetConnection): T $action

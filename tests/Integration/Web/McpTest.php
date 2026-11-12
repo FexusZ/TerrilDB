@@ -325,6 +325,7 @@ final class McpTest extends WebApiTestCase
         $this->prepare(rights: ['writeData' => true, 'createConnections' => true]);
         $this->initialize();
         self::assertNotContains('list_sessions', $this->toolNames());
+        self::assertNotContains('list_locks', $this->toolNames());
         $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
         self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
         self::assertArrayNotHasKey('structuredContent', $refused);
@@ -352,6 +353,23 @@ final class McpTest extends WebApiTestCase
         $other = $this->callTool('list_sessions', ['connection' => $this->otherConnectionId]);
         self::assertTrue($other['isError']);
         self::assertStringContainsString('not_found', self::str(self::obj(self::first($other['content']))['text']));
+    }
+
+    public function testListsTheLocksThroughMcpWithoutKilling(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_locks', $this->toolNames());
+        $report = self::textOf($this->callTool('list_locks', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertArrayHasKey('blocking', $report);
+        self::assertArrayHasKey('transactions', $report);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_locks', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
     }
 
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void
