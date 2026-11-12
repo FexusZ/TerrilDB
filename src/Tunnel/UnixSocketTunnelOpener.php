@@ -76,7 +76,7 @@ final readonly class UnixSocketTunnelOpener implements TunnelOpener
      *
      * @throws TunnelFailedException
      */
-    private function call(array $message): array
+    private function call(#[\SensitiveParameter] array $message): array
     {
         $stream = @stream_socket_client('unix://'.$this->controlSocket, $errno, $error, $this->timeoutSeconds);
         if (false === $stream) {

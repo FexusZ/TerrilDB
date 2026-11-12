@@ -151,4 +151,19 @@ final class UnixSocketTunnelOpenerTest extends TestCase
         $this->waitRelay();
         self::assertSame('{"op":"close","id":"0123456789abcdef0123456789abcdef"}', trim((string) file_get_contents($this->dir.'/received.json')));
     }
+
+    public function testTheKeyIsNotInTheTraceOfAnException(): void
+    {
+        $previous = ini_set('zend.exception_ignore_args', '0');
+        try {
+            $this->opener()->open($this->request());
+            self::fail('failure expected');
+        } catch (TunnelFailedException $failure) {
+            self::assertStringNotContainsString('AAAAfaux', $failure->getTraceAsString());
+            self::assertStringNotContainsString('AAAAfaux', json_encode($failure->getTrace(), \JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '');
+            self::assertStringNotContainsString('AAAAfaux', $failure->getMessage());
+        } finally {
+            ini_set('zend.exception_ignore_args', false === $previous ? '0' : $previous);
+        }
+    }
 }
