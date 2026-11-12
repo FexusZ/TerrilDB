@@ -49,6 +49,80 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame(5, $body['tablesAudited']);
         self::assertFalse($body['truncated']);
         self::assertSame([], $body['findings']);
+        self::assertSame([], $body['checks']);
+    }
+
+    public function testReportsDeadTuplesAndStaleStatisticsOfAnActualPostgreSqlTable(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+        $connection = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        try {
+            // Sans autovacuum : rien ne passe derrière nous le temps de lire.
+            $connection->executeStatement('CREATE TABLE audit_probe_ops (id serial PRIMARY KEY, pad text) WITH (autovacuum_enabled = false)');
+            $connection->executeStatement("INSERT INTO audit_probe_ops (pad) SELECT repeat('x', 50) FROM generate_series(1, 30000)");
+            $connection->executeStatement('DELETE FROM audit_probe_ops WHERE id <= 20000');
+
+            $rules = [];
+            for ($attempt = 0; $attempt < 30 && [] === $rules; ++$attempt) {
+                $connection->fetchOne('SELECT pg_stat_force_next_flush()');
+                $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+                foreach (array_map(self::arrayOf(...), self::arrayOf($body['findings'])) as $finding) {
+                    if ('audit_probe_ops' === $finding['table'] && 'dead_tuples' === $finding['rule']) {
+                        $rules[] = $finding;
+                    }
+                }
+                usleep(300000);
+            }
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_ops');
+            $connection->close();
+        }
+
+        self::assertCount(1, $rules);
+        self::assertSame('info', $rules[0]['severity']);
+        self::assertStringContainsString('20000 tuples morts pour 10000 vivants', self::stringOf($rules[0]['detail']));
+        self::assertStringStartsWith('VACUUM (ANALYZE) "audit_probe_ops";', self::stringOf($rules[0]['suggestion']));
+        self::assertSame([], $body['checks']);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function mysqlFamily(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testReportsAViewWhoseCreatorAccountNoLongerExists(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $connection = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement("CREATE USER 'audit_gone'@'localhost'");
+            $connection->executeStatement("CREATE DEFINER = 'audit_gone'@'localhost' SQL SECURITY DEFINER VIEW audit_probe_v AS SELECT id FROM categories");
+            $connection->executeStatement("DROP USER 'audit_gone'@'localhost'");
+
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP VIEW IF EXISTS audit_probe_v');
+            $connection->executeStatement("DROP USER IF EXISTS 'audit_gone'@'localhost'");
+            $connection->close();
+        }
+
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'orphan_definer' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_v', $findings[0]['table']);
+        self::assertSame('warning', $findings[0]['severity']);
+        self::assertSame('vue créée par « audit_gone@localhost », compte inexistant', $findings[0]['detail']);
+        self::assertSame([], $body['checks']);
     }
 
     public function testFindsWhatIsWrongInAnActualSchema(): void

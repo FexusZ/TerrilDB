@@ -8,9 +8,11 @@ use App\Core\Connection\Engine;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
+use App\Core\Schema\DefinerReport;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\OperationsSource;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
@@ -18,6 +20,7 @@ use App\Core\Schema\TableKind;
 use App\Core\Schema\TablePage;
 use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
+use App\Core\Schema\UpkeepReport;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
 
@@ -28,13 +31,23 @@ use Doctrine\DBAL\Connection;
  * Les index fonctionnels (expressions) n'ont pas de nom de colonne dans information_schema : leurs parties
  * sont ignorées, et un index qui n'a plus aucune colonne nommée n'est pas listé.
  */
-final readonly class MySqlIntrospector implements SchemaIntrospector
+final readonly class MySqlIntrospector implements SchemaIntrospector, OperationsSource
 {
     public function __construct(private Connection $connection)
     {
     }
 
     private const SYSTEM_DATABASES = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+
+    public function upkeep(): UpkeepReport
+    {
+        return (new MySqlOperations($this->connection))->upkeep();
+    }
+
+    public function orphanDefiners(): DefinerReport
+    {
+        return (new MySqlOperations($this->connection))->orphanDefiners();
+    }
 
     public function listDatabases(): array
     {
