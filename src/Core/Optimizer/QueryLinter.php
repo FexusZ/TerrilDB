@@ -24,6 +24,10 @@ final class QueryLinter
 {
     private const LARGE_OFFSET = 10_000;
 
+    /** Bornes de lecture : au-delà, le texte n'est pas examiné (le coût des conditions imbriquées croît avec la profondeur). */
+    private const MAX_TOKENS = 20_000;
+    private const MAX_DEPTH = 32;
+
     /** Fonctions qui, appliquées à une colonne, empêchent d'utiliser l'index sur cette colonne. */
     private const FUNCTIONS = [
         'YEAR', 'MONTH', 'DAY', 'DAYOFMONTH', 'DAYOFWEEK', 'DAYOFYEAR', 'WEEK', 'HOUR', 'MINUTE', 'DATE', 'TIME',
@@ -71,7 +75,7 @@ final class QueryLinter
         }
 
         $tokens = $this->tokens($sql, $dialect, $spans);
-        if (null === $tokens) {
+        if (null === $tokens || !$this->withinBounds($tokens)) {
             return [];
         }
 
@@ -98,6 +102,27 @@ final class QueryLinter
 
             return $seen[$key] = true;
         }));
+    }
+
+    /**
+     * @param list<LintToken> $tokens
+     */
+    private function withinBounds(array $tokens): bool
+    {
+        if (\count($tokens) > self::MAX_TOKENS) {
+            return false;
+        }
+        $depth = 0;
+        foreach ($tokens as $token) {
+            if ($token->isPunct('(') && ++$depth > self::MAX_DEPTH) {
+                return false;
+            }
+            if ($token->isPunct(')')) {
+                $depth = max(0, $depth - 1);
+            }
+        }
+
+        return true;
     }
 
     /**

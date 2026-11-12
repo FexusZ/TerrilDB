@@ -143,6 +143,29 @@ final class QueryLinterTest extends TestCase
         self::assertSame([], self::rules(Engine::Redis, 'GET a'));
     }
 
+    public function testDeeplyNestedConditionsAreNotRead(): void
+    {
+        $depth = 200;
+        $sql = 'SELECT id FROM t WHERE '.str_repeat('(', $depth).'YEAR(d) = 2026'.str_repeat(')', $depth);
+
+        self::assertSame([], self::rules(Engine::MySql, $sql));
+    }
+
+    public function testHostileNestingIsAnsweredFast(): void
+    {
+        $depth = 3000;
+        $start = microtime(true);
+        (new QueryLinter())->lint(Engine::MySql, 'SELECT 1 WHERE '.str_repeat('(', $depth).'a=1'.str_repeat(')', $depth));
+        (new QueryLinter())->lint(Engine::PostgreSql, 'SELECT 1 WHERE '.str_repeat('(', $depth).'a=1');
+
+        self::assertLessThan(1.0, microtime(true) - $start);
+    }
+
+    public function testAVeryLongTextIsNotRead(): void
+    {
+        self::assertSame([], self::rules(Engine::MySql, 'SELECT * FROM t WHERE '.str_repeat('a = 1 AND ', 20000).'b = 2'));
+    }
+
     public function testNeverThrowsOnGarbage(): void
     {
         foreach (['', '   ', '(((', ')))', 'SELECT', 'SELECT (', "SELECT 'a", 'WHERE', 'SELECT * FROM t WHERE ('] as $sql) {
