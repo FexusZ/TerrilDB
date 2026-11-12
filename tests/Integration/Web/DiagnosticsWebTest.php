@@ -53,7 +53,8 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
         $unsupported = ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null];
         $accounts = \in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? $unsupported : ['availability' => 'available', 'reason' => null, 'privilege' => null];
-        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks, 'accounts' => $accounts, 'encryption' => $unsupported], $body['capabilities']);
+        $encryption = 'TARGET_CLICKHOUSE_URL' === $envVar ? $unsupported : ['availability' => 'available', 'reason' => null, 'privilege' => null];
+        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks, 'accounts' => $accounts, 'encryption' => $encryption], $body['capabilities']);
     }
 
     #[DataProvider('targets')]
