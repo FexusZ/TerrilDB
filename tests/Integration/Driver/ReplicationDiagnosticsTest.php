@@ -13,6 +13,7 @@ use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
+use App\Driver\PostgreSql\PostgreSqlDriver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -34,6 +35,72 @@ final class ReplicationDiagnosticsTest extends TestCase
         yield 'MySQL 26' => ['TARGET_MYSQL26_URL', 'REPLICATION CLIENT'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL', 'SLAVE MONITOR'];
         yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'SLAVE MONITOR'];
+    }
+
+    #[DataProvider('postgresTargets')]
+    public function testPostgreSqlWithoutReplicationSaysSo(string $envVar): void
+    {
+        $target = $this->openPostgreSql($envVar);
+
+        $report = $target->diagnostics()->replication()->replication();
+        $target->close();
+
+        self::assertSame(Availability::Available, $report->status->availability);
+        self::assertSame(ReplicationRole::None, $report->role);
+        self::assertSame(0, $report->replicaCount);
+        self::assertSame([], $report->alerts());
+    }
+
+    public function testPostgreSqlAccountWithoutTheRightGetsAStateNotAnError(): void
+    {
+        $parameters = TargetDatabase::parameters('TARGET_POSTGRES_URL');
+        $user = 'tdb_repl_'.bin2hex(random_bytes(4));
+        $password = bin2hex(random_bytes(12));
+        $admin = (new DbalConnector())->connect(Engine::PostgreSql, $parameters);
+        $admin->executeStatement(\sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", $user, $password));
+        try {
+            $reduced = $this->openPostgreSql('TARGET_POSTGRES_URL', new ConnectionParameters($parameters->host, $parameters->port, $parameters->database, $user, $password));
+            $report = $reduced->diagnostics()->replication()->replication();
+            $status = $reduced->diagnostics()->replication()->status();
+            $reduced->close();
+
+            self::assertSame(Availability::PermissionDenied, $status->availability);
+            self::assertSame('pg_read_all_stats', $status->privilege);
+            self::assertSame(Availability::PermissionDenied, $report->status->availability);
+            self::assertSame([], $report->alerts());
+        } finally {
+            $admin->executeStatement(\sprintf('DROP ROLE IF EXISTS %s', $user));
+        }
+    }
+
+    public function testAnActualPostgreSqlReplicaIsRead(): void
+    {
+        $target = $this->openPostgreSql('TARGET_REPLICA_POSTGRES_URL');
+
+        $report = $target->diagnostics()->replication()->replication();
+        $target->close();
+
+        self::assertSame(ReplicationRole::Replica, $report->role);
+        self::assertSame(ThreadState::Running, $report->channels[0]->receiver);
+        self::assertSame(ThreadState::Running, $report->channels[0]->applier);
+        self::assertNotNull($report->channels[0]->received);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function postgresTargets(): iterable
+    {
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
+    }
+
+    private function openPostgreSql(string $envVar, ?ConnectionParameters $parameters = null): TargetConnection
+    {
+        try {
+            return (new PostgreSqlDriver(new DbalConnector()))->connect(Engine::PostgreSql, $parameters ?? TargetDatabase::parameters($envVar));
+        } catch (TargetConnectionFailedException) {
+            self::markTestSkipped(\sprintf('%s is unreachable.', $envVar));
+        }
     }
 
     /**
