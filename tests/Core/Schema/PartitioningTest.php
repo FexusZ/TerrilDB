@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Core\Schema;
 
-use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\Change\SchemaChangePlanner;
+use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\Exception\InvalidSchemaException;
 use App\Core\Schema\PartitionDefinition;
 use App\Core\Schema\PartitioningInfo;

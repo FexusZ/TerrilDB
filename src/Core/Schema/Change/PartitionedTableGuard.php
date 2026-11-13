@@ -10,7 +10,6 @@ use App\Core\Schema\Change\Operation\AddForeignKey;
 use App\Core\Schema\Change\Operation\DropColumn;
 use App\Core\Schema\Change\Operation\ModifyColumn;
 use App\Core\Schema\Change\Operation\RenameColumn;
-use App\Core\Schema\PartitionMethod;
 use App\Core\Schema\PartitioningInfo;
 use App\Core\Schema\TableDefinition;
 
@@ -79,7 +78,7 @@ final class PartitionedTableGuard
                 }
                 continue;
             }
-            $tokens = array_flip(array_map(strtolower(...), (array) preg_split('/[^\p{L}\p{N}_$]+/u', $expression, -1, \PREG_SPLIT_NO_EMPTY)));
+            $tokens = array_flip(array_map(static fn (string $t): string => strtolower($t), preg_split('/[^\p{L}\p{N}_$]+/u', $expression, -1, \PREG_SPLIT_NO_EMPTY) ?: []));
             foreach ($table->columns as $column) {
                 if (isset($tokens[strtolower($column->name)])) {
                     $found[strtolower($column->name)] = true;
