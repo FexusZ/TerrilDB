@@ -16,6 +16,7 @@ use App\Core\Connection\Exception\InvalidConnectionParametersException;
 final readonly class ConnectionParameters
 {
     private const FORMAT_VERSION = 1;
+    private const FORMAT_VERSION_TRANSPORT = 2;
     private const HOST_MAX_LENGTH = 255;
     private const NAME_MAX_LENGTH = 128;
     private const PASSWORD_MAX_LENGTH = 1024;
@@ -28,6 +29,7 @@ final readonly class ConnectionParameters
         #[\SensitiveParameter] private string $password,
         private ?string $pinnedAddress = null,
         public ?string $schema = null,
+        public ?Transport $transport = null,
     ) {
         if ('' === $host || \strlen($host) > self::HOST_MAX_LENGTH || 1 !== preg_match('/^[^\s\p{Cc}]+$/uD', $host)) {
             throw new InvalidConnectionParametersException('The host is not valid.');
@@ -58,7 +60,7 @@ final readonly class ConnectionParameters
 
     public function withPassword(#[\SensitiveParameter] string $password): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema);
+        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema, $this->transport);
     }
 
     /**
@@ -76,7 +78,7 @@ final readonly class ConnectionParameters
      */
     public function withAddress(string $address): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema, $this->transport);
     }
 
     /**
@@ -84,7 +86,7 @@ final readonly class ConnectionParameters
      */
     public function withDatabase(string $database): self
     {
-        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema);
+        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport);
     }
 
     /**
@@ -93,19 +95,34 @@ final readonly class ConnectionParameters
      */
     public function withSchema(?string $schema): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema, $this->transport);
+    }
+
+    /**
+     * Le premier saut que le serveur joint vraiment : le bastion s'il y en a un, sinon la base elle-même.
+     *
+     * @return array{string, int}
+     */
+    public function firstHop(): array
+    {
+        return null === $this->transport ? [$this->host, $this->port] : [$this->transport->host, $this->transport->port];
     }
 
     public function toJson(): string
     {
-        return json_encode([
-            'v' => self::FORMAT_VERSION,
+        $data = [
+            'v' => null === $this->transport ? self::FORMAT_VERSION : self::FORMAT_VERSION_TRANSPORT,
             'host' => $this->host,
             'port' => $this->port,
             'database' => $this->database,
             'username' => $this->username,
             'password' => $this->password,
-        ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
+        ];
+        if (null !== $this->transport) {
+            $data['transport'] = $this->transport->toArray();
+        }
+
+        return json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
     }
 
     public static function fromJson(#[\SensitiveParameter] string $json): self
@@ -116,7 +133,7 @@ final readonly class ConnectionParameters
             throw new InvalidConnectionParametersException('The connection parameters are not valid JSON.');
         }
 
-        if (!\is_array($data) || self::FORMAT_VERSION !== ($data['v'] ?? null)) {
+        if (!\is_array($data) || !\in_array($data['v'] ?? null, [self::FORMAT_VERSION, self::FORMAT_VERSION_TRANSPORT], true)) {
             throw new InvalidConnectionParametersException('The connection parameters have an unsupported format.');
         }
 
@@ -129,7 +146,25 @@ final readonly class ConnectionParameters
             throw new InvalidConnectionParametersException('The connection parameters are incomplete.');
         }
 
-        return new self($host, $port, $database, $username, $password);
+        // Le format 2 existe pour porter un transport : sans lui, il est illisible.
+        $transport = self::FORMAT_VERSION_TRANSPORT === $data['v'] ? self::transportFrom($data['transport'] ?? null) : null;
+
+        return new self($host, $port, $database, $username, $password, transport: $transport);
+    }
+
+    private static function transportFrom(mixed $data): Transport
+    {
+        $text = static fn (string $key): ?string => \is_array($data) && \is_string($data[$key] ?? null) ? $data[$key] : null;
+        $number = static fn (string $key): ?int => \is_array($data) && \is_int($data[$key] ?? null) ? $data[$key] : null;
+
+        $transport = match ($text('type')) {
+            'ssh' => null !== $text('host') && null !== $number('port') && null !== $text('username') && null !== $text('privateKey')
+                ? new SshJump($text('host'), $number('port'), $text('username'), $text('privateKey'), $text('hostKeyFingerprint'))
+                : null,
+            default => null,
+        };
+
+        return $transport ?? throw new InvalidConnectionParametersException('The connection transport is not valid.');
     }
 
     /**
@@ -144,6 +179,7 @@ final readonly class ConnectionParameters
             'username' => $this->username,
             'address' => $this->address(),
             'password' => '***',
+            'transport' => null === $this->transport ? '' : \sprintf('ssh %s:%d', $this->transport->host, $this->transport->port),
         ];
     }
 

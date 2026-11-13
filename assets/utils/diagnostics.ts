@@ -1,7 +1,8 @@
-import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/types'
+import type { BlockingNode, DiagnosticStatus, OpenTransaction, TableHolder } from '../api/types'
 
 const REASONS: Record<string, string> = {
   performance_schema_off: 'performance_schema est éteint sur ce serveur',
+  sys_schema_missing: 'le schéma sys est absent de ce serveur',
   extension_missing: 'L’extension pg_stat_statements n’est pas créée dans cette base',
   library_not_loaded: 'L’extension pg_stat_statements n’est pas préchargée par le serveur (shared_preload_libraries)',
   query_log_off: 'Le journal system.query_log est absent ou désactivé sur ce serveur ClickHouse',
@@ -29,6 +30,8 @@ export function describeStatus(status: DiagnosticStatus, topic: string): string 
       return `Le compte de la connexion n’a pas le droit de lire ${topic}${status.privilege === null ? '' : ` : il lui manque ${status.privilege}`}.`
     case 'disabled':
       return `${status.reason !== null && REASONS[status.reason] !== undefined ? REASONS[status.reason] : 'La source est éteinte ou absente sur ce serveur'} : ne rien voir ici ne veut pas dire qu’il n’y a rien à voir.`
+    case 'error':
+      return `La vérification de ${topic} a échoué pour une cause imprévue : ne rien voir ici ne veut pas dire qu’il n’y a rien à voir. Réessayez, et consultez le journal du serveur si cela persiste.`
     case 'unsupported':
       return `Ce moteur ne fournit pas ${topic}.`
   }
@@ -60,6 +63,14 @@ export interface BlockingLine {
 /** L'arbre à plat, parcours en profondeur : une ligne par session, avec sa profondeur pour l'indentation. */
 export function flattenBlocking(nodes: BlockingNode[], depth = 0): BlockingLine[] {
   return nodes.flatMap((node) => [{ node, depth }, ...flattenBlocking(node.blocked, depth + 1)])
+}
+
+/** Une session qui tient la table, en une ligne : « session 42 (alice), transaction ouverte depuis 2 min 15 s, inactive ». */
+export function describeHolder(holder: TableHolder): string {
+  const who = holder.user === null ? `session ${holder.session}` : `session ${holder.session} (${holder.user})`
+  const age = holder.seconds === null ? '' : `, transaction ouverte depuis ${formatSeconds(holder.seconds)}`
+
+  return `${who}${age}${holder.sleeping ? ', inactive' : ''}`
 }
 
 /** Une durée en millisecondes dans l'unité qui se lit : 0,4 ms, 12 ms, 1,5 s, 2 min 30 s. */

@@ -12,6 +12,7 @@ use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Diagnostics\StatementDigest;
+use App\Core\Diagnostics\TableHolders;
 
 final class DiagnosticsPresenter
 {
@@ -21,6 +22,19 @@ final class DiagnosticsPresenter
     public static function status(DiagnosticStatus $status): array
     {
         return ['availability' => $status->availability->value, 'reason' => $status->reason, 'privilege' => $status->privilege];
+    }
+
+    /**
+     * Qui tient une table (pré-contrôle d'un changement de structure) : sessions, âge, mode, jamais le texte de leur requête.
+     *
+     * @return array{status: array<string, string|null>, holders: list<array{session: string, user: string|null, seconds: int|null, sleeping: bool, mode: string|null}>}
+     */
+    public static function tableHolders(TableHolders $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'holders' => array_map(static fn ($h): array => ['session' => $h->session, 'user' => $h->user, 'seconds' => $h->seconds, 'sleeping' => $h->sleeping, 'mode' => $h->mode], $report->holders),
+        ];
     }
 
     /**

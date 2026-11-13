@@ -28,7 +28,7 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
-comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `invalid_input`,
+comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `deadlock` / `serialization_failure` / `lock_timeout` (`retryable: true`, voir docs/api.md), `invalid_input`,
 `target_unreachable`, `permission_denied`, `confirmation_required` (avec `reason`) ; le motif `write_not_permitted` signale un droit manquant.
 
 ## Configuration d'un client

@@ -141,7 +141,7 @@ final readonly class ApiController
     public function diagnostics(string $id): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $capabilities = $this->open($id, static fn (TargetConnection $target): array => $target->diagnostics()->capabilities());
+        $capabilities = $this->open($id, fn (TargetConnection $target): array => $this->diagnostics->capabilities($target));
 
         return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
     }

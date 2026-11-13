@@ -41,6 +41,15 @@ final readonly class DiagnosticStatus
         return new self(Availability::Disabled, $reason, null);
     }
 
+    /**
+     * La vérification de ce thème a échoué pour une cause que les autres états ne couvrent pas. Le code est fixe : le message du
+     * moteur (hôte, utilisateur…) n'entre jamais dans un état.
+     */
+    public static function failed(): self
+    {
+        return new self(Availability::Error, 'check_failed', null);
+    }
+
     public static function unsupported(string $reason = 'not_supported'): self
     {
         return new self(Availability::Unsupported, $reason, null);
