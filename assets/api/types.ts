@@ -191,7 +191,8 @@ export interface ApiTokenInput {
 }
 
 /** Pourquoi une source de supervision se lit ou non : « vide » n'est jamais un état. */
-export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled'
+/** `error` : la vérification a échoué pour une cause imprévue (`reason: check_failed`) ; on ne sait pas, et on le dit. */
+export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled' | 'error'
 
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability

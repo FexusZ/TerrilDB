@@ -30,7 +30,7 @@ final readonly class DiagnosticsController
     #[Route('/web/connections/{id}/diagnostics', requirements: self::ID, methods: ['GET'])]
     public function capabilities(string $id, Request $request): JsonResponse
     {
-        $capabilities = $this->targets->withSaved(Uuid::fromString($id), static fn (TargetConnection $target): array => $target->diagnostics()->capabilities(), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $capabilities = $this->targets->withSaved(Uuid::fromString($id), fn (TargetConnection $target): array => $this->diagnostics->capabilities($target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
     }

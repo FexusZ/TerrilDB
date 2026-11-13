@@ -76,6 +76,11 @@ describe('error messages', () => {
     const timeout = messageFor(new ApiError(409, 'lock_timeout', { retryable: true }))
     expect(timeout).toContain('verrou')
     expect(timeout).not.toBe(deadlock)
+    const serialization = messageFor(new ApiError(409, 'serialization_failure', { retryable: true, message: "value 'jean@example.org'" }))
+    expect(serialization).toContain('simultanée')
+    expect(serialization).toContain('Relancez')
+    expect(serialization).not.toContain('jean')
+    expect(serialization).not.toContain('interblocage')
   })
 
   it('does not advise replaying when part of the change is already applied', () => {

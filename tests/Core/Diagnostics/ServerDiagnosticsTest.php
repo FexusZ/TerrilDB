@@ -6,6 +6,7 @@ namespace App\Tests\Core\Diagnostics;
 
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\LockDiagnostics;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
@@ -92,5 +93,60 @@ final class ServerDiagnosticsTest extends TestCase
         self::assertSame('disabled', $diagnostics->capabilities()['locks']->availability->value);
         $this->expectException(UnsupportedOperationException::class);
         (new ServerDiagnostics(Engine::ClickHouse))->locks();
+    }
+
+    private function brokenSessions(): SessionDiagnostics
+    {
+        return new class implements SessionDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                throw DiagnosticsFailedException::create(new \RuntimeException("connection lost to 'db.internal' for user jean"));
+            }
+
+            public function sessions(): SessionReport
+            {
+                throw new \LogicException('Not read here.');
+            }
+        };
+    }
+
+    private function healthyLocks(): LockDiagnostics
+    {
+        return new class implements LockDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::available();
+            }
+
+            public function locks(): LockReport
+            {
+                throw new \LogicException('Not read here.');
+            }
+
+            public function tableHolders(string $table): TableHolders
+            {
+                return new TableHolders(DiagnosticStatus::available(), []);
+            }
+        };
+    }
+
+    public function testAThemeThatFailsDoesNotHideTheOthers(): void
+    {
+        $capabilities = (new ServerDiagnostics(Engine::PostgreSql, $this->brokenSessions(), $this->healthyLocks()))->capabilities();
+
+        self::assertSame('error', $capabilities['sessions']->availability->value);
+        self::assertSame('check_failed', $capabilities['sessions']->reason);
+        self::assertSame('available', $capabilities['locks']->availability->value);
+    }
+
+    public function testTheFailureIsHandedToTheCallerWithItsThemeSoItCanBeLogged(): void
+    {
+        $seen = [];
+
+        (new ServerDiagnostics(Engine::PostgreSql, $this->brokenSessions(), $this->healthyLocks()))->capabilities(static function (string $theme, DiagnosticsFailedException $e) use (&$seen): void {
+            $seen[] = [$theme, $e->getPrevious()?->getMessage()];
+        });
+
+        self::assertSame([['sessions', "connection lost to 'db.internal' for user jean"]], $seen);
     }
 }

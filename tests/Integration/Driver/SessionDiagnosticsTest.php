@@ -89,6 +89,15 @@ final class SessionDiagnosticsTest extends TestCase
         self::assertSame(TargetDatabase::parameters($envVar)->username, $current[0]->user);
         self::assertSame('shop', $current[0]->database);
         self::assertNotNull($current[0]->seconds);
+        // La session courante est celle de la requête qui la liste : le texte dit quelle source le moteur a servie.
+        $expectedSource = match (TargetDatabase::engine($envVar)) {
+            Engine::MySql => 'performance_schema.processlist',
+            Engine::MariaDb => 'information_schema.PROCESSLIST',
+            default => null,
+        };
+        if (null !== $expectedSource) {
+            self::assertStringContainsString($expectedSource, $current[0]->query ?? '');
+        }
         foreach ($report->sessions as $session) {
             self::assertLessThanOrEqual(ServerSession::MAX_QUERY_LENGTH, mb_strlen($session->query ?? ''));
             self::assertStringNotContainsString(':', $session->client ?? '', 'The client address has no port.');

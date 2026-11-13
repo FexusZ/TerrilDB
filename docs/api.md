@@ -33,21 +33,21 @@ Toujours `{"error": "<code>", …}`. Codes : `invalid_token` (401, en-tête `WWW
 connexion hors jeton comprise), `query_refused` (403, avec `reason`), `query_failed` (400, avec `message` du moteur),
 `query_timeout` (408), `invalid_input` (422), `bad_request` (400), `too_many_attempts` (429, avec `Retry-After`),
 `target_unreachable` (502), `permission_denied` (403, le jeton n'a pas le droit), `confirmation_required` (409, avec `reason`),
-`deadlock` et `lock_timeout` (409, `retryable`, jamais le message du moteur).
+`deadlock`, `serialization_failure` et `lock_timeout` (409, `retryable`, jamais le message du moteur).
 
 Motifs de refus (`reason`) : `empty_statement`, `multiple_statements`, `incomplete_sql`, `too_long`, `not_read_only`,
 `forbidden_construct`, `unsupported_statement`, `write_not_permitted` (le jeton n'a pas le droit de cette sorte d'écriture).
 
-## Verrous : `deadlock` et `lock_timeout`
+## Verrous : `deadlock`, `serialization_failure` et `lock_timeout`
 
-Classés d'après le CODE du moteur (MySQL/MariaDB 1213 et 1205, PostgreSQL SQLSTATE 40P01/40001 et 55P03), jamais d'après son texte, pour
+Classés d'après le CODE du moteur (MySQL/MariaDB 1213 et 1205, PostgreSQL SQLSTATE 40P01, 40001 et 55P03), jamais d'après son texte, pour
 `/execute` comme pour les écritures de l'interface. `deadlock` : le moteur a annulé toute la transaction, l'opération entière se rejoue.
 `lock_timeout` : l'instruction a cessé d'attendre un verrou tenu par une autre transaction ; on regarde qui bloque, puis on réessaie. Le
 corps porte `retryable: true` ; TerrilDB ne rejoue jamais seul. Exception : une modification de structure MySQL/MariaDB/ClickHouse se joue
 instruction par instruction ; si certaines sont DÉJÀ appliquées (`applied` non vide), `retryable` vaut `false` et il ne faut pas rejouer
 l'opération entière : relire la table, puis refaire ce qui manque. `retryable: true` n'est rendu que si rien n'a été appliqué (transaction
-annulée en entier). Précision : le SQLSTATE PostgreSQL 40001 (`serialization_failure`) est publié sous le code `deadlock` (même
-conduite : la transaction est annulée, on la rejoue) ; il n'a pas de code propre. Un délai d'exécution reste `query_timeout`. Les autres échecs d'écriture
+annulée en entier). `serialization_failure` (SQLSTATE PostgreSQL 40001) : deux transactions simultanées ne pouvaient pas rester cohérentes, le moteur
+a annulé celle-ci ; même conduite que `deadlock` (on rejoue l'opération entière), mais ce n'est pas un interblocage. Un délai d'exécution reste `query_timeout`. Les autres échecs d'écriture
 (`data_change_failed`, `schema_change_failed`) portent `retryable: false`.
 
 ## Écrire
@@ -69,7 +69,9 @@ console : des requêtes de catalogue fixes, écrites par TerrilDB, en lecture se
 `permission_denied`. Moteur sans supervision (Redis) : `capabilities` dit `unsupported`, la route des sessions répond 501 `unsupported_operation`.
 
 Chaque source rend un **état** et non une erreur : `availability` = `available`, `unsupported`, `permission_denied` (avec `privilege`, le droit
-manquant) ou `disabled` (source éteinte ; `reason` en donne le code stable). Une liste vide d'une source illisible n'est jamais rendue comme
+manquant), `disabled` (source éteinte ou absente ; `reason` en donne le code stable) ou `error` (`reason: check_failed` : la vérification a échoué
+pour une cause imprévue ; on ne sait pas, on le dit, et le détail n'est jamais montré). Dans la carte des capacités (`GET …/diagnostics`) un thème en échec rend
+`error` sans masquer les autres ; la route d'un thème précis (`…/diagnostics/sessions`) répond alors 502 `diagnostics_failed`. Une liste vide d'une source illisible n'est jamais rendue comme
 « personne ». Sessions : `id`, `user`, `client` (sans port), `database`, `state`, `seconds`, `query`, `queryReason`, `current` (la session de TerrilDB) ; 200 au
 plus (`truncated`). Le texte de la requête est **masqué puis raccourci à 200 caractères** : les littéraux (chaînes, nombres) sont remplacés par `?` et les commentaires
 retirés avant la troncature (d'après le scanner lexical du garde, par dialecte), donc `ALTER ROLE x PASSWORD 'secret'` ressort `ALTER ROLE x PASSWORD ?`. Un texte que
@@ -89,7 +91,8 @@ Compte de supervision minimal à donner à la connexion (documenté, pas imposé
 
 | Moteur | Source | Droit |
 | --- | --- | --- |
-| MySQL, MariaDB | `information_schema.PROCESSLIST` | `PROCESS` (accordé au compte lui-même : un droit reçu par un rôle n'est pas vu) |
+| MySQL | `performance_schema.processlist` (`information_schema.PROCESSLIST` est déprécié) ; état `disabled` (`performance_schema_off`) si `performance_schema` est désactivé : la table se lit alors VIDE | `PROCESS` (accordé au compte lui-même : un droit reçu par un rôle n'est pas vu) |
+| MariaDB | `information_schema.PROCESSLIST` (sa seule source) | `PROCESS`, comme ci-dessus |
 | PostgreSQL | `pg_stat_activity` | rôle `pg_monitor` ou `pg_read_all_stats` |
 | ClickHouse | `system.processes` | `SELECT ON system.processes` |
 | Redis | – | non pris en charge |

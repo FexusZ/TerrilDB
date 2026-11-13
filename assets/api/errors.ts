@@ -99,6 +99,9 @@ export function messageFor(error: unknown): string {
     case 'deadlock':
       if (partlyApplied(error)) return PARTLY_APPLIED
       return 'La base a détecté un interblocage avec une autre transaction et a annulé cette opération. Relancez-la telle quelle.'
+    case 'serialization_failure':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'La base a annulé cette opération parce qu’une modification simultanée l’empêchait de rester cohérente. Relancez-la telle quelle.'
     case 'lock_timeout':
       if (partlyApplied(error)) return PARTLY_APPLIED
       return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
