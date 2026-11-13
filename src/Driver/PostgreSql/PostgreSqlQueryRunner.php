@@ -47,7 +47,7 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
             $result = StatementKind::Read === $kind
                 ? $this->readThroughCursor($pdo, $sql, $options, $started)
                 : $this->execute($pdo, $sql, $options, $started);
-            $pdo->exec($readOnly ? 'ROLLBACK' : 'COMMIT');
+            $pdo->exec($readOnly || $options->discard ? 'ROLLBACK' : 'COMMIT');
 
             return $result;
         } catch (\PDOException $e) {
