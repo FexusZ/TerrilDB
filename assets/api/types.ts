@@ -110,6 +110,36 @@ export interface ForeignKeyInfo {
   onDelete: string
 }
 
+export type PartitionMethod = 'range' | 'list' | 'hash' | 'key'
+
+export interface SubpartitionInfo {
+  name: string
+  estimatedRows: number | null
+  dataBytes: number | null
+}
+
+export interface PartitionInfo {
+  name: string
+  /** Borne ou valeurs telles que le moteur les écrit (affichage seulement). */
+  bound: string | null
+  /** MAXVALUE ou DEFAULT : reçoit tout ce que les autres refusent. */
+  catchAll: boolean
+  estimatedRows: number | null
+  dataBytes: number | null
+  subpartitions: SubpartitionInfo[]
+}
+
+/** Le découpage d’une table en partitions (lecture seule). */
+export interface PartitioningInfo {
+  method: PartitionMethod
+  expression: string
+  subMethod: PartitionMethod | null
+  subExpression: string | null
+  estimatedRows: number | null
+  dataBytes: number | null
+  partitions: PartitionInfo[]
+}
+
 export interface TableDetail {
   name: string
   /** Empreinte de la structure : renvoyée à l’API pour refuser un brouillon bâti sur une table qui a changé. */
@@ -123,6 +153,8 @@ export interface TableDetail {
   columns: ColumnInfo[]
   indexes: IndexInfo[]
   foreignKeys: ForeignKeyInfo[]
+  /** Partitions de la table (lecture seule) ; nul ou absent sans partition. */
+  partitioning?: PartitioningInfo | null
 }
 
 export type KeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'other'
@@ -315,7 +347,7 @@ export interface PlanResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'partition_range_exhausted' | 'too_many_partitions'
   severity: 'warning' | 'info'
   table: string
   columns: string[]

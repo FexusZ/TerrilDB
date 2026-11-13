@@ -22,6 +22,16 @@ describe('optimizer wording', () => {
     expect(mismatch.help).toContain('convertit')
   })
 
+  it('words the partition rules', () => {
+    const exhausted = describeSchemaFinding(finding({ rule: 'partition_range_exhausted', table: 'events', columns: ['created_on'], detail: '2025-01-01' }))
+    expect(exhausted.title).toBe('La plage de partitions de « events » sur created_on s’arrête au 2025-01-01, sans partition pour la suite.')
+    expect(exhausted.help).toContain('refuse')
+
+    const many = describeSchemaFinding(finding({ rule: 'too_many_partitions', severity: 'info', table: 'events', detail: '1500' }))
+    expect(many.title).toBe('La table « events » a 1500 partitions.')
+    expect(many.help).toContain('1000')
+  })
+
   it('words a big full scan, with its condition when there is one', () => {
     const base: PlanFindingInfo = { rule: 'full_scan', relation: 'orders', rows: 11420, condition: '(status = 1)' }
 
