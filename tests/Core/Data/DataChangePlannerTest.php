@@ -253,4 +253,32 @@ final class DataChangePlannerTest extends TestCase
         self::assertSame('INSERT INTO `events` (`id`, `label`) SELECT {p1:UInt64}, {p2:String}', $insert->sql);
         self::assertSame(['p1' => '6', 'p2' => 'c'], $insert->params);
     }
+
+    /**
+     * @return iterable<string, array{Engine, string}>
+     */
+    public static function hostileNames(): iterable
+    {
+        foreach ([Engine::PostgreSql, Engine::MySql, Engine::ClickHouse] as $engine) {
+            foreach (["a\nDROP DATABASE y", "a\u{85}b", "a\u{2028}b", "a\u{2029}b", "a\0b", "a\rb"] as $i => $name) {
+                yield $engine->value.' '.$i => [$engine, $name];
+            }
+        }
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('hostileNames')]
+    public function testATableOrColumnNamedWithALineSeparatorIsNeverWrittenInTheStatements(Engine $engine, string $name): void
+    {
+        $table = new TableDefinition($name, TableKind::Table, [self::col('id'), self::col('status', 'text')], [new IndexDefinition('pk', ['id'], true, true)], [], null, 10);
+        try {
+            (new DataChangePlanner())->plan($engine, $table, new DataDraft([], [new RowInsert(['status' => 'x'])], []));
+            self::fail('Un nom de table hostile a été cité.');
+        } catch (InvalidDataChangeException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $table = new TableDefinition('orders', TableKind::Table, [self::col('id'), self::col($name, 'text')], [new IndexDefinition('pk', ['id'], true, true)], [], null, 10);
+        $this->expectException(InvalidDataChangeException::class);
+        (new DataChangePlanner())->plan($engine, $table, new DataDraft([], [new RowInsert([$name => 'x'])], []));
+    }
 }

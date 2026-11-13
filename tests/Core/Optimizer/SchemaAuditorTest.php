@@ -379,4 +379,49 @@ final class SchemaAuditorTest extends TestCase
         self::assertCount(1, $findings);
         self::assertSame(['a'], $findings[0]->columns);
     }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function hostileNames(): iterable
+    {
+        yield 'LF' => ["x\nDROP DATABASE y"];
+        yield 'CR' => ["x\rDROP"];
+        yield 'NEL' => ["x\u{85}DROP"];
+        yield 'LS' => ["x\u{2028}DROP"];
+        yield 'PS' => ["x\u{2029}DROP"];
+        yield 'NUL' => ["x\0DROP"];
+        yield 'bidi' => ["x\u{202E}DROP"];
+        yield 'long' => [str_repeat('a', 2000)];
+    }
+
+    #[DataProvider('hostileNames')]
+    public function testASuggestionNeverCarriesAHostileName(string $name): void
+    {
+        foreach ([Engine::PostgreSql, Engine::MySql, Engine::MariaDb] as $engine) {
+            $orders = $this->table($name, ['id', 'customer_id'], [new IndexDefinition('orders_pkey', ['id'], true, true)], [$this->fk('fk', ['customer_id'])]);
+            $byColumn = $this->table('orders', ['id', $name], [new IndexDefinition('orders_pkey', ['id'], true, true)], [$this->fk('fk', [$name])]);
+            $redundant = $this->table('orders', ['id', 'a'], [
+                new IndexDefinition('orders_pkey', ['id'], true, true),
+                new IndexDefinition($name, ['a'], false, false),
+                new IndexDefinition('idx_a_b', ['a', 'id'], false, false),
+            ]);
+            foreach ([$orders, $byColumn, $redundant] as $table) {
+                $findings = $this->audit([$table], $engine);
+                self::assertNotSame([], $findings);
+                foreach ($findings as $finding) {
+                    self::assertNull($finding->suggestion, 'Une suggestion citerait le nom hostile.');
+                }
+            }
+        }
+    }
+
+    public function testQuotesInsideANameStayInsideTheIdentifier(): void
+    {
+        $orders = $this->table('o"; DROP TABLE t; --', ['id', 'c`d'], [new IndexDefinition('orders_pkey', ['id'], true, true)], [$this->fk('fk', ['c`d'])]);
+
+        $findings = $this->audit([$orders]);
+
+        self::assertStringContainsString('ON "o""; DROP TABLE t; --" ("c`d");', (string) $findings[0]->suggestion);
+    }
 }

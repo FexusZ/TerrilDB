@@ -9,6 +9,8 @@ use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Sql\SqlText;
+use App\Core\Sql\UnsafeSqlNameException;
 
 /**
  * Audit d'un schéma par règles simples et sûres, à partir de ce que l'introspection sait déjà : tables sans clé
@@ -160,7 +162,7 @@ final class SchemaAuditor
                 Severity::Warning,
                 $table->name,
                 [$name],
-                suggestion: \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s;', self::quote($engine, $table->name), self::quote($engine, $name), $referenced->type),
+                suggestion: self::safely(static fn (): string => \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s;', SqlText::quoteIdentifier($engine, $table->name), SqlText::quoteIdentifier($engine, $name), self::plainType($referenced->type))),
                 detail: $own->type.' → '.$referenced->type,
             );
         }
@@ -227,21 +229,48 @@ final class SchemaAuditor
     /**
      * @param list<string> $columns
      */
-    private function createIndex(Engine $engine, string $table, array $columns): string
+    private function createIndex(Engine $engine, string $table, array $columns): ?string
     {
-        return \sprintf(
+        return self::safely(static fn (): string => \sprintf(
             'CREATE INDEX %s ON %s (%s);',
             self::indexName($table, $columns),
-            self::quote($engine, $table),
-            implode(', ', array_map(static fn (string $column): string => self::quote($engine, $column), $columns)),
-        );
+            SqlText::quoteIdentifier($engine, $table),
+            implode(', ', array_map(static fn (string $column): string => SqlText::quoteIdentifier($engine, $column), $columns)),
+        ));
     }
 
-    private function dropIndex(Engine $engine, string $table, string $index): string
+    private function dropIndex(Engine $engine, string $table, string $index): ?string
     {
-        return Engine::PostgreSql === $engine
-            ? \sprintf('DROP INDEX %s;', self::quote($engine, $index))
-            : \sprintf('ALTER TABLE %s DROP INDEX %s;', self::quote($engine, $table), self::quote($engine, $index));
+        return self::safely(static fn (): string => Engine::PostgreSql === $engine
+            ? \sprintf('DROP INDEX %s;', SqlText::quoteIdentifier($engine, $index))
+            : \sprintf('ALTER TABLE %s DROP INDEX %s;', SqlText::quoteIdentifier($engine, $table), SqlText::quoteIdentifier($engine, $index)));
+    }
+
+    /**
+     * Une suggestion est du texte à copier : si l'un des noms qu'elle cite n'est pas sûr (saut de ligne, contrôle, texte invalide,
+     * démesure), on n'en propose pas, plutôt que d'en écrire une qui pourrait agir autrement qu'annoncé.
+     *
+     * @param \Closure(): string $build
+     */
+    private static function safely(\Closure $build): ?string
+    {
+        try {
+            return $build();
+        } catch (UnsafeSqlNameException) {
+            return null;
+        }
+    }
+
+    /**
+     * Un type lu dans le catalogue, recopié tel quel dans la suggestion seulement s'il a la forme d'un type usuel.
+     */
+    private static function plainType(string $type): string
+    {
+        if (1 !== preg_match('/\A[A-Za-z0-9_ ,()]{1,100}\z/', $type)) {
+            throw new UnsafeSqlNameException('Unusual type.');
+        }
+
+        return $type;
     }
 
     /**
@@ -256,10 +285,5 @@ final class SchemaAuditor
         }
 
         return $name;
-    }
-
-    private static function quote(Engine $engine, string $identifier): string
-    {
-        return Engine::PostgreSql === $engine ? '"'.str_replace('"', '""', $identifier).'"' : '`'.str_replace('`', '``', $identifier).'`';
     }
 }
