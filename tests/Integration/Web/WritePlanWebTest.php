@@ -82,7 +82,9 @@ final class WritePlanWebTest extends WebApiTestCase
         self::assertSame('order_items', $write['relation']);
         self::assertTrue($write['fullScan']);
         self::assertIsInt($write['rows']);
-        self::assertSame(Engine::PostgreSql !== TargetDatabase::engine($envVar), $write['locksWide']);
+        // MySQL et MariaDB annoncent parfois très peu de lignes tant que la table n'est pas analysée (base neuve en CI) :
+        // le verdict suit l'estimation du moteur, pas le contenu réel.
+        self::assertSame(Engine::PostgreSql !== TargetDatabase::engine($envVar) && $write['rows'] >= 1000, $write['locksWide']);
         self::assertSame($before, $this->counts(), 'rien n\'a été supprimé');
     }
 
