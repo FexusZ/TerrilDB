@@ -7,6 +7,7 @@ namespace App\Http\Web;
 use App\Audit\AuditedDiagnostics;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
+use App\Http\Json\DigestQueryParam;
 use App\Http\Json\VariableQueryParser;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -31,7 +32,7 @@ final readonly class DiagnosticsController
     #[Route('/web/connections/{id}/diagnostics', requirements: self::ID, methods: ['GET'])]
     public function capabilities(string $id, Request $request): JsonResponse
     {
-        $capabilities = $this->targets->withSaved(Uuid::fromString($id), static fn (TargetConnection $target): array => $target->diagnostics()->capabilities(), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $capabilities = $this->targets->withSaved(Uuid::fromString($id), fn (TargetConnection $target): array => $this->diagnostics->capabilities($target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
     }
@@ -52,6 +53,16 @@ final readonly class DiagnosticsController
         $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->locks($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
+
+    #[Route('/web/connections/{id}/diagnostics/queries', requirements: self::ID, methods: ['GET'])]
+    public function queries(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $query = DigestQueryParam::fromQuery($request);
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->statements($this->session->auditContext(), $uuid, $target, $query), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::statements($report));
     }
 
     #[Route('/web/connections/{id}/diagnostics/variables', requirements: self::ID, methods: ['GET'])]

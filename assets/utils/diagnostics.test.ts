@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/types'
-import { describeStatus, describeRestart, describeSource, flattenBlocking, formatSeconds, isLongTransaction } from './diagnostics'
+import { describeStatus, enableHint, flattenBlocking, formatMs, formatRatio, formatSeconds, isLongTransaction, describeRestart, describeSource } from './diagnostics'
 
 const status = (availability: DiagnosticStatus['availability'], extra: Partial<DiagnosticStatus> = {}): DiagnosticStatus => ({ availability, reason: null, privilege: null, ...extra })
 
@@ -20,6 +20,19 @@ describe('describeStatus', () => {
   it('explains a switched-off source and says it is not an empty list', () => {
     expect(describeStatus(status('disabled', { reason: 'performance_schema_off' }), 'les verrous')).toContain('performance_schema')
     expect(describeStatus(status('disabled', { reason: 'performance_schema_off' }), 'les verrous')).toContain('ne veut pas dire')
+  })
+
+  it('explains a missing sys schema', () => {
+    const message = describeStatus(status('disabled', { reason: 'sys_schema_missing' }), 'les verrous')
+    expect(message).toContain('sys')
+    expect(message).toContain('ne veut pas dire')
+  })
+
+  it('says a check failed without knowing why, and never shows the reason code', () => {
+    const message = describeStatus(status('error', { reason: 'check_failed' }), 'les verrous')
+    expect(message).toContain('a échoué')
+    expect(message).toContain('ne veut pas dire')
+    expect(message).not.toContain('check_failed')
   })
 
   it('says the engine has no such source', () => {
@@ -61,6 +74,36 @@ describe('flattenBlocking', () => {
     const lines = flattenBlocking([node('1', [node('2', [node('3')]), node('4')]), node('5')])
 
     expect(lines.map((line) => [line.node.id, line.depth])).toEqual([['1', 0], ['2', 1], ['3', 2], ['4', 1], ['5', 0]])
+  })
+})
+
+describe('top queries helpers', () => {
+  it('explains each switched-off source of the digests', () => {
+    expect(describeStatus(status('disabled', { reason: 'extension_missing' }), 'les requêtes coûteuses')).toContain('pg_stat_statements')
+    expect(describeStatus(status('disabled', { reason: 'library_not_loaded' }), 'les requêtes coûteuses')).toContain('shared_preload_libraries')
+    expect(describeStatus(status('disabled', { reason: 'query_log_off' }), 'les requêtes coûteuses')).toContain('query_log')
+  })
+
+  it('gives the command to switch a source on, as text to read and never to run', () => {
+    expect(enableHint('extension_missing')).toContain('CREATE EXTENSION pg_stat_statements')
+    expect(enableHint('library_not_loaded')).toContain("shared_preload_libraries = 'pg_stat_statements'")
+    expect(enableHint('performance_schema_off')).toContain('performance_schema=ON')
+    expect(enableHint('something_else')).toBeNull()
+    expect(enableHint(null)).toBeNull()
+  })
+
+  it('formats milliseconds in the right unit', () => {
+    expect(formatMs(0.4)).toBe('0,4 ms')
+    expect(formatMs(12.34)).toBe('12 ms')
+    expect(formatMs(1500)).toBe('1,5 s')
+    expect(formatMs(150000)).toBe('2 min 30 s')
+  })
+
+  it('formats the ratio of rows examined over rows returned', () => {
+    expect(formatRatio(null)).toBe('')
+    expect(formatRatio(1)).toBe('1')
+    expect(formatRatio(1000)).toBe('1 000')
+    expect(formatRatio(2.5)).toBe('2,5')
   })
 })
 

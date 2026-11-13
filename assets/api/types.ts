@@ -191,7 +191,8 @@ export interface ApiTokenInput {
 }
 
 /** Pourquoi une source de supervision se lit ou non : « vide » n'est jamais un état. */
-export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled'
+/** `error` : la vérification a échoué pour une cause imprévue (`reason: check_failed`) ; on ne sait pas, et on le dit. */
+export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled' | 'error'
 
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability
@@ -257,6 +258,38 @@ export interface LockReport {
   blocking: BlockingNode[]
   /** L'arbre a été borné (nombre de sessions ou profondeur) : des sessions manquent. */
   blockingTruncated: boolean
+}
+
+export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
+
+/** Une famille de requêtes du serveur, regroupées par empreinte : le texte est normalisé par le moteur et ses littéraux masqués. */
+export interface StatementDigest {
+  text: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  textReason: 'redacted' | null
+  database: string | null
+  calls: number
+  /** Durées en millisecondes, quelle que soit l'unité de la source. */
+  totalMs: number
+  meanMs: number
+  maxMs: number | null
+  rowsExamined: number | null
+  rowsReturned: number | null
+  /** Lignes examinées pour une ligne renvoyée ; nul si la source ne compte pas les lignes lues. */
+  ratio: number | null
+  noIndexUsed: number | null
+  tmpDiskTables: number | null
+  sortMergePasses: number | null
+  firstSeen: string | null
+  lastSeen: string | null
+}
+
+export interface DigestReport {
+  status: DiagnosticStatus
+  order: DigestOrder
+  /** Fenêtre lue, en heures (ClickHouse) ; nulle quand la source cumule depuis sa remise à zéro. */
+  windowHours: number | null
+  digests: StatementDigest[]
 }
 
 export interface ServerVariable {
@@ -403,10 +436,28 @@ export interface StructurePlan {
   destructive: boolean
 }
 
+/** Une session qui tient la table : un ALTER attendrait sa fin. Jamais le texte de sa requête. */
+export interface TableHolder {
+  session: string
+  user: string | null
+  /** Âge de sa transaction, quand le moteur le dit. */
+  seconds: number | null
+  sleeping: boolean
+  mode: string | null
+}
+
+/** Pré-contrôle des verrous : un avertissement, jamais un blocage ; `status` dit si la source se lit. */
+export interface StructureLockCheck {
+  status: DiagnosticStatus
+  holders: TableHolder[]
+}
+
 export interface StructurePreview extends StructurePlan {
   fingerprint: string
   /** La table a changé depuis qu’on l’a chargée. */
   stale: boolean
+  /** Nul quand le moteur n'a pas de diagnostic. */
+  lockCheck?: StructureLockCheck | null
 }
 
 export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'

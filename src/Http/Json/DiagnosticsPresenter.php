@@ -6,11 +6,14 @@ namespace App\Http\Json;
 
 use App\Core\Diagnostics\BlockingNode;
 use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\ServerVariable;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Diagnostics\StatementDigest;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Diagnostics\VariableReport;
 
 final class DiagnosticsPresenter
@@ -21,6 +24,19 @@ final class DiagnosticsPresenter
     public static function status(DiagnosticStatus $status): array
     {
         return ['availability' => $status->availability->value, 'reason' => $status->reason, 'privilege' => $status->privilege];
+    }
+
+    /**
+     * Qui tient une table (pré-contrôle d'un changement de structure) : sessions, âge, mode, jamais le texte de leur requête.
+     *
+     * @return array{status: array<string, string|null>, holders: list<array{session: string, user: string|null, seconds: int|null, sleeping: bool, mode: string|null}>}
+     */
+    public static function tableHolders(TableHolders $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'holders' => array_map(static fn ($h): array => ['session' => $h->session, 'user' => $h->user, 'seconds' => $h->seconds, 'sleeping' => $h->sleeping, 'mode' => $h->mode], $report->holders),
+        ];
     }
 
     /**
@@ -124,6 +140,38 @@ final class DiagnosticsPresenter
             'mode' => $node->mode,
             'object' => $node->object,
             'blocked' => array_map(self::node(...), $node->blocked),
+        ];
+    }
+
+    /**
+     * Les empreintes les plus coûteuses : texte normalisé et raccourci (jamais de valeurs), durées en millisecondes, ratio
+     * « lignes examinées / lignes renvoyées » quand la source le permet. Rien ici n'est une instruction à exécuter.
+     *
+     * @return array<string, mixed>
+     */
+    public static function statements(DigestReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'order' => $report->order->value,
+            'windowHours' => $report->windowHours,
+            'digests' => array_map(static fn (StatementDigest $d): array => [
+                'text' => $d->text,
+                'textReason' => $d->textRedacted ? 'redacted' : null,
+                'database' => $d->database,
+                'calls' => $d->calls,
+                'totalMs' => $d->totalMs,
+                'meanMs' => $d->meanMs,
+                'maxMs' => $d->maxMs,
+                'rowsExamined' => $d->rowsExamined,
+                'rowsReturned' => $d->rowsReturned,
+                'ratio' => $d->ratio(),
+                'noIndexUsed' => $d->noIndexUsed,
+                'tmpDiskTables' => $d->tmpDiskTables,
+                'sortMergePasses' => $d->sortMergePasses,
+                'firstSeen' => $d->firstSeen,
+                'lastSeen' => $d->lastSeen,
+            ], $report->digests),
         ];
     }
 }

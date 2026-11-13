@@ -1,13 +1,13 @@
 import { api } from './client'
-import type { DiagnosticStatus, LockReport, SessionReport, VariableReport } from './types'
+import type { DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableReport } from './types'
 
 export interface DiagnosticScope {
   database: string | null
   schema: string | null
 }
 
-function suffix(scope: DiagnosticScope): string {
-  const parts: string[] = []
+function suffix(scope: DiagnosticScope, leading: string[] = []): string {
+  const parts: string[] = [...leading]
   if (scope.database !== null) parts.push(`database=${encodeURIComponent(scope.database)}`)
   if (scope.schema !== null) parts.push(`schema=${encodeURIComponent(scope.schema)}`)
 
@@ -27,6 +27,10 @@ export const fetchSessions = (id: string, scope: DiagnosticScope): Promise<Sessi
 
 /** Transactions ouvertes et arbre « qui bloque qui » : lecture seule, rien n'est arrêté. */
 export const fetchLocks = (id: string, scope: DiagnosticScope): Promise<LockReport> => api<LockReport>('GET', `/web/connections/${id}/diagnostics/locks${suffix(scope)}`)
+
+/** Les requêtes les plus coûteuses par empreinte, classées et bornées (1 à 100) : lecture seule, rien n'est remis à zéro. */
+export const fetchTopQueries = (id: string, scope: DiagnosticScope, order: DigestOrder, limit: number): Promise<DigestReport> =>
+  api<DigestReport>('GET', `/web/connections/${id}/diagnostics/queries${suffix(scope, [`order=${order}`, `limit=${String(limit)}`])}`)
 
 export interface VariableFilter {
   search: string

@@ -326,6 +326,7 @@ final class McpTest extends WebApiTestCase
         $this->initialize();
         self::assertNotContains('list_sessions', $this->toolNames());
         self::assertNotContains('list_locks', $this->toolNames());
+        self::assertNotContains('top_queries', $this->toolNames());
         self::assertNotContains('list_variables', $this->toolNames());
         $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
         self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
@@ -370,6 +371,28 @@ final class McpTest extends WebApiTestCase
         self::assertNotContains('execute_statement', $this->toolNames());
 
         $other = $this->callTool('list_locks', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+    }
+
+    public function testListsTheCostliestQueriesThroughMcpWithoutWriting(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('top_queries', $this->toolNames());
+        $report = self::textOf($this->callTool('top_queries', ['connection' => $this->connectionId, 'order' => 'calls', 'limit' => 3]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertSame('calls', $report['order']);
+        self::assertNotEmpty($report['digests']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $bad = $this->callTool('top_queries', ['connection' => $this->connectionId, 'limit' => 500]);
+        // Le schéma de l'outil borne déjà la limite ; le cœur la borne encore si le client ne le respecte pas.
+        self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'An out-of-bounds limit must not run.');
+        self::assertArrayNotHasKey('structuredContent', $bad);
+
+        $other = $this->callTool('top_queries', ['connection' => $this->otherConnectionId]);
         self::assertTrue($other['isError']);
     }
 

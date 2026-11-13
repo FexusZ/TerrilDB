@@ -44,6 +44,6 @@ final readonly class ClickHouseDriver implements Driver
 
         // Pas de session ni de socket à libérer : chaque requête HTTP est indépendante.
         return new TargetConnection($engine, new ClickHouseIntrospector($http, '' !== $parameters->database ? $parameters->database : 'default'), new ClickHouseQueryRunner($http), static function (): void {
-        }, ddl: new ClickHouseDdlExecutor($http), data: new ClickHouseDataExecutor($http), diagnostics: new ServerDiagnostics($engine, new ClickHouseSessionDiagnostics($http), variables: new ClickHouseVariableDiagnostics($http)));
+        }, ddl: new ClickHouseDdlExecutor($http), data: new ClickHouseDataExecutor($http), diagnostics: new ServerDiagnostics($engine, new ClickHouseSessionDiagnostics($http), statements: new ClickHouseStatementDiagnostics($http), variables: new ClickHouseVariableDiagnostics($http)));
     }
 }

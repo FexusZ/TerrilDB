@@ -12,6 +12,8 @@ use App\Core\Diagnostics\LockParty;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\LockWait;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\TableHolder;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
@@ -23,7 +25,7 @@ use Doctrine\DBAL\Exception\DriverException;
  *
  * Transactions : information_schema.INNODB_TRX (privilège PROCESS), les deux moteurs.
  * MySQL : attentes de lignes par performance_schema.data_lock_waits / data_locks, attentes de métadonnées (la file derrière
- * un DDL) par la vue sys.schema_table_lock_waits ; sans performance_schema allumé, état « source éteinte » (jamais « aucun verrou »).
+ * un DDL) par la vue sys.schema_table_lock_waits ; sans performance_schema allumé, état « source éteinte » (jamais « aucun verrou »), de même sans schéma sys (`sys_schema_missing`).
  * MariaDB : pas de data_locks, attentes de lignes par INNODB_LOCK_WAITS / INNODB_LOCKS ; ses verrous de métadonnées ne se lisent
  * que par performance_schema, éteint par défaut : ils ne sont pas rapportés (le moteur n'a pas cette source ici).
  */
@@ -33,6 +35,8 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
     private const ER_TABLEACCESS_DENIED = 1142;
     private const ER_VIEW_INVALID = 1356;
     private const ER_SPECIFIC_ACCESS_DENIED = 1227;
+    private const ER_BAD_DB = 1049;
+    private const ER_NO_SUCH_TABLE = 1146;
 
     private DbalCatalogReader $catalog;
 
@@ -67,6 +71,50 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
         });
     }
 
+    /**
+     * Les verrous de métadonnées ACCORDÉS sur la table (même une simple lecture dans une transaction ouverte en tient un) : ceux
+     * que le ALTER attendrait. Source : performance_schema.metadata_locks, éteint par défaut sur MariaDB (état « source éteinte »).
+     */
+    public function tableHolders(string $table): TableHolders
+    {
+        return $this->catalog->read(static function (Connection $c) use ($table): TableHolders {
+            if (1 !== (new RowReader(['v' => $c->fetchOne('SELECT @@performance_schema')]))->int('v')) {
+                return TableHolders::unreadable(DiagnosticStatus::disabled('performance_schema_off'));
+            }
+
+            try {
+                $rows = $c->fetchAllAssociative(
+                    "SELECT t.PROCESSLIST_ID AS id, MAX(t.PROCESSLIST_USER) AS usr, MAX(t.PROCESSLIST_COMMAND = 'Sleep') AS sleeping,
+                            MAX(TIMESTAMPDIFF(SECOND, x.trx_started, NOW())) AS seconds, MAX(m.LOCK_TYPE) AS mode
+                       FROM performance_schema.metadata_locks m
+                       JOIN performance_schema.threads t ON t.THREAD_ID = m.OWNER_THREAD_ID
+                       LEFT JOIN information_schema.INNODB_TRX x ON x.trx_mysql_thread_id = t.PROCESSLIST_ID
+                      WHERE m.OBJECT_TYPE = 'TABLE' AND m.LOCK_STATUS = 'GRANTED'
+                        AND m.OBJECT_SCHEMA = DATABASE() AND m.OBJECT_NAME = ?
+                        AND t.PROCESSLIST_ID IS NOT NULL AND t.PROCESSLIST_ID <> CONNECTION_ID()
+                      GROUP BY t.PROCESSLIST_ID
+                      ORDER BY seconds DESC, t.PROCESSLIST_ID
+                      LIMIT ".self::LIMIT,
+                    [$table],
+                );
+            } catch (DriverException $e) {
+                if (self::isRefusal($e)) {
+                    return TableHolders::unreadable(DiagnosticStatus::denied('SELECT ON performance_schema'));
+                }
+
+                throw $e;
+            }
+
+            $holders = [];
+            foreach ($rows as $row) {
+                $row = new RowReader($row);
+                $holders[] = new TableHolder($row->string('id'), $row->nullableString('usr'), null === $row->nullableInt('seconds') ? null : max(0, $row->int('seconds')), $row->bool('sleeping'), $row->nullableString('mode'));
+            }
+
+            return new TableHolders(DiagnosticStatus::available(), $holders);
+        });
+    }
+
     private static function isRefusal(DriverException $e): bool
     {
         return \in_array($e->getCode(), [self::ER_TABLEACCESS_DENIED, self::ER_VIEW_INVALID, self::ER_SPECIFIC_ACCESS_DENIED], true);
@@ -89,6 +137,10 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
             } catch (DriverException $e) {
                 if (self::isRefusal($e)) {
                     return DiagnosticStatus::denied($privilege);
+                }
+                // Pas de schéma « sys » (supprimé, ou non installé par le fournisseur) : le thème le dit, la carte des capacités tient.
+                if (str_contains($probe, 'sys.') && \in_array($e->getCode(), [self::ER_BAD_DB, self::ER_NO_SUCH_TABLE], true)) {
+                    return DiagnosticStatus::disabled('sys_schema_missing');
                 }
 
                 throw $e;
