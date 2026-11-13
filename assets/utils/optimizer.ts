@@ -28,6 +28,16 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `La clé étrangère de « ${finding.table} » sur ${finding.columns.join(', ')} n’a pas le type de la colonne qu’elle référence${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Pour comparer les deux colonnes, le moteur convertit celle de cette table sur chaque ligne : son index ne sert plus dans les jointures ni dans les recherches par la clé. Lui donner le type de la colonne référencée règle le problème ; la modification réécrit la colonne, à planifier sur une grosse table.',
       }
+    case 'partition_range_exhausted':
+      return {
+        title: `La plage de partitions de « ${finding.table} » sur ${finding.columns.join(', ')} s’arrête au ${finding.detail ?? ''}, sans partition pour la suite.`,
+        help: 'Le moteur refuse toute ligne dont la date dépasse la dernière borne tant qu’aucune partition fourre-tout (MAXVALUE ou DEFAULT) ou nouvelle partition ne la reçoit. Ajoutez-en une avant que des écritures n’échouent.',
+      }
+    case 'too_many_partitions':
+      return {
+        title: `La table « ${finding.table} » a ${finding.detail ?? ''} partitions.`,
+        help: 'Au-delà d’environ 1000 partitions, le moteur met plus de temps à planifier les requêtes et à ouvrir la table. Regroupez les partitions (par exemple par mois plutôt que par jour) ou archivez les plus anciennes.',
+      }
   }
 }
 

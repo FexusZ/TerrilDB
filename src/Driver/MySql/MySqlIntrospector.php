@@ -154,6 +154,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             TableKind::View === $kind ? null : $header->nullableInt('estimate'),
             TableKind::View === $kind ? null : $header->nullableInt('data_bytes'),
             TableKind::View === $kind ? null : $header->nullableInt('index_bytes'),
+            TableKind::View === $kind ? null : (new MySqlPartitionReader($this->connection))->read($name),
         );
     }
 

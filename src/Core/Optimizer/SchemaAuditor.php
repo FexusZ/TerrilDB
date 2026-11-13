@@ -21,12 +21,15 @@ final class SchemaAuditor
 {
     private const NAME_LIMIT = 63;
 
+    /** Au-delà, une table partitionnée alourdit la planification et l'ouverture de la table (voir `PartitionAuditor`). */
+    public const PARTITION_COUNT_ADVISED = PartitionAuditor::COUNT_ADVISED;
+
     /**
      * @param list<TableDefinition> $tables
      *
      * @return list<Finding>
      */
-    public function audit(Engine $engine, array $tables): array
+    public function audit(Engine $engine, array $tables, ?\DateTimeImmutable $now = null): array
     {
         if (Engine::ClickHouse === $engine) {
             // Ni clé primaire, ni clé étrangère, ni unicité : les règles relationnelles ne s'appliquent pas.
@@ -38,7 +41,7 @@ final class SchemaAuditor
             if (TableKind::Table !== $table->kind) {
                 continue;
             }
-            array_push($findings, ...$this->auditTable($engine, $table, $tables));
+            array_push($findings, ...$this->auditTable($engine, $table, $tables), ...(new PartitionAuditor())->audit($engine, $table, $now ?? new \DateTimeImmutable()));
         }
 
         // Par table, puis les constats graves d'abord.

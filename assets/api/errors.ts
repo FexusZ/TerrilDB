@@ -90,6 +90,8 @@ export function messageFor(error: unknown): string {
       return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
     case 'schema_change_failed':
       return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification de la structure.'
+    case 'unsupported_partition_change':
+      return partitionRefusal(error.details.reason, error.details.subject)
     case 'data_changed':
       return 'Une des lignes a été modifiée ou supprimée par ailleurs, ou ne se distingue pas d’une autre. Rechargez les données avant de continuer.'
     case 'data_change_failed':
@@ -114,5 +116,19 @@ export function messageFor(error: unknown): string {
       return 'Impossible de joindre le serveur TerrilDB.'
     default:
       return GENERIC
+  }
+}
+
+function partitionRefusal(reason: unknown, subject: unknown): string {
+  const name = typeof subject === 'string' && subject !== '' ? `« ${subject} » ` : ''
+  switch (reason) {
+    case 'partition_column':
+      return `${name}sert au partitionnement de la table : on ne peut ni la retirer, ni la renommer, ni changer son type.`
+    case 'partition_unique_key':
+      return `${name}doit contenir toutes les colonnes de partitionnement : le moteur refuse une clé primaire ou unique qui ne les contient pas.`
+    case 'partition_foreign_key':
+      return `${name}: une clé étrangère n’est pas permise sur une table partitionnée par ce moteur.`
+    default:
+      return 'Cette modification n’est pas prise en charge sur une table partitionnée.'
   }
 }

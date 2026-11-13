@@ -54,6 +54,27 @@ describe('TablePane', () => {
     expect((wrapper.get('section.columns input[aria-label="Type de la colonne"]').element as HTMLInputElement).value).toBe('integer')
   })
 
+  it('shows the partitions of a partitioned table', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: { ...detail, partitioning: { method: 'hash', expression: 'id', subMethod: null, subExpression: null, estimatedRows: 10, dataBytes: 16384, partitions: [{ name: 'p0', bound: null, catchAll: false, estimatedRows: 10, dataBytes: 16384, subpartitions: [] }] } } })
+
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    expect(wrapper.get('section.partitions h2').text()).toBe('Partitions')
+    expect(wrapper.get('section.partitions').text()).toContain('HASH')
+  })
+
+  it('shows no partitions section for a table without partitions', async () => {
+    const { router, pinia } = await mountPane()
+    mocked.mockResolvedValueOnce({ table: { ...detail, partitioning: null } })
+
+    const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
+    await flushPromises()
+
+    expect(wrapper.find('section.partitions').exists()).toBe(false)
+  })
+
   it('makes a table editable, but leaves a view read-only', async () => {
     const { router, pinia } = await mountPane()
     mocked.mockResolvedValueOnce({ table: detail })

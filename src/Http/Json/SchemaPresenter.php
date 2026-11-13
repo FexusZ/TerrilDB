@@ -9,6 +9,8 @@ use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\PartitionDefinition;
+use App\Core\Schema\PartitioningInfo;
 use App\Core\Schema\SchemaSummary;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableSummary;
@@ -67,6 +69,7 @@ final class SchemaPresenter
                 'primary' => $i->primary,
                 'sizeBytes' => $i->sizeBytes,
             ], $table->indexes),
+            'partitioning' => null === $table->partitioning ? null : self::partitioning($table->partitioning),
             'foreignKeys' => array_map(static fn (ForeignKeyDefinition $f): array => [
                 'name' => $f->name,
                 'columns' => $f->columns,
@@ -75,6 +78,29 @@ final class SchemaPresenter
                 'onUpdate' => $f->onUpdate->value,
                 'onDelete' => $f->onDelete->value,
             ], $table->foreignKeys),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function partitioning(PartitioningInfo $info): array
+    {
+        return [
+            'method' => $info->method->value,
+            'expression' => $info->expression,
+            'subMethod' => $info->subMethod?->value,
+            'subExpression' => $info->subExpression,
+            'estimatedRows' => $info->estimatedRows(),
+            'dataBytes' => $info->dataBytes(),
+            'partitions' => array_map(static fn (PartitionDefinition $p): array => [
+                'name' => $p->name,
+                'bound' => $p->bound,
+                'catchAll' => $p->catchAll,
+                'estimatedRows' => $p->estimatedRows,
+                'dataBytes' => $p->dataBytes,
+                'subpartitions' => array_map(static fn (PartitionDefinition $s): array => ['name' => $s->name, 'estimatedRows' => $s->estimatedRows, 'dataBytes' => $s->dataBytes], $p->subpartitions),
+            ], $info->partitions),
         ];
     }
 }
