@@ -1,0 +1,18 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 0.0777644,
+    "nested_loop": [
+      {
+        "table": {
+          "table_name": "products",
+          "access_type": "ALL",
+          "loops": 1,
+          "rows": 400,
+          "cost": 0.0777644,
+          "filtered": 100
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "Plan": {
+      "Node Type": "ModifyTable",
+      "Operation": "Update",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "orders",
+      "Alias": "orders",
+      "Startup Cost": 0.28,
+      "Total Cost": 8.30,
+      "Plan Rows": 0,
+      "Plan Width": 0,
+      "Disabled": false,
+      "Plans": [
+        {
+          "Node Type": "Index Scan",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "orders_pkey",
+          "Relation Name": "orders",
+          "Alias": "orders",
+          "Startup Cost": 0.28,
+          "Total Cost": 8.30,
+          "Plan Rows": 1,
+          "Plan Width": 64,
+          "Disabled": false,
+          "Index Cond": "(id = 5)"
+        }
+      ]
+    }
+  }
+]

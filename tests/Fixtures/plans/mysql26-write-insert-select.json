@@ -1,0 +1,26 @@
+{
+  "query": "insert into `shop`.`categories` (`shop`.`categories`.`name`) /* select#1 */ select `shop`.`products`.`name` AS `name` from `shop`.`products`",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on products",
+        "table_name": "products",
+        "access_type": "table",
+        "schema_name": "shop",
+        "used_columns": [
+          "name"
+        ],
+        "estimated_rows": 400.0,
+        "estimated_total_cost": 40.75
+      }
+    ],
+    "operation": "Insert into categories",
+    "table_name": "categories",
+    "schema_name": "shop",
+    "used_columns": [
+      "name"
+    ]
+  },
+  "query_type": "insert",
+  "json_schema_version": "2.1"
+}

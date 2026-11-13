@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Core\Optimizer;
 
+use App\Core\Connection\Engine;
+use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 
 /**
@@ -26,6 +28,9 @@ final class MySqlPlanParser implements PlanParser
         'windowing' => [PlanKind::Other, 'Window'],
     ];
 
+    /** Ce que MySQL en JSON v2 écrit pour un UPDATE ou un DELETE : pas de plan lisible. */
+    private const NOT_EXECUTABLE = '<not executable by iterator executor>';
+
     public function parse(string $json): QueryPlan
     {
         try {
@@ -35,6 +40,10 @@ final class MySqlPlanParser implements PlanParser
         }
 
         if (\is_array($data) && \is_array($data['query_plan'] ?? null)) {
+            if (self::NOT_EXECUTABLE === ($data['query_plan']['operation'] ?? null)) {
+                throw PlanNotAvailableException::forStatement(Engine::MySql);
+            }
+
             return $this->parseTree($data['query_plan']);
         }
 
@@ -72,6 +81,10 @@ final class MySqlPlanParser implements PlanParser
         $inputs = array_values(array_filter(\is_array($op['inputs'] ?? null) ? $op['inputs'] : [], \is_array(...)));
         $access = \is_string($op['access_type'] ?? null) ? $op['access_type'] : 'unknown';
         $label = \is_string($op['operation'] ?? null) ? $op['operation'] : $access;
+
+        if (str_starts_with($label, 'Insert into ') && \is_string($op['table_name'] ?? null)) {
+            return new PlanNode(PlanKind::Other, $label, $op['table_name'], children: array_map(fn (array $input): PlanNode => $this->operation($input, null), $inputs), writes: 'insert');
+        }
 
         if ('filter' === $access && 1 === \count($inputs)) {
             return $this->operation($inputs[0], \is_string($op['condition'] ?? null) ? $op['condition'] : $condition);
@@ -122,7 +135,9 @@ final class MySqlPlanParser implements PlanParser
                 continue;
             }
             if ('table' === $key) {
-                $nodes[] = $this->leaf($value);
+                $nodes[] = $this->leaf($value, \is_array($container['insert_from'] ?? null) ? $this->collect($container['insert_from']) : []);
+            } elseif ('insert_from' === $key && \is_array($container['table'] ?? null)) {
+                continue;
             } elseif ('nested_loop' === $key && array_is_list($value)) {
                 $members = [];
                 foreach ($value as $member) {
@@ -144,9 +159,17 @@ final class MySqlPlanParser implements PlanParser
 
     /**
      * @param array<array-key, mixed> $table
+     * @param list<PlanNode>          $sources les lignes lues par un INSERT … SELECT, sous le nœud qui écrit
      */
-    private function leaf(array $table): PlanNode
+    private function leaf(array $table, array $sources = []): PlanNode
     {
+        $writes = null;
+        foreach (['insert', 'update', 'delete'] as $operation) {
+            if (isset($table[$operation]) && false !== $table[$operation]) {
+                $writes = $operation;
+            }
+        }
+
         $access = \is_string($table['access_type'] ?? null) ? $table['access_type'] : 'unknown';
         $costInfo = \is_array($table['cost_info'] ?? null) ? $table['cost_info'] : [];
         $rows = self::number($table['rows_examined_per_scan'] ?? $table['rows'] ?? null);
@@ -157,6 +180,10 @@ final class MySqlPlanParser implements PlanParser
                 $condition = $table[$key];
                 break;
             }
+        }
+
+        if ('insert' === $writes) {
+            return new PlanNode(PlanKind::Other, 'Insert', \is_string($table['table_name'] ?? null) ? $table['table_name'] : null, children: $sources, writes: $writes);
         }
 
         return new PlanNode(
@@ -172,6 +199,7 @@ final class MySqlPlanParser implements PlanParser
             self::number($costInfo['prefix_cost'] ?? $table['cost'] ?? null),
             $condition,
             'all' === strtolower($access),
+            writes: $writes,
         );
     }
 
