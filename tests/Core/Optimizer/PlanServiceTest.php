@@ -48,7 +48,7 @@ final class PlanServiceTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{Engine, string}>
+     * @return iterable<string, array{Engine, non-empty-string}>
      */
     public static function neverAnalyzed(): iterable
     {
@@ -69,6 +69,7 @@ final class PlanServiceTest extends TestCase
     #[DataProvider('neverAnalyzed')]
     public function testTheBuiltPrefixNeverAsksForAnAnalyze(Engine $engine, string $sql): void
     {
+        \assert('' !== $sql);
         $built = str_starts_with(strtolower($sql), 'select')
             ? $this->service()->statementFor($engine, $sql)
             : $this->service()->statementForWrite($engine, $sql);
