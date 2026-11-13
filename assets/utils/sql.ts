@@ -1,7 +1,19 @@
 import type { Engine } from '../api/types'
 
-/** Entoure un identifiant des guillemets du moteur (le caractère de citation, doublé, reste lisible). */
+const MAX_NAME_BYTES = 1024
+// Contrôles C0 et C1, DEL, séparateurs de ligne et de paragraphe, marques et isolats bidirectionnels (miroir de SqlText côté serveur).
+const UNSAFE_NAME = /[\u0000-\u001F\u007F-\u009F\u2028\u2029\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u
+
+/** Un nom de la cible qu'on accepte d'écrire dans du SQL montré : ni contrôle, ni séparateur de ligne, ni bidirectionnel, ni vide, ni démesuré. */
+export function isSafeName(name: string): boolean {
+  return name !== '' && name.isWellFormed() && new TextEncoder().encode(name).length <= MAX_NAME_BYTES && !UNSAFE_NAME.test(name)
+}
+
+/** Entoure un identifiant des guillemets du moteur (le caractère de citation, doublé, reste lisible) ; refuse un nom hostile. */
 export function quoteIdentifier(engine: Engine, name: string): string {
+  if (!isSafeName(name)) {
+    throw new Error('Ce nom ne peut pas être écrit dans du SQL.')
+  }
   if (engine === 'postgresql') {
     return `"${name.replaceAll('"', '""')}"`
   }

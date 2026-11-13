@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPlainReadOf, previewQuery, quoteIdentifier } from './sql'
+import { isPlainReadOf, isSafeName, previewQuery, quoteIdentifier } from './sql'
 
 describe('sql helpers', () => {
   it('quotes identifiers the way each engine reads them', () => {
@@ -18,6 +18,26 @@ describe('sql helpers', () => {
   it('builds a bounded preview of a table', () => {
     expect(previewQuery('postgresql', 'orders')).toBe('SELECT *\n  FROM "orders"\n LIMIT 100;')
     expect(previewQuery('mysql', 'orders', 25)).toBe('SELECT *\n  FROM `orders`\n LIMIT 25;')
+  })
+})
+
+describe('hostile names', () => {
+  const hostile = ['x\nDROP DATABASE y', 'x\rDROP', 'x\u0085DROP', 'x\u2028DROP', 'x\u2029DROP', 'x\0y', 'x\u202Ey', 'x\u0007y', '', 'a'.repeat(1025)]
+
+  it.each(hostile)('refuses to quote %j', (name) => {
+    expect(isSafeName(name)).toBe(false)
+    for (const engine of ['postgresql', 'mysql', 'mariadb', 'clickhouse'] as const) {
+      expect(() => quoteIdentifier(engine, name)).toThrow()
+      expect(() => previewQuery(engine, name)).toThrow()
+    }
+  })
+
+  it('keeps ordinary names, quotes and comment markers inside the identifier', () => {
+    for (const name of ['orders', 'a b', 'a"b', 'a`b', 'x*/y', 'x--y', 'Été', '日本', 'a'.repeat(1024)]) {
+      expect(isSafeName(name)).toBe(true)
+    }
+    expect(quoteIdentifier('mysql', 'a`; DROP TABLE t; -- ')).toBe('`a``; DROP TABLE t; -- `')
+    expect(quoteIdentifier('postgresql', 'a"; DROP TABLE t; -- ')).toBe('"a""; DROP TABLE t; -- "')
   })
 })
 
