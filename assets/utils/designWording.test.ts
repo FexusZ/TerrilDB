@@ -41,4 +41,11 @@ describe('design rule wording', () => {
     expect(w.help).toContain('2038')
     expect(w.help).toContain('À vérifier')
   })
+  it('words a date stored as text', () => {
+    const w = describeSchemaFinding(finding({ rule: 'date_as_text', severity: 'info', table: 'orders', columns: ['order_date'], detail: 'varchar(10)' }))
+
+    expect(w.title).toBe('« orders » : order_date est du texte (varchar(10)), et son nom dit une date.')
+    expect(w.help).toContain('À vérifier')
+    expect(w.help).toContain('31/02')
+  })
 })

@@ -34,5 +34,10 @@ export function describeDesignFinding(finding: SchemaFinding & { rule: DesignRul
         title: `« ${finding.table} » : ${finding.columns.join(', ')} est un TIMESTAMP, et son nom dit une échéance.`,
         help: 'À vérifier : sur MySQL un TIMESTAMP s’arrête au 19 janvier 2038 et refuse une date plus lointaine (un abonnement de vingt ans, une échéance de contrat). DATETIME va jusqu’à l’an 9999. Si les dates restent proches, il n’y a rien à faire. Changer le type réécrit la colonne : à planifier.',
       }
+    case 'date_as_text':
+      return {
+        title: `« ${finding.table} » : ${finding.columns.join(', ')} est du texte${finding.detail === null ? '' : ` (${finding.detail})`}, et son nom dit une date.`,
+        help: 'À vérifier : dans une colonne de texte le moteur ne contrôle plus la forme (« 31/02 » passe), trie par ordre alphabétique et ne sait plus calculer entre deux dates. Un type DATE ou DATETIME règle cela ; la conversion dépend du format réellement stocké : essayez-la sur une copie.',
+      }
   }
 }

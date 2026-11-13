@@ -343,4 +343,60 @@ final class DesignAuditTest extends TestCase
         self::assertSame([], self::rule(FindingRule::TimestampDeadline, [$risky], Engine::MariaDb));
         self::assertSame([], self::rule(FindingRule::TimestampDeadline, [self::table('l', [self::column('expires_at', 'timestamp without time zone')])], Engine::PostgreSql));
     }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function datesInText(): iterable
+    {
+        yield 'varchar date' => ['date', 'varchar(10)'];
+        yield 'birth_date text' => ['birth_date', 'text'];
+        yield 'date_of_order char' => ['date_order', 'char(10)'];
+        yield 'created_at pg' => ['created_at', 'character varying(30)'];
+        yield 'birthday' => ['birthday', 'varchar(20)'];
+        yield 'start_datetime' => ['start_datetime', 'tinytext'];
+        yield 'upper case' => ['Order_Date', 'VARCHAR(10)'];
+    }
+
+    #[DataProvider('datesInText')]
+    public function testFlagsADateNamedColumnStoredAsText(string $name, string $type): void
+    {
+        $table = self::table('orders', [self::column('id'), self::column($name, $type)], [self::primary('id')]);
+
+        $findings = self::rule(FindingRule::DateAsText, [$table]);
+
+        self::assertCount(1, $findings);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame([$name], $findings[0]->columns);
+        self::assertSame($type, $findings[0]->detail);
+        self::assertNull($findings[0]->suggestion);
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function notDatesInText(): iterable
+    {
+        yield 'a real date type' => ['order_date', 'date'];
+        yield 'a datetime' => ['created_at', 'datetime'];
+        yield 'a number' => ['date_code', 'int'];
+        yield 'a format' => ['date_format', 'varchar(20)'];
+        yield 'a pattern' => ['birth_date_pattern', 'varchar(20)'];
+        yield 'a label' => ['date_label', 'varchar(20)'];
+        yield 'a note about a date' => ['due_date_note', 'text'];
+        yield 'update is not a date' => ['update', 'varchar(20)'];
+        yield 'candidate is not a date' => ['candidate', 'varchar(20)'];
+        yield 'validate' => ['validated_by', 'varchar(20)'];
+        yield 'timezone' => ['timezone', 'varchar(40)'];
+        yield 'blob' => ['order_date', 'blob'];
+    }
+
+    #[DataProvider('notDatesInText')]
+    public function testSaysNothingWhenTheNameOrTheTypeDoesNotSayDateInText(string $name, string $type): void
+    {
+        $table = self::table('orders', [self::column($name, $type)]);
+
+        self::assertSame([], self::rule(FindingRule::DateAsText, [$table]));
+        self::assertSame([], self::rule(FindingRule::DateAsText, [$table], Engine::PostgreSql));
+    }
 }

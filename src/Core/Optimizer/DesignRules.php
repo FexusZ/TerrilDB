@@ -34,6 +34,7 @@ final class DesignRules
         array_push($findings, ...$this->implicitForeignKeys($engine, $table, $tables));
         array_push($findings, ...$this->collationMismatches($table, $tables));
         array_push($findings, ...$this->twinTable($table, $tables));
+        array_push($findings, ...$this->datesAsText($table));
 
         return $findings;
     }
@@ -234,6 +235,36 @@ final class DesignRules
         foreach ($table->columns as $column) {
             if ('timestamp' === self::baseType($column->type) && 1 === preg_match(self::DEADLINE_NAME, strtolower($column->name))) {
                 $findings[] = new Finding(FindingRule::TimestampDeadline, Severity::Info, $table->name, [$column->name], detail: $column->type);
+            }
+        }
+
+        return $findings;
+    }
+
+    private const DATE_NAME = '/^(date|datetime|birthday|birthdate|dob|created_at|updated_at|deleted_at)$|_date$|^date_|_datetime$/';
+
+    /**
+     * Mots qui font d'une colonne « date_… » autre chose qu'une date (un format, un libellé, une remarque).
+     */
+    private const NOT_A_DATE = '/format|pattern|fmt|label|text|name|desc|comment|note|mask|type|range|string|regex/';
+
+    private const TEXT_TYPES = ['char', 'varchar', 'character', 'character varying', 'bpchar', 'text', 'tinytext', 'mediumtext', 'longtext'];
+
+    /**
+     * Une colonne de TEXTE dont le nom dit une date (date, birth_date, created_at…) : le moteur ne contrôle plus la forme (un
+     * « 31/02 » passe), trie en ordre alphabétique et ne sait plus calculer. Heuristique de nom, donc « à vérifier » ; les
+     * noms qui parlent d'un format, d'un libellé ou d'une remarque sont écartés. Pas de SQL : la conversion dépend du format
+     * réellement stocké.
+     *
+     * @return list<Finding>
+     */
+    private function datesAsText(TableDefinition $table): array
+    {
+        $findings = [];
+        foreach ($table->columns as $column) {
+            $name = strtolower($column->name);
+            if (\in_array(self::baseType($column->type), self::TEXT_TYPES, true) && 1 === preg_match(self::DATE_NAME, $name) && 1 !== preg_match(self::NOT_A_DATE, $name)) {
+                $findings[] = new Finding(FindingRule::DateAsText, Severity::Info, $table->name, [$column->name], detail: $column->type);
             }
         }
 

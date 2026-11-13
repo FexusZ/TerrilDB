@@ -21,4 +21,5 @@ enum FindingRule: string
     case TwinTable = 'twin_table';
     case CopyWithoutIndexes = 'copy_without_indexes';
     case TimestampDeadline = 'timestamp_deadline';
+    case DateAsText = 'date_as_text';
 }

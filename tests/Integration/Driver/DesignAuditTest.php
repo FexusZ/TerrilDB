@@ -34,6 +34,7 @@ final class DesignAuditTest extends TestCase
         FindingRule::TwinTable,
         FindingRule::CopyWithoutIndexes,
         FindingRule::TimestampDeadline,
+        FindingRule::DateAsText,
     ];
 
     private ?TargetConnection $target = null;
@@ -230,6 +231,20 @@ final class DesignAuditTest extends TestCase
 
         self::assertSame($mysql, $rejected);
         self::assertCount($mysql ? 1 : 0, $this->findings(FindingRule::TimestampDeadline));
+    }
+
+    #[DataProvider('relational')]
+    public function testADateKeptInTextIsFoundOnEveryEngine(string $env): void
+    {
+        $this->open($env);
+        $orders = $this->scratch('dated');
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, order_date varchar(10) NOT NULL, date_format varchar(10), shipped text)', $this->q($orders)));
+
+        $found = $this->findings(FindingRule::DateAsText);
+
+        self::assertCount(1, $found);
+        self::assertSame($orders, $found[0]->table);
+        self::assertSame(['order_date'], $found[0]->columns);
     }
 
     #[DataProvider('mysqlFamily')]
