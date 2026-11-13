@@ -9,7 +9,8 @@ use App\Core\Schema\Exception\InvalidSchemaException;
 /**
  * Le détail d'une table ou d'une vue : colonnes dans l'ordre du moteur, index, clés étrangères sortantes.
  * Seule une vue porte une définition (le SELECT qui la compose). `dataBytes` et `indexBytes` : place sur disque des données et
- * de tous les index, quand le moteur la donne ; ce sont des mesures qui bougent, hors de l'empreinte de structure.
+ * de tous les index, quand le moteur la donne ; ce sont des mesures qui bougent, hors de l'empreinte de structure. `partitioning` :
+ * le découpage en partitions (lecture seule, nul sans partition), lui aussi hors de l'empreinte.
  */
 final readonly class TableDefinition
 {
@@ -28,6 +29,7 @@ final readonly class TableDefinition
         public ?int $estimatedRows,
         public ?int $dataBytes = null,
         public ?int $indexBytes = null,
+        public ?PartitioningInfo $partitioning = null,
     ) {
         if ('' === $name || [] === $columns) {
             throw new InvalidSchemaException('A table needs a name and at least one column.');
