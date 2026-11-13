@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Schema\Change\Dialect;
 
+use App\Core\Connection\Engine;
 use App\Core\Schema\Change\ColumnDraft;
 use App\Core\Schema\Change\DdlStatement;
 use App\Core\Schema\Change\DefaultKind;
@@ -75,7 +76,7 @@ final class MySqlDdlDialect extends AbstractDdlDialect
 
     protected function quote(string $name): string
     {
-        return '`'.str_replace('`', '``', $name).'`';
+        return $this->quoteName(Engine::MySql, $name);
     }
 
     protected function stringLiteral(string $value): string
