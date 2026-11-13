@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Driver;
 
 use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Schema\Change\ColumnDraft;
+use App\Core\Schema\Change\Exception\UnsupportedPartitionChangeException;
 use App\Core\Schema\Change\SchemaChangePlanner;
+use App\Core\Schema\Change\TableDraft;
+use App\Core\Schema\TableDefinition;
 use App\Core\Schema\PartitionMethod;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlIntrospector;
@@ -181,5 +185,33 @@ final class MySqlPartitionsTest extends TestCase
         self::assertSame(SchemaChangePlanner::fingerprint($before), SchemaChangePlanner::fingerprint($after));
         self::assertNotNull($after->partitioning);
         self::assertGreaterThan(0, $after->partitioning->estimatedRows());
+    }
+
+    private static function draftWithout(TableDefinition $table, string $dropped): TableDraft
+    {
+        $columns = [];
+        foreach ($table->columns as $column) {
+            if ($column->name !== $dropped) {
+                $columns[] = new ColumnDraft($column->name, $column->name, $column->type, $column->nullable, null, false);
+            }
+        }
+
+        return new TableDraft($table->name, $columns, [], []);
+    }
+
+    #[DataProvider('targets')]
+    public function testTheEditorRefusesToDropThePartitionColumnOfARealTable(string $env): void
+    {
+        $introspector = $this->open($env);
+        $name = $this->create('id INT NOT NULL, created_on DATE NOT NULL, PRIMARY KEY (id, created_on)', "PARTITION BY RANGE COLUMNS (created_on) (PARTITION p0 VALUES LESS THAN ('2030-01-01'))");
+        $table = $introspector->describeTable($name);
+
+        try {
+            (new SchemaChangePlanner())->plan(TargetDatabase::engine($env), $table, self::draftWithout($table, 'created_on'));
+            self::fail('The change should have been refused.');
+        } catch (UnsupportedPartitionChangeException $e) {
+            self::assertSame('partition_column', $e->reason);
+            self::assertSame('created_on', $e->subject);
+        }
     }
 }
