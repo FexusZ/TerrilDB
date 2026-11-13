@@ -112,6 +112,41 @@ final class DesignAuditTest extends TestCase
     /**
      * @return iterable<string, array{string}>
      */
+    public static function hostileNames(): iterable
+    {
+        yield 'next line (NEL)' => ["a\u{0085}b"];
+        yield 'line separator' => ["a\u{2028}b"];
+        yield 'paragraph separator' => ["a\u{2029}b"];
+        yield 'right-to-left override' => ["a\u{202E}b"];
+        yield 'bidirectional isolate' => ["a\u{2066}b"];
+        yield 'invalid UTF-8' => ["a\xC3\x28b"];
+        yield 'too long' => [str_repeat('a', 1025)];
+    }
+
+    #[DataProvider('hostileNames')]
+    public function testNoSuggestionForAnUnsafeTableNameBeyondAsciiControls(string $name): void
+    {
+        $findings = self::rule(FindingRule::LegacyCharacterSet, [self::table($name, [self::column('n', 'text', 'utf8mb3')])]);
+
+        self::assertCount(1, $findings);
+        self::assertNull($findings[0]->suggestion);
+    }
+
+    public function testAHostileColumnNameGivesNoImplicitKeySuggestion(): void
+    {
+        $tables = [
+            self::table('orders', [self::column("user\u{2028}x_id"), self::column('id')], [self::primary('id')]),
+            self::table("user\u{2028}x", [self::column('id')], [self::primary('id')]),
+        ];
+
+        foreach (self::rule(FindingRule::ImplicitForeignKey, $tables) as $finding) {
+            self::assertNull($finding->suggestion);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
     public static function pluralForms(): iterable
     {
         yield 'same name' => ['customer'];

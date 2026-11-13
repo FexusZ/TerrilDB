@@ -316,7 +316,10 @@ final class DesignRules
      */
     private static function quote(Engine $engine, string $identifier): ?string
     {
-        if (1 === preg_match('/[\x00-\x1F\x7F]/', $identifier)) {
+        // Contrôles C0 et C1 (dont NEL), séparateurs de ligne et de paragraphe, contrôles bidirectionnels, UTF-8 invalide,
+        // nom vide ou démesuré : tout ce qui ferait lire autre chose que ce qui sera exécuté.
+        if ('' === $identifier || \strlen($identifier) > 1024 || !mb_check_encoding($identifier, 'UTF-8')
+            || 0 !== preg_match('/[\x00-\x1F\x7F-\x9F\x{061C}\x{200E}\x{200F}\x{2028}-\x{202E}\x{2066}-\x{2069}]/u', $identifier)) {
             return null;
         }
 
