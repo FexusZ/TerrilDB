@@ -260,6 +260,38 @@ export interface LockReport {
   blockingTruncated: boolean
 }
 
+export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
+
+/** Une famille de requêtes du serveur, regroupées par empreinte : le texte est normalisé par le moteur et ses littéraux masqués. */
+export interface StatementDigest {
+  text: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  textReason: 'redacted' | null
+  database: string | null
+  calls: number
+  /** Durées en millisecondes, quelle que soit l'unité de la source. */
+  totalMs: number
+  meanMs: number
+  maxMs: number | null
+  rowsExamined: number | null
+  rowsReturned: number | null
+  /** Lignes examinées pour une ligne renvoyée ; nul si la source ne compte pas les lignes lues. */
+  ratio: number | null
+  noIndexUsed: number | null
+  tmpDiskTables: number | null
+  sortMergePasses: number | null
+  firstSeen: string | null
+  lastSeen: string | null
+}
+
+export interface DigestReport {
+  status: DiagnosticStatus
+  order: DigestOrder
+  /** Fenêtre lue, en heures (ClickHouse) ; nulle quand la source cumule depuis sa remise à zéro. */
+  windowHours: number | null
+  digests: StatementDigest[]
+}
+
 export type AuditOutcome = 'success' | 'refused' | 'failed'
 export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
 

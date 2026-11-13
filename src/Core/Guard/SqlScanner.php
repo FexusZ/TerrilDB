@@ -157,7 +157,10 @@ final class SqlScanner
                 while ($i < $length && (ctype_alnum($sql[$i]) || '_' === $sql[$i] || '.' === $sql[$i])) {
                     ++$i;
                 }
-                $spans[] = [$numberStart, $i, 'literal'];
+                // « $1 » est une marque de paramètre (texte normalisé de PostgreSQL), pas une valeur.
+                if ($numberStart < 1 || '$' !== $sql[$numberStart - 1]) {
+                    $spans[] = [$numberStart, $i, 'literal'];
+                }
             } else {
                 ++$i;
             }

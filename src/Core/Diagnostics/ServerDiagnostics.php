@@ -18,6 +18,7 @@ final readonly class ServerDiagnostics
         private Engine $engine,
         private ?SessionDiagnostics $sessions = null,
         private ?LockDiagnostics $locks = null,
+        private ?StatementDiagnostics $statements = null,
     ) {
     }
 
@@ -38,6 +39,14 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function statements(): StatementDiagnostics
+    {
+        return $this->statements ?? throw UnsupportedOperationException::for($this->engine, 'statements');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données. Un thème dont la vérification échoue pour une cause imprévue rend
      * l'état « erreur » sans masquer les autres ; `$onFailure` reçoit son nom et l'exception (pour la consigner, jamais la montrer).
      *
@@ -47,7 +56,7 @@ final readonly class ServerDiagnostics
      */
     public function capabilities(?\Closure $onFailure = null): array
     {
-        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks];
+        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements];
         $capabilities = [];
         foreach ($themes as $name => $theme) {
             if (null === $theme) {

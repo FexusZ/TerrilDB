@@ -39,7 +39,7 @@ const locks: LockReport = {
 
 function answer(overrides: { sessions?: SessionReport | ApiError; locks?: LockReport | ApiError } = {}): void {
   mocked.mockImplementation((_method, path) => {
-    const value = path.includes('/diagnostics/sessions') ? (overrides.sessions ?? sessions) : path.includes('/diagnostics/locks') ? (overrides.locks ?? locks) : { tables: [] }
+    const value = path.includes('/diagnostics/sessions') ? (overrides.sessions ?? sessions) : path.includes('/diagnostics/locks') ? (overrides.locks ?? locks) : path.includes('/diagnostics/queries') ? { status: ok, order: 'total_time', digests: [{ text: 'SELECT ?', database: null, calls: 1, totalMs: 1, meanMs: 1, maxMs: 1, rowsExamined: null, rowsReturned: null, ratio: null, noIndexUsed: null, tmpDiskTables: null, sortMergePasses: null, firstSeen: null, lastSeen: null }] } : { tables: [] }
     return value instanceof ApiError ? Promise.reject(value) : Promise.resolve(value)
   })
 }
@@ -111,7 +111,7 @@ describe('ServerActivityPane', () => {
     const wrapper = await mountPane()
 
     expect(wrapper.text()).not.toMatch(/KILL|terminate/i)
-    expect(wrapper.findAll('button').map((button) => button.text())).toEqual(['Actualiser'])
+    expect(wrapper.findAll('button:not([role="tab"])').map((button) => button.text())).toEqual(['Actualiser'])
   })
 
   it('says there is no wait when the source is readable and empty', async () => {
@@ -159,7 +159,7 @@ describe('ServerActivityPane', () => {
     const wrapper = await mountPane()
     mocked.mockClear()
 
-    await wrapper.find('button').trigger('click')
+    await wrapper.find('button:not([role="tab"])').trigger('click')
     await flushPromises()
 
     expect(mocked).toHaveBeenCalledTimes(2)
@@ -180,5 +180,19 @@ describe('ServerActivityPane', () => {
     const wrapper = await mountPane()
 
     expect(wrapper.text()).toContain('200 premières')
+  })
+
+  it('offers the costliest queries in a second tab, read only when opened', async () => {
+    const wrapper = await mountPane()
+    expect(mocked).not.toHaveBeenCalledWith('GET', expect.stringContaining('/diagnostics/queries'))
+    expect(wrapper.find('[role="tablist"]').exists()).toBe(true)
+
+    const tab = wrapper.findAll('[role="tab"]').find((candidate) => candidate.text() === 'Requêtes coûteuses')
+    await tab?.trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/queries?order=total_time&limit=20')
+    expect(wrapper.find('[data-testid="digests"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sessions"]').exists()).toBe(false)
   })
 })
