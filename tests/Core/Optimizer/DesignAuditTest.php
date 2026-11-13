@@ -157,6 +157,7 @@ final class DesignAuditTest extends TestCase
     public static function notImplicitKeys(): iterable
     {
         $customers = self::table('customers', [self::column('id', 'integer')], [self::primary('id')]);
+        /** @param list<ForeignKeyDefinition> $foreignKeys */
         $orders = static fn (ColumnDefinition $column, array $foreignKeys = []): TableDefinition => self::table('orders', [self::column('id', 'integer'), $column], [self::primary('id')], $foreignKeys);
         $declared = new ForeignKeyDefinition('fk', ['customer_id'], 'customers', ['id'], ReferentialAction::NoAction, ReferentialAction::NoAction);
 
