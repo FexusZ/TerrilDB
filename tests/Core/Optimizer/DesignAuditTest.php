@@ -152,16 +152,23 @@ final class DesignAuditTest extends TestCase
     }
 
     /**
+     * @param list<ForeignKeyDefinition> $foreignKeys
+     */
+    private static function ordersWith(ColumnDefinition $column, array $foreignKeys): TableDefinition
+    {
+        return self::table('orders', [self::column('id', 'integer'), $column], [self::primary('id')], $foreignKeys);
+    }
+
+    /**
      * @return iterable<string, array{TableDefinition, TableDefinition}>
      */
     public static function notImplicitKeys(): iterable
     {
         $customers = self::table('customers', [self::column('id', 'integer')], [self::primary('id')]);
-        /** @param list<ForeignKeyDefinition> $foreignKeys */
-        $orders = static fn (ColumnDefinition $column, array $foreignKeys = []): TableDefinition => self::table('orders', [self::column('id', 'integer'), $column], [self::primary('id')], $foreignKeys);
+        $orders = static fn (ColumnDefinition $column, ForeignKeyDefinition ...$foreignKeys): TableDefinition => self::ordersWith($column, array_values($foreignKeys));
         $declared = new ForeignKeyDefinition('fk', ['customer_id'], 'customers', ['id'], ReferentialAction::NoAction, ReferentialAction::NoAction);
 
-        yield 'key declared' => [$orders(self::column('customer_id', 'integer'), [$declared]), $customers];
+        yield 'key declared' => [$orders(self::column('customer_id', 'integer'), $declared), $customers];
         yield 'other integer width' => [$orders(self::column('customer_id', 'bigint')), $customers];
         yield 'text against integer' => [$orders(self::column('customer_id', 'text')), $customers];
         yield 'no such table' => [$orders(self::column('vendor_id', 'integer')), $customers];
