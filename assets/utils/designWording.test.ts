@@ -19,4 +19,10 @@ describe('design rule wording', () => {
     expect(w.help).toContain('orphelines')
     expect(w.help).toContain('À vérifier')
   })
+  it('words a collation mismatch between joined columns', () => {
+    const w = describeSchemaFinding(finding({ rule: 'collation_mismatch', table: 'posts', columns: ['user_id'], detail: 'utf8mb4_general_ci ≠ utf8mb4_bin (users.id)' }))
+
+    expect(w.title).toBe('« posts » : user_id et la colonne qu’elle désigne n’ont pas la même collation (utf8mb4_general_ci ≠ utf8mb4_bin (users.id)).')
+    expect(w.help).toContain('1267')
+  })
 })

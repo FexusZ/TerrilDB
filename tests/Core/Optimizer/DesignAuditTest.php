@@ -205,4 +205,31 @@ final class DesignAuditTest extends TestCase
         self::assertCount(1, $findings);
         self::assertSame(['product_id'], $findings[0]->columns);
     }
+
+    public function testFlagsTwoImplicitlyJoinedTextColumnsWithDifferentCollations(): void
+    {
+        $users = self::table('users', [self::column('id', 'varchar(10)', 'utf8mb4', 'utf8mb4_bin')], [self::primary('id')]);
+        $posts = self::table('posts', [
+            self::column('id', 'int'),
+            self::column('user_id', 'varchar(10)', 'utf8mb4', 'utf8mb4_general_ci'),
+        ], [self::primary('id')]);
+
+        $findings = self::rule(FindingRule::CollationMismatch, [$posts, $users]);
+
+        self::assertCount(1, $findings);
+        self::assertSame(Severity::Warning, $findings[0]->severity);
+        self::assertSame('posts', $findings[0]->table);
+        self::assertSame(['user_id'], $findings[0]->columns);
+        self::assertSame('utf8mb4_general_ci ≠ utf8mb4_bin (users.id)', $findings[0]->detail);
+        self::assertNull($findings[0]->suggestion);
+    }
+
+    public function testSaysNothingWhenCollationsAgreeOrAreUnknown(): void
+    {
+        $users = self::table('users', [self::column('id', 'varchar(10)', 'utf8mb4', 'utf8mb4_bin')], [self::primary('id')]);
+        $same = self::table('posts', [self::column('user_id', 'varchar(10)', 'utf8mb4', 'utf8mb4_bin')]);
+        $unknown = self::table('notes', [self::column('user_id', 'varchar(10)')]);
+
+        self::assertSame([], self::rule(FindingRule::CollationMismatch, [$same, $unknown, $users]));
+    }
 }

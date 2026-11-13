@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Optimizer;
 
 use App\Core\Connection\Engine;
+use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 
@@ -28,6 +29,7 @@ final class DesignRules
             array_push($findings, ...$this->legacyCharacterSet($engine, $table));
         }
         array_push($findings, ...$this->implicitForeignKeys($engine, $table, $tables));
+        array_push($findings, ...$this->collationMismatches($table, $tables));
 
         return $findings;
     }
@@ -74,13 +76,43 @@ final class DesignRules
      */
     private function implicitForeignKeys(Engine $engine, TableDefinition $table, array $tables): array
     {
+        $findings = [];
+        foreach ($this->implicitRelations($table, $tables) as [$column, $target, $referenced]) {
+            $own = self::quote($engine, $table->name);
+            $col = self::quote($engine, $column->name);
+            $ref = self::quote($engine, $target->name);
+            $refCol = self::quote($engine, $referenced->name);
+            $findings[] = new Finding(
+                FindingRule::ImplicitForeignKey,
+                Severity::Info,
+                $table->name,
+                [$column->name],
+                suggestion: null === $own || null === $col || null === $ref || null === $refCol
+                    ? null
+                    : \sprintf('ALTER TABLE %s ADD FOREIGN KEY (%s) REFERENCES %s (%s);', $own, $col, $ref, $refCol),
+                detail: $target->name.'('.$referenced->name.')',
+            );
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Les relations que le nom et le type laissent deviner sans clé déclarée : colonne, table visée, colonne visée.
+     *
+     * @param list<TableDefinition> $tables
+     *
+     * @return list<array{ColumnDefinition, TableDefinition, ColumnDefinition}>
+     */
+    private function implicitRelations(TableDefinition $table, array $tables): array
+    {
         $declared = [];
         foreach ($table->foreignKeys as $key) {
             array_push($declared, ...$key->columns);
         }
         $primary = $table->primaryKey();
 
-        $findings = [];
+        $relations = [];
         foreach ($table->columns as $column) {
             if (!str_ends_with($column->name, '_id') || \strlen($column->name) <= 3 || \in_array($column->name, $declared, true)) {
                 continue;
@@ -98,20 +130,35 @@ final class DesignRules
             if (null === $referenced || self::normalizedType($referenced->type) !== self::normalizedType($column->type)) {
                 continue;
             }
+            $relations[] = [$column, $target, $referenced];
+        }
 
-            $own = self::quote($engine, $table->name);
-            $col = self::quote($engine, $column->name);
-            $ref = self::quote($engine, $target->name);
-            $refCol = self::quote($engine, $referenced->name);
+        return $relations;
+    }
+
+    /**
+     * Deux colonnes de texte jointes par une relation IMPLICITE (une clé étrangère déclarée n'est pas jugée : les quatre moteurs de test refusent de la créer entre deux collations, mesuré) de collations différentes : la comparaison
+     * échoue (erreur 1267 « Illegal mix of collations ») ou, si le jeu de caractères diffère aussi, convertit l'une des deux
+     * et n'utilise plus son index. Aucune suggestion : changer une collation redit toute la définition de la colonne, à faire à
+     * la main. Seules des collations CONNUES des deux côtés sont comparées (MySQL, MariaDB).
+     *
+     * @param list<TableDefinition> $tables
+     *
+     * @return list<Finding>
+     */
+    private function collationMismatches(TableDefinition $table, array $tables): array
+    {
+        $findings = [];
+        foreach ($this->implicitRelations($table, $tables) as [$own, $target, $referenced]) {
+            if (null === $own->collation || null === $referenced->collation || $own->collation === $referenced->collation) {
+                continue;
+            }
             $findings[] = new Finding(
-                FindingRule::ImplicitForeignKey,
-                Severity::Info,
+                FindingRule::CollationMismatch,
+                Severity::Warning,
                 $table->name,
-                [$column->name],
-                suggestion: null === $own || null === $col || null === $ref || null === $refCol
-                    ? null
-                    : \sprintf('ALTER TABLE %s ADD FOREIGN KEY (%s) REFERENCES %s (%s);', $own, $col, $ref, $refCol),
-                detail: $target->name.'('.$referenced->name.')',
+                [$own->name],
+                detail: \sprintf('%s ≠ %s (%s.%s)', $own->collation, $referenced->collation, $target->name, $referenced->name),
             );
         }
 

@@ -30,6 +30,7 @@ final class DesignAuditTest extends TestCase
     private const DESIGN_RULES = [
         FindingRule::LegacyCharacterSet,
         FindingRule::ImplicitForeignKey,
+        FindingRule::CollationMismatch,
     ];
 
     private ?TargetConnection $target = null;
@@ -160,6 +161,22 @@ final class DesignAuditTest extends TestCase
         self::assertNotNull($found[0]->suggestion);
         $this->raw($found[0]->suggestion);
         self::assertSame([], $this->findings(FindingRule::ImplicitForeignKey));
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testJoinedColumnsOfDifferentCollationsAreFoundOnAnImplicitRelation(string $env): void
+    {
+        $this->open($env);
+        $users = $this->scratch('users');
+        $implicit = $this->scratch('posts');
+        $this->raw(\sprintf('CREATE TABLE %s (id varchar(10) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY) DEFAULT CHARSET=utf8mb4', $this->q($users)));
+        $this->raw(\sprintf('CREATE TABLE %s (n int NOT NULL PRIMARY KEY, tdb_dsg_user_id varchar(10) COLLATE utf8mb4_general_ci NOT NULL) DEFAULT CHARSET=utf8mb4', $this->q($implicit)));
+
+        $found = $this->findings(FindingRule::CollationMismatch);
+
+        self::assertCount(1, $found);
+        self::assertSame($implicit, $found[0]->table);
+        self::assertSame('utf8mb4_general_ci ≠ utf8mb4_bin ('.$users.'.id)', $found[0]->detail);
     }
 
     #[DataProvider('mysqlFamily')]

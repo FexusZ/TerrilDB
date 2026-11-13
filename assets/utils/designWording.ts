@@ -14,5 +14,10 @@ export function describeDesignFinding(finding: SchemaFinding & { rule: DesignRul
         title: `« ${finding.table} » : ${finding.columns.join(', ')} semble désigner ${finding.detail ?? 'une autre table'}, mais aucune clé étrangère ne le dit.`,
         help: 'Sans clé étrangère, rien n’empêche une ligne orpheline ni une suppression qui laisse des références dans le vide. À vérifier : seul le nom et le type concordent. Comptez d’abord les lignes orphelines (LEFT JOIN … WHERE … IS NULL) : la clé ne s’ajoutera pas tant qu’il en reste.',
       }
+    case 'collation_mismatch':
+      return {
+        title: `« ${finding.table} » : ${finding.columns.join(', ')} et la colonne qu’elle désigne n’ont pas la même collation${finding.detail === null ? '' : ` (${finding.detail})`}.`,
+        help: 'Une jointure entre les deux échoue (erreur 1267) ou, si le jeu de caractères diffère aussi, convertit l’une des colonnes et n’utilise plus son index. Aucun SQL n’est proposé : changer la collation redit toute la définition de la colonne, à faire à la main.',
+      }
   }
 }

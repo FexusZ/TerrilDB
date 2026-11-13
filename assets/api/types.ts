@@ -315,7 +315,7 @@ export interface PlanResult {
 }
 
 /** Les règles de conception de l'audit (voir `designWording.ts`). */
-export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key'
+export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key' | 'collation_mismatch'
 
 export interface SchemaFinding {
   rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | DesignRule
