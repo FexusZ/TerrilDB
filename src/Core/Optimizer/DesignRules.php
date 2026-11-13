@@ -6,6 +6,7 @@ namespace App\Core\Optimizer;
 
 use App\Core\Connection\Engine;
 use App\Core\Schema\TableDefinition;
+use App\Core\Schema\TableKind;
 
 /**
  * Règles de CONCEPTION de l'audit de schéma (suite de #78) : ce qu'une table dit d'elle-même, jugé sans exécuter quoi que ce
@@ -26,6 +27,7 @@ final class DesignRules
         if (Engine::MySql === $engine || Engine::MariaDb === $engine) {
             array_push($findings, ...$this->legacyCharacterSet($engine, $table));
         }
+        array_push($findings, ...$this->implicitForeignKeys($engine, $table, $tables));
 
         return $findings;
     }
@@ -57,6 +59,94 @@ final class DesignRules
             $columns,
             suggestion: null === $name ? null : \sprintf('ALTER TABLE %s CONVERT TO CHARACTER SET utf8mb4;', $name),
         )];
+    }
+
+    /**
+     * Une colonne « xxx_id » qui désigne la clé primaire d'une table « xxx » sans qu'aucune clé étrangère le dise : MySQL et
+     * MariaDB acceptent `col INT REFERENCES t(id)` sans créer de contrainte, et beaucoup de schémas n'en déclarent jamais. Rien
+     * ne protège alors la relation (orphelins) ni ne l'indexe. Il faut tout à la fois : un nom qui concorde avec UNE seule
+     * table (xxx, xxxs, xxxes, xxxies pour xxxy), la clé primaire de cette table sur UNE colonne nommée `id` (ou comme la
+     * colonne), et exactement le même type. La colonne qui est à elle seule la clé primaire de sa table n'est pas jugée.
+     *
+     * @param list<TableDefinition> $tables
+     *
+     * @return list<Finding>
+     */
+    private function implicitForeignKeys(Engine $engine, TableDefinition $table, array $tables): array
+    {
+        $declared = [];
+        foreach ($table->foreignKeys as $key) {
+            array_push($declared, ...$key->columns);
+        }
+        $primary = $table->primaryKey();
+
+        $findings = [];
+        foreach ($table->columns as $column) {
+            if (!str_ends_with($column->name, '_id') || \strlen($column->name) <= 3 || \in_array($column->name, $declared, true)) {
+                continue;
+            }
+            if (null !== $primary && [$column->name] === $primary->columns) {
+                continue;
+            }
+
+            $target = $this->namedTable(substr($column->name, 0, -3), $table, $tables);
+            $key = $target?->primaryKey();
+            if (null === $target || null === $key || 1 !== \count($key->columns) || !\in_array($key->columns[0], ['id', $column->name], true)) {
+                continue;
+            }
+            $referenced = $target->column($key->columns[0]);
+            if (null === $referenced || self::normalizedType($referenced->type) !== self::normalizedType($column->type)) {
+                continue;
+            }
+
+            $own = self::quote($engine, $table->name);
+            $col = self::quote($engine, $column->name);
+            $ref = self::quote($engine, $target->name);
+            $refCol = self::quote($engine, $referenced->name);
+            $findings[] = new Finding(
+                FindingRule::ImplicitForeignKey,
+                Severity::Info,
+                $table->name,
+                [$column->name],
+                suggestion: null === $own || null === $col || null === $ref || null === $refCol
+                    ? null
+                    : \sprintf('ALTER TABLE %s ADD FOREIGN KEY (%s) REFERENCES %s (%s);', $own, $col, $ref, $refCol),
+                detail: $target->name.'('.$referenced->name.')',
+            );
+        }
+
+        return $findings;
+    }
+
+    /**
+     * La seule table, autre que `$from`, qui porte ce nom au singulier ou à son pluriel simple ; null si aucune ou si
+     * plusieurs (dans le doute, on se tait).
+     *
+     * @param list<TableDefinition> $tables
+     */
+    private function namedTable(string $stem, TableDefinition $from, array $tables): ?TableDefinition
+    {
+        $names = [$stem, $stem.'s', $stem.'es'];
+        if (str_ends_with($stem, 'y')) {
+            $names[] = substr($stem, 0, -1).'ies';
+        }
+
+        $found = [];
+        foreach ($tables as $candidate) {
+            if (TableKind::Table === $candidate->kind && $candidate->name !== $from->name && \in_array(strtolower($candidate->name), $names, true)) {
+                $found[] = $candidate;
+            }
+        }
+
+        return 1 === \count($found) ? $found[0] : null;
+    }
+
+    /**
+     * Le type sans la casse ni les espaces en trop.
+     */
+    private static function normalizedType(string $type): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', strtolower($type)));
     }
 
     /**

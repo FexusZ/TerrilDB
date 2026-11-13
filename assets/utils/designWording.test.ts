@@ -12,4 +12,11 @@ describe('design rule wording', () => {
     expect(w.help).toContain('émojis')
     expect(w.help).toContain('utf8mb4')
   })
+  it('words an implicit foreign key, naming the table it seems to point to', () => {
+    const w = describeSchemaFinding(finding({ rule: 'implicit_foreign_key', severity: 'info', table: 'orders', columns: ['customer_id'], detail: 'customers(id)' }))
+
+    expect(w.title).toBe('« orders » : customer_id semble désigner customers(id), mais aucune clé étrangère ne le dit.')
+    expect(w.help).toContain('orphelines')
+    expect(w.help).toContain('À vérifier')
+  })
 })

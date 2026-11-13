@@ -16,4 +16,5 @@ enum FindingRule: string
 
     // Règles de conception, suite de #78 (jeux de caractères, collations, relations implicites, tables jumelles, types).
     case LegacyCharacterSet = 'legacy_character_set';
+    case ImplicitForeignKey = 'implicit_foreign_key';
 }

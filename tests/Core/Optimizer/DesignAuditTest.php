@@ -12,6 +12,7 @@ use App\Core\Optimizer\Severity;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -106,5 +107,94 @@ final class DesignAuditTest extends TestCase
 
         self::assertCount(1, $findings);
         self::assertNull($findings[0]->suggestion);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function pluralForms(): iterable
+    {
+        yield 'same name' => ['customer'];
+        yield 'plural s' => ['customers'];
+        yield 'plural es' => ['addresses'];
+        yield 'plural ies' => ['categories'];
+    }
+
+    #[DataProvider('pluralForms')]
+    public function testFlagsAnIdColumnThatNamesATableWithoutDeclaringTheKey(string $targetName): void
+    {
+        $stem = match ($targetName) {
+            'addresses' => 'address',
+            'categories' => 'category',
+            default => 'customer',
+        };
+        $target = self::table($targetName, [self::column('id', 'integer')], [self::primary('id')]);
+        $orders = self::table('orders', [self::column('id', 'integer'), self::column($stem.'_id', 'integer')], [self::primary('id')]);
+
+        $findings = self::rule(FindingRule::ImplicitForeignKey, [$orders, $target], Engine::PostgreSql);
+
+        self::assertCount(1, $findings);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame('orders', $findings[0]->table);
+        self::assertSame([$stem.'_id'], $findings[0]->columns);
+        self::assertSame($targetName.'(id)', $findings[0]->detail);
+        self::assertSame(\sprintf('ALTER TABLE "orders" ADD FOREIGN KEY ("%s_id") REFERENCES "%s" ("id");', $stem, $targetName), $findings[0]->suggestion);
+    }
+
+    public function testTheImplicitKeySuggestionUsesBackticksOnMySql(): void
+    {
+        $target = self::table('customers', [self::column('id', 'int unsigned')], [self::primary('id')]);
+        $orders = self::table('orders', [self::column('id', 'int unsigned'), self::column('customer_id', 'int unsigned')], [self::primary('id')]);
+
+        $findings = self::rule(FindingRule::ImplicitForeignKey, [$orders, $target]);
+
+        self::assertSame('ALTER TABLE `orders` ADD FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`);', $findings[0]->suggestion ?? null);
+    }
+
+    /**
+     * @return iterable<string, array{TableDefinition, TableDefinition}>
+     */
+    public static function notImplicitKeys(): iterable
+    {
+        $customers = self::table('customers', [self::column('id', 'integer')], [self::primary('id')]);
+        $orders = static fn (ColumnDefinition $column, array $foreignKeys = []): TableDefinition => self::table('orders', [self::column('id', 'integer'), $column], [self::primary('id')], $foreignKeys);
+        $declared = new ForeignKeyDefinition('fk', ['customer_id'], 'customers', ['id'], ReferentialAction::NoAction, ReferentialAction::NoAction);
+
+        yield 'key declared' => [$orders(self::column('customer_id', 'integer'), [$declared]), $customers];
+        yield 'other integer width' => [$orders(self::column('customer_id', 'bigint')), $customers];
+        yield 'text against integer' => [$orders(self::column('customer_id', 'text')), $customers];
+        yield 'no such table' => [$orders(self::column('vendor_id', 'integer')), $customers];
+        yield 'not an id column' => [$orders(self::column('customer_ref', 'integer')), $customers];
+        yield 'bare id' => [$orders(self::column('_id', 'integer')), $customers];
+        yield 'target key is not an id' => [$orders(self::column('customer_id', 'integer')), self::table('customers', [self::column('id', 'integer'), self::column('code', 'integer')], [self::primary('code')])];
+        yield 'composite target key' => [$orders(self::column('customer_id', 'integer')), self::table('customers', [self::column('id', 'integer'), self::column('shop', 'integer')], [self::primary('id', 'shop')])];
+        yield 'target without key' => [$orders(self::column('customer_id', 'integer')), self::table('customers', [self::column('id', 'integer')])];
+        yield 'own identity' => [self::table('orders', [self::column('customer_id', 'integer')], [self::primary('customer_id')]), $customers];
+    }
+
+    #[DataProvider('notImplicitKeys')]
+    public function testSaysNothingWhenTheRelationIsNotCertain(TableDefinition $orders, TableDefinition $customers): void
+    {
+        self::assertSame([], self::rule(FindingRule::ImplicitForeignKey, [$orders, $customers], Engine::PostgreSql));
+    }
+
+    public function testSaysNothingWhenTwoTablesMatchTheName(): void
+    {
+        $one = self::table('user', [self::column('id')], [self::primary('id')]);
+        $many = self::table('users', [self::column('id')], [self::primary('id')]);
+        $post = self::table('post', [self::column('id'), self::column('user_id')], [self::primary('id')]);
+
+        self::assertSame([], self::rule(FindingRule::ImplicitForeignKey, [$post, $one, $many]));
+    }
+
+    public function testAJoinTableKeyColumnIsStillJudged(): void
+    {
+        $products = self::table('products', [self::column('id')], [self::primary('id')]);
+        $links = self::table('product_tags', [self::column('product_id'), self::column('tag_id')], [self::primary('product_id', 'tag_id')]);
+
+        $findings = self::rule(FindingRule::ImplicitForeignKey, [$links, $products]);
+
+        self::assertCount(1, $findings);
+        self::assertSame(['product_id'], $findings[0]->columns);
     }
 }

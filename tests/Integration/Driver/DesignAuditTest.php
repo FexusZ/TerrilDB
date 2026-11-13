@@ -29,6 +29,7 @@ final class DesignAuditTest extends TestCase
 {
     private const DESIGN_RULES = [
         FindingRule::LegacyCharacterSet,
+        FindingRule::ImplicitForeignKey,
     ];
 
     private ?TargetConnection $target = null;
@@ -128,6 +129,37 @@ final class DesignAuditTest extends TestCase
 
         self::assertCount(1, $findings);
         self::assertSame(['name', 'tag'], $findings[0]->columns);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relational(): iterable
+    {
+        yield from self::mysqlFamily();
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL'];
+    }
+
+    #[DataProvider('relational')]
+    public function testAnImplicitKeyIsFoundUntilItIsDeclared(string $env): void
+    {
+        $this->open($env);
+        $customers = $this->scratch('customers');
+        $orders = $this->scratch('orders');
+        $declared = $this->scratch('invoices');
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, label varchar(20))', $this->q($customers)));
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, tdb_dsg_customer_id integer NOT NULL)', $this->q($orders)));
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, tdb_dsg_customer_id integer NOT NULL, FOREIGN KEY (tdb_dsg_customer_id) REFERENCES %s (id))', $this->q($declared), $this->q($customers)));
+
+        $found = $this->findings(FindingRule::ImplicitForeignKey);
+
+        self::assertCount(1, $found);
+        self::assertSame($orders, $found[0]->table);
+        self::assertSame($customers.'(id)', $found[0]->detail);
+        // La suggestion se rejoue telle quelle : le moteur l'accepte, et la règle se tait ensuite.
+        self::assertNotNull($found[0]->suggestion);
+        $this->raw($found[0]->suggestion);
+        self::assertSame([], $this->findings(FindingRule::ImplicitForeignKey));
     }
 
     #[DataProvider('mysqlFamily')]
