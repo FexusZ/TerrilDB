@@ -91,7 +91,7 @@ final readonly class MySqlPartitionReader
      */
     private static function expression(?string $expression): string
     {
-        return null === $expression || '' === trim($expression) ? '(clé primaire)' : $expression;
+        return null === $expression || '' === trim($expression) ? PartitioningInfo::PRIMARY_KEY : $expression;
     }
 
     private static function bytes(RowReader $row): ?int

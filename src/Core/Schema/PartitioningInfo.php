@@ -12,6 +12,9 @@ use App\Core\Schema\Exception\InvalidSchemaException;
  */
 final readonly class PartitioningInfo
 {
+    /** Expression d'un KEY() sans colonne : le moteur se sert de la clé primaire et n'écrit aucune expression. */
+    public const PRIMARY_KEY = '(clé primaire)';
+
     /**
      * @param list<PartitionDefinition> $partitions
      */

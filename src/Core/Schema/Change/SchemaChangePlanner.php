@@ -33,7 +33,10 @@ final class SchemaChangePlanner
         $this->assertTable($current);
         $draft = $dialect->prepare($current, $draft);
 
-        return new ChangePlan($dialect->statements($current->name, $this->differ->diff($current, $draft)), $dialect->transactional());
+        $operations = $this->differ->diff($current, $draft);
+        PartitionedTableGuard::check($engine, $current, $draft, $operations);
+
+        return new ChangePlan($dialect->statements($current->name, $operations), $dialect->transactional());
     }
 
     /**
