@@ -22,7 +22,7 @@ describe('sql helpers', () => {
 })
 
 describe('hostile names', () => {
-  const hostile = ['x\nDROP DATABASE y', 'x\rDROP', 'x\u0085DROP', 'x\u2028DROP', 'x\u2029DROP', 'x\0y', 'x\u202Ey', 'x\u0007y', '', 'a'.repeat(1025)]
+  const hostile = ['x\nDROP DATABASE y', 'x\rDROP', 'x\u0085DROP', 'x\u2028DROP', 'x\u2029DROP', 'x\0y', 'x\u202Ey', 'x\u0007y', 'x\uD800y', '', 'a'.repeat(1025)]
 
   it.each(hostile)('refuses to quote %j', (name) => {
     expect(isSafeName(name)).toBe(false)
@@ -33,7 +33,7 @@ describe('hostile names', () => {
   })
 
   it('keeps ordinary names, quotes and comment markers inside the identifier', () => {
-    for (const name of ['orders', 'a b', 'a"b', 'a`b', 'x*/y', 'x--y', 'Été', '日本', 'a'.repeat(1024)]) {
+    for (const name of ['orders', 'a b', 'a"b', 'a`b', 'x*/y', 'x--y', 'Été', '日本', '😀', 'a'.repeat(1024)]) {
       expect(isSafeName(name)).toBe(true)
     }
     expect(quoteIdentifier('mysql', 'a`; DROP TABLE t; -- ')).toBe('`a``; DROP TABLE t; -- `')
