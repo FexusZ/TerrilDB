@@ -33,6 +33,7 @@ final class DesignAuditTest extends TestCase
         FindingRule::CollationMismatch,
         FindingRule::TwinTable,
         FindingRule::CopyWithoutIndexes,
+        FindingRule::TimestampDeadline,
     ];
 
     private ?TargetConnection $target = null;
@@ -197,6 +198,38 @@ final class DesignAuditTest extends TestCase
             self::assertSame($copy, $found[0]->table);
             self::assertSame($orders, $found[0]->detail);
         }
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function timestampLimits(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL', true];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL', true];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL', false];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', false];
+    }
+
+    /**
+     * La preuve de la règle : seul MySQL refuse une échéance en 2040 dans un TIMESTAMP, et seul MySQL est donc signalé.
+     */
+    #[DataProvider('timestampLimits')]
+    public function testOnlyMySqlStopsATimestampAt2038AndOnlyMySqlIsFlagged(string $env, bool $mysql): void
+    {
+        $this->open($env);
+        $licences = $this->scratch('licences');
+        $this->raw(\sprintf('CREATE TABLE %s (id int NOT NULL PRIMARY KEY, expires_at timestamp NULL DEFAULT NULL)', $this->q($licences)));
+
+        $rejected = false;
+        try {
+            $this->raw(\sprintf("INSERT INTO %s (id, expires_at) VALUES (1, '2040-06-01 12:00:00')", $this->q($licences)));
+        } catch (\Throwable) {
+            $rejected = true;
+        }
+
+        self::assertSame($mysql, $rejected);
+        self::assertCount($mysql ? 1 : 0, $this->findings(FindingRule::TimestampDeadline));
     }
 
     #[DataProvider('mysqlFamily')]

@@ -20,4 +20,5 @@ enum FindingRule: string
     case CollationMismatch = 'collation_mismatch';
     case TwinTable = 'twin_table';
     case CopyWithoutIndexes = 'copy_without_indexes';
+    case TimestampDeadline = 'timestamp_deadline';
 }

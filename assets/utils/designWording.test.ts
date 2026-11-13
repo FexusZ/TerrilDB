@@ -34,4 +34,11 @@ describe('design rule wording', () => {
     expect(copy.title).toBe('« orders_bak » n’a aucun index, alors que « orders » en a.')
     expect(copy.help).toContain('CREATE TABLE')
   })
+  it('words a timestamp that holds a deadline', () => {
+    const w = describeSchemaFinding(finding({ rule: 'timestamp_deadline', severity: 'info', table: 'licences', columns: ['expires_at'], detail: 'timestamp' }))
+
+    expect(w.title).toBe('« licences » : expires_at est un TIMESTAMP, et son nom dit une échéance.')
+    expect(w.help).toContain('2038')
+    expect(w.help).toContain('À vérifier')
+  })
 })

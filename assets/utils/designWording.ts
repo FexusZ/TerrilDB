@@ -29,5 +29,10 @@ export function describeDesignFinding(finding: SchemaFinding & { rule: DesignRul
         title: `« ${finding.table} » n’a aucun index, alors que « ${finding.detail ?? 'sa voisine'} » en a.`,
         help: 'Une copie faite par CREATE TABLE … AS SELECT recopie les colonnes mais ni la clé primaire, ni les index, ni l’auto-incrément. Si la copie sert encore, recréez ce qui lui manque.',
       }
+    case 'timestamp_deadline':
+      return {
+        title: `« ${finding.table} » : ${finding.columns.join(', ')} est un TIMESTAMP, et son nom dit une échéance.`,
+        help: 'À vérifier : sur MySQL un TIMESTAMP s’arrête au 19 janvier 2038 et refuse une date plus lointaine (un abonnement de vingt ans, une échéance de contrat). DATETIME va jusqu’à l’an 9999. Si les dates restent proches, il n’y a rien à faire. Changer le type réécrit la colonne : à planifier.',
+      }
   }
 }

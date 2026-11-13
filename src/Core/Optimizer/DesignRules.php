@@ -28,6 +28,9 @@ final class DesignRules
         if (Engine::MySql === $engine || Engine::MariaDb === $engine) {
             array_push($findings, ...$this->legacyCharacterSet($engine, $table));
         }
+        if (Engine::MySql === $engine) {
+            array_push($findings, ...$this->timestampDeadlines($table));
+        }
         array_push($findings, ...$this->implicitForeignKeys($engine, $table, $tables));
         array_push($findings, ...$this->collationMismatches($table, $tables));
         array_push($findings, ...$this->twinTable($table, $tables));
@@ -210,6 +213,39 @@ final class DesignRules
     private static function shape(TableDefinition $table): array
     {
         return array_map(static fn (ColumnDefinition $c): array => [$c->name, self::normalizedType($c->type)], $table->columns);
+    }
+
+    /**
+     * Noms de colonnes qui disent « une échéance », donc une date qui peut tomber loin dans le futur.
+     */
+    private const DEADLINE_NAME = '/(^|_)(expir\w*|deadline|renew\w*|valid_(until|to|through)|due_(at|date|on)|ends?_(at|date|on))($|_)/';
+
+    /**
+     * Une colonne TIMESTAMP au nom d'échéance (expires_at, valid_until, end_date…) : sur MySQL le type s'arrête au 19 janvier
+     * 2038 et refuse au-delà (mesuré sur 8.4 et 26) ; DATETIME va jusqu'à l'an 9999. MySQL seulement : MariaDB 11.5 et plus étend
+     * TIMESTAMP à 2106 (mesuré), PostgreSQL n'a pas cette limite. Heuristique de nom, donc « à vérifier » ; pas de SQL, un
+     * changement de type redit toute la définition de la colonne.
+     *
+     * @return list<Finding>
+     */
+    private function timestampDeadlines(TableDefinition $table): array
+    {
+        $findings = [];
+        foreach ($table->columns as $column) {
+            if ('timestamp' === self::baseType($column->type) && 1 === preg_match(self::DEADLINE_NAME, strtolower($column->name))) {
+                $findings[] = new Finding(FindingRule::TimestampDeadline, Severity::Info, $table->name, [$column->name], detail: $column->type);
+            }
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Le type sans ses paramètres (longueur, précision), en minuscules : « timestamp(3) » -> « timestamp ».
+     */
+    private static function baseType(string $type): string
+    {
+        return trim((string) preg_replace('/\s+/', ' ', (string) preg_replace('/\([^)]*\)/', '', strtolower($type))));
     }
 
     /**

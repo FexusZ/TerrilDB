@@ -296,4 +296,51 @@ final class DesignAuditTest extends TestCase
         self::assertSame([], self::rule(FindingRule::CopyWithoutIndexes, [self::table('logs', $columns), self::table('logs_old', $columns)]));
         self::assertCount(1, self::rule(FindingRule::TwinTable, [self::table('logs', $columns), self::table('logs_old', $columns)]));
     }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function deadlineNames(): iterable
+    {
+        foreach (['expires_at', 'expiry', 'expiration_date', 'valid_until', 'valid_to', 'ends_at', 'end_date', 'due_date', 'deadline', 'renew_at', 'EXPIRES_AT'] as $name) {
+            yield $name => [$name];
+        }
+    }
+
+    #[DataProvider('deadlineNames')]
+    public function testFlagsATimestampThatHoldsADistantDeadlineOnMySql(string $name): void
+    {
+        $table = self::table('licences', [self::column('id'), self::column($name, 'timestamp')], [self::primary('id')]);
+
+        $findings = self::rule(FindingRule::TimestampDeadline, [$table]);
+
+        self::assertCount(1, $findings);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame([$name], $findings[0]->columns);
+        self::assertSame('timestamp', $findings[0]->detail);
+        self::assertNull($findings[0]->suggestion);
+    }
+
+    public function testTimestampsWithAFractionAreFlaggedToo(): void
+    {
+        $table = self::table('licences', [self::column('expires_at', 'timestamp(3)')]);
+
+        self::assertCount(1, self::rule(FindingRule::TimestampDeadline, [$table]));
+    }
+
+    public function testSaysNothingForOtherTypesNamesOrEngines(): void
+    {
+        $table = self::table('licences', [
+            self::column('expires_at', 'datetime'),
+            self::column('created_at', 'timestamp'),
+            self::column('expiry_policy', 'varchar(20)'),
+            self::column('suspended_until_review', 'int'),
+        ]);
+
+        self::assertSame([], self::rule(FindingRule::TimestampDeadline, [$table]));
+        // MariaDB 11.5+ étend TIMESTAMP à 2106 ; PostgreSQL n'a pas cette limite.
+        $risky = self::table('licences', [self::column('expires_at', 'timestamp')]);
+        self::assertSame([], self::rule(FindingRule::TimestampDeadline, [$risky], Engine::MariaDb));
+        self::assertSame([], self::rule(FindingRule::TimestampDeadline, [self::table('l', [self::column('expires_at', 'timestamp without time zone')])], Engine::PostgreSql));
+    }
 }
