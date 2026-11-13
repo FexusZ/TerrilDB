@@ -21,6 +21,7 @@ use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Driver\LockConflict;
 use App\Core\KeyValue\Exception\InvalidKeyException;
 use App\Core\KeyValue\Exception\KeyNotFoundException;
 use App\Core\Optimizer\Exception\PlanNotAvailableException;
@@ -110,7 +111,13 @@ final class ErrorMapper
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
             $error instanceof SchemaChangeFailedException => null !== $error->lock
-                ? new ErrorResponse(409, $error->lock->code(), ['retryable' => [] === $error->applied, 'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied), 'failed' => ChangePlanPresenter::statement($error->failed)])
+                ? new ErrorResponse(409, $error->lock->code(), [
+                    'retryable' => [] === $error->applied,
+                    'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
+                    'failed' => ChangePlanPresenter::statement($error->failed),
+                    'lockTimeout' => LockConflict::LockTimeout === $error->lock,
+                    'lockCheck' => null === $error->holders ? null : DiagnosticsPresenter::tableHolders($error->holders),
+                ])
                 : new ErrorResponse(409, 'schema_change_failed', [
                     'message' => $error->getMessage(),
                     'retryable' => false,

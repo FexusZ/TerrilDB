@@ -1,4 +1,4 @@
-import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/types'
+import type { BlockingNode, DiagnosticStatus, OpenTransaction, TableHolder } from '../api/types'
 
 const REASONS: Record<string, string> = {
   performance_schema_off: 'performance_schema est éteint sur ce serveur',
@@ -50,4 +50,12 @@ export interface BlockingLine {
 /** L'arbre à plat, parcours en profondeur : une ligne par session, avec sa profondeur pour l'indentation. */
 export function flattenBlocking(nodes: BlockingNode[], depth = 0): BlockingLine[] {
   return nodes.flatMap((node) => [{ node, depth }, ...flattenBlocking(node.blocked, depth + 1)])
+}
+
+/** Une session qui tient la table, en une ligne : « session 42 (alice), transaction ouverte depuis 2 min 15 s, inactive ». */
+export function describeHolder(holder: TableHolder): string {
+  const who = holder.user === null ? `session ${holder.session}` : `session ${holder.session} (${holder.user})`
+  const age = holder.seconds === null ? '' : `, transaction ouverte depuis ${formatSeconds(holder.seconds)}`
+
+  return `${who}${age}${holder.sleeping ? ', inactive' : ''}`
 }

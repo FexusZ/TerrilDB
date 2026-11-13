@@ -12,6 +12,8 @@ use App\Core\Diagnostics\LockParty;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\LockWait;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\TableHolder;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
@@ -66,6 +68,50 @@ final readonly class MySqlLockDiagnostics implements LockDiagnostics
 
                 throw $e;
             }
+        });
+    }
+
+    /**
+     * Les verrous de métadonnées ACCORDÉS sur la table (même une simple lecture dans une transaction ouverte en tient un) : ceux
+     * que le ALTER attendrait. Source : performance_schema.metadata_locks, éteint par défaut sur MariaDB (état « source éteinte »).
+     */
+    public function tableHolders(string $table): TableHolders
+    {
+        return $this->catalog->read(static function (Connection $c) use ($table): TableHolders {
+            if (1 !== (new RowReader(['v' => $c->fetchOne('SELECT @@performance_schema')]))->int('v')) {
+                return TableHolders::unreadable(DiagnosticStatus::disabled('performance_schema_off'));
+            }
+
+            try {
+                $rows = $c->fetchAllAssociative(
+                    "SELECT t.PROCESSLIST_ID AS id, MAX(t.PROCESSLIST_USER) AS usr, MAX(t.PROCESSLIST_COMMAND = 'Sleep') AS sleeping,
+                            MAX(TIMESTAMPDIFF(SECOND, x.trx_started, NOW())) AS seconds, MAX(m.LOCK_TYPE) AS mode
+                       FROM performance_schema.metadata_locks m
+                       JOIN performance_schema.threads t ON t.THREAD_ID = m.OWNER_THREAD_ID
+                       LEFT JOIN information_schema.INNODB_TRX x ON x.trx_mysql_thread_id = t.PROCESSLIST_ID
+                      WHERE m.OBJECT_TYPE = 'TABLE' AND m.LOCK_STATUS = 'GRANTED'
+                        AND m.OBJECT_SCHEMA = DATABASE() AND m.OBJECT_NAME = ?
+                        AND t.PROCESSLIST_ID IS NOT NULL AND t.PROCESSLIST_ID <> CONNECTION_ID()
+                      GROUP BY t.PROCESSLIST_ID
+                      ORDER BY seconds DESC, t.PROCESSLIST_ID
+                      LIMIT ".self::LIMIT,
+                    [$table],
+                );
+            } catch (DriverException $e) {
+                if (self::isRefusal($e)) {
+                    return TableHolders::unreadable(DiagnosticStatus::denied('SELECT ON performance_schema'));
+                }
+
+                throw $e;
+            }
+
+            $holders = [];
+            foreach ($rows as $row) {
+                $row = new RowReader($row);
+                $holders[] = new TableHolder($row->string('id'), $row->nullableString('usr'), null === $row->nullableInt('seconds') ? null : max(0, $row->int('seconds')), $row->bool('sleeping'), $row->nullableString('mode'));
+            }
+
+            return new TableHolders(DiagnosticStatus::available(), $holders);
         });
     }
 

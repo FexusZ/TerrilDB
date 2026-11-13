@@ -14,6 +14,7 @@ use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\QueryOptions;
@@ -52,6 +53,11 @@ final class AuditedDiagnosticsTest extends DatabaseTestCase
             public function locks(): LockReport
             {
                 throw new \LogicException('Not read here.');
+            }
+
+            public function tableHolders(string $table): TableHolders
+            {
+                return new TableHolders(DiagnosticStatus::available(), []);
             }
         };
         $logger = new class extends AbstractLogger {
