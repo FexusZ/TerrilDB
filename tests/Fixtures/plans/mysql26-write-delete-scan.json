@@ -1,0 +1,8 @@
+{
+  "query": "delete from `shop`.`order_items` where (`shop`.`order_items`.`quantity` = 3)",
+  "query_plan": {
+    "operation": "<not executable by iterator executor>"
+  },
+  "query_type": "delete",
+  "json_schema_version": "2.1"
+}
