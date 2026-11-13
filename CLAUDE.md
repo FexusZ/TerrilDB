@@ -228,9 +228,9 @@ Cible de test `target-redis` (`TARGET_REDIS_URL`, base 15, hôte 63791) : `Redis
 Socle de la supervision (issue #70) : `TargetConnection::diagnostics()` rend un `ServerDiagnostics` (une petite interface par thème, aujourd'hui
 `SessionDiagnostics` ; absent = `UnsupportedOperationException` 501). JAMAIS par la console ni le garde : requêtes de catalogue fixes, bornées (200
 lignes + `truncated`), dans une transaction en lecture seule annulée (`DbalCatalogReader`) ; rien ne s'écrit (KILL, SET… ne sont jamais lancés).
-Un résultat porte un `DiagnosticStatus` (`Availability` : `available | unsupported | permission_denied | disabled`, `reason` = code stable,
+Un résultat porte un `DiagnosticStatus` (`Availability` : `available | unsupported | permission_denied | disabled | error`, `reason` = code stable,
 `privilege` = mot-clé de droit) : un droit manquant ou une source éteinte est un ÉTAT, jamais une erreur ni une liste vide ; échec imprévu =
-`DiagnosticsFailedException` (502 `diagnostics_failed`, message du moteur jamais montré). Sessions : MySQL `performance_schema.processlist` (état `disabled` / `performance_schema_off` si le serveur l'a désactivé : la table se lit alors vide, vérifié) et MariaDB `information_schema.PROCESSLIST` (sa seule source) (privilège
+`DiagnosticsFailedException` (502 `diagnostics_failed`, message du moteur jamais montré) sur la route d'un thème ; dans la carte des capacités, `ServerDiagnostics::capabilities()` isole chaque thème (`DiagnosticStatus::failed()` = `error` / `check_failed`, cause consignée par `AuditedDiagnostics::capabilities` : thème + classe de l'exception, jamais le message). Sessions : MySQL `performance_schema.processlist` (état `disabled` / `performance_schema_off` si le serveur l'a désactivé : la table se lit alors vide, vérifié) et MariaDB `information_schema.PROCESSLIST` (sa seule source) (privilège
 `PROCESS` lu dans `USER_PRIVILEGES` d'abord, car sans lui le serveur ne montre que les threads du compte sans le dire ; un droit reçu par un rôle n'est pas vu),
 PostgreSQL `pg_stat_activity` (`pg_read_all_stats`/`pg_monitor`/superutilisateur, `backend_type = 'client backend'`), ClickHouse `system.processes`
 (`readonly=1`, `query_id` choisi pour repérer sa propre ligne, code 497 = droit refusé), Redis `ServerDiagnostics` vide (capacités `unsupported`, sessions 501).

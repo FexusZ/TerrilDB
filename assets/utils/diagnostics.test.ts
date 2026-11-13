@@ -28,6 +28,13 @@ describe('describeStatus', () => {
     expect(message).toContain('ne veut pas dire')
   })
 
+  it('says a check failed without knowing why, and never shows the reason code', () => {
+    const message = describeStatus(status('error', { reason: 'check_failed' }), 'les verrous')
+    expect(message).toContain('a échoué')
+    expect(message).toContain('ne veut pas dire')
+    expect(message).not.toContain('check_failed')
+  })
+
   it('says the engine has no such source', () => {
     expect(describeStatus(status('unsupported', { reason: 'not_supported' }), 'les verrous')).toBe('Ce moteur ne fournit pas les verrous.')
   })

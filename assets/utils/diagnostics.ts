@@ -17,6 +17,8 @@ export function describeStatus(status: DiagnosticStatus, topic: string): string 
       return `Le compte de la connexion n’a pas le droit de lire ${topic}${status.privilege === null ? '' : ` : il lui manque ${status.privilege}`}.`
     case 'disabled':
       return `${status.reason !== null && REASONS[status.reason] !== undefined ? REASONS[status.reason] : 'La source est éteinte ou absente sur ce serveur'} : ne rien voir ici ne veut pas dire qu’il n’y a rien à voir.`
+    case 'error':
+      return `La vérification de ${topic} a échoué pour une cause imprévue : ne rien voir ici ne veut pas dire qu’il n’y a rien à voir. Réessayez, et consultez le journal du serveur si cela persiste.`
     case 'unsupported':
       return `Ce moteur ne fournit pas ${topic}.`
   }
