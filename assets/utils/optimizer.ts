@@ -1,4 +1,5 @@
 import type { PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
+import { describeDesignFinding } from './designWording'
 import { formatEstimate } from './format'
 
 export interface Wording {
@@ -28,6 +29,9 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `La clé étrangère de « ${finding.table} » sur ${finding.columns.join(', ')} n’a pas le type de la colonne qu’elle référence${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Pour comparer les deux colonnes, le moteur convertit celle de cette table sur chaque ligne : son index ne sert plus dans les jointures ni dans les recherches par la clé. Lui donner le type de la colonne référencée règle le problème ; la modification réécrit la colonne, à planifier sur une grosse table.',
       }
+    // Règles de conception (suite de #78) : leurs mots sont dans designWording.ts.
+    default:
+      return describeDesignFinding({ ...finding, rule: finding.rule })
   }
 }
 

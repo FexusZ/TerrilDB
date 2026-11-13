@@ -21,6 +21,13 @@ final class SchemaAuditor
 {
     private const NAME_LIMIT = 63;
 
+    private readonly DesignRules $design;
+
+    public function __construct(?DesignRules $design = null)
+    {
+        $this->design = $design ?? new DesignRules();
+    }
+
     /**
      * @param list<TableDefinition> $tables
      *
@@ -75,6 +82,8 @@ final class SchemaAuditor
         foreach ($table->foreignKeys as $key) {
             array_push($findings, ...$this->typeMismatches($engine, $table, $key, $tables));
         }
+
+        array_push($findings, ...$this->design->check($engine, $table, $tables));
 
         foreach ($table->indexes as $index) {
             $covering = $this->coveredBy($index, $table->indexes);
