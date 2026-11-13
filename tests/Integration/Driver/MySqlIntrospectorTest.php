@@ -244,6 +244,21 @@ final class MySqlIntrospectorTest extends TestCase
     }
 
     #[DataProvider('targets')]
+    public function testReadsTheCharacterSetAndCollationOfTextColumnsOnly(string $envVar): void
+    {
+        $products = $this->introspector($envVar)->describeTable('products');
+
+        $name = $products->column('name');
+        self::assertNotNull($name);
+        self::assertSame('utf8mb4', $name->characterSet);
+        self::assertStringStartsWith('utf8mb4_', (string) $name->collation);
+        $id = $products->column('id');
+        self::assertNotNull($id);
+        self::assertNull($id->characterSet);
+        self::assertNull($id->collation);
+    }
+
+    #[DataProvider('targets')]
     public function testTheTableNameIsNeverInterpolated(string $envVar): void
     {
         $introspector = $this->introspector($envVar);

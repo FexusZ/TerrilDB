@@ -169,7 +169,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     {
         $rows = $this->connection->fetchAllAssociative(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
-                    EXTRA AS extra, COLUMN_COMMENT AS comment
+                    EXTRA AS extra, COLUMN_COMMENT AS comment, CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation
                FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION',
@@ -189,6 +189,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 $nullable && 'NULL' === $default ? null : $default,
                 str_contains($row->string('extra'), 'auto_increment'),
                 $row->nullableString('comment'),
+                $row->nullableString('charset'),
+                $row->nullableString('collation'),
             );
         }
 
