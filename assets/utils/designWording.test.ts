@@ -1,0 +1,15 @@
+import { describe, expect, it } from 'vitest'
+import type { SchemaFinding } from '../api/types'
+import { describeSchemaFinding } from './optimizer'
+
+const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'legacy_character_set', severity: 'warning', table: 'users', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
+
+describe('design rule wording', () => {
+  it('words the legacy character set', () => {
+    const w = describeSchemaFinding(finding({ columns: ['name', 'bio'] }))
+
+    expect(w.title).toBe('« users » garde du texte en utf8 sur trois octets : name, bio.')
+    expect(w.help).toContain('émojis')
+    expect(w.help).toContain('utf8mb4')
+  })
+})

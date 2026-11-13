@@ -13,4 +13,7 @@ enum FindingRule: string
     case ForeignKeyWithoutIndex = 'foreign_key_without_index';
     case RedundantIndex = 'redundant_index';
     case ForeignKeyTypeMismatch = 'foreign_key_type_mismatch';
+
+    // Règles de conception, suite de #78 (jeux de caractères, collations, relations implicites, tables jumelles, types).
+    case LegacyCharacterSet = 'legacy_character_set';
 }

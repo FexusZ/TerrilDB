@@ -314,8 +314,11 @@ export interface PlanResult {
   findings: PlanFindingInfo[]
 }
 
+/** Les règles de conception de l'audit (voir `designWording.ts`). */
+export type DesignRule = 'legacy_character_set'
+
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | DesignRule
   severity: 'warning' | 'info'
   table: string
   columns: string[]
