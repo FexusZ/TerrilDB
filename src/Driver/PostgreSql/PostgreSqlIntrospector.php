@@ -159,6 +159,7 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector
             self::estimate($kind, $header),
             $header->nullableInt('data_bytes'),
             $header->nullableInt('index_bytes'),
+            TableKind::Table === $kind ? (new PostgreSqlPartitionReader($this->connection))->read($oid) : null,
         );
     }
 
