@@ -25,4 +25,13 @@ describe('design rule wording', () => {
     expect(w.title).toBe('« posts » : user_id et la colonne qu’elle désigne n’ont pas la même collation (utf8mb4_general_ci ≠ utf8mb4_bin (users.id)).')
     expect(w.help).toContain('1267')
   })
+  it('words a twin table and a copy that lost its indexes', () => {
+    const twin = describeSchemaFinding(finding({ rule: 'twin_table', severity: 'info', table: 'orders_bak', detail: 'orders' }))
+    expect(twin.title).toBe('« orders_bak » a exactement les colonnes de « orders » : reste de sauvegarde ?')
+    expect(twin.help).toContain('À vérifier')
+
+    const copy = describeSchemaFinding(finding({ rule: 'copy_without_indexes', severity: 'info', table: 'orders_bak', detail: 'orders' }))
+    expect(copy.title).toBe('« orders_bak » n’a aucun index, alors que « orders » en a.')
+    expect(copy.help).toContain('CREATE TABLE')
+  })
 })

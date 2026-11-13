@@ -19,5 +19,15 @@ export function describeDesignFinding(finding: SchemaFinding & { rule: DesignRul
         title: `« ${finding.table} » : ${finding.columns.join(', ')} et la colonne qu’elle désigne n’ont pas la même collation${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Une jointure entre les deux échoue (erreur 1267) ou, si le jeu de caractères diffère aussi, convertit l’une des colonnes et n’utilise plus son index. Aucun SQL n’est proposé : changer la collation redit toute la définition de la colonne, à faire à la main.',
       }
+    case 'twin_table':
+      return {
+        title: `« ${finding.table} » a exactement les colonnes de « ${finding.detail ?? 'sa voisine'} » : reste de sauvegarde ?`,
+        help: 'À vérifier : une table de copie oubliée occupe de la place et finit par être prise pour la vraie. Si elle ne sert plus, on la supprime ; TerrilDB ne propose aucune suppression.',
+      }
+    case 'copy_without_indexes':
+      return {
+        title: `« ${finding.table} » n’a aucun index, alors que « ${finding.detail ?? 'sa voisine'} » en a.`,
+        help: 'Une copie faite par CREATE TABLE … AS SELECT recopie les colonnes mais ni la clé primaire, ni les index, ni l’auto-incrément. Si la copie sert encore, recréez ce qui lui manque.',
+      }
   }
 }

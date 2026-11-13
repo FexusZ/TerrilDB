@@ -232,4 +232,68 @@ final class DesignAuditTest extends TestCase
 
         self::assertSame([], self::rule(FindingRule::CollationMismatch, [$same, $unknown, $users]));
     }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function backupSuffixes(): iterable
+    {
+        yield '_old' => ['_old'];
+        yield '_bak' => ['_bak'];
+        yield '_backup' => ['_backup'];
+        yield '_copy' => ['_copy'];
+        yield 'upper case' => ['_OLD'];
+    }
+
+    #[DataProvider('backupSuffixes')]
+    public function testFlagsABackupCopyOfANeighbourTable(string $suffix): void
+    {
+        $columns = [self::column('id', 'int'), self::column('label', 'varchar(20)', 'utf8mb4', 'utf8mb4_bin')];
+        $orders = self::table('orders', $columns, [self::primary('id')]);
+        $copy = self::table('orders'.$suffix, $columns, [self::primary('id')]);
+
+        $findings = self::rule(FindingRule::TwinTable, [$orders, $copy]);
+
+        self::assertCount(1, $findings);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame('orders'.$suffix, $findings[0]->table);
+        self::assertSame('orders', $findings[0]->detail);
+        self::assertNull($findings[0]->suggestion);
+        self::assertSame([], self::rule(FindingRule::CopyWithoutIndexes, [$orders, $copy]));
+    }
+
+    public function testACopyThatLostEveryIndexIsFlaggedAsSuch(): void
+    {
+        $columns = [self::column('id', 'int'), self::column('label', 'varchar(20)')];
+        $orders = self::table('orders', $columns, [self::primary('id'), new IndexDefinition('idx_label', ['label'], false, false)]);
+        $copy = self::table('orders_bak', $columns);
+
+        $findings = self::rule(FindingRule::CopyWithoutIndexes, [$orders, $copy]);
+
+        self::assertCount(1, $findings);
+        self::assertSame('orders_bak', $findings[0]->table);
+        self::assertSame('orders', $findings[0]->detail);
+        self::assertCount(1, self::rule(FindingRule::TwinTable, [$orders, $copy]));
+    }
+
+    public function testSaysNothingWhenTheNeighbourIsNotTheSameShape(): void
+    {
+        $orders = self::table('orders', [self::column('id', 'int'), self::column('label', 'text')], [self::primary('id')]);
+        $otherColumns = self::table('orders_old', [self::column('id', 'int'), self::column('note', 'text')], [self::primary('id')]);
+        $otherTypes = self::table('orders_bak', [self::column('id', 'bigint'), self::column('label', 'text')], [self::primary('id')]);
+        $otherOrder = self::table('orders_copy', [self::column('label', 'text'), self::column('id', 'int')], [self::primary('id')]);
+        $noNeighbour = self::table('invoices_old', [self::column('id', 'int')], [self::primary('id')]);
+        $notASuffix = self::table('older', [self::column('id', 'int'), self::column('label', 'text')]);
+
+        self::assertSame([], self::rule(FindingRule::TwinTable, [$orders, $otherColumns, $otherTypes, $otherOrder, $noNeighbour, $notASuffix]));
+        self::assertSame([], self::rule(FindingRule::CopyWithoutIndexes, [$orders, $otherColumns, $otherTypes, $otherOrder, $noNeighbour, $notASuffix]));
+    }
+
+    public function testTwoIndexlessTablesAreNotACopyWithoutIndexes(): void
+    {
+        $columns = [self::column('id', 'int')];
+
+        self::assertSame([], self::rule(FindingRule::CopyWithoutIndexes, [self::table('logs', $columns), self::table('logs_old', $columns)]));
+        self::assertCount(1, self::rule(FindingRule::TwinTable, [self::table('logs', $columns), self::table('logs_old', $columns)]));
+    }
 }

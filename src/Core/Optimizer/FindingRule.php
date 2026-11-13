@@ -18,4 +18,6 @@ enum FindingRule: string
     case LegacyCharacterSet = 'legacy_character_set';
     case ImplicitForeignKey = 'implicit_foreign_key';
     case CollationMismatch = 'collation_mismatch';
+    case TwinTable = 'twin_table';
+    case CopyWithoutIndexes = 'copy_without_indexes';
 }

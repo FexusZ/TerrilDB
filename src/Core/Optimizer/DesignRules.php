@@ -30,6 +30,7 @@ final class DesignRules
         }
         array_push($findings, ...$this->implicitForeignKeys($engine, $table, $tables));
         array_push($findings, ...$this->collationMismatches($table, $tables));
+        array_push($findings, ...$this->twinTable($table, $tables));
 
         return $findings;
     }
@@ -163,6 +164,52 @@ final class DesignRules
         }
 
         return $findings;
+    }
+
+    /**
+     * Une table « xxx_old », « xxx_bak », « xxx_backup » ou « xxx_copy » dont la voisine « xxx » existe avec EXACTEMENT les
+     * mêmes colonnes (noms, types, ordre) : un reste de sauvegarde ou de migration, qui occupe de la place et qu'on finit par
+     * prendre pour la vraie. Seules ces quatre terminaisons comptent, et jamais sans la voisine. Si la copie n'a aucun index
+     * alors que sa voisine en a (le signe d'un `CREATE TABLE … AS SELECT`, qui ne recopie ni clé ni index), un second constat
+     * le dit. Rien n'est suggéré : supprimer une table ne se propose pas à la légère.
+     *
+     * @param list<TableDefinition> $tables
+     *
+     * @return list<Finding>
+     */
+    private function twinTable(TableDefinition $table, array $tables): array
+    {
+        if (1 !== preg_match('/^(.+)_(?:old|bak|backup|copy)$/i', $table->name, $match)) {
+            return [];
+        }
+
+        $neighbour = null;
+        foreach ($tables as $candidate) {
+            if (TableKind::Table === $candidate->kind && $candidate->name === $match[1]) {
+                $neighbour = $candidate;
+                break;
+            }
+        }
+        if (null === $neighbour || self::shape($neighbour) !== self::shape($table)) {
+            return [];
+        }
+
+        $findings = [new Finding(FindingRule::TwinTable, Severity::Info, $table->name, detail: $neighbour->name)];
+        if ([] === $table->indexes && [] !== $neighbour->indexes) {
+            $findings[] = new Finding(FindingRule::CopyWithoutIndexes, Severity::Info, $table->name, detail: $neighbour->name);
+        }
+
+        return $findings;
+    }
+
+    /**
+     * Les colonnes d'une table, noms et types dans l'ordre : ce qui fait qu'une table en copie une autre.
+     *
+     * @return list<array{string, string}>
+     */
+    private static function shape(TableDefinition $table): array
+    {
+        return array_map(static fn (ColumnDefinition $c): array => [$c->name, self::normalizedType($c->type)], $table->columns);
     }
 
     /**

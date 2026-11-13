@@ -31,6 +31,8 @@ final class DesignAuditTest extends TestCase
         FindingRule::LegacyCharacterSet,
         FindingRule::ImplicitForeignKey,
         FindingRule::CollationMismatch,
+        FindingRule::TwinTable,
+        FindingRule::CopyWithoutIndexes,
     ];
 
     private ?TargetConnection $target = null;
@@ -177,6 +179,24 @@ final class DesignAuditTest extends TestCase
         self::assertCount(1, $found);
         self::assertSame($implicit, $found[0]->table);
         self::assertSame('utf8mb4_general_ci ≠ utf8mb4_bin ('.$users.'.id)', $found[0]->detail);
+    }
+
+    #[DataProvider('relational')]
+    public function testACreateTableAsSelectCopyIsATwinWithoutIndexes(string $env): void
+    {
+        $this->open($env);
+        $orders = $this->scratch('orders');
+        $copy = $this->scratch('orders_bak');
+        $this->raw(\sprintf('CREATE TABLE %s (id integer NOT NULL PRIMARY KEY, label varchar(20) NOT NULL, note text)', $this->q($orders)));
+        $this->raw(\sprintf('CREATE INDEX %s ON %s (label)', $this->q('tdb_dsg_idx_label'), $this->q($orders)));
+        $this->raw(\sprintf('CREATE TABLE %s AS SELECT * FROM %s', $this->q($copy), $this->q($orders)));
+
+        foreach ([FindingRule::TwinTable, FindingRule::CopyWithoutIndexes] as $rule) {
+            $found = $this->findings($rule);
+            self::assertCount(1, $found, $rule->value);
+            self::assertSame($copy, $found[0]->table);
+            self::assertSame($orders, $found[0]->detail);
+        }
     }
 
     #[DataProvider('mysqlFamily')]
