@@ -25,6 +25,11 @@ use Doctrine\DBAL\Connection;
  *
  * Délais : MAX_EXECUTION_TIME (MySQL, SELECT seulement) ou max_statement_time (MariaDB, toute instruction).
  * Limite connue : sur MySQL, une écriture n'a pas de délai côté moteur.
+ *
+ * Sur Vitess (détecté à l'ouverture, voir `forConnection`), vtgate accepte `SET SESSION TRANSACTION READ ONLY` sans le
+ * transmettre : le primaire n'imposerait rien. La lecture seule passe donc par `START TRANSACTION READ ONLY`, que le tablet
+ * applique aux écritures de données (mesuré, #39) ; un DDL y passe quand même, le garde est seul à le refuser. Un réplica
+ * refuse tout par lui-même.
  */
 final readonly class MySqlQueryRunner implements QueryRunner
 {
@@ -34,7 +39,26 @@ final readonly class MySqlQueryRunner implements QueryRunner
     public function __construct(
         private Connection $connection,
         private Engine $engine,
+        private bool $vitess = false,
     ) {
+    }
+
+    /**
+     * Lit `@@version` une fois pour reconnaître Vitess (MySQL seulement : MariaDB n'est jamais derrière vtgate).
+     */
+    public static function forConnection(Connection $connection, Engine $engine): self
+    {
+        $vitess = false;
+        if (Engine::MySql === $engine) {
+            try {
+                $version = $connection->fetchOne('SELECT @@version');
+                $vitess = \is_string($version) && str_ends_with($version, '-Vitess');
+            } catch (\Throwable) {
+                // Version illisible : comportement MySQL ordinaire.
+            }
+        }
+
+        return new self($connection, $engine, $vitess);
     }
 
     public function run(string $sql, StatementKind $kind, QueryOptions $options): QueryResult
@@ -46,7 +70,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
         try {
             $pdo->exec('SET SESSION TRANSACTION '.($readOnly ? 'READ ONLY' : 'READ WRITE'));
             $pdo->exec($this->timeoutStatement($options->timeoutMs));
-            $pdo->exec('START TRANSACTION');
+            $pdo->exec($this->vitess && $readOnly ? 'START TRANSACTION READ ONLY' : 'START TRANSACTION');
 
             $statement = $pdo->query($sql);
             \assert($statement instanceof \PDOStatement);
