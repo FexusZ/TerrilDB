@@ -10,6 +10,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Driver\MySql\MySqlQueryRunner;
 use Doctrine\DBAL\Connection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -18,15 +19,36 @@ use PHPUnit\Framework\TestCase;
  */
 final class MySqlQueryRunnerVitessTest extends TestCase
 {
-    public function testReadOnlyOpensAReadOnlyTransactionOnVitess(): void
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function versions(): iterable
     {
-        $sent = $this->sentBy('8.0.35-Vitess', QueryMode::ReadOnly);
+        yield 'vitess' => ['8.0.35-Vitess'];
+        yield 'vitess en minuscules' => ['8.0.35-vitess'];
+        yield 'version renommée par vtgate' => ['9.9.9'];
+        yield 'version illisible' => [''];
+        yield 'mysql ordinaire' => ['8.4.6'];
+    }
+
+    #[DataProvider('versions')]
+    public function testReadOnlyAlwaysOpensAReadOnlyTransaction(string $version): void
+    {
+        $sent = $this->sentBy($version, QueryMode::ReadOnly);
 
         self::assertContains('START TRANSACTION READ ONLY', $sent);
+        self::assertContains('SET SESSION TRANSACTION READ ONLY', $sent);
         self::assertNotContains('START TRANSACTION', $sent);
     }
 
-    public function testReadWriteStaysAPlainTransactionOnVitess(): void
+    public function testReadOnlyDoesNotDependOnReadingTheVersion(): void
+    {
+        $sent = $this->sentBy(new \RuntimeException('connexion perdue'), QueryMode::ReadOnly);
+
+        self::assertContains('START TRANSACTION READ ONLY', $sent);
+    }
+
+    public function testReadWriteStaysAPlainTransaction(): void
     {
         $sent = $this->sentBy('8.0.35-Vitess', QueryMode::ReadWrite);
 
@@ -34,19 +56,10 @@ final class MySqlQueryRunnerVitessTest extends TestCase
         self::assertNotContains('START TRANSACTION READ ONLY', $sent);
     }
 
-    public function testPlainMysqlKeepsTheSessionSetting(): void
-    {
-        $sent = $this->sentBy('8.4.6', QueryMode::ReadOnly);
-
-        self::assertContains('SET SESSION TRANSACTION READ ONLY', $sent);
-        self::assertContains('START TRANSACTION', $sent);
-        self::assertNotContains('START TRANSACTION READ ONLY', $sent);
-    }
-
     /**
      * @return list<string>
      */
-    private function sentBy(string $version, QueryMode $mode): array
+    private function sentBy(string|\Throwable $version, QueryMode $mode): array
     {
         $pdo = new class extends \PDO {
             /** @var list<string> */
@@ -82,10 +95,10 @@ final class MySqlQueryRunnerVitessTest extends TestCase
         };
 
         $connection = $this->createStub(Connection::class);
-        $connection->method('fetchOne')->willReturn($version);
+        $connection->method('fetchOne')->willReturnCallback(static fn () => $version instanceof \Throwable ? throw $version : $version);
         $connection->method('getNativeConnection')->willReturn($pdo);
 
-        MySqlQueryRunner::forConnection($connection, Engine::MySql)
+        new MySqlQueryRunner($connection, Engine::MySql)
             ->run('UPDATE t SET a = 1', StatementKind::Write, new QueryOptions($mode, 1000, 10));
 
         return $pdo->sent;
