@@ -372,8 +372,8 @@ export interface PlanResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index'
-  severity: 'warning' | 'info'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
+  severity: 'critical' | 'warning' | 'info'
   table: string
   columns: string[]
   index: string | null

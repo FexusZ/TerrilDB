@@ -43,6 +43,11 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `L’index « ${finding.index ?? ''} » de « ${finding.table} » n’a servi à aucune lecture${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Les compteurs du moteur repartent à zéro au redémarrage du serveur : un index utilisé seulement en fin de mois ou par un traitement de nuit peut paraître inutile. Observez une période représentative avant de décider. Sur MySQL et MariaDB, rendez-le d’abord invisible (ignoré) : le moteur ne s’en sert plus mais le garde, et le rétablir est immédiat ; il reste cependant mis à jour à chaque écriture, l’essai ne mesure donc pas le gain côté écritures. PostgreSQL n’a pas d’index invisible : la suppression se prépare avec prudence. Un index qui porte une contrainte n’est jamais proposé.',
       }
+    case 'counter_near_limit':
+      return {
+        title: `Le compteur de « ${finding.table} » sur ${finding.columns.join(', ')} approche de la limite de son type${finding.detail === null ? '' : ` (${finding.detail})`}.`,
+        help: 'Quand il atteint la limite, chaque insertion échoue d’un coup avec une erreur de doublon. Passer à un type plus large règle le problème, mais la modification réécrit toute la table (et les colonnes qui la référencent doivent suivre) : à planifier avant la saturation. La valeur lue est celle du moment, sans compter les lignes.',
+      }
   }
 }
 

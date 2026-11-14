@@ -56,6 +56,11 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
         return IndexUsageReport::unavailable('not_supported');
     }
 
+    public function autoCounters(): array
+    {
+        return [];
+    }
+
     public function listSchemas(): array
     {
         throw UnsupportedOperationException::for(Engine::ClickHouse, 'schemas');

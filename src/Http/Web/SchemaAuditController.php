@@ -48,7 +48,7 @@ final readonly class SchemaAuditController
 
             $usage = $introspector->indexUsage();
 
-            return [$this->auditor->audit($target->engine, $definitions, $usage), $this->auditor->checks($target->engine, $usage), \count($definitions), $truncated];
+            return [$this->auditor->audit($target->engine, $definitions, $usage, $introspector->autoCounters()), $this->auditor->checks($target->engine, $usage), \count($definitions), $truncated];
         }, DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse([
