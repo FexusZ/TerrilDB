@@ -69,7 +69,6 @@ final readonly class ConnectionController
     public function probe(Request $request): JsonResponse
     {
         [, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), null, nameRequired: false);
-        $parameters = $this->hosts->pinned($this->session->user(), $parameters);
 
         return new JsonResponse(['ok' => true, 'durationMs' => $this->targets->probe($engine, $parameters)]);
     }
