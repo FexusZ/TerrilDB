@@ -37,7 +37,7 @@ final class LogDiagnosticsTest extends TestCase
         if (null !== $this->savedEnvVar) {
             $admin = $this->admin($this->savedEnvVar);
             foreach ($this->saved as $name => $value) {
-                $admin->executeStatement(\sprintf('SET GLOBAL %s = %s', $name, $admin->quote($value)));
+                $admin->executeStatement(\sprintf('SET GLOBAL %s = %s', $name, is_numeric($value) ? $value : $admin->quote($value)));
             }
             $admin->executeStatement('TRUNCATE TABLE mysql.slow_log');
         }
@@ -98,9 +98,19 @@ final class LogDiagnosticsTest extends TestCase
         $this->savedEnvVar = $envVar;
         foreach ($values as $name => $value) {
             $this->saved[$name] ??= (string) $admin->fetchOne('SELECT @@GLOBAL.'.$name);
-            $admin->executeStatement(\sprintf('SET GLOBAL %s = %s', $name, $admin->quote($value)));
+            $admin->executeStatement(\sprintf('SET GLOBAL %s = %s', $name, is_numeric($value) ? $value : $admin->quote($value)));
         }
         $admin->executeStatement('TRUNCATE TABLE mysql.slow_log');
+    }
+
+    /**
+     * Le serveur écrit la ligne du journal APRÈS avoir rendu le résultat : on attend qu'elle soit là.
+     */
+    private function waitForTheLog(Connection $admin, int $rows): void
+    {
+        for ($i = 0; $i < 50 && (int) $admin->fetchOne('SELECT COUNT(*) FROM mysql.slow_log') < $rows; ++$i) {
+            usleep(100_000);
+        }
     }
 
     #[DataProvider('mysqlTargets')]
@@ -191,6 +201,7 @@ final class LogDiagnosticsTest extends TestCase
         $target = $this->open($envVar);
         $load = $this->admin($envVar);
         $load->executeQuery("SELECT SLEEP(0.4), 'tdb_secret_value_91', 424242")->fetchAllAssociative();
+        $this->waitForTheLog($load, 1);
 
         $report = $target->diagnostics()->logs()->slowQueries();
         $capability = $target->diagnostics()->capabilities()['logs'];
@@ -223,6 +234,7 @@ final class LogDiagnosticsTest extends TestCase
         for ($i = 0; $i < 205; ++$i) {
             $load->fetchOne('SELECT 1');
         }
+        $this->waitForTheLog($load, 205);
         $target = $this->open($envVar);
 
         $report = $target->diagnostics()->logs()->slowQueries();
