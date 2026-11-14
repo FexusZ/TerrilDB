@@ -33,6 +33,11 @@ final class TargetConnectionTest extends TestCase
                 return new \App\Core\Schema\TablePage([], null, 0);
             }
 
+            public function indexUsage(): \App\Core\Schema\IndexUsageReport
+            {
+                return \App\Core\Schema\IndexUsageReport::unavailable('not_supported');
+            }
+
             public function autoCounters(): array
             {
                 return [];
@@ -75,6 +80,19 @@ final class TargetConnectionTest extends TestCase
         self::assertSame(Engine::PostgreSql, $connection->engine);
         self::assertSame($introspector, $connection->introspector());
         self::assertSame($runner, $connection->runner());
+    }
+
+    public function testDiagnosticsAreOptional(): void
+    {
+        $without = new TargetConnection(Engine::Redis, null, $this->runner(), static function (): void {
+        });
+        $diagnostics = new \App\Core\Diagnostics\ServerDiagnostics(Engine::MySql);
+        $with = new TargetConnection(Engine::MySql, $this->introspector(), $this->runner(), static function (): void {
+        }, diagnostics: $diagnostics);
+
+        self::assertSame($diagnostics, $with->diagnostics());
+        $this->expectException(UnsupportedOperationException::class);
+        $without->diagnostics();
     }
 
     public function testAnEngineWithoutSchemaHasNoIntrospector(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Web;
 
+use App\Core\Connection\Engine;
 use App\Driver\DbalConnector;
 use App\Tests\Integration\Driver\TargetDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -18,6 +19,14 @@ final class SchemaAuditWebTest extends WebApiTestCase
     public static function targets(): iterable
     {
         yield from TargetDatabase::all();
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
     }
 
     private function saveTarget(string $envVar): string
@@ -37,6 +46,17 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame(401, $this->statusCode());
     }
 
+    /**
+     * Les index jamais lus dépendent de l'âge de la cible (au-delà de sept jours de collecte, un index de l'exemple que personne
+     * n'a interrogé remonte à bon droit) : ce constat-là est jugé à part.
+     *
+     * @return list<mixed>
+     */
+    private static function withoutUnusedIndexes(mixed $findings): array
+    {
+        return array_values(array_filter(self::arrayOf($findings), static fn (mixed $f): bool => 'unused_index' !== self::arrayOf($f)['rule']));
+    }
+
     #[DataProvider('targets')]
     public function testTheSampleSchemaIsClean(string $envVar): void
     {
@@ -48,7 +68,45 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame(200, $this->statusCode());
         self::assertSame(5, $body['tablesAudited']);
         self::assertFalse($body['truncated']);
-        self::assertSame([], $body['findings']);
+        self::assertSame([], self::withoutUnusedIndexes($body['findings']));
+    }
+
+    /**
+     * @return iterable<string, array{string, ?string, ?string}>
+     */
+    public static function usageChecks(): iterable
+    {
+        // Les cibles viennent de démarrer : MySQL et PostgreSQL disent que la collecte est trop récente (ni constat ni erreur),
+        // MariaDB que ses compteurs sont éteints, ClickHouse n'a pas de règle.
+        yield 'MySQL' => ['TARGET_MYSQL_URL', 'too_short', null];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL', 'too_short', null];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL', 'unavailable', 'performance_schema_off'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', 'unavailable', 'performance_schema_off'];
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL', 'too_short', null];
+        yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL', null, null];
+    }
+
+    #[DataProvider('usageChecks')]
+    public function testUnusedIndexRuleSaysWhyItCouldNotJudge(string $envVar, ?string $state, ?string $reason): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame([], self::withoutUnusedIndexes($body['findings']));
+        $checks = array_map(self::arrayOf(...), self::arrayOf($body['checks']));
+        if (null === $state || ('too_short' === $state && [] === $checks)) {
+            // Pas de règle (ClickHouse), ou une cible qui tourne depuis plus de sept jours : la règle a pu juger.
+            self::assertSame([], $checks);
+
+            return;
+        }
+        self::assertCount(1, $checks);
+        self::assertSame('unused_index', $checks[0]['rule']);
+        self::assertSame($state, $checks[0]['state']);
+        self::assertSame($reason, $checks[0]['reason']);
     }
 
     public function testFindsWhatIsWrongInAnActualSchema(): void
@@ -114,6 +172,77 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame('ALTER TABLE "audit_probe_small" ALTER COLUMN "num_id" TYPE numeric;', $findings[0]['suggestion']);
     }
 
+    #[DataProvider('relationalTargets')]
+    public function testFindsAnUuidStoredAsTextKey(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $connection = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement('CREATE TABLE audit_probe_uuid (id char(36) PRIMARY KEY, label varchar(20))');
+            $connection->executeStatement('CREATE TABLE audit_probe_ok (id char(32) PRIMARY KEY)');
+
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_uuid');
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_ok');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'text_primary_key' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_uuid', $findings[0]['table']);
+        self::assertSame('warning', $findings[0]['severity']);
+        self::assertSame(['id'], $findings[0]['columns']);
+        self::assertIsString($findings[0]['detail']);
+        self::assertMatchesRegularExpression('/^(char|character)\(36\)$/i', $findings[0]['detail']);
+        if (Engine::PostgreSql === TargetDatabase::engine($envVar)) {
+            self::assertSame('ALTER TABLE "audit_probe_uuid" ALTER COLUMN "id" TYPE uuid USING "id"::uuid;', $findings[0]['suggestion']);
+        } else {
+            self::assertNull($findings[0]['suggestion']);
+        }
+    }
+
+    #[DataProvider('relationalTargets')]
+    public function testFindsAMoneyColumnStoredAsFloatingPoint(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $engine = TargetDatabase::engine($envVar);
+        $connection = (new DbalConnector())->connect($engine, TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement('CREATE TABLE audit_probe_money (id integer PRIMARY KEY, price double precision NOT NULL, price_cents double precision, weight double precision)');
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_money');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'float_amount' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_money', $findings[0]['table']);
+        self::assertSame(['price'], $findings[0]['columns']);
+        self::assertSame('info', $findings[0]['severity']);
+        self::assertSame(Engine::PostgreSql === $engine ? 'ALTER TABLE "audit_probe_money" ALTER COLUMN "price" TYPE numeric(12,2);' : 'ALTER TABLE `audit_probe_money` MODIFY `price` DECIMAL(12,2) NOT NULL;', $findings[0]['suggestion']);
+    }
+
+    public function testAnotherAccountsConnectionIsNotFound(): void
+    {
+        $this->seedAndLogin('alice');
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+        $this->call('POST', '/web/logout');
+        $this->seedUser('bob');
+        $this->login('bob');
+
+        $this->call('GET', '/web/connections/'.$id.'/audit');
+
+        self::assertSame(404, $this->statusCode());
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */
@@ -153,18 +282,5 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertStringContainsString('ALTER TABLE', $findings[0]['suggestion']);
         self::assertIsString($findings[0]['detail']);
         self::assertStringContainsString('(9', $findings[0]['detail']);
-    }
-
-    public function testAnotherAccountsConnectionIsNotFound(): void
-    {
-        $this->seedAndLogin('alice');
-        $id = $this->saveTarget('TARGET_POSTGRES_URL');
-        $this->call('POST', '/web/logout');
-        $this->seedUser('bob');
-        $this->login('bob');
-
-        $this->call('GET', '/web/connections/'.$id.'/audit');
-
-        self::assertSame(404, $this->statusCode());
     }
 }

@@ -32,6 +32,23 @@ Secrets and variables → Actions).
 
 Le domaine doit déjà pointer vers la machine (DNS) et les ports 80/443 être joignables pour certbot.
 
+## Durée maximale d'une requête : `TERRILDB_PROXY_TIMEOUT`
+
+nginx coupe la réponse d'une requête qui dure plus de `proxy_read_timeout` (504) pendant que la base continue de travailler. Pour
+que l'application ne laisse pas un client demander plus que nginx n'attend, **une seule valeur** règle les deux :
+`TERRILDB_PROXY_TIMEOUT` (secondes, 120 par défaut, de 30 à 3600) dans `deploy.env`.
+
+- nginx : `proxy_read_timeout` et l'en-tête `X-TerrilDB-Proxy-Timeout` sont rendus depuis cette valeur (`nginx.conf.template`).
+- application : `compose.prod.yaml` la lui passe ; la durée qu'un client peut demander (`timeoutMs` de la console, des scripts, de
+  l'API et du MCP) est cette valeur moins 20 s (100 s par défaut). Au-dessus : refus 422 `invalid_input`, jamais un 504 muet.
+- Pour la changer : modifier `TERRILDB_PROXY_TIMEOUT` dans `deploy.env`, lancer `sh docker/prod/sync-nginx.sh` (sudo : aligne
+  l'hôte virtuel existant, teste la configuration, recharge nginx, remet l'ancienne si nginx la refuse), puis redéployer.
+- Contrôle d'accord, à deux niveaux : `deploy.sh` compare la valeur à celle de l'hôte virtuel (`proxy-timeout.sh check`) et AVERTIT
+  (sans faire échouer un déploiement qu'un retour arrière ne réparerait pas) ; à l'exécution, l'application relit l'en-tête que nginx
+  ajoute à chaque requête et écrit une erreur dans son journal si les deux valeurs diffèrent (une fois par heure).
+- Un site nginx créé avant cette valeur garde son ancien réglage et n'envoie pas l'en-tête : lancer `sh docker/prod/sync-nginx.sh`
+  une fois (il ajoute l'en-tête et accorde le délai).
+
 ## Sécurité du runner (dépôt public)
 
 Un runner auto-hébergé exécute le code d'un workflow sur la machine. Garde-fous :

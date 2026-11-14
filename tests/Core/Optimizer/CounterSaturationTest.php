@@ -24,7 +24,7 @@ final class CounterSaturationTest extends TestCase
     {
         $table = new TableDefinition('t', TableKind::Table, [new ColumnDefinition('id', $type, false, null, true, null)], [], [], null, null);
 
-        return $this->counterFindings((new SchemaAuditor())->audit($engine, [$table], [$counter ?? new AutoCounter('t', 'id', $last)]));
+        return $this->counterFindings((new SchemaAuditor())->audit($engine, [$table], counters: [$counter ?? new AutoCounter('t', 'id', $last)]));
     }
 
     /**
@@ -128,7 +128,7 @@ final class CounterSaturationTest extends TestCase
     {
         self::assertSame([], $this->audit(Engine::MySql, 'decimal(10,0)', '99999999'));
         $table = new TableDefinition('t', TableKind::Table, [new ColumnDefinition('id', 'int', false, null, true, null)], [], [], null, null);
-        self::assertSame([], $this->counterFindings((new SchemaAuditor())->audit(Engine::MySql, [$table], [])));
+        self::assertSame([], $this->counterFindings((new SchemaAuditor())->audit(Engine::MySql, [$table], counters: [])));
     }
 
     public function testGraveFindingsComeBeforeWarnings(): void
@@ -137,7 +137,7 @@ final class CounterSaturationTest extends TestCase
             new ColumnDefinition('id', 'tinyint unsigned', false, null, true, null),
             new ColumnDefinition('n', 'tinyint unsigned', false, null, false, null),
         ], [], [], null, null)];
-        $findings = (new SchemaAuditor())->audit(Engine::MySql, $tables, [new AutoCounter('a', 'n', '200'), new AutoCounter('a', 'id', '250')]);
+        $findings = (new SchemaAuditor())->audit(Engine::MySql, $tables, counters: [new AutoCounter('a', 'n', '200'), new AutoCounter('a', 'id', '250')]);
 
         $rules = array_values(array_filter($findings, static fn ($f): bool => FindingRule::CounterNearLimit === $f->rule));
         self::assertSame(['id', 'n'], array_map(static fn ($f): string => $f->columns[0], $rules));
