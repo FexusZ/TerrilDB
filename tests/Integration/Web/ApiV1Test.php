@@ -549,6 +549,10 @@ final class ApiV1Test extends WebApiTestCase
         $locks = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/locks');
         self::assertSame(403, $this->statusCode());
         self::assertSame(['error' => 'permission_denied'], $locks);
+
+        $logs = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/logs');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $logs);
     }
 
     #[DataProvider('targets')]
@@ -559,13 +563,32 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
-        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'health' => 'available' === $locks ? 'available' : 'unsupported'], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'health' => 'available' === $locks ? 'available' : 'unsupported', 'logs' => match ($envVar) {
+            'TARGET_MYSQL_URL', 'TARGET_MYSQL26_URL' => 'available',
+            'TARGET_MARIADB_URL', 'TARGET_MARIADB13_URL' => 'disabled',
+            default => 'unsupported',
+        }], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertIsArray($body['sessions']);
         self::assertNotEmpty($body['sessions']);
+    }
+
+    public function testATokenWithTheDiagnosticRightReadsTheLogs(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/logs');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf(self::arrayOf($body['errorLog'])['status'])['availability']);
+        self::assertNotEmpty(self::arrayOf($body['errorLog'])['entries']);
+        self::assertArrayHasKey('slowQueries', $body);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/logs');
+        self::assertSame(404, $this->statusCode());
     }
 
     public function testATokenWithTheDiagnosticRightMeasuresTheHealth(): void
