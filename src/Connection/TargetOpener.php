@@ -68,10 +68,10 @@ final readonly class TargetOpener
      * base d'une connexion à rebond.
      *
      * @throws Exception\ForbiddenTargetHostException
-     * @throws ForbiddenBastionException               bastion absent de la liste de l'administrateur
-     * @throws TunnelFailedException                   le tunnel n'a pas pu s'ouvrir (la raison seule, un code stable)
+     * @throws ForbiddenBastionException              bastion absent de la liste de l'administrateur
+     * @throws TunnelFailedException                  le tunnel n'a pas pu s'ouvrir (la raison seule, un code stable)
      * @throws TargetConnectionFailedException
-     * @throws UnsupportedOperationException           moteur qui ne sait pas passer par un socket Unix
+     * @throws UnsupportedOperationException          moteur qui ne sait pas passer par un socket Unix
      */
     public function connect(User $owner, Engine $engine, ConnectionParameters $parameters): TargetConnection
     {

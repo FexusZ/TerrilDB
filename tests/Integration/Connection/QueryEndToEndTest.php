@@ -7,7 +7,6 @@ namespace App\Tests\Integration\Connection;
 use App\Audit\AuditedTargetHosts;
 use App\Audit\AuditedTunnels;
 use App\Audit\RequestAuditContext;
-use Symfony\Component\HttpFoundation\RequestStack;
 use App\Connection\ConnectionManager;
 use App\Connection\TargetOpener;
 use App\Core\Connection\Engine;
@@ -35,6 +34,7 @@ use App\Tests\Integration\Persistence\DatabaseTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Du compte de l'utilisateur à l'instruction exécutée sur la vraie cible, en passant par la connexion chiffrée.

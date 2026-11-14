@@ -78,7 +78,7 @@ final class AuditedTunnelsTest extends DatabaseTestCase
     }
 
     /**
-     * @return array<string, array{string}>
+     * @return iterable<string, array{string}>
      */
     public static function failures(): iterable
     {
