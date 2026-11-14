@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Web;
 
+use App\Core\Connection\Engine;
 use App\Driver\DbalConnector;
 use App\Tests\Integration\Driver\TargetDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -18,6 +19,14 @@ final class SchemaAuditWebTest extends WebApiTestCase
     public static function targets(): iterable
     {
         yield from TargetDatabase::all();
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
     }
 
     private function saveTarget(string $envVar): string
@@ -112,6 +121,64 @@ final class SchemaAuditWebTest extends WebApiTestCase
         self::assertSame(['num_id'], $findings[0]['columns']);
         self::assertSame('integer → numeric', $findings[0]['detail']);
         self::assertSame('ALTER TABLE "audit_probe_small" ALTER COLUMN "num_id" TYPE numeric;', $findings[0]['suggestion']);
+    }
+
+    #[DataProvider('relationalTargets')]
+    public function testFindsAnUuidStoredAsTextKey(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $connection = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement('CREATE TABLE audit_probe_uuid (id char(36) PRIMARY KEY, label varchar(20))');
+            $connection->executeStatement('CREATE TABLE audit_probe_ok (id char(32) PRIMARY KEY)');
+
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_uuid');
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_ok');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'text_primary_key' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_uuid', $findings[0]['table']);
+        self::assertSame('warning', $findings[0]['severity']);
+        self::assertSame(['id'], $findings[0]['columns']);
+        self::assertIsString($findings[0]['detail']);
+        self::assertMatchesRegularExpression('/^(char|character)\(36\)$/i', $findings[0]['detail']);
+        if (Engine::PostgreSql === TargetDatabase::engine($envVar)) {
+            self::assertSame('ALTER TABLE "audit_probe_uuid" ALTER COLUMN "id" TYPE uuid USING "id"::uuid;', $findings[0]['suggestion']);
+        } else {
+            self::assertNull($findings[0]['suggestion']);
+        }
+    }
+
+    #[DataProvider('relationalTargets')]
+    public function testFindsAMoneyColumnStoredAsFloatingPoint(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $engine = TargetDatabase::engine($envVar);
+        $connection = (new DbalConnector())->connect($engine, TargetDatabase::parameters($envVar));
+
+        try {
+            $connection->executeStatement('CREATE TABLE audit_probe_money (id integer PRIMARY KEY, price double precision NOT NULL, price_cents double precision, weight double precision)');
+            $body = $this->call('GET', '/web/connections/'.$id.'/audit');
+        } finally {
+            $connection->executeStatement('DROP TABLE IF EXISTS audit_probe_money');
+            $connection->close();
+        }
+
+        self::assertSame(200, $this->statusCode());
+        $findings = array_values(array_filter(array_map(self::arrayOf(...), self::arrayOf($body['findings'])), static fn (array $f): bool => 'float_amount' === $f['rule']));
+        self::assertCount(1, $findings);
+        self::assertSame('audit_probe_money', $findings[0]['table']);
+        self::assertSame(['price'], $findings[0]['columns']);
+        self::assertSame('info', $findings[0]['severity']);
+        self::assertSame(Engine::PostgreSql === $engine ? 'ALTER TABLE "audit_probe_money" ALTER COLUMN "price" TYPE numeric(12,2);' : 'ALTER TABLE `audit_probe_money` MODIFY `price` DECIMAL(12,2) NOT NULL;', $findings[0]['suggestion']);
     }
 
     public function testAnotherAccountsConnectionIsNotFound(): void
