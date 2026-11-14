@@ -20,6 +20,9 @@ use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
+use App\Core\Query\Script\Exception\ScriptRefusedException;
+use App\Core\Query\Script\ScriptService;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -34,6 +37,7 @@ final readonly class WriteApproval
         private StatementGuard $guard,
         private ConfirmationTickets $tickets,
         private AuditLog $audit,
+        private ScriptService $scripts,
     ) {
     }
 
@@ -104,6 +108,87 @@ final readonly class WriteApproval
             $this->tickets->redeem($confirmationToken, new ConfirmationBinding($access->token->getId(), $connectionId, ConfirmationKind::Statement, $sql, self::decision($verdict)));
         } catch (InvalidConfirmationException $e) {
             $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $base + ['reason' => 'invalid_confirmation']);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Première étape d'un SCRIPT : chaque instruction est jugée avec les droits du jeton, rien n'est exécuté, UN jeton de
+     * confirmation couvre le script entier (texte exact). Un refus d'une seule instruction = aucun jeton.
+     *
+     * @throws ScriptRefusedException
+     */
+    public function prepareScript(ApiTokenAccess $access, AuditContext $context, Uuid $connectionId, TargetConnection $target, string $script): PreparedScript
+    {
+        $writes = $access->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes;
+        $preview = $this->scripts->previewFor($target, $script, $writes);
+        $report = $preview->report;
+        if ([] === $report->steps) {
+            throw new QueryRefusedException(GuardReason::EmptyStatement);
+        }
+        if (null !== $report->firstRefused) {
+            $reason = $report->firstRefused->verdict->reason ?? GuardReason::UnsupportedStatement;
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, [
+                'sql' => $report->firstRefused->sql, 'engine' => $target->engine->value, 'reason' => $reason->value, 'purpose' => 'prepare', 'script' => true,
+                'rank' => $report->firstRefused->index + 1, 'total' => \count($report->steps),
+            ]);
+
+            throw new ScriptRefusedException($reason, $report->firstRefused->index);
+        }
+
+        $decision = $report->needsConfirmation() ? 'needs_confirmation' : 'allowed';
+        $issued = $this->tickets->issue($access->token, new ConfirmationBinding($access->token->getId(), $connectionId, ConfirmationKind::Script, $script, $decision));
+        $this->audit->record($context, AuditAction::QueryPrepared, AuditOutcome::Success, $connectionId, [
+            'script' => true, 'engine' => $target->engine->value, 'decision' => $decision, 'statements' => \count($report->steps),
+            'destructive' => $report->destructiveCount(), 'danger' => 'needs_confirmation' === $decision ? 'destructive' : 'normal',
+        ]);
+
+        return new PreparedScript($preview, $decision, $issued);
+    }
+
+    /**
+     * À appeler AVANT l'exécution d'un script par un jeton d'API. Un script exige TOUJOURS un jeton de confirmation, même pour
+     * un jeton « une seule étape » : c'est jusqu'à 500 écritures d'un coup.
+     *
+     * @throws ConfirmationRequiredException
+     * @throws InvalidConfirmationException
+     * @throws ScriptRefusedException
+     * @throws ScriptNeedsConfirmationException destructif sans `confirmed` (le jeton n'est alors pas consommé)
+     */
+    public function authorizeScript(ApiTokenAccess $access, AuditContext $context, Uuid $connectionId, TargetConnection $target, string $script, ?string $confirmationToken, bool $confirmed): void
+    {
+        if (null === $confirmationToken) {
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, ['script' => true, 'engine' => $target->engine->value, 'reason' => 'confirmation_required']);
+
+            throw ConfirmationRequiredException::create();
+        }
+
+        $writes = $access->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes;
+        $report = $this->scripts->previewFor($target, $script, $writes)->report;
+        $refusal = ['script' => true, 'engine' => $target->engine->value, 'purpose' => 'execute'];
+        if ([] === $report->steps) {
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $refusal + ['reason' => GuardReason::EmptyStatement->value]);
+
+            throw new QueryRefusedException(GuardReason::EmptyStatement);
+        }
+        if (null !== $report->firstRefused) {
+            $reason = $report->firstRefused->verdict->reason ?? GuardReason::UnsupportedStatement;
+            // Le droit a pu changer entre prepare et execute : le refus laisse une trace, comme à la préparation (texte de l'instruction fautive seulement).
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $refusal + [
+                'sql' => $report->firstRefused->sql, 'reason' => $reason->value, 'rank' => $report->firstRefused->index + 1, 'total' => \count($report->steps),
+            ]);
+
+            throw new ScriptRefusedException($reason, $report->firstRefused->index);
+        }
+        if ($report->needsConfirmation() && !$confirmed) {
+            throw new ScriptNeedsConfirmationException($report->destructiveCount());
+        }
+
+        try {
+            $this->tickets->redeem($confirmationToken, new ConfirmationBinding($access->token->getId(), $connectionId, ConfirmationKind::Script, $script, $report->needsConfirmation() ? 'needs_confirmation' : 'allowed'));
+        } catch (InvalidConfirmationException $e) {
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, ['script' => true, 'engine' => $target->engine->value, 'reason' => 'invalid_confirmation']);
 
             throw $e;
         }
