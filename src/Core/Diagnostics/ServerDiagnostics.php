@@ -18,6 +18,7 @@ final readonly class ServerDiagnostics
         private ?SessionDiagnostics $sessions = null,
         private ?LockDiagnostics $locks = null,
         private ?HealthDiagnostics $health = null,
+        private ?LogDiagnostics $logs = null,
     ) {
     }
 
@@ -46,6 +47,14 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function logs(): LogDiagnostics
+    {
+        return $this->logs ?? throw UnsupportedOperationException::for($this->engine, 'logs');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données.
      *
      * @return array<string, DiagnosticStatus>
@@ -56,6 +65,7 @@ final readonly class ServerDiagnostics
             'sessions' => $this->sessions?->status() ?? DiagnosticStatus::unsupported(),
             'locks' => $this->locks?->status() ?? DiagnosticStatus::unsupported(),
             'health' => $this->health?->status() ?? DiagnosticStatus::unsupported(),
+            'logs' => $this->logs?->status() ?? DiagnosticStatus::unsupported(),
         ];
     }
 }

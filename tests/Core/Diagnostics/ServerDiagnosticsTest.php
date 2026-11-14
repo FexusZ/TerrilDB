@@ -9,7 +9,10 @@ use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\Health\HealthSample;
 use App\Core\Diagnostics\Health\HealthWindow;
 use App\Core\Diagnostics\HealthDiagnostics;
+use App\Core\Diagnostics\Log\ErrorLogReport;
+use App\Core\Diagnostics\Log\SlowQueryReport;
 use App\Core\Diagnostics\LockDiagnostics;
+use App\Core\Diagnostics\LogDiagnostics;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Diagnostics\SessionDiagnostics;
@@ -47,7 +50,7 @@ final class ServerDiagnosticsTest extends TestCase
     {
         $diagnostics = new ServerDiagnostics(Engine::Redis);
 
-        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'health' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
+        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'health' => 'unsupported', 'logs' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
     }
 
     public function testCapabilitiesAskTheThemeForItsStatus(): void
@@ -116,5 +119,33 @@ final class ServerDiagnosticsTest extends TestCase
         self::assertSame('available', $diagnostics->capabilities()['health']->availability->value);
         $this->expectException(UnsupportedOperationException::class);
         (new ServerDiagnostics(Engine::Redis))->health();
+    }
+
+    public function testLogsAreServedOrUnsupported(): void
+    {
+        $logs = new class implements LogDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::disabled('slow_query_log_off');
+            }
+
+            public function errorLog(): ErrorLogReport
+            {
+                return new ErrorLogReport(DiagnosticStatus::available(), [], false);
+            }
+
+            public function slowQueries(): SlowQueryReport
+            {
+                return new SlowQueryReport(DiagnosticStatus::available(), [], false, null);
+            }
+        };
+
+        $diagnostics = new ServerDiagnostics(Engine::MySql, logs: $logs);
+
+        self::assertSame($logs, $diagnostics->logs());
+        self::assertSame('disabled', $diagnostics->capabilities()['logs']->availability->value);
+
+        $this->expectException(UnsupportedOperationException::class);
+        (new ServerDiagnostics(Engine::Redis))->logs();
     }
 }
