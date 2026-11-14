@@ -6,6 +6,12 @@ const REASONS: Record<string, string> = {
   extension_missing: 'L’extension pg_stat_statements n’est pas créée dans cette base',
   library_not_loaded: 'L’extension pg_stat_statements n’est pas préchargée par le serveur (shared_preload_libraries)',
   query_log_off: 'Le journal system.query_log est absent ou désactivé sur ce serveur ClickHouse',
+  log_output_without_table: 'le journal des requêtes lentes ne va pas dans une table (log_output ne contient pas TABLE)',
+  slow_query_log_off: 'le journal des requêtes lentes est éteint (slow_query_log)',
+}
+
+const UNSUPPORTED_REASONS: Record<string, string> = {
+  log_is_a_file: 'Ce journal est un fichier du serveur : TerrilDB ne lit jamais les fichiers de l’hôte, il n’est donc pas lisible ici.',
 }
 
 const HINTS: Record<string, string> = {
@@ -33,8 +39,22 @@ export function describeStatus(status: DiagnosticStatus, topic: string): string 
     case 'error':
       return `La vérification de ${topic} a échoué pour une cause imprévue : ne rien voir ici ne veut pas dire qu’il n’y a rien à voir. Réessayez, et consultez le journal du serveur si cela persiste.`
     case 'unsupported':
+      if (status.reason !== null && UNSUPPORTED_REASONS[status.reason] !== undefined) return UNSUPPORTED_REASONS[status.reason] ?? null
+
       return `Ce moteur ne fournit pas ${topic}.`
   }
+}
+
+/**
+ * La commande qui rendrait le journal des requêtes lentes lisible, à LIRE puis à lancer soi-même : TerrilDB n'exécute rien.
+ * Nulle quand la source se lit ou que le manque n'est pas un réglage de journal.
+ */
+export function enableLogHint(status: DiagnosticStatus): string | null {
+  if (status.availability !== 'disabled') return null
+  if (status.reason === 'log_output_without_table') return "SET GLOBAL log_output = 'TABLE'; SET GLOBAL slow_query_log = 'ON';"
+  if (status.reason === 'slow_query_log_off') return "SET GLOBAL slow_query_log = 'ON';"
+
+  return null
 }
 
 /** Une durée en secondes, dans les deux plus grandes unités : 135 → « 2 min 15 s ». */
