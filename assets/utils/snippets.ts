@@ -17,7 +17,7 @@ export interface Snippet {
   example: Record<string, string>
 }
 
-export const CATALOGUE: Snippet[] = catalogue as Snippet[]
+export const CATALOGUE: Snippet[] = catalogue as unknown as Snippet[]
 
 /** Les champs d'un squelette, dans l'ordre d'apparition (un nom répété compte à chaque fois). */
 export function fieldNames(body: string): string[] {

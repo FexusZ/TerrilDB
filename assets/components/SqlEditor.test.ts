@@ -1,6 +1,8 @@
 import { mount } from '@vue/test-utils'
+import { CompletionContext, type Completion, type CompletionSource } from '@codemirror/autocomplete'
 import { EditorView } from '@codemirror/view'
 import { describe, expect, it } from 'vitest'
+import { snippetsFor } from '../utils/snippets'
 import SqlEditor from './SqlEditor.vue'
 
 // jsdom ne mesure rien : CodeMirror a besoin de ces deux méthodes pour calculer ses positions.
@@ -74,6 +76,56 @@ describe('SqlEditor', () => {
     const wrapper = mountEditor()
 
     expect(wrapper.get('.cm-content').attributes('aria-label')).toBe('Éditeur de requête SQL')
+    wrapper.unmount()
+  })
+})
+
+describe('SqlEditor snippets', () => {
+  async function offered(wrapper: ReturnType<typeof mountEditor>): Promise<Completion[]> {
+    const state = view(wrapper).state
+    const sources = state.languageDataAt<CompletionSource>('autocomplete', 0)
+    const found: Completion[] = []
+    for (const source of sources) {
+      found.push(...((await source(new CompletionContext(state, 0, true)))?.options ?? []))
+    }
+
+    return found
+  }
+
+  const every = { recursive_cte: true, window_functions: true, lateral: true, json_table: true }
+
+  it('offers the snippets it is given as completions, with their template', async () => {
+    const wrapper = mountEditor({ modelValue: '', snippets: snippetsFor('postgresql', every) })
+
+    const labels = (await offered(wrapper)).map((option) => option.label)
+
+    expect(labels).toContain('WITH RECURSIVE : arbre des ancêtres')
+    expect(labels).toContain('JOIN LATERAL : n dernières lignes par parent')
+    wrapper.unmount()
+  })
+
+  it('offers none by default, nor when the capability is not declared', async () => {
+    const wrapper = mountEditor({ modelValue: '', dialect: 'mariadb', snippets: snippetsFor('mariadb', { ...every, lateral: false }) })
+
+    const labels = (await offered(wrapper)).map((option) => option.label)
+
+    expect(labels).not.toContain('JOIN LATERAL : n dernières lignes par parent')
+    expect(labels).toContain('Fonction de fenêtrage : cumul')
+    await wrapper.setProps({ snippets: [] })
+    expect((await offered(wrapper)).map((option) => option.label)).not.toContain('Fonction de fenêtrage : cumul')
+    wrapper.unmount()
+  })
+
+  it('inserts the template into the editor without running anything', async () => {
+    const wrapper = mountEditor({ modelValue: '', snippets: snippetsFor('postgresql', every) })
+    const option = (await offered(wrapper)).find((candidate) => candidate.label.startsWith('Fonction de fenêtrage'))
+    const apply = option?.apply
+    expect(typeof apply).toBe('function')
+
+    ;(apply as (v: EditorView, c: Completion, from: number, to: number) => void)(view(wrapper), option as Completion, 0, 0)
+
+    expect(view(wrapper).state.doc.toString()).toContain('OVER (ORDER BY ')
+    expect(wrapper.emitted('run')).toBeUndefined()
     wrapper.unmount()
   })
 })
