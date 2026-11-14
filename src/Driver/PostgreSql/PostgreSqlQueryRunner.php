@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Driver\PostgreSql;
 
+use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\CellValue;
 use App\Core\Query\Exception\QueryFailedException;
@@ -12,6 +14,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
 
@@ -133,6 +136,11 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
         $info = \is_array($e->errorInfo) ? $e->errorInfo : [];
         if (self::TIMEOUT_SQLSTATE === ($info[0] ?? null)) {
             return QueryTimeoutException::afterMilliseconds($options->timeoutMs, $e);
+        }
+
+        $lock = EngineLockConflict::of(Engine::PostgreSql, $e);
+        if (null !== $lock) {
+            return new LockConflictException($lock, $e);
         }
 
         $message = \is_string($info[2] ?? null) ? $info[2] : $e->getMessage();

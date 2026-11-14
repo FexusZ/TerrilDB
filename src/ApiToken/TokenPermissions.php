@@ -19,6 +19,10 @@ final readonly class TokenPermissions
         public bool $writeSchema = false,
         /** Enregistrer de nouvelles connexions dans le compte. */
         public bool $createConnections = false,
+        /** Lire la supervision du serveur (sessions…) : les textes de requêtes des autres sessions sont sensibles. Jamais d'écriture. */
+        public bool $diagnostic = false,
+        /** Écrire en UNE étape (sans `prepare` préalable) : le choix du propriétaire, refusé par défaut. */
+        public bool $singleStep = false,
     ) {
     }
 

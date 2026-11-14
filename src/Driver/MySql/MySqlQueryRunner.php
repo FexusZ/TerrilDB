@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryTimeoutException;
@@ -12,6 +13,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
 
@@ -60,7 +62,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
         } catch (\PDOException $e) {
             $this->rollBack($pdo);
 
-            throw self::translate($e, $options);
+            throw $this->translate($e, $options);
         } catch (\Throwable $e) {
             $this->rollBack($pdo);
 
@@ -91,11 +93,16 @@ final readonly class MySqlQueryRunner implements QueryRunner
         }
     }
 
-    private static function translate(\PDOException $e, QueryOptions $options): \RuntimeException
+    private function translate(\PDOException $e, QueryOptions $options): \RuntimeException
     {
         $info = \is_array($e->errorInfo) ? $e->errorInfo : [];
         if (\in_array($info[1] ?? null, self::TIMEOUT_CODES, true)) {
             return QueryTimeoutException::afterMilliseconds($options->timeoutMs, $e);
+        }
+
+        $lock = EngineLockConflict::of($this->engine, $e);
+        if (null !== $lock) {
+            return new LockConflictException($lock, $e);
         }
 
         return new QueryFailedException(trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage()), previous: $e);
