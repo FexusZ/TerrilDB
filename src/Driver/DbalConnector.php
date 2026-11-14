@@ -22,20 +22,36 @@ final readonly class DbalConnector
     // Sans base nommée, PostgreSQL chercherait une base du nom de l'utilisateur : on prend celle que tout serveur possède.
     private const POSTGRES_MAINTENANCE_DATABASE = 'postgres';
 
-    public function connect(Engine $engine, ConnectionParameters $parameters): Connection
+    /**
+     * @return array<string, mixed>
+     */
+    public function options(Engine $engine, ConnectionParameters $parameters): array
     {
+        if (null !== $parameters->transport && null === $parameters->socketPath()) {
+            // Un rebond sans tunnel ouvert : joindre la base en direct contournerait le rebond voulu.
+            throw new \LogicException('A connection through a jump must be opened through its tunnel.');
+        }
         $options = [
             'driver' => match ($engine) {
                 Engine::MySql, Engine::MariaDb => 'pdo_mysql',
                 Engine::PostgreSql => 'pdo_pgsql',
                 Engine::ClickHouse, Engine::Redis => throw new \InvalidArgumentException('This engine is not reached through DBAL.'),
             },
-            'host' => $parameters->address(),
-            'port' => $parameters->port,
             'user' => $parameters->username,
             'password' => $parameters->password(),
             'driverOptions' => [\PDO::ATTR_TIMEOUT => self::CONNECT_TIMEOUT_SECONDS],
         ];
+        $socket = $parameters->socketPath();
+        if (null === $socket) {
+            $options['host'] = $parameters->address();
+            $options['port'] = $parameters->port;
+        } elseif (Engine::PostgreSql === $engine) {
+            // libpq cherche `.s.PGSQL.<port>` dans le dossier donné comme hôte.
+            $options['host'] = \dirname($socket);
+            $options['port'] = $parameters->port;
+        } else {
+            $options['unix_socket'] = $socket;
+        }
         if ('' !== $parameters->database) {
             $options['dbname'] = $parameters->database;
         } elseif (Engine::PostgreSql === $engine) {
@@ -48,6 +64,13 @@ final readonly class DbalConnector
             $options['driverOptions'][\Pdo\Mysql::ATTR_USE_BUFFERED_QUERY] = false;
             $options['driverOptions'][\Pdo\Mysql::ATTR_MULTI_STATEMENTS] = false;
         }
+
+        return $options;
+    }
+
+    public function connect(Engine $engine, ConnectionParameters $parameters): Connection
+    {
+        $options = $this->options($engine, $parameters);
 
         try {
             $connection = DriverManager::getConnection($options);
