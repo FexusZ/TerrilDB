@@ -17,6 +17,7 @@ use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Diagnostics\DigestQuery;
 use App\Core\Driver\TargetConnection;
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\Script\ScriptOptions;
@@ -32,6 +33,7 @@ use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
 use App\Http\Json\VariableQueryParser;
 use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Result\CallToolResult;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -41,6 +43,8 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class McpTools
 {
+    private const PREVIEW_ROWS = 100;
+
     public function __construct(
         private ApiRequestAccess $request,
         private ConnectionManager $connections,
@@ -95,15 +99,18 @@ final readonly class McpTools
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed>|CallToolResult
      */
-    public function runQuery(string $connection, string $sql, ?int $maxRows = null, ?int $timeoutMs = null): array
+    public function runQuery(string $connection, string $sql, ?int $maxRows = null, ?int $timeoutMs = null, ?string $format = null, ?bool $measure = null): array|CallToolResult
     {
-        return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs): array {
+        return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs, $format, $measure): array|CallToolResult {
             $defaults = new QueryOptions();
-            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
+            $measuring = $measure ?? false;
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $measuring ? self::PREVIEW_ROWS : ($maxRows ?? $defaults->maxRows), measure: $measuring);
 
-            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
+            $result = $this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options));
+
+            return null === $format ? ResultPresenter::present($result) : CompactResult::render($result, ResultFormat::tryFrom($format) ?? throw new InvalidQueryOptionsException('The format is not supported.'));
         });
     }
 
