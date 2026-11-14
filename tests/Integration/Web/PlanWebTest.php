@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Web;
 
+use App\Core\Connection\Engine;
 use App\Tests\Integration\Driver\TargetDatabase;
+use Doctrine\DBAL\DriverManager;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -31,6 +33,22 @@ final class PlanWebTest extends WebApiTestCase
         $id = self::arrayOf($created['connection'])['id'];
         self::assertIsString($id);
         $this->connectionId = $id;
+    }
+
+    /**
+     * Une cible neuve n'a pas de statistiques (MySQL et MariaDB annoncent 1 ligne, PostgreSQL attend
+     * l'autovacuum) : le test les calcule lui-même au lieu de dépendre de l'état de la cible.
+     */
+    private function analyze(string $envVar, string $table): void
+    {
+        $engine = TargetDatabase::engine($envVar);
+        if (!\in_array($engine, [Engine::MySql, Engine::MariaDb, Engine::PostgreSql], true)) {
+            return;
+        }
+        $p = TargetDatabase::parameters($envVar);
+        $connection = DriverManager::getConnection(['driver' => Engine::PostgreSql === $engine ? 'pdo_pgsql' : 'pdo_mysql', 'host' => $p->host, 'port' => $p->port, 'dbname' => $p->database, 'user' => $p->username, 'password' => $p->password()]);
+        $connection->executeQuery('ANALYZE '.(Engine::PostgreSql === $engine ? '' : 'TABLE ').$table)->fetchAllAssociative();
+        $connection->close();
     }
 
     /**
@@ -93,6 +111,7 @@ final class PlanWebTest extends WebApiTestCase
     public function testShowsAFullScan(string $envVar): void
     {
         $this->prepare($envVar);
+        $this->analyze($envVar, 'order_items');
 
         $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from order_items where quantity > 3']);
 
@@ -101,6 +120,31 @@ final class PlanWebTest extends WebApiTestCase
         self::assertCount(1, $scans);
         self::assertSame('order_items', $scans[0]['relation']);
         self::assertTrue($scans[0]['fullScan']);
+    }
+
+    #[DataProvider('targets')]
+    public function testFlagsALargeSortOnlyWithoutLimit(string $envVar): void
+    {
+        $this->prepare($envVar);
+        $this->analyze($envVar, 'order_items');
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from order_items order by quantity']);
+        $rules = array_column(self::arrayOf($body['findings']), 'rule');
+        self::assertContains('large_sort', $rules);
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => 'select * from order_items order by quantity limit 10']);
+        self::assertNotContains('large_sort', array_column(self::arrayOf($body['findings']), 'rule'));
+    }
+
+    #[DataProvider('targets')]
+    public function testExplainsWhyALeadingWildcardLikeIgnoresIndexes(string $envVar): void
+    {
+        $this->prepare($envVar);
+        $this->analyze($envVar, 'customers');
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/plan', ['sql' => "select * from customers where email like '%a%'"]);
+
+        self::assertContains('leading_wildcard', array_column(self::arrayOf($body['findings']), 'rule'));
     }
 
     public function testTheStatementIsNotRun(): void

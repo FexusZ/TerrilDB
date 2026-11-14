@@ -1,0 +1,32 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "22.25"
+    },
+    "ordering_operation": {
+      "using_filesort": true,
+      "cost_info": {
+        "sort_cost": "20.00"
+      },
+      "table": {
+        "table_name": "categories",
+        "access_type": "ALL",
+        "rows_examined_per_scan": 20,
+        "rows_produced_per_join": 20,
+        "filtered": "100.00",
+        "cost_info": {
+          "read_cost": "0.25",
+          "eval_cost": "2.00",
+          "prefix_cost": "2.25",
+          "data_read_per_join": "6K"
+        },
+        "used_columns": [
+          "id",
+          "parent_id",
+          "name"
+        ]
+      }
+    }
+  }
+}

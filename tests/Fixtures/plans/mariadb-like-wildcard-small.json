@@ -1,0 +1,19 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 0.0141148,
+    "nested_loop": [
+      {
+        "table": {
+          "table_name": "categories",
+          "access_type": "ALL",
+          "loops": 1,
+          "rows": 20,
+          "cost": 0.0141148,
+          "filtered": 100,
+          "attached_condition": "categories.`name` like '%a%'"
+        }
+      }
+    ]
+  }
+}

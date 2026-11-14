@@ -1,0 +1,35 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost_info": {
+      "query_cost": "7705.00"
+    },
+    "ordering_operation": {
+      "using_filesort": true,
+      "cost_info": {
+        "sort_cost": "7000.00"
+      },
+      "table": {
+        "table_name": "order_items",
+        "access_type": "ALL",
+        "rows_examined_per_scan": 7000,
+        "rows_produced_per_join": 7000,
+        "filtered": "100.00",
+        "cost_info": {
+          "read_cost": "5.00",
+          "eval_cost": "700.00",
+          "prefix_cost": "705.00",
+          "data_read_per_join": "164K"
+        },
+        "used_columns": [
+          "id",
+          "order_id",
+          "line_no",
+          "product_id",
+          "quantity",
+          "unit_price_cents"
+        ]
+      }
+    }
+  }
+}

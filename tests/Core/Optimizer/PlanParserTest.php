@@ -76,9 +76,10 @@ final class PlanParserTest extends TestCase
 
         self::assertSame(PlanKind::Other, $plan->root->kind);
         self::assertEqualsWithDelta(1.15, $plan->totalCost, 0.001);
-        $sort = $plan->root->children[0];
-        self::assertSame(PlanKind::Sort, $sort->kind);
-        $join = $sort->children[0];
+        $ordering = $plan->root->children[0];
+        self::assertSame(PlanKind::Other, $ordering->kind, 'using_filesort: false, l\'index donne déjà l\'ordre : ce n\'est pas un tri');
+        self::assertSame('Ordering', $ordering->label);
+        $join = $ordering->children[0];
         self::assertSame(PlanKind::Join, $join->kind);
         self::assertSame(['index_full_scan', 'index_scan'], self::kinds($join->children));
 
@@ -115,6 +116,46 @@ final class PlanParserTest extends TestCase
         self::assertSame(2, $scan->rows);
         self::assertSame('(i.q > 3)', $scan->condition);
         self::assertSame([], $scan->children);
+    }
+
+    public function testMySqlFilesortTakesTheRowsOfItsInput(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql-sort'));
+
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        self::assertSame(7000, $sort->rows);
+        self::assertSame(['full_scan'], self::kinds($sort->children));
+    }
+
+    public function testMySql26SortKeepsItsOwnRows(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql26-sort'));
+
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        self::assertSame(7000, $sort->rows);
+        self::assertSame(['full_scan'], self::kinds($sort->children));
+    }
+
+    public function testMariaDbFilesortIsASortOverTheScan(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mariadb-sort'));
+
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        self::assertSame('Filesort', $sort->label);
+        self::assertSame(7000, $sort->rows);
+        self::assertSame(['full_scan'], self::kinds($sort->children));
+        self::assertSame('order_items', $sort->children[0]->relation);
+    }
+
+    public function testPostgreSqlSortKeepsItsRows(): void
+    {
+        $plan = (new PostgreSqlPlanParser())->parse($this->fixture('postgres-sort'));
+
+        self::assertSame(PlanKind::Sort, $plan->root->kind);
+        self::assertSame(7000, $plan->root->rows);
     }
 
     public function testMySql26JoinInJsonFormatV2(): void
