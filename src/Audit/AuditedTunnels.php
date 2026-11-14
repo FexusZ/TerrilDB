@@ -46,6 +46,11 @@ final readonly class AuditedTunnels
         return $this->guarded($context, $host, $port, fn (): HostKey => $this->opener->hostKey($host, $port));
     }
 
+    public function close(TunnelEndpoint $endpoint): void
+    {
+        $this->opener->close($endpoint);
+    }
+
     /**
      * @template T
      *

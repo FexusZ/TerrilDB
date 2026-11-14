@@ -13,6 +13,7 @@ use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Connection\Exception\InvalidConnectionOrderException;
 use App\Core\Connection\Exception\ForbiddenBastionException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Connection\Tunnel\TooManyTunnelsException;
 use App\Core\Connection\Tunnel\TunnelFailedException;
 use App\Core\Data\Exception\DataChangeConflictException;
 use App\Core\Data\Exception\DataChangeFailedException;
@@ -68,6 +69,7 @@ final class ErrorMapper
             $error instanceof InvalidSecondFactorException => new ErrorResponse(401, 'invalid_second_factor'),
             $error instanceof LockedException, $error instanceof CryptoException => new ErrorResponse(401, 'locked'),
             $error instanceof TooManyAttemptsException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
+            $error instanceof TooManyTunnelsException => new ErrorResponse(429, 'too_many_tunnels'),
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),

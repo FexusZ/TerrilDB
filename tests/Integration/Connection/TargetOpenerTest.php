@@ -13,6 +13,7 @@ use App\Connection\Exception\ConnectionNotFoundException;
 use App\Connection\HostResolver;
 use App\Connection\TargetHostPolicy;
 use App\Connection\TargetOpener;
+use App\Connection\TunnelQuota;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\SshJump;
@@ -37,6 +38,7 @@ use App\Tests\Integration\Driver\TargetDatabase;
 use App\Tests\Integration\Persistence\DatabaseTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -72,7 +74,7 @@ final class TargetOpenerTest extends DatabaseTestCase
         return new AuditedTargetHosts($policy, $audit, new RequestStack(), BastionAllowList::fromString('bastion.example'));
     }
 
-    private function opener(?AuditedTargetHosts $hosts = null, ?RecordingTunnelOpener $tunnels = null, ?DriverRegistry $drivers = null): TargetOpener
+    private function opener(?AuditedTargetHosts $hosts = null, ?RecordingTunnelOpener $tunnels = null, ?DriverRegistry $drivers = null, ?TunnelQuota $quota = null): TargetOpener
     {
         $audit = self::getContainer()->get(AuditLog::class);
         self::assertInstanceOf(AuditLog::class, $audit);
@@ -83,6 +85,7 @@ final class TargetOpenerTest extends DatabaseTestCase
             $hosts ?? $this->hostPolicy(),
             new AuditedTunnels(new AllowedBastionTunnelOpener($tunnels ?? new RecordingTunnelOpener(), BastionAllowList::fromString('bastion.example')), $audit),
             new RequestAuditContext(new RequestStack()),
+            $quota ?? new TunnelQuota(new ArrayAdapter(), new MockClock('2026-11-14 10:00:00 UTC')),
         );
     }
 
@@ -263,7 +266,7 @@ final class TargetOpenerTest extends DatabaseTestCase
     {
         $parameters = new ConnectionParameters($host, $port, 'shop', 'reader', 'secret', transport: new SshJump($bastion, 22, 'tunnel', self::KEY, $fingerprint));
 
-        return $this->manager->create($this->alice, $this->key, 'Via bastion', $engine, $parameters);
+        return $this->manager->create($this->alice, $this->key, 'Via bastion '.$port, $engine, $parameters);
     }
 
     public function testAJumpIsAskedForTheTargetBehindItAndTheDriverGetsOnlyTheSocket(): void
@@ -365,17 +368,122 @@ final class TargetOpenerTest extends DatabaseTestCase
         self::assertSame(0, $tunnels->opened);
     }
 
-    public function testProbingParametersWithAJumpGoesThroughTheTunnelToo(): void
+    private function jumpParameters(int $port = 5432): ConnectionParameters
+    {
+        return new ConnectionParameters('db.behind', $port, 'shop', 'reader', 'secret', transport: new SshJump('bastion.example', 22, 'tunnel', self::KEY, RecordingTunnelOpener::FINGERPRINT));
+    }
+
+    private function refusingDrivers(): DriverRegistry
+    {
+        return new DriverRegistry([new class implements Driver {
+            public function engines(): array
+            {
+                return [Engine::PostgreSql];
+            }
+
+            public function connect(Engine $engine, ConnectionParameters $parameters): TargetConnection
+            {
+                throw TargetConnectionFailedException::create(new \RuntimeException('stop here'));
+            }
+        }]);
+    }
+
+    public function testATryClosesTheTunnelItOpenedEvenWhenTheConnectionFails(): void
     {
         $tunnels = new RecordingTunnelOpener();
-        $parameters = new ConnectionParameters('db.behind', 5432, 'shop', 'reader', 'secret', transport: new SshJump('bastion.example', 22, 'tunnel', self::KEY, RecordingTunnelOpener::FINGERPRINT));
 
         try {
-            $this->opener(tunnels: $tunnels)->connect($this->alice, Engine::PostgreSql, $parameters)->close();
+            $this->opener(tunnels: $tunnels, drivers: $this->refusingDrivers())->probe($this->alice, Engine::PostgreSql, $this->jumpParameters());
+            self::fail('the fake driver refuses');
         } catch (TargetConnectionFailedException) {
-            // Le faux tunnel ne mène nulle part : seul compte qu'il ait été demandé.
         }
 
         self::assertSame(1, $tunnels->opened);
+        self::assertSame(['abc'], $tunnels->closedIds);
+    }
+
+    public function testATryNeverClosesATunnelThatWasAlreadyOpen(): void
+    {
+        $tunnels = new RecordingTunnelOpener();
+        $tunnels->reused = true;
+
+        try {
+            $this->opener(tunnels: $tunnels, drivers: $this->refusingDrivers())->probe($this->alice, Engine::PostgreSql, $this->jumpParameters());
+        } catch (TargetConnectionFailedException) {
+        }
+
+        self::assertSame(1, $tunnels->opened);
+        self::assertSame(0, $tunnels->closed);
+    }
+
+    public function testATryFreesItsSlotInTheQuota(): void
+    {
+        $tunnels = new RecordingTunnelOpener();
+        $tunnels->uniqueIds = true;
+        $opener = $this->opener(tunnels: $tunnels, drivers: $this->refusingDrivers());
+
+        for ($try = 0; $try < TunnelQuota::MAX_PER_ACCOUNT + 3; ++$try) {
+            try {
+                $opener->probe($this->alice, Engine::PostgreSql, $this->jumpParameters(5000 + $try));
+            } catch (TargetConnectionFailedException) {
+            }
+        }
+
+        self::assertSame(TunnelQuota::MAX_PER_ACCOUNT + 3, $tunnels->closed);
+    }
+
+    public function testAMemberCannotHoldMoreTunnelsThanItsQuotaAndAnotherAccountKeepsItsCapacity(): void
+    {
+        $tunnels = new RecordingTunnelOpener();
+        $tunnels->uniqueIds = true;
+        $opener = $this->opener(tunnels: $tunnels, drivers: $this->refusingDrivers());
+        for ($n = 0; $n < TunnelQuota::MAX_PER_ACCOUNT; ++$n) {
+            $saved = $this->throughJump(port: 6000 + $n);
+            try {
+                $opener->open($this->alice, $this->key, $saved->getId());
+            } catch (TargetConnectionFailedException) {
+            }
+        }
+        $sixth = $this->throughJump(port: 6100);
+
+        try {
+            $opener->open($this->alice, $this->key, $sixth->getId());
+            self::fail('the quota must refuse');
+        } catch (\App\Core\Connection\Tunnel\TooManyTunnelsException) {
+        }
+        // Le tunnel qui vient d'être ouvert pour rien est refermé.
+        self::assertSame($afterRefusal, $tunnels->closed);
+
+        $afterRefusal = $tunnels->closed;
+        $bob = $this->user('bob');
+        $bobKey = new DerivedKey(random_bytes(DerivedKey::LENGTH));
+        $bobSaved = $this->manager->create($bob, $bobKey, 'Bob via bastion', Engine::PostgreSql, $this->jumpParameters(7000));
+        try {
+            $opener->open($bob, $bobKey, $bobSaved->getId());
+        } catch (TargetConnectionFailedException) {
+        }
+        self::assertSame(1, $tunnels->closed);
+    }
+
+    public function testAReusedTunnelOverTheQuotaIsRefusedButNotClosedBecauseItIsNotOurs(): void
+    {
+        $tunnels = new RecordingTunnelOpener();
+        $tunnels->uniqueIds = true;
+        $opener = $this->opener(tunnels: $tunnels, drivers: $this->refusingDrivers());
+        for ($n = 0; $n < TunnelQuota::MAX_PER_ACCOUNT; ++$n) {
+            try {
+                $opener->open($this->alice, $this->key, $this->throughJump(port: 6000 + $n)->getId());
+            } catch (TargetConnectionFailedException) {
+            }
+        }
+        $tunnels->reused = true;
+
+        try {
+            $opener->open($this->alice, $this->key, $this->throughJump(port: 6100)->getId());
+            self::fail('the quota must refuse');
+        } catch (\App\Core\Connection\Tunnel\TooManyTunnelsException) {
+        }
+
+        self::assertSame(0, $tunnels->closed);
     }
 }

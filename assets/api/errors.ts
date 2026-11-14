@@ -79,6 +79,8 @@ export function messageFor(error: unknown): string {
       return 'Cette adresse désigne le serveur de TerrilDB lui-même : seul un administrateur peut la viser.'
     case 'forbidden_bastion':
       return 'Ce bastion n’est pas autorisé : l’administrateur doit le déclarer avant qu’on puisse l’utiliser.'
+    case 'too_many_tunnels':
+      return 'Trop de rebonds SSH sont ouverts pour votre compte : attendez qu’ils se referment (5 minutes d’inactivité) ou fermez-en.'
     case 'tunnel_failed':
       return tunnelReason(error.details.reason)
     case 'unsupported_operation':

@@ -12,6 +12,8 @@ use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\ForbiddenBastionException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Connection\SshJump;
+use App\Core\Connection\Tunnel\TooManyTunnelsException;
+use App\Core\Connection\Tunnel\TunnelEndpoint;
 use App\Core\Connection\Tunnel\TunnelFailedException;
 use App\Core\Connection\Tunnel\TunnelRequest;
 use App\Core\Driver\DriverRegistry;
@@ -34,6 +36,7 @@ final readonly class TargetOpener
         private AuditedTargetHosts $hosts,
         private AuditedTunnels $tunnels,
         private RequestAuditContext $contexts,
+        private TunnelQuota $quota,
     ) {
     }
 
@@ -72,8 +75,36 @@ final readonly class TargetOpener
      * @throws TunnelFailedException                  le tunnel n'a pas pu s'ouvrir (la raison seule, un code stable)
      * @throws TargetConnectionFailedException
      * @throws UnsupportedOperationException          moteur qui ne sait pas passer par un socket Unix
+     * @throws TooManyTunnelsException                le compte tient déjà son plafond de tunnels (`TunnelQuota`)
      */
     public function connect(User $owner, Engine $engine, ConnectionParameters $parameters): TargetConnection
+    {
+        $endpoint = null;
+
+        return $this->establish($owner, $engine, $parameters, $endpoint);
+    }
+
+    /**
+     * Essaie des paramètres (connexion non enregistrée) puis referme tout : le tunnel ouvert POUR l'essai est refermé et
+     * libère sa place dans le plafond du compte, sauf s'il existait déjà (celui d'une connexion enregistrée : il se partage et
+     * se referme tout seul après l'inactivité).
+     *
+     * @throws \Throwable les mêmes erreurs que `connect`
+     */
+    public function probe(User $owner, Engine $engine, ConnectionParameters $parameters): void
+    {
+        $endpoint = null;
+        try {
+            $this->establish($owner, $engine, $parameters, $endpoint)->close();
+        } finally {
+            if (null !== $endpoint && !$endpoint->reused) {
+                $this->quota->release($owner->getId(), $endpoint->id);
+                $this->tunnels->close($endpoint);
+            }
+        }
+    }
+
+    private function establish(User $owner, Engine $engine, ConnectionParameters $parameters, ?TunnelEndpoint &$opened): TargetConnection
     {
         $transport = $parameters->transport;
         if (null === $transport) {
@@ -91,6 +122,17 @@ final readonly class TargetOpener
             $parameters->port,
             Engine::PostgreSql === $engine ? '.s.PGSQL.'.$parameters->port : 'tunnel.sock',
         ));
+        try {
+            $this->quota->admit($owner->getId(), $endpoint->id);
+        } catch (TooManyTunnelsException $refused) {
+            // Un tunnel qu'on vient d'ouvrir pour rien est refermé ; celui d'un autre usage n'est pas à nous.
+            if (!$endpoint->reused) {
+                $this->tunnels->close($endpoint);
+            }
+
+            throw $refused;
+        }
+        $opened = $endpoint;
 
         return $this->drivers->for($engine)->connect($engine, $parameters->withSocket($endpoint->socketPath));
     }
