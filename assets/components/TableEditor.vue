@@ -313,7 +313,7 @@ function handleFailure(error: unknown): void {
 
     return
   }
-  if (error instanceof ApiError && ['schema_change_failed', 'lock_timeout', 'deadlock', 'serialization_failure'].includes(error.code)) {
+  if (error instanceof ApiError && ['schema_change_failed', 'lock_timeout', 'deadlock', 'serialization_failure', 'too_many_connections', 'engine_permission_denied', 'duplicate_key'].includes(error.code)) {
     const applied = Array.isArray(error.details.applied) ? (error.details.applied as { operation: string; subject: string }[]).map((s) => describeStatement(s.operation, s.subject)) : []
     const check = error.details.lockCheck as StructureLockCheck | null | undefined
     failure.value = {

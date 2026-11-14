@@ -296,6 +296,25 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('gives advice, not the engine message, when the account lacks the right', async () => {
+    mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
+      if (url.endsWith('/preview')) {
+        return Promise.resolve(preview())
+      }
+
+      return Promise.reject(new ApiError(403, 'engine_permission_denied', { retryable: false, applied: [], failed: { sql: 'y', operation: 'add_column', subject: 'x', destructive: false } }))
+    })
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('n’a pas le droit')
+    wrapper.unmount()
+  })
+
   it('shows what the engine said and what was already applied when a change fails half way', async () => {
     mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
       if (url.endsWith('/preview')) {
