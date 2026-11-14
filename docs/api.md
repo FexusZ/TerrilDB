@@ -19,7 +19,7 @@ lui-même (transaction en lecture seule). Trois droits se cochent à la créatio
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
 | POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` |
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmed` |
-| POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
+| POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password`, `transport?` (rebond SSH : `{type: "ssh", host, port?, username, privateKey, hostKeyFingerprint}` ; bastion déclaré par l'administrateur, empreinte à fournir, MySQL/MariaDB/PostgreSQL seulement) |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
 (`null` pour une lecture), `durationMs`. Les entiers au-delà de 2^53 sont rendus en chaînes.
