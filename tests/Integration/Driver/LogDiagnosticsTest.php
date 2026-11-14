@@ -13,6 +13,7 @@ use App\Core\Driver\TargetConnection;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
 use App\Driver\PostgreSql\PostgreSqlDriver;
+use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -97,7 +98,7 @@ final class LogDiagnosticsTest extends TestCase
         $admin = $this->admin($envVar);
         $this->savedEnvVar = $envVar;
         foreach ($values as $name => $value) {
-            $this->saved[$name] ??= (string) $admin->fetchOne('SELECT @@GLOBAL.'.$name);
+            $this->saved[$name] ??= (new RowReader(['v' => $admin->fetchOne('SELECT @@GLOBAL.'.$name)]))->string('v');
             $admin->executeStatement(\sprintf('SET GLOBAL %s = %s', $name, is_numeric($value) ? $value : $admin->quote($value)));
         }
         $admin->executeStatement('TRUNCATE TABLE mysql.slow_log');
@@ -108,7 +109,7 @@ final class LogDiagnosticsTest extends TestCase
      */
     private function waitForTheLog(Connection $admin, int $rows): void
     {
-        for ($i = 0; $i < 50 && (int) $admin->fetchOne('SELECT COUNT(*) FROM mysql.slow_log') < $rows; ++$i) {
+        for ($i = 0; $i < 50 && (new RowReader(['n' => $admin->fetchOne('SELECT COUNT(*) FROM mysql.slow_log')]))->int('n') < $rows; ++$i) {
             usleep(100_000);
         }
     }

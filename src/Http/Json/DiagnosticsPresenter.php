@@ -13,6 +13,10 @@ use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\Health\HealthIndicator;
 use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\LockReport;
+use App\Core\Diagnostics\Log\ErrorLogEntry;
+use App\Core\Diagnostics\Log\ErrorLogReport;
+use App\Core\Diagnostics\Log\SlowQuery;
+use App\Core\Diagnostics\Log\SlowQueryReport;
 use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\Replication\ReplicationAlert;
 use App\Core\Diagnostics\Replication\ReplicationAlerts;
@@ -249,6 +253,45 @@ final class DiagnosticsPresenter
             'endedAt' => self::instant($report->secondSampleAt),
             'discarded' => $report->discarded,
             'indicators' => array_map(static fn (HealthIndicator $i): array => ['key' => $i->key, 'value' => $i->value, 'unit' => $i->unit, 'level' => $i->level->value, 'threshold' => $i->threshold], $report->indicators),
+        ];
+    }
+
+    /**
+     * Journal d'erreurs et requêtes lentes, chacun avec son état : une source éteinte ou refusée n'est pas « aucune ligne ».
+     * Les textes sont déjà masqués et raccourcis par le cœur ; rien ici n'est une instruction à exécuter.
+     *
+     * @return array<string, mixed>
+     */
+    public static function logs(ErrorLogReport $error, SlowQueryReport $slow): array
+    {
+        return [
+            'errorLog' => [
+                'status' => self::status($error->status),
+                'truncated' => $error->truncated,
+                'entries' => array_map(static fn (ErrorLogEntry $e): array => [
+                    'loggedAt' => self::instant($e->loggedAt),
+                    'level' => $e->level,
+                    'subsystem' => $e->subsystem,
+                    'code' => $e->code,
+                    'message' => $e->message,
+                ], $error->entries),
+            ],
+            'slowQueries' => [
+                'status' => self::status($slow->status),
+                'truncated' => $slow->truncated,
+                'thresholdSeconds' => $slow->thresholdSeconds,
+                'queries' => array_map(static fn (SlowQuery $q): array => [
+                    'startedAt' => self::instant($q->startedAt),
+                    'user' => $q->user,
+                    'database' => $q->database,
+                    'durationMs' => null === $q->durationMs ? null : round($q->durationMs, 3),
+                    'lockMs' => null === $q->lockMs ? null : round($q->lockMs, 3),
+                    'rowsSent' => $q->rowsSent,
+                    'rowsExamined' => $q->rowsExamined,
+                    'query' => $q->query,
+                    'queryReason' => $q->queryRedacted ? 'redacted' : null,
+                ], $slow->queries),
+            ],
         ];
     }
 

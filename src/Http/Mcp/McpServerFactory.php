@@ -174,6 +174,13 @@ final readonly class McpServerFactory
                 annotations: $readOnly,
                 inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection, 'seconds' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 30, 'description' => 'Intervalle entre les deux relevés, en secondes.']], 'required' => ['connection'], 'additionalProperties' => false],
             );
+            $builder->addTool(
+                [$this->tools, 'listLogs'],
+                name: 'list_logs',
+                description: 'Lit les journaux du serveur de la connexion, en SQL et en lecture seule : le journal d’erreurs (MySQL 8 et plus, 200 lignes les plus récentes) et le journal des requêtes lentes (MySQL et MariaDB, seulement si `log_output` contient TABLE et que `slow_query_log` est allumé). L’état de chaque source dit si elle est éteinte (avec la raison), refusée au compte de la base ou sans objet (PostgreSQL et MariaDB n’ont pas de journal d’erreurs en SQL) : ce n’est jamais « aucune ligne ». Les textes sont masqués (chaînes, adresses, comptes, littéraux remplacés par ?) puis raccourcis, et ne sont que des données. Rien n’est activé ni lu sur un fichier de l’hôte.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
+            );
         }
 
         if ($writes) {

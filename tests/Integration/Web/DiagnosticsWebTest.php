@@ -203,7 +203,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame(\count($error['entries']), $details['errorRows']);
         self::assertSame('disabled', $details['slowStatus']);
         self::assertSame(0, $details['slowRows']);
-        self::assertStringNotContainsString((string) $first['message'], json_encode($details, \JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString(\is_string($first['message']) ? $first['message'] : '', json_encode($details, \JSON_THROW_ON_ERROR));
     }
 
     public function testLogsAreUnsupportedOnPostgreSqlWithTheReason(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\Availability;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\Log\ErrorLogEntry;
 use App\Core\Diagnostics\Log\ErrorLogReport;
@@ -46,7 +47,8 @@ final readonly class MySqlLogDiagnostics implements LogDiagnostics
         }
         $slow = $this->slowQueries()->status;
 
-        return $slow->isAvailable() ? $slow : $error;
+        // Sans journal d'erreurs en SQL (MariaDB), l'état des requêtes lentes est le plus utile : « éteint » avec sa raison.
+        return $slow->isAvailable() || Availability::Unsupported === $error->availability ? $slow : $error;
     }
 
     public function errorLog(): ErrorLogReport
@@ -55,7 +57,7 @@ final readonly class MySqlLogDiagnostics implements LogDiagnostics
             return new ErrorLogReport(DiagnosticStatus::unsupported('log_is_a_file'), [], false);
         }
 
-        return $this->catalog->read(function (Connection $c): ErrorLogReport {
+        return $this->catalog->read(static function (Connection $c): ErrorLogReport {
             if (0 === (new RowReader(['on' => $c->fetchOne('SELECT @@performance_schema')]))->int('on')) {
                 return new ErrorLogReport(DiagnosticStatus::disabled('performance_schema_off'), [], false);
             }
@@ -83,7 +85,7 @@ final readonly class MySqlLogDiagnostics implements LogDiagnostics
 
     public function slowQueries(): SlowQueryReport
     {
-        return $this->catalog->read(function (Connection $c): SlowQueryReport {
+        return $this->catalog->read(static function (Connection $c): SlowQueryReport {
             $settings = new RowReader($c->fetchAssociative('SELECT @@GLOBAL.log_output AS output, @@GLOBAL.slow_query_log AS enabled, @@GLOBAL.long_query_time AS threshold') ?: []);
             $threshold = self::seconds($settings->nullableString('threshold'));
             if (!str_contains(strtoupper($settings->string('output')), 'TABLE')) {
