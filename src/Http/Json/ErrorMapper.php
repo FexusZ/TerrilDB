@@ -7,6 +7,8 @@ namespace App\Http\Json;
 use App\ApiToken\Exception\ApiTokenNotFoundException;
 use App\ApiToken\Exception\ApiTokenPermissionException;
 use App\ApiToken\Exception\InvalidApiTokenException;
+use App\Confirmation\Exception\ConfirmationRequiredException;
+use App\Confirmation\Exception\InvalidConfirmationException;
 use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Connection\Exception\ForbiddenTargetHostException;
@@ -109,6 +111,8 @@ final class ErrorMapper
             $error instanceof ScriptDryRunUnavailableException => new ErrorResponse(409, 'dry_run_unavailable', ['reason' => $error->reason]),
             $error instanceof UnsplittableScriptException => new ErrorResponse(422, 'invalid_script', ['detail' => $error->getMessage()]),
             $error instanceof ScriptTooLargeException => new ErrorResponse(422, 'script_too_large', ['detail' => $error->getMessage()]),
+            $error instanceof ConfirmationRequiredException => new ErrorResponse(409, 'preparation_required'),
+            $error instanceof InvalidConfirmationException => new ErrorResponse(403, 'invalid_confirmation'),
             $error instanceof InvalidDataChangeException => new ErrorResponse(422, 'invalid_data_change', ['detail' => $error->getMessage()]),
             $error instanceof DataChangeConflictException => new ErrorResponse(409, 'data_changed', ['statement' => $error->statementIndex, 'matched' => $error->matched]),
             $error instanceof DataChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'delete_rows'] + DataPlanPresenter::plan($error->plan)),

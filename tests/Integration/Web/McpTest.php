@@ -30,7 +30,7 @@ final class McpTest extends WebApiTestCase
         $body = ['name' => 'Target', 'engine' => TargetDatabase::engine($envVar)->value, 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
         $this->connectionId = $this->idOf($this->call('POST', '/web/connections', $body)['connection']);
         $this->otherConnectionId = $this->idOf($this->call('POST', '/web/connections', ['name' => 'Other'] + $body)['connection']);
-        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId]] + $rights);
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId]] + $this->legacyRights($rights));
         self::assertIsString($created['token']);
         $this->token = $created['token'];
         $this->client->getCookieJar()->clear();
@@ -59,6 +59,19 @@ final class McpTest extends WebApiTestCase
         self::assertIsString($value);
 
         return $value;
+    }
+
+    /**
+     * Ces tests couvrent l'écriture directe : leurs jetons d'écriture choisissent « une seule étape » (le défaut est
+     * prepare puis execute, voir WriteApprovalApiTest et les tests de confirmation ci-dessous).
+     *
+     * @param array<string, bool> $rights
+     *
+     * @return array<string, bool>
+     */
+    private function legacyRights(array $rights): array
+    {
+        return ($rights['writeData'] ?? false) || ($rights['writeSchema'] ?? false) ? $rights + ['singleStep' => true] : $rights;
     }
 
     private function idOf(mixed $entity): string
@@ -415,6 +428,65 @@ final class McpTest extends WebApiTestCase
 
         $bad = $this->callTool('list_variables', ['connection' => $this->connectionId, 'limit' => 0]);
         self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'A limit out of bounds is refused.');
+    }
+
+    public function testAReadOnlyTokenDoesNotSeePrepareStatement(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('prepare_statement', $this->toolNames());
+    }
+
+    public function testAWritingTokenSeesPrepareStatement(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => false]);
+        $this->initialize();
+
+        self::assertContains('prepare_statement', $this->toolNames());
+    }
+
+    public function testATwoStepTokenWritesOnlyWithAPreparationTicket(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => false]);
+        $this->initialize();
+        $sql = 'update categories set name = name where id = 1';
+
+        $direct = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql]);
+        self::assertTrue($direct['isError']);
+        self::assertStringContainsString('preparation_required', self::str(self::obj(self::first($direct['content']))['text']));
+
+        $prepared = self::textOf($this->callTool('prepare_statement', ['connection' => $this->connectionId, 'sql' => $sql]));
+        self::assertSame(['allowed', 'normal'], [$prepared['decision'], $prepared['danger']]);
+        self::assertIsString($prepared['confirmationToken']);
+
+        $done = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql, 'confirmationToken' => $prepared['confirmationToken']]));
+        self::assertSame(1, $done['affectedRows']);
+
+        $replay = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql, 'confirmationToken' => $prepared['confirmationToken']]);
+        self::assertTrue($replay['isError']);
+        self::assertStringContainsString('invalid_confirmation', self::str(self::obj(self::first($replay['content']))['text']));
+    }
+
+    public function testATicketDoesNotCoverAChangedStatementNorADestructiveOneWithoutConfirmed(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => false]);
+        $this->initialize();
+        $sql = 'update categories set name = name where id = 1';
+        $ticket = self::textOf($this->callTool('prepare_statement', ['connection' => $this->connectionId, 'sql' => $sql]))['confirmationToken'];
+
+        $changed = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql.' ', 'confirmationToken' => $ticket]);
+        self::assertTrue($changed['isError']);
+        self::assertStringContainsString('invalid_confirmation', self::str(self::obj(self::first($changed['content']))['text']));
+
+        $wide = 'update categories set name = name';
+        $prepared = self::textOf($this->callTool('prepare_statement', ['connection' => $this->connectionId, 'sql' => $wide]));
+        self::assertSame(['needs_confirmation', 'destructive'], [$prepared['decision'], $prepared['danger']]);
+        $asked = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $wide, 'confirmationToken' => $prepared['confirmationToken']]);
+        self::assertTrue($asked['isError']);
+        self::assertStringContainsString('confirmation_required', self::str(self::obj(self::first($asked['content']))['text']));
+        $confirmed = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $wide, 'confirmationToken' => $prepared['confirmationToken'], 'confirmed' => true]));
+        self::assertGreaterThan(0, $confirmed['affectedRows']);
     }
 
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void

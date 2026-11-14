@@ -73,6 +73,8 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Invitation révoquée'
     case 'query.executed':
       return 'Requête exécutée'
+    case 'query.prepared':
+      return 'Écriture préparée (rien n’a été exécuté)'
     case 'query.refused':
       return 'Requête refusée'
     case 'query.failed':

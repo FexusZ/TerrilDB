@@ -47,11 +47,11 @@ final readonly class TokensController
             $input->stringList('connectionIds'),
         );
         $never = $input->bool('neverExpires', false);
-        $permissions = new TokenPermissions($input->bool('writeData', false), $input->bool('writeSchema', false), $input->bool('createConnections', false), $input->bool('diagnostic', false));
+        $permissions = new TokenPermissions($input->bool('writeData', false), $input->bool('writeSchema', false), $input->bool('createConnections', false), $input->bool('diagnostic', false), $input->bool('singleStep', false));
         $lifetime = $never ? null : ($input->optionalInt('lifetimeDays', self::DEFAULT_LIFETIME_DAYS) ?? self::DEFAULT_LIFETIME_DAYS);
 
         $issued = $this->tokens->issue($this->session->user(), $this->session->key(), $name, $connections, $lifetime, $all, $permissions);
-        $this->audit->record($this->session->auditContext(), AuditAction::TokenCreated, subject: $issued->entity->getId(), details: ['name' => $issued->entity->getName(), 'connections' => \count($issued->entity->getConnectionIds()), 'lifetimeDays' => $lifetime] + array_filter(['writeData' => $permissions->writeData, 'writeSchema' => $permissions->writeSchema, 'createConnections' => $permissions->createConnections, 'diagnostic' => $permissions->diagnostic]));
+        $this->audit->record($this->session->auditContext(), AuditAction::TokenCreated, subject: $issued->entity->getId(), details: ['name' => $issued->entity->getName(), 'connections' => \count($issued->entity->getConnectionIds()), 'lifetimeDays' => $lifetime] + array_filter(['writeData' => $permissions->writeData, 'writeSchema' => $permissions->writeSchema, 'createConnections' => $permissions->createConnections, 'diagnostic' => $permissions->diagnostic, 'singleStep' => $permissions->singleStep]));
 
         return new JsonResponse(['token' => $issued->token, 'tokenInfo' => TokenPresenter::present($issued->entity)], Response::HTTP_CREATED);
     }

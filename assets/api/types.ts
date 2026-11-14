@@ -170,6 +170,8 @@ export interface ApiTokenInfo {
   createConnections: boolean
   /** Lit la supervision du serveur (sessions…), sans rien écrire. */
   diagnostic: boolean
+  /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
+  singleStep: boolean
   createdAt: string
   /** Nul : le jeton n'expire jamais. */
   expiresAt: string | null
@@ -188,6 +190,7 @@ export interface ApiTokenInput {
   writeSchema?: boolean
   createConnections?: boolean
   diagnostic?: boolean
+  singleStep?: boolean
 }
 
 /** Pourquoi une source de supervision se lit ou non : « vide » n'est jamais un état. */

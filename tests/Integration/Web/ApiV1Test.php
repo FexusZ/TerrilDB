@@ -39,7 +39,7 @@ final class ApiV1Test extends WebApiTestCase
         $this->connectionId = $this->idOf($this->call('POST', '/web/connections', $body)['connection']);
         $this->otherConnectionId = $this->idOf($this->call('POST', '/web/connections', ['name' => 'Other'] + $body)['connection']);
 
-        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId], 'lifetimeDays' => $lifetimeDays] + $rights);
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId], 'lifetimeDays' => $lifetimeDays] + $this->legacyRights($rights));
         self::assertSame(201, $this->statusCode());
         self::assertIsString($created['token']);
         $this->token = $created['token'];
@@ -48,6 +48,19 @@ final class ApiV1Test extends WebApiTestCase
         $this->client->getCookieJar()->clear();
 
         return $user;
+    }
+
+    /**
+     * Ces tests couvrent l'écriture directe : leurs jetons d'écriture choisissent « une seule étape » (le défaut est
+     * prepare puis execute, voir WriteApprovalApiTest et les tests de confirmation ci-dessous).
+     *
+     * @param array<string, bool> $rights
+     *
+     * @return array<string, bool>
+     */
+    private function legacyRights(array $rights): array
+    {
+        return ($rights['writeData'] ?? false) || ($rights['writeSchema'] ?? false) ? $rights + ['singleStep' => true] : $rights;
     }
 
     private function idOf(mixed $entity): string

@@ -20,6 +20,7 @@ const writeData = ref(false)
 const writeSchema = ref(false)
 const createConnections = ref(false)
 const diagnostic = ref(false)
+const singleStep = ref(false)
 const lifetime = ref('30')
 const error = ref<string | null>(null)
 const listError = ref<string | null>(null)
@@ -63,6 +64,7 @@ async function create(): Promise<void> {
       ...(writeSchema.value ? { writeSchema: true } : {}),
       ...(createConnections.value ? { createConnections: true } : {}),
       ...(diagnostic.value ? { diagnostic: true } : {}),
+      ...(singleStep.value ? { singleStep: true } : {}),
     }
     fresh.value = await tokens.create(
       everything.value ? { name: name.value, allConnections: true, ...validity, ...rights } : { name: name.value, connectionIds: chosen.value, ...validity, ...rights },
@@ -73,6 +75,7 @@ async function create(): Promise<void> {
     writeData.value = false
     writeSchema.value = false
     createConnections.value = false
+    singleStep.value = false
     copyFailed.value = false
   } catch (failure) {
     error.value = messageFor(failure)
@@ -177,6 +180,10 @@ async function revoke(): Promise<void> {
             <input id="token-diagnostic" v-model="diagnostic" type="checkbox">
             <span>Lire la supervision du serveur <small class="hint">(sessions en cours ; lecture seule, textes de requêtes raccourcis)</small></span>
           </label>
+          <label class="choice">
+            <input id="token-single-step" v-model="singleStep" type="checkbox">
+            <span>Écrire en une seule étape <small class="hint">(sans préparation préalable : par défaut, une écriture se prépare puis se confirme avec un jeton à usage unique)</small></span>
+          </label>
         </fieldset>
         <div class="field">
           <label for="token-lifetime">Validité</label>
@@ -203,6 +210,7 @@ async function revoke(): Promise<void> {
               <span v-if="token.writeSchema" class="chip warn">Modifie la structure</span>
               <span v-if="token.createConnections" class="chip warn">Crée des connexions</span>
               <span v-if="token.diagnostic" class="chip">Lit la supervision du serveur</span>
+              <span v-if="token.singleStep && (token.writeData || token.writeSchema)" class="chip warn">Écrit en une seule étape</span>
             </p>
             <p class="meta">
               <template v-if="token.expiresAt === null">N’expire jamais</template>

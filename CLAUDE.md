@@ -184,6 +184,8 @@ liste est celle du compte à cet instant, puis ne bouge que par `POST /web/token
 session requise, texte du jeton inchangé, connexions supprimées retirées, pas de plafond de connexions, refusé 422
 pour un jeton à liste fixe ; l'actualisation ne prolonge pas l'expiration). Jamais automatique : le propriétaire décide quand les nouvelles connexions deviennent lisibles (audit `token.refreshed`).
 
+Écriture en DEUX TEMPS (#41, `src/Confirmation`, `WriteApproval`) : `prepare` (`POST /api/v1/connections/{id}/prepare`, outil MCP `prepare_statement`) juge sans exécuter et émet un jeton `cft_…` (`ConfirmationTickets`, table `confirmation_ticket`, empreintes seulement) lié au jeton d'API, à la connexion, au texte EXACT, à la nature et au verdict, 300 s, consommé atomiquement (`DELETE … RETURNING`) à la première présentation même si elle échoue. `/execute` et `execute_statement` exigent ce jeton (409 `preparation_required`, 403 `invalid_confirmation`) sauf jeton d'API `singleStep` (colonne `api_token.single_step`, refusée par défaut, choix du propriétaire à la création) ; un jeton présenté est toujours vérifié ; un destructif exige aussi `confirmed` (vérifié AVANT consommation). Audit `query.prepared` et `query.refused` (`invalid_confirmation` / `confirmation_required`). Pas encore : tables touchées et lignes estimées dans l'aperçu ; scripts par API/MCP (étape suivante, `ConfirmationKind::Script` prévu).
+
 ## ClickHouse (src/Driver/ClickHouse)
 
 Pas de pilote DBAL pour ClickHouse : `ClickHouseHttp` parle son interface HTTP (`symfony/http-client`), port 8123 par défaut

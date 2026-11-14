@@ -36,6 +36,7 @@ describe('audit labels', () => {
   it('tells a query that ran from one that was refused or failed', () => {
     expect(describeEvent(entry('query.executed'))).toBe('Requête exécutée')
     expect(describeEvent(entry('query.refused', { reason: 'not_read_only' }, { outcome: 'refused' }))).toContain('refusée')
+    expect(describeEvent(entry('query.prepared', { decision: 'needs_confirmation' }))).toContain('préparée')
     expect(describeEvent(entry('query.failed', { reason: 'timeout' }, { outcome: 'failed' }))).toContain('délai')
     expect(describeEvent(entry('query.failed', { reason: 'engine_error' }, { outcome: 'failed' }))).toContain('erreur')
   })
