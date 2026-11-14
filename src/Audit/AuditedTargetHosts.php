@@ -54,12 +54,13 @@ final readonly class AuditedTargetHosts
         try {
             return $this->policy->pinnedAddress($user, $parameters);
         } catch (ForbiddenTargetHostException $refused) {
-            $this->audit->record(
-                $this->context($user),
-                AuditAction::TargetForbidden,
-                AuditOutcome::Refused,
-                details: ['host' => mb_substr($parameters->host, 0, self::MAX_HOST_LENGTH), 'port' => $parameters->port],
-            );
+            // Avec un rebond, on note l'adresse refusée (le bastion, ou la cible derrière lui) et le rebond, jamais l'identifiant ni la clé.
+            [$host, $port] = null === $parameters->transport || $refused->behindJump ? [$parameters->host, $parameters->port] : $parameters->firstHop();
+            $details = ['host' => mb_substr($host, 0, self::MAX_HOST_LENGTH), 'port' => $port];
+            if (null !== $parameters->transport) {
+                $details['via'] = 'jump';
+            }
+            $this->audit->record($this->context($user), AuditAction::TargetForbidden, AuditOutcome::Refused, details: $details);
 
             throw $refused;
         }
