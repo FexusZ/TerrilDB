@@ -82,6 +82,14 @@ describe('connections store', () => {
     expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/a/test')
   })
 
+  it('reads the host key of a bastion, to be confirmed by the user', async () => {
+    mocked.mockResolvedValue({ fingerprint: 'SHA256:abc', keyType: 'ed25519' })
+    const store = useConnectionsStore()
+
+    expect(await store.readHostKey('bastion.exemple.test', 22)).toEqual({ fingerprint: 'SHA256:abc', keyType: 'ed25519' })
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/host-key', { host: 'bastion.exemple.test', port: 22 })
+  })
+
   it('forgets everything on demand', async () => {
     mocked.mockResolvedValue({ connections: [production] })
     const store = useConnectionsStore()

@@ -27,6 +27,19 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(403, 'invalid_recovery'))).toContain('phrase')
   })
 
+  it('explains a bastion the administrator did not declare, without naming any', () => {
+    expect(messageFor(new ApiError(403, 'forbidden_bastion'))).toContain('bastion')
+  })
+
+  it('explains why a tunnel did not open, from the stable reason only', () => {
+    expect(messageFor(new ApiError(502, 'tunnel_failed', { reason: 'host_key_unconfirmed' }))).toContain('empreinte')
+    const changed = messageFor(new ApiError(502, 'tunnel_failed', { reason: 'host_key_changed' }))
+    expect(changed).toContain('empreinte')
+    expect(changed).toContain('a changé')
+    expect(messageFor(new ApiError(502, 'tunnel_failed', { reason: 'unavailable' }))).toContain('rebond')
+    expect(messageFor(new ApiError(502, 'tunnel_failed', { reason: '<script>' }))).toContain('rebond')
+  })
+
   it('explains that an address of the server itself is reserved to administrators', () => {
     const message = messageFor(new ApiError(403, 'forbidden_target'))
     expect(message).toContain('serveur')

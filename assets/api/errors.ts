@@ -23,6 +23,17 @@ export function reasonText(reason: unknown): string {
   return (typeof reason === 'string' && REASONS[reason]) || 'Cette instruction n’est pas autorisée.'
 }
 
+function tunnelReason(reason: unknown): string {
+  switch (reason) {
+    case 'host_key_unconfirmed':
+      return 'L’empreinte de la clé du bastion n’a pas été confirmée : lisez-la et confirmez-la dans la connexion.'
+    case 'host_key_changed':
+      return 'L’empreinte de la clé du bastion a changé : par prudence, le rebond est refusé. Vérifiez auprès de son administrateur avant de confirmer la nouvelle.'
+    default:
+      return 'Le rebond SSH n’a pas pu s’ouvrir. Vérifiez le bastion, l’identifiant et la clé.'
+  }
+}
+
 /** Message à montrer à l'utilisateur pour une erreur de l'API. */
 const PARTLY_APPLIED =
   'Un verrou a interrompu la modification : certaines instructions sont déjà appliquées (voir la liste). Ne la rejouez pas telle quelle : relisez la table, puis refaites ce qui manque.'
@@ -80,6 +91,10 @@ export function messageFor(error: unknown): string {
       return 'Ce moteur n’est pas encore pris en charge.'
     case 'forbidden_target':
       return 'Cette adresse désigne le serveur de TerrilDB lui-même : seul un administrateur peut la viser.'
+    case 'forbidden_bastion':
+      return 'Ce bastion n’est pas autorisé : l’administrateur doit le déclarer avant qu’on puisse l’utiliser.'
+    case 'tunnel_failed':
+      return tunnelReason(error.details.reason)
     case 'unsupported_operation':
       return 'Cette opération n’existe pas pour ce moteur.'
     case 'diagnostics_failed':
