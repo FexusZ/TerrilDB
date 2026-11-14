@@ -82,6 +82,23 @@ abstract class WebApiTestCase extends WebTestCase
     }
 
     /**
+     * @return list<mixed>
+     */
+    protected static function listOf(mixed $value): array
+    {
+        self::assertIsArray($value);
+
+        return array_values($value);
+    }
+
+    protected static function stringOf(mixed $value): string
+    {
+        self::assertIsString($value);
+
+        return $value;
+    }
+
+    /**
      * @phpstan-impure
      */
     protected function statusCode(): int
