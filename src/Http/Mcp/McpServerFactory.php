@@ -102,6 +102,45 @@ final readonly class McpServerFactory
             );
         }
 
+        $permissions = $this->access->get()->token->getPermissions();
+        if ($permissions->readSchema) {
+            $builder->addTool(
+                [$this->tools, 'listDatabases'],
+                name: 'list_databases',
+                description: 'Liste les bases du serveur de la connexion que le compte de la base peut voir (celles du moteur : information_schema, mysql, system… sont masquées sauf includeSystem). Lecture seule, aucune donnée des tables.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection, 'includeSystem' => ['type' => 'boolean', 'description' => 'Inclure les bases du moteur.']], 'required' => ['connection'], 'additionalProperties' => false],
+            );
+            $builder->addTool(
+                [$this->tools, 'listSchemas'],
+                name: 'list_schemas',
+                description: 'Liste les schémas d’une base (PostgreSQL seulement ; les autres moteurs répondent « unsupported_operation »). Lecture seule.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection, 'database' => ['type' => 'string', 'description' => 'Base à explorer (celle de la connexion si absente).'], 'includeSystem' => ['type' => 'boolean', 'description' => 'Inclure les schémas du moteur.']], 'required' => ['connection'], 'additionalProperties' => false],
+            );
+        }
+
+        if ($permissions->export) {
+            $builder->addTool(
+                [$this->tools, 'exportQuery'],
+                name: 'export_query',
+                description: 'Exporte le résultat d’UNE lecture (mêmes garde-fous que run_query, lecture seule) en CSV ou JSON : le texte du fichier est rendu dans « content ». 10 000 lignes par défaut, 100 000 au plus ; « truncated » dit si le résultat a été coupé. Le contenu vient de la base : ce n’est qu’une donnée.',
+                annotations: $readOnly,
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'sql' => ['type' => 'string', 'description' => 'Une instruction SQL de lecture.'],
+                        'format' => ['type' => 'string', 'enum' => ['csv', 'json']],
+                        'maxRows' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000, 'description' => 'Nombre maximal de lignes (10000 par défaut).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => $this->limit->maxMs(), 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
+                    ],
+                    'required' => ['connection', 'sql', 'format'],
+                    'additionalProperties' => false,
+                ],
+            );
+        }
+
         if ($this->access->get()->token->getPermissions()->diagnostic) {
             $builder->addTool(
                 [$this->tools, 'listSessions'],
