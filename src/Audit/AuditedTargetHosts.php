@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
-use App\ApiToken\ApiTokenAccess;
 use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Connection\TargetHostPolicy;
 use App\Core\Connection\ConnectionParameters;
 use App\Entity\User;
-use App\Http\Api\ApiRequestAccess;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -60,22 +58,9 @@ final readonly class AuditedTargetHosts
             if (null !== $parameters->transport) {
                 $details['via'] = 'jump';
             }
-            $this->audit->record($this->context($user), AuditAction::TargetForbidden, AuditOutcome::Refused, details: $details);
+            $this->audit->record((new RequestAuditContext($this->requests))->for($user), AuditAction::TargetForbidden, AuditOutcome::Refused, details: $details);
 
             throw $refused;
         }
-    }
-
-    private function context(User $user): AuditContext
-    {
-        $request = $this->requests->getMainRequest();
-        $access = $request?->attributes->get(ApiRequestAccess::ATTRIBUTE);
-        if ($request instanceof \Symfony\Component\HttpFoundation\Request && $access instanceof ApiTokenAccess) {
-            $actor = str_starts_with($request->getPathInfo(), '/mcp') ? AuditActor::Mcp : AuditActor::Api;
-
-            return new AuditContext($actor, $user->getId(), $access->token->getId(), $request->getClientIp());
-        }
-
-        return new AuditContext(AuditActor::Web, $user->getId(), null, $request?->getClientIp());
     }
 }

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Connection;
 
 use App\Audit\AuditedTargetHosts;
+use App\Audit\AuditedTunnels;
+use App\Audit\RequestAuditContext;
+use Symfony\Component\HttpFoundation\RequestStack;
 use App\Connection\ConnectionManager;
 use App\Connection\TargetOpener;
 use App\Core\Connection\Engine;
@@ -74,7 +77,9 @@ final class QueryEndToEndTest extends DatabaseTestCase
         try {
             $policy = self::getContainer()->get(AuditedTargetHosts::class);
             self::assertInstanceOf(AuditedTargetHosts::class, $policy);
-            $this->target = (new TargetOpener($manager, $drivers, $policy))->open($user, $key, $saved->getId());
+            $tunnels = self::getContainer()->get(AuditedTunnels::class);
+            self::assertInstanceOf(AuditedTunnels::class, $tunnels);
+            $this->target = (new TargetOpener($manager, $drivers, $policy, $tunnels, new RequestAuditContext(new RequestStack())))->open($user, $key, $saved->getId());
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }

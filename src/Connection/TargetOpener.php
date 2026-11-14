@@ -5,7 +5,15 @@ declare(strict_types=1);
 namespace App\Connection;
 
 use App\Audit\AuditedTargetHosts;
+use App\Audit\AuditedTunnels;
+use App\Audit\RequestAuditContext;
+use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\Engine;
+use App\Core\Connection\Exception\ForbiddenBastionException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Connection\SshJump;
+use App\Core\Connection\Tunnel\TunnelFailedException;
+use App\Core\Connection\Tunnel\TunnelRequest;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
@@ -24,6 +32,8 @@ final readonly class TargetOpener
         private ConnectionManager $connections,
         private DriverRegistry $drivers,
         private AuditedTargetHosts $hosts,
+        private AuditedTunnels $tunnels,
+        private RequestAuditContext $contexts,
     ) {
     }
 
@@ -32,16 +42,14 @@ final readonly class TargetOpener
      * @throws Exception\ForbiddenTargetHostException
      * @throws InvalidConnectionParametersException   nom de base ou de schéma invalide
      * @throws TargetConnectionFailedException
-     * @throws UnsupportedOperationException          connexion avec rebond (pas encore ouvrable)
+     * @throws ForbiddenBastionException
+     * @throws TunnelFailedException
+     * @throws UnsupportedOperationException          connexion avec rebond sur un moteur sans socket Unix
      */
     public function open(User $owner, DerivedKey $key, Uuid $id, ?string $database = null, ?string $schema = null): TargetConnection
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
-        if (null !== $parameters->transport) {
-            // Le relais local qui porte le tunnel n'existe pas encore : joindre la base en direct contournerait le rebond voulu.
-            throw UnsupportedOperationException::for($engine, 'connection through a jump');
-        }
         if (null !== $database) {
             // Une connexion reste une base (PostgreSQL ne change pas de base en route) : on ouvre une connexion sur celle-là.
             $parameters = $parameters->withDatabase($database);
@@ -51,7 +59,40 @@ final readonly class TargetOpener
             $parameters = $parameters->withSchema($schema);
         }
 
-        return $this->drivers->for($engine)->connect($engine, $this->hosts->pinned($owner, $parameters));
+        return $this->connect($owner, $engine, $parameters);
+    }
+
+    /**
+     * Ouvre une cible depuis des paramètres déjà en main (essai d'une connexion non enregistrée comprise), par la seule voie
+     * permise : la règle d'adresses d'abord, puis, pour un rebond, le tunnel du conteneur dédié. Jamais en direct vers la
+     * base d'une connexion à rebond.
+     *
+     * @throws Exception\ForbiddenTargetHostException
+     * @throws ForbiddenBastionException               bastion absent de la liste de l'administrateur
+     * @throws TunnelFailedException                   le tunnel n'a pas pu s'ouvrir (la raison seule, un code stable)
+     * @throws TargetConnectionFailedException
+     * @throws UnsupportedOperationException           moteur qui ne sait pas passer par un socket Unix
+     */
+    public function connect(User $owner, Engine $engine, ConnectionParameters $parameters): TargetConnection
+    {
+        $transport = $parameters->transport;
+        if (null === $transport) {
+            return $this->drivers->for($engine)->connect($engine, $this->hosts->pinned($owner, $parameters));
+        }
+        if (!$transport instanceof SshJump || !$engine->reachableThroughJump()) {
+            throw UnsupportedOperationException::for($engine, 'connection through a jump');
+        }
+
+        // Le bastion ET la cible derrière lui sont jugés ; le relais résout le bastion lui-même (liste d'autorisation).
+        $this->hosts->assertAllowed($owner, $parameters);
+        $endpoint = $this->tunnels->open($this->contexts->for($owner), new TunnelRequest(
+            $transport,
+            $parameters->host,
+            $parameters->port,
+            Engine::PostgreSql === $engine ? '.s.PGSQL.'.$parameters->port : 'tunnel.sock',
+        ));
+
+        return $this->drivers->for($engine)->connect($engine, $parameters->withSocket($endpoint->socketPath));
     }
 
     /**
