@@ -7,6 +7,9 @@ namespace App\Audit;
 use App\Connection\Exception\ForbiddenTargetHostException;
 use App\Connection\TargetHostPolicy;
 use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\Exception\ForbiddenBastionException;
+use App\Core\Connection\SshJump;
+use App\Core\Connection\Tunnel\BastionAllowList;
 use App\Entity\User;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -23,6 +26,7 @@ final readonly class AuditedTargetHosts
         private TargetHostPolicy $policy,
         private AuditLog $audit,
         private RequestStack $requests,
+        private BastionAllowList $bastions,
     ) {
     }
 
@@ -32,6 +36,48 @@ final readonly class AuditedTargetHosts
     public function assertAllowed(User $user, ConnectionParameters $parameters): void
     {
         $this->check($user, $parameters);
+        if ($parameters->transport instanceof SshJump) {
+            $this->assertListed($user, $parameters->transport->host, $parameters->transport->port);
+        }
+    }
+
+    /**
+     * Un bastion dont on veut lire la clé d'hôte : règle d'adresses (le serveur lui-même est réservé aux administrateurs),
+     * puis liste de l'administrateur.
+     *
+     * @throws ForbiddenTargetHostException
+     * @throws ForbiddenBastionException
+     */
+    public function assertBastion(User $user, string $host, int $port): void
+    {
+        try {
+            $this->policy->assertHostAllowed($user, $host);
+        } catch (ForbiddenTargetHostException $refused) {
+            $this->refuse($user, $host, $port, true);
+
+            throw $refused;
+        }
+        $this->assertListed($user, $host, $port);
+    }
+
+    private function assertListed(User $user, string $host, int $port): void
+    {
+        try {
+            $this->bastions->assertAddressAllowed($host, $port);
+        } catch (ForbiddenBastionException $refused) {
+            $this->refuse($user, $host, $port, true);
+
+            throw $refused;
+        }
+    }
+
+    private function refuse(User $user, string $host, int $port, bool $viaJump): void
+    {
+        $details = ['host' => mb_substr($host, 0, self::MAX_HOST_LENGTH), 'port' => $port];
+        if ($viaJump) {
+            $details['via'] = 'jump';
+        }
+        $this->audit->record((new RequestAuditContext($this->requests))->for($user), AuditAction::TargetForbidden, AuditOutcome::Refused, details: $details);
     }
 
     /**
@@ -54,11 +100,7 @@ final readonly class AuditedTargetHosts
         } catch (ForbiddenTargetHostException $refused) {
             // Avec un rebond, on note l'adresse refusée (le bastion, ou la cible derrière lui) et le rebond, jamais l'identifiant ni la clé.
             [$host, $port] = null === $parameters->transport || $refused->behindJump ? [$parameters->host, $parameters->port] : $parameters->firstHop();
-            $details = ['host' => mb_substr($host, 0, self::MAX_HOST_LENGTH), 'port' => $port];
-            if (null !== $parameters->transport) {
-                $details['via'] = 'jump';
-            }
-            $this->audit->record((new RequestAuditContext($this->requests))->for($user), AuditAction::TargetForbidden, AuditOutcome::Refused, details: $details);
+            $this->refuse($user, $host, $port, null !== $parameters->transport);
 
             throw $refused;
         }

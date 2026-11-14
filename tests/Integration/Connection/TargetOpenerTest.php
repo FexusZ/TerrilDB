@@ -20,11 +20,10 @@ use App\Core\Connection\Tunnel\AllowedBastionTunnelOpener;
 use App\Core\Connection\Tunnel\BastionAllowList;
 use App\Core\Driver\Driver;
 use App\Core\Driver\DriverRegistry;
-use App\Core\Driver\TargetConnection;
-use App\Tests\Core\Connection\Tunnel\RecordingTunnelOpener;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Driver\TargetConnection;
 use App\Crypto\DerivedKey;
 use App\Crypto\Exception\DecryptionFailedException;
 use App\Crypto\KeyDerivation;
@@ -33,6 +32,7 @@ use App\Entity\User;
 use App\Repository\DatabaseConnectionRepository;
 use App\Repository\UserRepository;
 use App\Security\AuthPasswordHasher;
+use App\Tests\Core\Connection\Tunnel\RecordingTunnelOpener;
 use App\Tests\Integration\Driver\TargetDatabase;
 use App\Tests\Integration\Persistence\DatabaseTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -64,10 +64,12 @@ final class TargetOpenerTest extends DatabaseTestCase
 
     private function hostPolicy(): AuditedTargetHosts
     {
-        $policy = self::getContainer()->get(AuditedTargetHosts::class);
-        self::assertInstanceOf(AuditedTargetHosts::class, $policy);
+        $policy = self::getContainer()->get(TargetHostPolicy::class);
+        $audit = self::getContainer()->get(AuditLog::class);
+        self::assertInstanceOf(TargetHostPolicy::class, $policy);
+        self::assertInstanceOf(AuditLog::class, $audit);
 
-        return $policy;
+        return new AuditedTargetHosts($policy, $audit, new RequestStack(), BastionAllowList::fromString('bastion.example'));
     }
 
     private function opener(?AuditedTargetHosts $hosts = null, ?RecordingTunnelOpener $tunnels = null, ?DriverRegistry $drivers = null): TargetOpener
@@ -115,7 +117,7 @@ final class TargetOpenerTest extends DatabaseTestCase
         $saved = $this->manager->create($this->alice, $this->key, 'Target', $engine, TargetDatabase::parameters($envVar));
 
         try {
-            $target = ($this->opener())->open($this->alice, $this->key, $saved->getId());
+            $target = $this->opener()->open($this->alice, $this->key, $saved->getId());
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }
@@ -145,11 +147,11 @@ final class TargetOpenerTest extends DatabaseTestCase
                 return 1 === $this->calls ? [$this->address] : ['127.0.0.1'];
             }
         };
-        $audit = self::getContainer()->get(\App\Audit\AuditLog::class);
-        self::assertInstanceOf(\App\Audit\AuditLog::class, $audit);
-        $hosts = new AuditedTargetHosts(new TargetHostPolicy($resolver, null), $audit, new RequestStack());
+        $audit = self::getContainer()->get(AuditLog::class);
+        self::assertInstanceOf(AuditLog::class, $audit);
+        $hosts = new AuditedTargetHosts(new TargetHostPolicy($resolver, null), $audit, new RequestStack(), BastionAllowList::fromString(''));
 
-        $target = ($this->opener($hosts))->open($this->alice, $this->key, $saved->getId());
+        $target = $this->opener($hosts)->open($this->alice, $this->key, $saved->getId());
 
         self::assertSame(1, $resolver->calls);
         self::assertCount(7, $target->introspector()->listTables());
@@ -171,7 +173,7 @@ final class TargetOpenerTest extends DatabaseTestCase
     {
         $saved = $this->manager->create($this->alice, $this->key, 'Target', TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
 
-        $target = ($this->opener())->open($this->alice, $this->key, $saved->getId(), $other);
+        $target = $this->opener()->open($this->alice, $this->key, $saved->getId(), $other);
 
         $names = array_map(static fn ($table): string => $table->name, $target->introspector()->listTables());
         self::assertNotContains('categories', $names);
@@ -185,7 +187,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(\App\Core\Connection\Exception\InvalidConnectionParametersException::class);
 
-        ($this->opener())->open($this->alice, $this->key, $saved->getId(), "bad\x00name");
+        $this->opener()->open($this->alice, $this->key, $saved->getId(), "bad\x00name");
     }
 
     public function testTheContainerKnowsADriverForEveryEngine(): void
@@ -202,7 +204,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(ConnectionNotFoundException::class);
 
-        ($this->opener())->open($bob, $this->key, $saved->getId());
+        $this->opener()->open($bob, $this->key, $saved->getId());
     }
 
     public function testTheWrongKeyCannotOpenIt(): void
@@ -211,7 +213,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(DecryptionFailedException::class);
 
-        ($this->opener())->open($this->alice, new DerivedKey(random_bytes(DerivedKey::LENGTH)), $saved->getId());
+        $this->opener()->open($this->alice, new DerivedKey(random_bytes(DerivedKey::LENGTH)), $saved->getId());
     }
 
     public function testASavedWrongPasswordIsReportedAsAFailedConnection(): void
@@ -221,7 +223,7 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(TargetConnectionFailedException::class);
 
-        ($this->opener())->open($this->alice, $this->key, $saved->getId());
+        $this->opener()->open($this->alice, $this->key, $saved->getId());
     }
 
     public function testAnEngineWithoutDriverIsRefused(): void
@@ -230,14 +232,14 @@ final class TargetOpenerTest extends DatabaseTestCase
 
         $this->expectException(UnsupportedEngineException::class);
 
-        ($this->opener(drivers: new DriverRegistry([])))->open($this->alice, $this->key, $saved->getId());
+        $this->opener(drivers: new DriverRegistry([]))->open($this->alice, $this->key, $saved->getId());
     }
 
     public function testOpensAnotherSchemaOfAPostgreSqlDatabase(): void
     {
         $saved = $this->manager->create($this->alice, $this->key, 'Target', TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
 
-        $target = ($this->opener())->open($this->alice, $this->key, $saved->getId(), null, 'information_schema');
+        $target = $this->opener()->open($this->alice, $this->key, $saved->getId(), null, 'information_schema');
 
         $names = array_map(static fn ($table): string => $table->name, $target->introspector()->listTables());
         self::assertContains('columns', $names);

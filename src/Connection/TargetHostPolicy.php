@@ -35,6 +35,16 @@ final readonly class TargetHostPolicy
     }
 
     /**
+     * Un hôte seul (un bastion dont on veut lire la clé d'hôte) : mêmes règles que pour le premier saut d'une connexion.
+     *
+     * @throws ForbiddenTargetHostException
+     */
+    public function assertHostAllowed(User $user, string $host): void
+    {
+        $this->assertNotTheMachine($user, $host, false);
+    }
+
+    /**
      * Contrôle l'hôte (sauf pour un administrateur) et rend l'adresse à joindre, résolue UNE seule fois : c'est celle-là
      * que le driver doit recevoir, pas le nom, sans quoi une réponse DNS qui change entre ici et la connexion contournerait
      * le contrôle. IPv4 d'abord (la plus courante) ; nul si le nom ne se résout pas (la connexion échouera d'elle-même).

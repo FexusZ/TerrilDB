@@ -23,7 +23,7 @@ final readonly class DbalConnector
     private const POSTGRES_MAINTENANCE_DATABASE = 'postgres';
 
     /**
-     * @return array<string, mixed>
+     * @return array{driver: 'pdo_mysql'|'pdo_pgsql', user: string, password: string, driverOptions: array<int, mixed>, host?: string, port?: int, unix_socket?: string, dbname?: string, charset?: string}
      */
     public function options(Engine $engine, ConnectionParameters $parameters): array
     {

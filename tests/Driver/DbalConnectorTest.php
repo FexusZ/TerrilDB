@@ -26,8 +26,8 @@ final class DbalConnectorTest extends TestCase
 
         $options = (new DbalConnector())->options(Engine::PostgreSql, $parameters);
 
-        self::assertSame('/run/tunnels/0123456789abcdef0123456789abcdef', $options['host']);
-        self::assertSame(5432, $options['port']);
+        self::assertSame('/run/tunnels/0123456789abcdef0123456789abcdef', $options['host'] ?? null);
+        self::assertSame(5432, $options['port'] ?? null);
         self::assertArrayNotHasKey('unix_socket', $options);
     }
 
@@ -38,7 +38,7 @@ final class DbalConnectorTest extends TestCase
 
         $options = (new DbalConnector())->options($engine, $parameters);
 
-        self::assertSame('/run/tunnels/0123456789abcdef0123456789abcdef/tunnel.sock', $options['unix_socket']);
+        self::assertSame('/run/tunnels/0123456789abcdef0123456789abcdef/tunnel.sock', $options['unix_socket'] ?? null);
         self::assertArrayNotHasKey('host', $options);
         self::assertArrayNotHasKey('port', $options);
     }
@@ -56,8 +56,8 @@ final class DbalConnectorTest extends TestCase
     {
         $options = (new DbalConnector())->options(Engine::MySql, (new ConnectionParameters('db.example.test', 3306, 'shop', 'reader', 'not-a-real-secret'))->withAddress('203.0.113.9'));
 
-        self::assertSame('203.0.113.9', $options['host']);
-        self::assertSame(3306, $options['port']);
+        self::assertSame('203.0.113.9', $options['host'] ?? null);
+        self::assertSame(3306, $options['port'] ?? null);
     }
 
     public function testAJumpThatWasNotTunnelledIsNeverReachedDirectly(): void

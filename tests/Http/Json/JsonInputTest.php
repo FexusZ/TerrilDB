@@ -29,6 +29,16 @@ final class JsonInputTest extends TestCase
         self::assertSame(7, $input->optionalInt('absent', 7));
     }
 
+    public function testTellsAnAbsentFieldFromAnExplicitNull(): void
+    {
+        $input = $this->input('{"n":null,"s":"x"}');
+
+        self::assertTrue($input->hasKey('n'));
+        self::assertTrue($input->hasKey('s'));
+        self::assertFalse($input->hasKey('absent'));
+        self::assertFalse($input->has('n'));
+    }
+
     public function testAnEmptyBodyIsAnEmptyObject(): void
     {
         self::assertNull($this->input('')->optionalString('x'));
