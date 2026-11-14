@@ -3,6 +3,10 @@ import { ApiError } from './client'
 import { messageFor, reasonText } from './errors'
 
 describe('error messages', () => {
+  it('does not show the engine message when a diagnostic read fails', () => {
+    expect(messageFor(new ApiError(502, 'diagnostics_failed', { message: 'secret host' }))).toBe('La lecture de l’activité du serveur a échoué. Réessayez.')
+  })
+
   it('speaks French for the stable codes', () => {
     expect(messageFor(new ApiError(401, 'invalid_credentials'))).toBe('Identifiant ou mot de passe incorrect.')
     expect(messageFor(new ApiError(401, 'invalid_second_factor'))).toContain('Code')
@@ -62,6 +66,28 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(422, 'invalid_data_change', { detail: 'The column "x" does not exist.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
+  })
+
+  it('gives advice for lock conflicts without echoing anything from the engine', () => {
+    const deadlock = messageFor(new ApiError(409, 'deadlock', { retryable: true, message: "value 'jean@example.org'" }))
+    expect(deadlock).toContain('interblocage')
+    expect(deadlock).toContain('Relancez')
+    expect(deadlock).not.toContain('jean')
+    const timeout = messageFor(new ApiError(409, 'lock_timeout', { retryable: true }))
+    expect(timeout).toContain('verrou')
+    expect(timeout).not.toBe(deadlock)
+    const serialization = messageFor(new ApiError(409, 'serialization_failure', { retryable: true, message: "value 'jean@example.org'" }))
+    expect(serialization).toContain('simultanée')
+    expect(serialization).toContain('Relancez')
+    expect(serialization).not.toContain('jean')
+    expect(serialization).not.toContain('interblocage')
+  })
+
+  it('does not advise replaying when part of the change is already applied', () => {
+    const message = messageFor(new ApiError(409, 'lock_timeout', { retryable: false, applied: [{ sql: 'ALTER TABLE t ADD c int' }] }))
+    expect(message).toContain('déjà appliquées')
+    expect(message).not.toContain('Relancez')
+    expect(messageFor(new ApiError(409, 'deadlock', { retryable: false, applied: [{ sql: 'x' }] }))).toContain('déjà appliquées')
   })
 
   it('names the refused statement of a script and says nothing ran', () => {

@@ -6,6 +6,7 @@ namespace App\Driver\PostgreSql;
 
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Driver;
 use App\Core\Driver\TargetConnection;
 use App\Driver\DbalConnector;
@@ -31,6 +32,6 @@ final readonly class PostgreSqlDriver implements Driver
 
         $connection = $this->connector->connect($engine, $parameters);
 
-        return new TargetConnection($engine, new PostgreSqlIntrospector($connection), new PostgreSqlQueryRunner($connection), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection), script: new PostgreSqlScriptExecutor($connection));
+        return new TargetConnection($engine, new PostgreSqlIntrospector($connection), new PostgreSqlQueryRunner($connection), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection, $engine), diagnostics: new ServerDiagnostics($engine, new PostgreSqlSessionDiagnostics($connection), new PostgreSqlLockDiagnostics($connection), new PostgreSqlStatementDiagnostics($connection), variables: new PostgreSqlVariableDiagnostics($connection)), script: new PostgreSqlScriptExecutor($connection));
     }
 }

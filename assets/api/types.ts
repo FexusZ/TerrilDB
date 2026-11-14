@@ -168,6 +168,8 @@ export interface ApiTokenInfo {
   writeData: boolean
   writeSchema: boolean
   createConnections: boolean
+  /** Lit la supervision du serveur (sessions…), sans rien écrire. */
+  diagnostic: boolean
   /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
   singleStep: boolean
   createdAt: string
@@ -187,7 +189,131 @@ export interface ApiTokenInput {
   writeData?: boolean
   writeSchema?: boolean
   createConnections?: boolean
+  diagnostic?: boolean
   singleStep?: boolean
+}
+
+/** Pourquoi une source de supervision se lit ou non : « vide » n'est jamais un état. */
+/** `error` : la vérification a échoué pour une cause imprévue (`reason: check_failed`) ; on ne sait pas, et on le dit. */
+export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled' | 'error'
+
+export interface DiagnosticStatus {
+  availability: DiagnosticAvailability
+  /** Code stable (`insufficient_privilege`, `not_supported`…), jamais le message du moteur. */
+  reason: string | null
+  /** Le droit manquant, pour `permission_denied`. */
+  privilege: string | null
+}
+
+export interface ServerSession {
+  id: string
+  user: string | null
+  client: string | null
+  database: string | null
+  state: string | null
+  seconds: number | null
+  /** Début de la requête en cours, littéraux masqués par `?` puis raccourci par le serveur. */
+  query: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  queryReason: 'redacted' | null
+  /** La session de TerrilDB lui-même. */
+  current: boolean
+}
+
+export interface SessionReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  sessions: ServerSession[]
+}
+
+export interface OpenTransaction {
+  /** Identifiant de la session qui la tient. */
+  session: string
+  user: string | null
+  state: string | null
+  /** Âge de la transaction, en secondes. */
+  seconds: number
+  rowsLocked: number | null
+  rowsModified: number | null
+  /** La session n'exécute rien : la transaction est oubliée (elle garde ses verrous). */
+  sleeping: boolean
+  query: string | null
+  queryReason: 'redacted' | null
+}
+
+/** Une session de l'arbre de blocage ; durée, mode et objet sont ceux de SON attente vis-à-vis de son parent (nuls pour une racine). */
+export interface BlockingNode {
+  id: string
+  user: string | null
+  query: string | null
+  queryReason: 'redacted' | null
+  seconds: number | null
+  kind: 'row' | 'metadata' | null
+  mode: string | null
+  object: string | null
+  blocked: BlockingNode[]
+}
+
+export interface LockReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  transactions: OpenTransaction[]
+  blocking: BlockingNode[]
+  /** L'arbre a été borné (nombre de sessions ou profondeur) : des sessions manquent. */
+  blockingTruncated: boolean
+}
+
+export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
+
+/** Une famille de requêtes du serveur, regroupées par empreinte : le texte est normalisé par le moteur et ses littéraux masqués. */
+export interface StatementDigest {
+  text: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  textReason: 'redacted' | null
+  database: string | null
+  calls: number
+  /** Durées en millisecondes, quelle que soit l'unité de la source. */
+  totalMs: number
+  meanMs: number
+  maxMs: number | null
+  rowsExamined: number | null
+  rowsReturned: number | null
+  /** Lignes examinées pour une ligne renvoyée ; nul si la source ne compte pas les lignes lues. */
+  ratio: number | null
+  noIndexUsed: number | null
+  tmpDiskTables: number | null
+  sortMergePasses: number | null
+  firstSeen: string | null
+  lastSeen: string | null
+}
+
+export interface DigestReport {
+  status: DiagnosticStatus
+  order: DigestOrder
+  /** Fenêtre lue, en heures (ClickHouse) ; nulle quand la source cumule depuis sa remise à zéro. */
+  windowHours: number | null
+  digests: StatementDigest[]
+}
+
+export interface ServerVariable {
+  name: string
+  /** Nul pour un secret (`masked`) ou une valeur que le compte ne peut pas lire. */
+  value: string | null
+  default: string | null
+  /** Diffère du défaut du moteur (ou a une autre origine que la compilation quand il ne donne pas de défaut). */
+  changed: boolean
+  /** Le nom évoque un secret : la valeur n'est jamais servie. */
+  masked: boolean
+  source: string | null
+  restart: 'required' | 'pending' | null
+  scope: 'global' | 'session' | 'server' | null
+  unit: string | null
+}
+
+export interface VariableReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  variables: ServerVariable[]
 }
 
 export type AuditOutcome = 'success' | 'refused' | 'failed'
@@ -313,10 +439,28 @@ export interface StructurePlan {
   destructive: boolean
 }
 
+/** Une session qui tient la table : un ALTER attendrait sa fin. Jamais le texte de sa requête. */
+export interface TableHolder {
+  session: string
+  user: string | null
+  /** Âge de sa transaction, quand le moteur le dit. */
+  seconds: number | null
+  sleeping: boolean
+  mode: string | null
+}
+
+/** Pré-contrôle des verrous : un avertissement, jamais un blocage ; `status` dit si la source se lit. */
+export interface StructureLockCheck {
+  status: DiagnosticStatus
+  holders: TableHolder[]
+}
+
 export interface StructurePreview extends StructurePlan {
   fingerprint: string
   /** La table a changé depuis qu’on l’a chargée. */
   stale: boolean
+  /** Nul quand le moteur n'a pas de diagnostic. */
+  lockCheck?: StructureLockCheck | null
 }
 
 export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'

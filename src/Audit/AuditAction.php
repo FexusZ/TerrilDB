@@ -42,6 +42,7 @@ enum AuditAction: string
     case SchemaChangeFailed = 'schema.failed';
     case DataChanged = 'data.changed';
     case DataChangeFailed = 'data.failed';
+    case DiagnosticRead = 'diagnostic.read';
 
     public function category(): string
     {

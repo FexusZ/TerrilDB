@@ -6,6 +6,7 @@ namespace App\Http\Api;
 
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
+use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
 use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
@@ -18,12 +19,16 @@ use App\Core\Query\QueryOptions;
 use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
+use App\Http\Json\DiagnosticsPresenter;
+use App\Http\Json\DigestQueryParam;
 use App\Http\Json\JsonInput;
 use App\Http\Json\PreparedWritePresenter;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
+use App\Http\Json\VariableQueryParser;
 use App\Http\Web\TokenPresenter;
 use App\Http\Web\UserPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -46,6 +51,8 @@ final readonly class ApiController
         private TargetSession $targets,
         private AuditedQueries $queries,
         private TokenConnections $created,
+        private AuditedDiagnostics $diagnostics,
+        private RequestTimeLimit $limit,
         private WriteApproval $approval,
         private AuditedScripts $scripts,
     ) {
@@ -111,7 +118,7 @@ final readonly class ApiController
         $defaults = new QueryOptions();
         $options = new QueryOptions(
             QueryMode::ReadOnly,
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
@@ -128,7 +135,7 @@ final readonly class ApiController
         $confirmed = $input->bool('confirmed', false);
         $defaults = new QueryOptions();
         $options = $this->request->get()->writeOptions(
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
@@ -142,6 +149,69 @@ final readonly class ApiController
         });
 
         return new JsonResponse(ResultPresenter::present($result));
+    }
+
+    /**
+     * Ce que chaque source de supervision peut lire pour cette connexion. Réservé aux jetons qui ont le droit `diagnostic`.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics', requirements: self::ID, methods: ['GET'])]
+    public function diagnostics(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $capabilities = $this->open($id, fn (TargetConnection $target): array => $this->diagnostics->capabilities($target));
+
+        return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
+    }
+
+    /**
+     * Les sessions en cours sur le serveur de la connexion, en lecture seule, textes de requêtes masqués puis raccourcis.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]
+    public function sessions(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::sessions($report));
+    }
+
+    /**
+     * Les transactions ouvertes et qui bloque qui sur le serveur de la connexion, en lecture seule : aucune instruction d'arrêt.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/locks', requirements: self::ID, methods: ['GET'])]
+    public function locks(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::locks($report));
+    }
+
+    /**
+     * Les requêtes les plus coûteuses du serveur de la connexion, par empreinte : texte normalisé, jamais les valeurs.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/queries', requirements: self::ID, methods: ['GET'])]
+    public function queries(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $query = DigestQueryParam::fromQuery($request);
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+
+        return new JsonResponse(DiagnosticsPresenter::statements($report));
+    }
+
+    /**
+     * Les variables de configuration du serveur de la connexion, en lecture seule : aucun SET, la valeur d'un secret jamais servie.
+     * Paramètres `q` (morceau de nom), `changed` (1 = seulement celles qui diffèrent du défaut), `limit` (1 à 500).
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/variables', requirements: self::ID, methods: ['GET'])]
+    public function variables(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $query = VariableQueryParser::fromRequest($request);
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+
+        return new JsonResponse(DiagnosticsPresenter::variables($report));
     }
 
     /**
@@ -181,7 +251,7 @@ final readonly class ApiController
         $confirmation = $input->optionalString('confirmationToken');
         $options = new ScriptOptions(
             $this->request->get()->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes,
-            $input->optionalInt('timeoutMs', ScriptOptions::DEFAULT_TIMEOUT_MS) ?? ScriptOptions::DEFAULT_TIMEOUT_MS,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), ScriptOptions::DEFAULT_TIMEOUT_MS),
             $input->bool('dryRun', false),
         );
 

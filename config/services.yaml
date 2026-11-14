@@ -13,6 +13,9 @@ parameters:
     env(TERRILDB_AUDIT_RETENTION_DAYS): '365'
     # Noms d'hôte acceptés par le point d'entrée MCP (protection contre le « DNS rebinding »), séparés par des virgules
     env(TERRILDB_ALLOWED_HOSTS): 'localhost,127.0.0.1,[::1]'
+    # Délai (secondes) après lequel le reverse proxy coupe la réponse ; la même valeur règle nginx (docker/prod/nginx.conf.template).
+    # Une durée demandée par un client ne peut pas dépasser ce délai moins une marge (RequestTimeLimit).
+    env(TERRILDB_PROXY_TIMEOUT): '120'
 
     # Envoi des invitations par e-mail : actif seulement si l'expéditeur ET l'adresse publique sont renseignés
     # (avec MAILER_DSN). Sans cela, l'administrateur transmet le lien lui-même.
@@ -34,6 +37,10 @@ services:
         arguments:
             $from: '%env(TERRILDB_MAIL_FROM)%'
             $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
+
+    App\Http\Json\RequestTimeLimit:
+        arguments:
+            $proxyTimeoutSeconds: '%env(int:TERRILDB_PROXY_TIMEOUT)%'
 
     App\Http\Web\RegistrationPolicy:
         arguments:

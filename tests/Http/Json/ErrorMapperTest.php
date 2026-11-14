@@ -10,9 +10,15 @@ use App\Connection\Exception\ConnectionNameAlreadyUsedException;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Data\DataStatement;
+use App\Core\Data\Exception\DataChangeFailedException;
+use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\TableHolders;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Driver\LockConflict;
 use App\Core\Guard\GuardReason;
 use App\Core\KeyValue\Exception\InvalidKeyException;
 use App\Core\KeyValue\Exception\KeyNotFoundException;
@@ -23,6 +29,8 @@ use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Schema\Change\DdlStatement;
+use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\DecryptionFailedException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
@@ -74,6 +82,7 @@ final class ErrorMapperTest extends TestCase
         yield 'invalid key' => [new InvalidKeyException('x'), 422, 'invalid_input'];
         yield 'key not found' => [KeyNotFoundException::named('k'), 404, 'not_found'];
         yield 'unsupported operation' => [UnsupportedOperationException::for(Engine::Redis, 'tables'), 501, 'unsupported_operation'];
+        yield 'diagnostics failed' => [\App\Core\Diagnostics\Exception\DiagnosticsFailedException::create(new \RuntimeException('engine detail')), 502, 'diagnostics_failed'];
         yield 'plan not available' => [PlanNotAvailableException::for(Engine::ClickHouse), 501, 'plan_unavailable'];
         yield 'unreadable plan' => [UnreadablePlanException::create(), 502, 'unreadable_plan'];
         yield 'query timeout' => [QueryTimeoutException::afterMilliseconds(100), 408, 'query_timeout'];
@@ -149,5 +158,94 @@ final class ErrorMapperTest extends TestCase
 
         self::assertNotNull($response);
         self::assertSame([], $response->extra);
+    }
+
+    public function testLockConflictsOfAStatementAreRetryableAndNeverShowTheEngineMessage(): void
+    {
+        $response = (new ErrorMapper())->map(new LockConflictException(LockConflict::Deadlock, new \PDOException("Deadlock found; value 'jean@example.org'")));
+
+        self::assertNotNull($response);
+        self::assertSame(409, $response->status);
+        self::assertSame('deadlock', $response->code);
+        self::assertSame(['retryable' => true], $response->extra);
+        self::assertSame('lock_timeout', (new ErrorMapper())->map(new LockConflictException(LockConflict::LockTimeout))?->code);
+    }
+
+    public function testASerializationFailureIsReportedUnderItsOwnRetryableCode(): void
+    {
+        $response = (new ErrorMapper())->map(new LockConflictException(LockConflict::SerializationFailure, new \PDOException("could not serialize access; value 'jean@example.org'")));
+
+        self::assertNotNull($response);
+        self::assertSame(409, $response->status);
+        self::assertSame('serialization_failure', $response->code);
+        self::assertSame(['retryable' => true], $response->extra);
+    }
+
+    public function testDataChangeBlockedByALockKeepsItsStatementButNotTheMessage(): void
+    {
+        $statement = new DataStatement('UPDATE t SET a = ? WHERE id = ?', ['x', 1], 'UPDATE t SET a = \'x\'', 'update', 't', false, null, []);
+        $error = new DataChangeFailedException("duplicate entry 'secret'", 0, $statement, null, LockConflict::LockTimeout);
+
+        $response = (new ErrorMapper())->map($error);
+
+        self::assertNotNull($response);
+        self::assertSame(409, $response->status);
+        self::assertSame('lock_timeout', $response->code);
+        self::assertTrue($response->extra['retryable']);
+        self::assertSame(0, $response->extra['applied']);
+        self::assertArrayNotHasKey('message', $response->extra);
+    }
+
+    public function testOrdinaryDataChangeFailureIsNotRetryable(): void
+    {
+        $statement = new DataStatement('UPDATE t SET a = ?', ['x'], 'UPDATE t SET a = \'x\'', 'update', 't', false, null, []);
+
+        $response = (new ErrorMapper())->map(new DataChangeFailedException('boom', 0, $statement));
+
+        self::assertSame('data_change_failed', $response?->code);
+        self::assertFalse($response->extra['retryable']);
+    }
+
+    public function testSchemaChangeBlockedByALockIsRetryable(): void
+    {
+        $statement = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $response = (new ErrorMapper())->map(new SchemaChangeFailedException('Lock wait timeout', [], $statement, null, LockConflict::LockTimeout));
+
+        self::assertSame(409, $response?->status);
+        self::assertSame('lock_timeout', $response->code);
+        self::assertTrue($response->extra['retryable']);
+        self::assertArrayNotHasKey('message', $response->extra);
+        self::assertSame('schema_change_failed', (new ErrorMapper())->map(new SchemaChangeFailedException('x', [], $statement))?->code);
+    }
+
+    public function testSchemaChangeBlockedByALockAfterAppliedStatementsIsNotRetryable(): void
+    {
+        $done = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $failed = new DdlStatement('ALTER TABLE t ADD d int', 'add_column', 't', false);
+
+        $response = (new ErrorMapper())->map(new SchemaChangeFailedException('Lock wait timeout', [$done], $failed, null, LockConflict::LockTimeout));
+
+        self::assertSame('lock_timeout', $response?->code);
+        self::assertFalse($response->extra['retryable']);
+        self::assertIsArray($response->extra['applied']);
+        self::assertCount(1, $response->extra['applied']);
+    }
+
+    public function testLockTimeoutOfAStructureChangeKeepsTheHolderReport(): void
+    {
+        $statement = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $error = (new SchemaChangeFailedException('Lock wait timeout', [], $statement, null, LockConflict::LockTimeout))
+            ->withHolders(TableHolders::unreadable(DiagnosticStatus::unsupported('lock_check_failed')));
+
+        $response = (new ErrorMapper())->map($error);
+
+        self::assertSame('lock_timeout', $response?->code);
+        self::assertTrue($response->extra['lockTimeout']);
+        self::assertTrue($response->extra['retryable']);
+        self::assertIsArray($response->extra['lockCheck']);
+        self::assertArrayNotHasKey('message', $response->extra);
+        $deadlock = (new ErrorMapper())->map(new SchemaChangeFailedException('x', [], $statement, null, LockConflict::Deadlock));
+        self::assertFalse($deadlock?->extra['lockTimeout']);
+        self::assertNull($deadlock->extra['lockCheck']);
     }
 }

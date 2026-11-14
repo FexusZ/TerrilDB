@@ -109,6 +109,24 @@ final class ScriptApiTest extends WebApiTestCase
         self::assertSame(0, $this->rows());
     }
 
+    public function testAScriptDurationAboveWhatTheProxyAllowsIsRefusedWithoutBurningTheTicket(): void
+    {
+        $this->setUpToken();
+        $script = $this->script();
+        $ticket = $this->ticket($script);
+
+        $body = $this->api('script/execute', ['script' => $script, 'confirmationToken' => $ticket, 'timeoutMs' => 100_001]);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+        self::assertSame(0, $this->rows());
+
+        $done = $this->api('script/execute', ['script' => $script, 'confirmationToken' => $ticket, 'timeoutMs' => 100_000]);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('committed', $done['status']);
+        self::assertSame(2, $this->rows());
+    }
+
     public function testPrepareJudgesEveryStatementAndRunsNothing(): void
     {
         $this->setUpToken();

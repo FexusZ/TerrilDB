@@ -6,6 +6,7 @@ namespace App\Core\Driver;
 
 use App\Core\Connection\Engine;
 use App\Core\Data\DataExecutor;
+use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\KeyValueStore;
 use App\Core\Query\QueryRunner;
@@ -34,6 +35,7 @@ final class TargetConnection
         private readonly ?KeyValueStore $keys = null,
         private readonly ?DdlExecutor $ddl = null,
         private readonly ?DataExecutor $data = null,
+        private readonly ?ServerDiagnostics $diagnostics = null,
         private readonly ?ScriptExecutor $script = null,
     ) {
         $this->release = $release;
@@ -69,6 +71,16 @@ final class TargetConnection
     public function data(): DataExecutor
     {
         return $this->data ?? throw UnsupportedOperationException::for($this->engine, 'data');
+    }
+
+    /**
+     * Lectures de supervision du serveur (sessions…), à part de la console et du garde.
+     *
+     * @throws UnsupportedOperationException
+     */
+    public function diagnostics(): ServerDiagnostics
+    {
+        return $this->diagnostics ?? throw UnsupportedOperationException::for($this->engine, 'diagnostics');
     }
 
     /**

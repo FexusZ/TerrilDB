@@ -22,6 +22,13 @@ export function reasonText(reason: unknown): string {
 }
 
 /** Message à montrer à l'utilisateur pour une erreur de l'API. */
+const PARTLY_APPLIED =
+  'Un verrou a interrompu la modification : certaines instructions sont déjà appliquées (voir la liste). Ne la rejouez pas telle quelle : relisez la table, puis refaites ce qui manque.'
+
+function partlyApplied(error: ApiError): boolean {
+  return error.details.retryable === false && Array.isArray(error.details.applied) && error.details.applied.length > 0
+}
+
 export function messageFor(error: unknown): string {
   if (!(error instanceof ApiError)) {
     return GENERIC
@@ -69,6 +76,8 @@ export function messageFor(error: unknown): string {
       return 'Cette adresse désigne le serveur de TerrilDB lui-même : seul un administrateur peut la viser.'
     case 'unsupported_operation':
       return 'Cette opération n’existe pas pour ce moteur.'
+    case 'diagnostics_failed':
+      return 'La lecture de l’activité du serveur a échoué. Réessayez.'
     case 'plan_unavailable':
       return 'Le plan d’exécution n’est pas disponible pour ce moteur.'
     case 'query_refused':
@@ -103,6 +112,15 @@ export function messageFor(error: unknown): string {
       return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification des données.'
     case 'invalid_data_change':
       return 'Cette modification de données est invalide.'
+    case 'deadlock':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'La base a détecté un interblocage avec une autre transaction et a annulé cette opération. Relancez-la telle quelle.'
+    case 'serialization_failure':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'La base a annulé cette opération parce qu’une modification simultanée l’empêchait de rester cohérente. Relancez-la telle quelle.'
+    case 'lock_timeout':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':

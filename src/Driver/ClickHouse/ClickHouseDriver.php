@@ -6,6 +6,7 @@ namespace App\Driver\ClickHouse;
 
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Driver;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
@@ -43,6 +44,6 @@ final readonly class ClickHouseDriver implements Driver
 
         // Pas de session ni de socket à libérer : chaque requête HTTP est indépendante.
         return new TargetConnection($engine, new ClickHouseIntrospector($http, '' !== $parameters->database ? $parameters->database : 'default'), new ClickHouseQueryRunner($http), static function (): void {
-        }, ddl: new ClickHouseDdlExecutor($http), data: new ClickHouseDataExecutor($http), script: new ClickHouseScriptExecutor($http));
+        }, ddl: new ClickHouseDdlExecutor($http), data: new ClickHouseDataExecutor($http), diagnostics: new ServerDiagnostics($engine, new ClickHouseSessionDiagnostics($http), statements: new ClickHouseStatementDiagnostics($http), variables: new ClickHouseVariableDiagnostics($http)), script: new ClickHouseScriptExecutor($http));
     }
 }
