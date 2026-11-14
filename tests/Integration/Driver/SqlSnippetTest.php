@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Driver;
 
 use App\Core\Connection\Engine;
-use App\Core\Driver\Driver;
 use App\Core\Driver\EngineCapability;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
@@ -47,9 +46,8 @@ final class SqlSnippetTest extends TestCase
     private static function catalogue(): array
     {
         $path = \dirname(__DIR__, 3).'/assets/snippets/sql-snippets.json';
-        $decoded = json_decode((string) file_get_contents($path), true, flags: \JSON_THROW_ON_ERROR);
-        \assert(\is_array($decoded));
         /** @var list<array{id: string, requires: string, engines: list<string>, body: string, example: array<string, string>}> $decoded */
+        $decoded = json_decode((string) file_get_contents($path), true, flags: \JSON_THROW_ON_ERROR);
 
         return $decoded;
     }
@@ -76,7 +74,6 @@ final class SqlSnippetTest extends TestCase
             Engine::ClickHouse => new ClickHouseDriver(HttpClient::create()),
             Engine::Redis => new RedisDriver(new RedisConnector()),
         };
-        \assert($driver instanceof Driver);
         try {
             $this->target = $driver->connect($engine, $parameters);
         } catch (TargetConnectionFailedException) {
