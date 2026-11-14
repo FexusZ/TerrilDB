@@ -573,6 +573,29 @@ final class McpTest extends WebApiTestCase
         self::assertNotContains('server_health', $this->toolNames());
     }
 
+    public function testTheLogsToolIsForTokensWithTheDiagnosticRightOnly(): void
+    {
+        $this->prepare();
+        $this->initialize();
+        self::assertNotContains('list_logs', $this->toolNames());
+    }
+
+    public function testReadsTheLogsThroughMcp(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_logs', $this->toolNames());
+        $report = self::textOf($this->callTool('list_logs', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj(self::obj($report['errorLog'])['status'])['availability']);
+        self::assertNotEmpty(self::obj($report['errorLog'])['entries']);
+        self::assertArrayHasKey('slowQueries', $report);
+
+        $other = $this->callTool('list_logs', ['connection' => '00000000-0000-7000-8000-000000000000']);
+        self::assertTrue($other['isError']);
+    }
+
     public function testMeasuresTheHealthThroughMcp(): void
     {
         $this->prepare(rights: ['diagnostic' => true]);
