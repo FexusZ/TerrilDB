@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/types'
-import { describeStatus, flattenBlocking, formatSeconds, isLongTransaction } from './diagnostics'
+import { describeStatus, enableLogHint, flattenBlocking, formatSeconds, isLongTransaction } from './diagnostics'
 
 const status = (availability: DiagnosticStatus['availability'], extra: Partial<DiagnosticStatus> = {}): DiagnosticStatus => ({ availability, reason: null, privilege: null, ...extra })
 
@@ -34,6 +34,27 @@ describe('describeStatus', () => {
 
   it('never shows an unknown reason as is', () => {
     expect(describeStatus(status('disabled', { reason: 'something_else' }), 'les verrous')).not.toContain('something_else')
+  })
+})
+
+describe('journaux', () => {
+  it('explains why a log is not readable, and that it is not an empty list', () => {
+    expect(describeStatus(status('disabled', { reason: 'log_output_without_table' }), 'le journal')).toContain('log_output')
+    expect(describeStatus(status('disabled', { reason: 'slow_query_log_off' }), 'le journal')).toContain('slow_query_log')
+    expect(describeStatus(status('disabled', { reason: 'slow_query_log_off' }), 'le journal')).toContain('ne veut pas dire')
+  })
+
+  it('says a file log is never read from the host', () => {
+    const message = describeStatus(status('unsupported', { reason: 'log_is_a_file' }), 'le journal')
+    expect(message).toContain('fichier')
+    expect(message).toContain('hôte')
+  })
+
+  it('gives the activation command to READ, only for what is missing', () => {
+    expect(enableLogHint(status('disabled', { reason: 'log_output_without_table' }))).toContain("SET GLOBAL log_output = 'TABLE'")
+    expect(enableLogHint(status('disabled', { reason: 'slow_query_log_off' }))).toBe("SET GLOBAL slow_query_log = 'ON';")
+    expect(enableLogHint(status('disabled', { reason: 'performance_schema_off' }))).toBeNull()
+    expect(enableLogHint(status('available'))).toBeNull()
   })
 })
 
