@@ -55,6 +55,35 @@ export interface ConnectionParams {
   database: string
   username: string
   hasPassword: boolean
+  /** Rebond SSH : jamais la clé privée, seulement qu'il y en a une. */
+  transport?: JumpParams
+}
+
+export interface JumpParams {
+  type: 'ssh'
+  host: string
+  port: number
+  username: string
+  hasPrivateKey: boolean
+  /** Empreinte de la clé d'hôte que l'utilisateur a confirmée, nulle tant qu'il ne l'a pas fait. */
+  hostKeyFingerprint: string | null
+}
+
+export interface JumpInput {
+  type: 'ssh'
+  host: string
+  port?: number
+  username: string
+  /** Absente à la modification : la clé enregistrée est conservée. */
+  privateKey?: string
+  /** Absente : celle du même bastion est conservée. */
+  hostKeyFingerprint?: string
+}
+
+/** Ce que le bastion publie de sa clé d'hôte, à faire confirmer par l'utilisateur. */
+export interface HostKey {
+  fingerprint: string
+  keyType: string
 }
 
 export interface ConnectionInput {
@@ -68,6 +97,8 @@ export interface ConnectionInput {
   color?: ConnectionColor
   /** Absent à la modification : le mot de passe enregistré est conservé. */
   password?: string
+  /** Absent : rien ne change (à la modification, le rebond enregistré est conservé) ; `null` : on le retire. */
+  transport?: JumpInput | null
 }
 
 export type TableKind = 'table' | 'view' | 'materialized_view'

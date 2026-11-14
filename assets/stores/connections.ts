@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '../api/client'
-import type { ConnectionInput, ConnectionParams, ConnectionSummary } from '../api/types'
+import type { ConnectionInput, ConnectionParams, ConnectionSummary, HostKey } from '../api/types'
 
 export const useConnectionsStore = defineStore('connections', () => {
   const items = ref<ConnectionSummary[]>([])
@@ -87,10 +87,15 @@ export const useConnectionsStore = defineStore('connections', () => {
     return (await api<{ durationMs: number }>('POST', `/web/connections/${id}/test`)).durationMs
   }
 
+  /** L'empreinte que le bastion publie : rien n'est enregistré, c'est à l'utilisateur de la confirmer. */
+  async function readHostKey(host: string, port: number): Promise<HostKey> {
+    return api<HostKey>('POST', '/web/connections/host-key', { host, port })
+  }
+
   function reset(): void {
     items.value = []
     loaded.value = false
   }
 
-  return { items, loaded, load, byId, fetch, create, update, reorder, move, moveOnto, remove, probe, testSaved, reset }
+  return { items, loaded, load, byId, fetch, create, update, reorder, move, moveOnto, remove, probe, testSaved, readHostKey, reset }
 })

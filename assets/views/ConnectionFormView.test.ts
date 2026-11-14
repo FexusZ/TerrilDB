@@ -264,4 +264,146 @@ describe('ConnectionFormView', () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain('introuvable')
   })
+
+  describe('SSH jump', () => {
+    const KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----'
+    const FINGERPRINT = `SHA256:${'A'.repeat(43)}`
+
+    async function withJump(wrapper: Awaited<ReturnType<typeof mountForm>>['wrapper']) {
+      await fill(wrapper, { name: 'Cachée', host: 'db.interne', database: 'd', username: 'u', password: 'p' })
+      await wrapper.get('#jump-enabled').setValue(true)
+      await fill(wrapper, { 'jump-host': 'bastion.exemple.test', 'jump-username': 'tunnel' })
+      await wrapper.get('#jump-key').setValue(KEY)
+    }
+
+    it('is off by default and sends no transport', async () => {
+      const { wrapper } = await mountForm()
+      await fill(wrapper, { name: 'P', host: 'h', database: 'd', username: 'u', password: 'p' })
+      mocked.mockResolvedValueOnce({ connection: summary })
+
+      expect((wrapper.get('#jump-enabled').element as HTMLInputElement).checked).toBe(false)
+      expect(wrapper.find('#jump-host').exists()).toBe(false)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mocked.mock.calls[0]?.[2]).not.toHaveProperty('transport')
+    })
+
+    it('is only offered to the engines that can use a socket', async () => {
+      const { wrapper } = await mountForm()
+
+      await wrapper.get('input[value="clickhouse"]').setValue(true)
+      expect(wrapper.find('#jump-enabled').exists()).toBe(false)
+      await wrapper.get('input[value="mysql"]').setValue(true)
+      expect(wrapper.find('#jump-enabled').exists()).toBe(true)
+    })
+
+    it('reads the host key, shows it, and refuses to save until the user confirms it', async () => {
+      const { wrapper } = await mountForm()
+      await withJump(wrapper)
+      mocked.mockResolvedValueOnce({ fingerprint: FINGERPRINT, keyType: 'ed25519' })
+
+      await wrapper.get('button.read-host-key').trigger('click')
+      await flushPromises()
+      expect(mocked).toHaveBeenCalledWith('POST', '/web/connections/host-key', { host: 'bastion.exemple.test', port: 22 })
+      expect(wrapper.get('.fingerprint').text()).toContain(FINGERPRINT)
+
+      mocked.mockClear()
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(mocked).not.toHaveBeenCalled()
+      expect(wrapper.get('[role="alert"]').text()).toContain('empreinte')
+    })
+
+    it('saves the transport with the fingerprint the user confirmed', async () => {
+      const { wrapper } = await mountForm()
+      await withJump(wrapper)
+      mocked.mockResolvedValueOnce({ fingerprint: FINGERPRINT, keyType: 'ed25519' })
+      await wrapper.get('button.read-host-key').trigger('click')
+      await flushPromises()
+      await wrapper.get('#jump-confirm').setValue(true)
+      mocked.mockResolvedValueOnce({ connection: summary })
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections', expect.objectContaining({
+        transport: { type: 'ssh', host: 'bastion.exemple.test', port: 22, username: 'tunnel', privateKey: KEY, hostKeyFingerprint: FINGERPRINT },
+      }))
+    })
+
+    it('forgets the fingerprint read when the bastion address changes', async () => {
+      const { wrapper } = await mountForm()
+      await withJump(wrapper)
+      mocked.mockResolvedValueOnce({ fingerprint: FINGERPRINT, keyType: 'ed25519' })
+      await wrapper.get('button.read-host-key').trigger('click')
+      await flushPromises()
+
+      await wrapper.get('#jump-host').setValue('autre.exemple.test')
+
+      expect(wrapper.find('.fingerprint').exists()).toBe(false)
+    })
+
+    it('shows a refused reading as such, never the fingerprint of anything', async () => {
+      const { wrapper } = await mountForm()
+      await withJump(wrapper)
+      mocked.mockRejectedValueOnce(new ApiError(403, 'forbidden_bastion'))
+
+      await wrapper.get('button.read-host-key').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain('bastion')
+      expect(wrapper.find('.fingerprint').exists()).toBe(false)
+    })
+
+    it('fills the form of a saved connection without the key, and keeps the stored key and fingerprint when left alone', async () => {
+      mocked.mockResolvedValueOnce({
+        connection: summary,
+        parameters: { host: 'db.interne', port: 5432, database: 'd', username: 'u', hasPassword: true, transport: { type: 'ssh', host: 'bastion.exemple.test', port: 22, username: 'tunnel', hasPrivateKey: true, hostKeyFingerprint: FINGERPRINT } },
+      })
+      const { wrapper } = await mountForm('abc')
+      expect((wrapper.get('#jump-enabled').element as HTMLInputElement).checked).toBe(true)
+      expect((wrapper.get('#jump-host').element as HTMLInputElement).value).toBe('bastion.exemple.test')
+      expect((wrapper.get('#jump-key').element as HTMLTextAreaElement).value).toBe('')
+      expect(wrapper.get('.fingerprint').text()).toContain(FINGERPRINT)
+      mocked.mockResolvedValueOnce({ connection: summary })
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      const sent = mocked.mock.calls.at(-1)?.[2] as { transport: Record<string, unknown> }
+      expect(sent.transport).toEqual({ type: 'ssh', host: 'bastion.exemple.test', port: 22, username: 'tunnel' })
+    })
+
+    it('removes the jump of a saved connection when the box is unchecked', async () => {
+      mocked.mockResolvedValueOnce({
+        connection: summary,
+        parameters: { host: 'db.interne', port: 5432, database: 'd', username: 'u', hasPassword: true, transport: { type: 'ssh', host: 'bastion.exemple.test', port: 22, username: 'tunnel', hasPrivateKey: true, hostKeyFingerprint: FINGERPRINT } },
+      })
+      const { wrapper } = await mountForm('abc')
+      await wrapper.get('#jump-enabled').setValue(false)
+      mocked.mockResolvedValueOnce({ connection: summary })
+
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mocked.mock.calls.at(-1)?.[2]).toHaveProperty('transport', null)
+    })
+
+    it('tries the parameters through the same transport', async () => {
+      const { wrapper } = await mountForm()
+      await withJump(wrapper)
+      mocked.mockResolvedValueOnce({ fingerprint: FINGERPRINT, keyType: 'ed25519' })
+      await wrapper.get('button.read-host-key').trigger('click')
+      await flushPromises()
+      await wrapper.get('#jump-confirm').setValue(true)
+      mocked.mockResolvedValueOnce({ ok: true, durationMs: 40 })
+
+      await wrapper.get('button.test').trigger('click')
+      await flushPromises()
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/test', expect.objectContaining({ transport: expect.objectContaining({ host: 'bastion.exemple.test' }) }))
+      expect(wrapper.get('[role="status"]').text()).toContain('40 ms')
+    })
+  })
 })
