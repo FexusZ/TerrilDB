@@ -58,7 +58,7 @@ final readonly class UnixSocketTunnelOpener implements TunnelOpener
             throw new TunnelFailedException();
         }
 
-        return new TunnelEndpoint($id, $socket);
+        return new TunnelEndpoint($id, $socket, false !== ($reply['reused'] ?? true));
     }
 
     public function hostKey(string $host, int $port): HostKey
