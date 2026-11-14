@@ -36,6 +36,7 @@ describe('audit labels', () => {
   it('tells a query that ran from one that was refused or failed', () => {
     expect(describeEvent(entry('query.executed'))).toBe('Requête exécutée')
     expect(describeEvent(entry('query.refused', { reason: 'not_read_only' }, { outcome: 'refused' }))).toContain('refusée')
+    expect(describeEvent(entry('query.prepared', { decision: 'needs_confirmation' }))).toContain('préparée')
     expect(describeEvent(entry('query.failed', { reason: 'timeout' }, { outcome: 'failed' }))).toContain('délai')
     expect(describeEvent(entry('query.failed', { reason: 'engine_error' }, { outcome: 'failed' }))).toContain('erreur')
   })
@@ -46,6 +47,12 @@ describe('audit labels', () => {
     expect(describeEvent(entry('schema.failed', { table: 'orders', applied: 0 }, { outcome: 'failed' }))).toBe('Modification de la structure de « orders » refusée par la base')
     expect(describeEvent(entry('schema.failed', { table: 'orders', applied: 2 }, { outcome: 'failed' }))).toBe('Modification de la structure de « orders » interrompue : 2 instructions déjà appliquées')
     expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('schema')
+  })
+
+  it('describes a read of the server diagnostics without its content', () => {
+    expect(describeEvent(entry('diagnostic.read', { topic: 'sessions', engine: 'mysql', status: 'available', rows: 3 }))).toBe('Supervision lue : sessions')
+    expect(describeEvent(entry('diagnostic.read', { topic: 'sessions' }, { outcome: 'failed' }))).toBe('Lecture de la supervision en échec : sessions')
+    expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('diagnostic')
   })
 
   it('does not break on an action it does not know', () => {
@@ -60,6 +67,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query', 'schema'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query', 'schema', 'diagnostic'])
   })
 })

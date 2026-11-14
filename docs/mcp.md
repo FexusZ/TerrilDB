@@ -12,7 +12,7 @@ passe. Les noms d'hôte acceptés se règlent avec `TERRILDB_ALLOWED_HOSTS` (lis
 
 ## Outils
 
-Les quatre premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les deux derniers n'existent que pour
+Les quatre premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les autres n'existent que pour
 les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit pas).
 
 | Outil | Arguments | Rôle |
@@ -20,12 +20,19 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `list_connections` | – | `id`, `name`, `engine` des connexions permises |
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
-| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
-| `execute_statement` | `connection`, `sql`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
+| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit ; `timeoutMs` est borné par le délai du proxy moins 20 s (100 000 par défaut ; le schéma de l'outil dit la valeur du serveur) |
+| `list_sessions` | `connection` | (droit `diagnostic`, lecture seule) sessions en cours sur le serveur : utilisateur, base, état, durée, début de la requête (littéraux masqués par `?`, 200 caractères au plus ; nul avec `queryReason: redacted` si le texte ne peut pas être masqué sans risque) ; l'état dit si le compte de la base n'a pas le droit de les lire (voir docs/api.md, « Diagnostics ») |
+| `list_variables` | `connection`, `search?`, `changedOnly?`, `limit?` | (droit `diagnostic`, lecture seule) variables de configuration : valeur, défaut quand le moteur le donne, écart au défaut, origine, redémarrage nécessaire ; la valeur d'un nom évoquant un secret n'est jamais donnée (`masked`) ; rien n'est modifié |
+| `list_locks` | `connection` | (droit `diagnostic`, lecture seule) transactions ouvertes (les plus anciennes d'abord) et arbre de blocage : qui attend qui, depuis combien de temps, sur quel objet ; rien n'est arrêté ; l'état distingue « aucun verrou » de « non lisible » (voir docs/api.md, « Diagnostics ») |
+| `top_queries` | `connection`, `order` (`total_time`, `mean_time`, `calls`), `limit` (1 à 100), `hours` (1 à 168, 24 par défaut, ClickHouse seulement) | (droit `diagnostic`, lecture seule) requêtes les plus coûteuses par empreinte : texte normalisé et littéraux masqués par `?` (aussi pour les instructions utilitaires de PostgreSQL, que `pg_stat_statements` ne normalise pas ; nul avec `textReason: redacted` si illisible), appels, temps total / moyen / maximal en millisecondes, lignes examinées et renvoyées quand le moteur les donne ; rien n'est remis à zéro ; l'état distingue « source éteinte » (performance_schema, pg_stat_statements, query_log) et « droits insuffisants » de « aucune requête » (voir docs/api.md, « Diagnostics ») |
+| `prepare_statement` | `connection`, `sql` | (droit d'écriture) juge une écriture SANS l'exécuter, rend un `confirmationToken` à usage unique lié au texte exact (300 s) |
+| `execute_statement` | `connection`, `sql`, `confirmationToken?`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton, avec le `confirmationToken` de `prepare_statement` (sauf jeton « une seule étape ») ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
+| `prepare_script` | `connection`, `script` | (droit d'écriture) juge un script entier sans l'exécuter, rend un `confirmationToken` unique pour l'ensemble |
+| `execute_script` | `connection`, `script`, `confirmationToken`, `confirmed?`, `dryRun?`, `timeoutMs?` | exécute le script préparé (jeton TOUJOURS exigé), arrêt à la première erreur, compte rendu `applied` / `failed` / `notRun` ; le jeton est consommé par un `dryRun` aussi (deux `prepare` pour tester puis exécuter) ; `timeoutMs` est borné comme celui de `run_query` (le schéma de l'outil dit la valeur du serveur), un dépassement est refusé sans brûler le jeton |
 | `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
-comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `invalid_input`,
+comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `deadlock` / `serialization_failure` / `lock_timeout` (`retryable: true`, voir docs/api.md), `invalid_input`,
 `target_unreachable`, `permission_denied`, `confirmation_required` (avec `reason`) ; le motif `write_not_permitted` signale un droit manquant.
 
 ## Configuration d'un client
