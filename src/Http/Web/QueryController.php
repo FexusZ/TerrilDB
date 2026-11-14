@@ -10,6 +10,7 @@ use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Http\Json\JsonInput;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,6 +23,7 @@ final readonly class QueryController
         private TargetAccess $targets,
         private AuditedQueries $queries,
         private WebSession $session,
+        private RequestTimeLimit $limit,
     ) {
     }
 
@@ -34,7 +36,7 @@ final readonly class QueryController
         $defaults = new QueryOptions();
         $options = new QueryOptions(
             QueryMode::tryFrom($input->optionalString('mode') ?? QueryMode::ReadOnly->value) ?? throw new InvalidQueryOptionsException('The mode is not supported.'),
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 

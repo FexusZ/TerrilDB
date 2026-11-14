@@ -6,21 +6,31 @@ namespace App\Http\Mcp;
 
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
+use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
+use App\Audit\AuditedScripts;
+use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Diagnostics\DigestQuery;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
+use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
+use App\Http\Json\PreparedWritePresenter;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
+use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
+use App\Http\Json\VariableQueryParser;
 use Mcp\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
 
@@ -38,6 +48,10 @@ final readonly class McpTools
         private AuditedQueries $queries,
         private ErrorMapper $errors,
         private TokenConnections $created,
+        private AuditedDiagnostics $diagnostics,
+        private RequestTimeLimit $limit,
+        private WriteApproval $approval,
+        private AuditedScripts $scripts,
     ) {
     }
 
@@ -87,7 +101,7 @@ final readonly class McpTools
     {
         return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs): array {
             $defaults = new QueryOptions();
-            $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
         });
@@ -115,13 +129,111 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
-    public function executeStatement(string $connection, string $sql, ?bool $confirmed = null, ?int $maxRows = null, ?int $timeoutMs = null): array
+    public function executeStatement(string $connection, string $sql, ?bool $confirmed = null, ?int $maxRows = null, ?int $timeoutMs = null, ?string $confirmationToken = null): array
     {
-        return $this->guard(function () use ($connection, $sql, $confirmed, $maxRows, $timeoutMs): array {
+        return $this->guard(function () use ($connection, $sql, $confirmed, $maxRows, $timeoutMs, $confirmationToken): array {
             $defaults = new QueryOptions();
-            $options = $this->request->get()->writeOptions($timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+            $options = $this->request->get()->writeOptions($this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
 
-            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options, $confirmed ?? false)));
+            return ResultPresenter::present($this->open($connection, function (TargetConnection $target) use ($connection, $sql, $options, $confirmed, $confirmationToken) {
+                $context = $this->request->auditContext(AuditActor::Mcp);
+                $this->approval->authorize($this->request->get(), $context, Uuid::fromString($connection), $target, $sql, $confirmationToken, $confirmed ?? false);
+
+                return $this->queries->execute($context, Uuid::fromString($connection), $target, $sql, $options, $confirmed ?? false);
+            }));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listSessions(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::sessions($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listLocks(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::locks($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null): array
+    {
+        return $this->guard(function () use ($connection, $order, $limit, $hours): array {
+            $this->request->get()->requireDiagnostic();
+            $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
+
+            return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listVariables(string $connection, ?string $search = null, ?bool $changedOnly = null, ?int $limit = null): array
+    {
+        return $this->guard(function () use ($connection, $search, $changedOnly, $limit): array {
+            $this->request->get()->requireDiagnostic();
+            $query = VariableQueryParser::build($search, $changedOnly ? '1' : null, null === $limit ? null : (string) $limit);
+
+            return DiagnosticsPresenter::variables($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function prepareStatement(string $connection, string $sql): array
+    {
+        return $this->guard(fn (): array => PreparedWritePresenter::present(
+            $this->open($connection, fn (TargetConnection $target) => $this->approval->prepare($this->request->get(), $this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql)),
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function prepareScript(string $connection, string $script): array
+    {
+        return $this->guard(fn (): array => PreparedWritePresenter::script(
+            $this->open($connection, fn (TargetConnection $target) => $this->approval->prepareScript($this->request->get(), $this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $script)),
+        ));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function executeScript(string $connection, string $script, ?string $confirmationToken = null, ?bool $confirmed = null, ?bool $dryRun = null, ?int $timeoutMs = null): array
+    {
+        return $this->guard(function () use ($connection, $script, $confirmationToken, $confirmed, $dryRun, $timeoutMs): array {
+            $options = new ScriptOptions(
+                $this->request->get()->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes,
+                $this->limit->timeout($timeoutMs, ScriptOptions::DEFAULT_TIMEOUT_MS),
+                $dryRun ?? false,
+            );
+
+            $run = $this->open($connection, function (TargetConnection $target) use ($connection, $script, $options, $confirmationToken, $confirmed) {
+                $context = $this->request->auditContext(AuditActor::Mcp);
+                $this->approval->authorizeScript($this->request->get(), $context, Uuid::fromString($connection), $target, $script, $confirmationToken, $confirmed ?? false);
+
+                return $this->scripts->execute($context, Uuid::fromString($connection), $target, $script, $options, $confirmed ?? false);
+            });
+
+            return ScriptPresenter::result($run->result, $run->executionId->toRfc4122());
         });
     }
 

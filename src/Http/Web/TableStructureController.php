@@ -8,6 +8,7 @@ use App\Audit\AuditedSchemaChanges;
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\Change\ChangePlan;
 use App\Http\Json\ChangePlanPresenter;
+use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\JsonInput;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TableDraftInput;
@@ -47,7 +48,11 @@ final readonly class TableStructureController
             $input->optionalString('schema'),
         );
 
-        return new JsonResponse(ChangePlanPresenter::plan($preview->plan) + ['fingerprint' => $preview->fingerprint, 'stale' => $preview->stale]);
+        return new JsonResponse(ChangePlanPresenter::plan($preview->plan) + [
+            'fingerprint' => $preview->fingerprint,
+            'stale' => $preview->stale,
+            'lockCheck' => null === $preview->holders ? null : DiagnosticsPresenter::tableHolders($preview->holders),
+        ]);
     }
 
     #[Route('/web/connections/{id}/tables/{name}/structure/apply', requirements: self::ID, methods: ['POST'])]

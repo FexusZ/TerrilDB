@@ -12,7 +12,7 @@ vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<t
 const mocked = vi.mocked(api)
 const connection = (id: string, name: string): ConnectionSummary => ({ id, name, engine: 'postgresql', createdAt: '', updatedAt: '' })
 const token = (id: string, name: string, extra: Partial<ApiTokenInfo> = {}): ApiTokenInfo => ({
-  id, name, connectionIds: ['c1'], allConnections: false, writeData: false, writeSchema: false, createConnections: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
+  id, name, connectionIds: ['c1'], allConnections: false, writeData: false, writeSchema: false, createConnections: false, diagnostic: false, singleStep: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
 })
 
 async function mountView(tokens: ApiTokenInfo[] = [], connections: ConnectionSummary[] = [connection('c1', 'Production'), connection('c2', 'Recette')]) {
@@ -97,6 +97,30 @@ describe('TokensView', () => {
     await flushPromises()
 
     expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', connectionIds: ['c1'], lifetimeDays: 30, writeData: true, createConnections: true })
+    wrapper.unmount()
+  })
+
+  it('offers the diagnostic right, unticked, and sends it only when ticked', async () => {
+    const wrapper = await mountView()
+    expect((wrapper.get('#token-diagnostic').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('#token-name').setValue('Supervision')
+    await wrapper.get('input[value="c1"]').setValue(true)
+    await wrapper.get('#token-diagnostic').setValue(true)
+    mocked.mockResolvedValueOnce({ token: 'tdb_x', tokenInfo: token('n', 'Supervision', { diagnostic: true }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Supervision', connectionIds: ['c1'], lifetimeDays: 30, diagnostic: true })
+    wrapper.unmount()
+  })
+
+  it('shows that a token reads the server diagnostics while staying read-only', async () => {
+    const wrapper = await mountView([token('a', 'Supervision', { diagnostic: true })])
+
+    const text = wrapper.get('li.token').text()
+    expect(text).toContain('Lit la supervision du serveur')
+    expect(text).toContain('Lecture seule')
     wrapper.unmount()
   })
 
@@ -281,6 +305,31 @@ describe('TokensView', () => {
     await wrapper.get('button.cancel').trigger('click')
 
     expect(wrapper.findAll('li.token')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('offers the single-step writing option, unticked, and sends it only when ticked', async () => {
+    const wrapper = await mountView()
+    expect((wrapper.get('#token-single-step').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('#token-name').setValue('Assistant')
+    await wrapper.get('input[value="c1"]').setValue(true)
+    await wrapper.get('#token-write-data').setValue(true)
+    await wrapper.get('#token-single-step').setValue(true)
+    mocked.mockResolvedValueOnce({ token: 'tdb_x', tokenInfo: token('n', 'Assistant', { writeData: true, singleStep: true }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Assistant', connectionIds: ['c1'], lifetimeDays: 30, writeData: true, singleStep: true })
+    wrapper.unmount()
+  })
+
+  it('tells a writing token that writes in a single step from one that needs a preparation', async () => {
+    const wrapper = await mountView([token('a', 'Direct', { writeData: true, singleStep: true }), token('b', 'Prudent', { writeData: true })])
+
+    const rows = wrapper.findAll('li.token')
+    expect(rows[0]?.text()).toContain('Écrit en une seule étape')
+    expect(rows[1]?.text()).not.toContain('une seule étape')
     wrapper.unmount()
   })
 })

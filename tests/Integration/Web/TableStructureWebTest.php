@@ -333,4 +333,77 @@ final class TableStructureWebTest extends WebApiTestCase
 
         self::assertSame(501, $this->statusCode());
     }
+
+    public function testPreviewWarnsAboutAnOpenTransactionThatHoldsTheTable(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $holder = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        try {
+            $holder->executeStatement('BEGIN');
+            $holder->fetchAllAssociative(\sprintf('SELECT * FROM "%s"', $table));
+            $holderPid = (string) (\is_scalar($pid = $holder->fetchOne('SELECT pg_backend_pid()')) ? $pid : '');
+
+            $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+        } finally {
+            $holder->executeStatement('ROLLBACK');
+            $holder->close();
+        }
+
+        self::assertSame(200, $this->statusCode(), 'The warning never blocks the preview.');
+        self::assertCount(1, self::arrayOf($body['statements']));
+        $check = self::arrayOf($body['lockCheck']);
+        self::assertSame('available', self::arrayOf($check['status'])['availability']);
+        $holders = self::arrayOf($check['holders']);
+        self::assertCount(1, $holders);
+        $first = self::arrayOf($holders[0]);
+        self::assertSame($holderPid, $first['session']);
+        self::assertTrue($first['sleeping']);
+        self::assertArrayNotHasKey('query', $first, 'No query text of another session.');
+    }
+
+    public function testPreviewOfAFreeTableSaysNobodyHoldsIt(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        [$detail, $fingerprint] = $this->load($id, $table);
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+
+        $check = self::arrayOf($body['lockCheck']);
+        self::assertSame('available', self::arrayOf($check['status'])['availability']);
+        self::assertSame([], $check['holders']);
+    }
+
+    public function testATimedOutApplyExplainsWhichSessionHoldsTheTable(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $holder = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        try {
+            $holder->executeStatement('BEGIN');
+            $holder->fetchAllAssociative(\sprintf('SELECT * FROM "%s"', $table));
+            $holderPid = (string) (\is_scalar($pid = $holder->fetchOne('SELECT pg_backend_pid()')) ? $pid : '');
+
+            $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint, 'confirmed' => true]);
+        } finally {
+            $holder->executeStatement('ROLLBACK');
+            $holder->close();
+        }
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('lock_timeout', $body['error']);
+        self::assertTrue($body['lockTimeout']);
+        self::assertTrue($body['retryable']);
+        self::assertSame([], $body['applied']);
+        $holders = self::arrayOf(self::arrayOf($body['lockCheck'])['holders']);
+        self::assertSame($holderPid, self::arrayOf($holders[0])['session']);
+    }
 }

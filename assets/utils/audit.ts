@@ -13,6 +13,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'invitation', label: 'Invitations' },
   { value: 'query', label: 'Requêtes' },
   { value: 'schema', label: 'Structure des tables' },
+  { value: 'diagnostic', label: 'Supervision du serveur' },
 ]
 
 const tableOf = (details: Record<string, unknown>): string => (typeof details.table === 'string' ? details.table : '?')
@@ -72,6 +73,8 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Invitation révoquée'
     case 'query.executed':
       return 'Requête exécutée'
+    case 'query.prepared':
+      return 'Écriture préparée (rien n’a été exécuté)'
     case 'query.refused':
       return 'Requête refusée'
     case 'query.failed':
@@ -87,6 +90,11 @@ export function describeEvent(entry: AuditEntry): string {
       return applied > 0
         ? `Modification de la structure de « ${tableOf(details)} » interrompue : ${String(applied)} ${applied > 1 ? 'instructions déjà appliquées' : 'instruction déjà appliquée'}`
         : `Modification de la structure de « ${tableOf(details)} » refusée par la base`
+    }
+    case 'diagnostic.read': {
+      const topic = typeof details.topic === 'string' ? details.topic : '?'
+
+      return entry.outcome === 'failed' ? `Lecture de la supervision en échec : ${topic}` : `Supervision lue : ${topic}`
     }
     default:
       return entry.action
