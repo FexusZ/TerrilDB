@@ -19,6 +19,10 @@ final class RecordingTunnelOpener implements TunnelOpener
 
     public int $closed = 0;
     public int $scanned = 0;
+    public bool $reused = false;
+    public bool $uniqueIds = false;
+    /** @var list<string> */
+    public array $closedIds = [];
     public ?TunnelRequest $last = null;
     public ?\Throwable $failure = null;
 
@@ -30,7 +34,9 @@ final class RecordingTunnelOpener implements TunnelOpener
             throw $this->failure;
         }
 
-        return new TunnelEndpoint('abc', '/run/tunnels/abc/tunnel.sock');
+        $id = $this->uniqueIds ? \sprintf('%032x', $this->opened) : 'abc';
+
+        return new TunnelEndpoint($id, '/run/tunnels/'.$id.'/tunnel.sock', $this->reused);
     }
 
     public function hostKey(string $host, int $port): HostKey
@@ -43,5 +49,6 @@ final class RecordingTunnelOpener implements TunnelOpener
     public function close(TunnelEndpoint $endpoint): void
     {
         ++$this->closed;
+        $this->closedIds[] = $endpoint->id;
     }
 }

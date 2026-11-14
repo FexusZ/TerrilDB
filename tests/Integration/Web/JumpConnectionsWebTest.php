@@ -321,4 +321,51 @@ final class JumpConnectionsWebTest extends WebApiTestCase
         self::assertSame(501, $this->statusCode());
         self::assertSame('unsupported_operation', $failure['error']);
     }
+
+    /**
+     * @return list<string>
+     */
+    private function openTunnels(): array
+    {
+        return glob('/run/tunnels/[0-9a-f]*', \GLOB_ONLYDIR) ?: [];
+    }
+
+    public function testATryLeavesNoTunnelOpen(): void
+    {
+        $this->seedAndLogin();
+        $before = $this->openTunnels();
+
+        $this->call('POST', '/web/connections/test', $this->body());
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame($before, $this->openTunnels());
+    }
+
+    public function testATryKeepsTheTunnelOfASavedConnectionThatIsAlreadyOpen(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->createdId($this->call('POST', '/web/connections', $this->body()));
+        $this->call('GET', '/web/connections/'.$id.'/tables');
+        $open = $this->openTunnels();
+        self::assertNotSame([], array_diff($open, []));
+
+        $this->call('POST', '/web/connections/test', $this->body());
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame($open, $this->openTunnels());
+    }
+
+    public function testAMemberTryingManyTargetsIsStoppedAtTheirQuotaWithoutHoldingTheBastion(): void
+    {
+        $this->seedAndLogin();
+        $before = \count($this->openTunnels());
+
+        for ($port = 5000; $port < 5000 + 12; ++$port) {
+            $body = $this->body();
+            $body['port'] = $port;
+            $this->call('POST', '/web/connections/test', $body);
+        }
+
+        self::assertSame($before, \count($this->openTunnels()));
+    }
 }

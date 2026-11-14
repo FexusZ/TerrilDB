@@ -67,6 +67,14 @@ n'y est pas (voir « Ce qui reste »).
   Le risque résiduel repose sur la liste de bastions et sur le compte SSH. Un administrateur n'est pas borné.
 - **Adresse du bastion** : le relais résout lui-même le nom du bastion (la règle d'adresses d'ici est une vérification, pas
   l'adresse épinglée) ; la liste de bastions est le rempart contre un DNS qui changerait.
+- **Plafond par compte** : les plafonds du relais (50 tunnels, 10 par bastion) sont globaux ; l'application ajoute un plafond de
+  `TunnelQuota::MAX_PER_ACCOUNT` (5) tunnels simultanés PAR COMPTE (429 `too_many_tunnels`), tenu en cache avec la même échéance que
+  le relais (5 min, renouvelée à chaque usage ; un tunnel déjà compté ne compte pas deux fois). Comptabilité approchée, sans verrou
+  (un dépassement d'une unité en cas de requêtes simultanées est possible). Un tunnel ouvert pour rien (plafond atteint) est refermé.
+- **Essai de connexion** : `TargetOpener::probe` referme le tunnel ouvert POUR l'essai dès qu'il est fini (réussi ou non) et libère sa
+  place ; la réponse du relais porte `reused` : s'il existait déjà (celui d'une connexion enregistrée), il n'est pas refermé. Un relais
+  qui ne dit rien est traité comme `reused` (on ne referme que ce qu'on est sûr d'avoir ouvert). Deux comptes qui partagent une clé et
+  une cible partagent le tunnel : celui qui l'a ouvert pour un essai le referme, l'autre le rouvre à l'usage suivant.
 - **Lecture de l'empreinte** : chaque lecture lance un `ssh-keyscan` depuis le conteneur (au plus 32 demandes en parallèle) ;
   plafonnées à 20 par 10 minutes et par compte, refusées comprises (limiteur `host_key_read`). Un sshd récent pénalise les connexions sans authentification d'une même source
   (`PerSourcePenalties`) : le relais ne tente qu'un type de clé par connexion et s'arrête au premier.

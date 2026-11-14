@@ -46,7 +46,7 @@ final readonly class TargetAccess
     public function probe(Engine $engine, ConnectionParameters $parameters): int
     {
         $started = hrtime(true);
-        $this->opener->connect($this->session->user(), $engine, $parameters)->close();
+        $this->opener->probe($this->session->user(), $engine, $parameters);
 
         return intdiv(hrtime(true) - $started, 1_000_000);
     }

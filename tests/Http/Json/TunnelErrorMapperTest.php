@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Http\Json;
 
 use App\Core\Connection\Exception\ForbiddenBastionException;
+use App\Core\Connection\Tunnel\TooManyTunnelsException;
 use App\Core\Connection\Tunnel\TunnelFailedException;
 use App\Http\Json\ErrorMapper;
 use PHPUnit\Framework\TestCase;
@@ -17,6 +18,14 @@ final class TunnelErrorMapperTest extends TestCase
 
         self::assertSame(403, $response?->status);
         self::assertSame('forbidden_bastion', $response->code);
+    }
+
+    public function testTooManyTunnelsIsA429WithAStableCode(): void
+    {
+        $response = (new ErrorMapper())->map(TooManyTunnelsException::create());
+
+        self::assertSame(429, $response?->status);
+        self::assertSame('too_many_tunnels', $response->code);
     }
 
     public function testATunnelFailureIsA502WithItsReasonAndNothingElse(): void

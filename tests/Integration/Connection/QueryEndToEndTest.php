@@ -79,7 +79,7 @@ final class QueryEndToEndTest extends DatabaseTestCase
             self::assertInstanceOf(AuditedTargetHosts::class, $policy);
             $tunnels = self::getContainer()->get(AuditedTunnels::class);
             self::assertInstanceOf(AuditedTunnels::class, $tunnels);
-            $this->target = (new TargetOpener($manager, $drivers, $policy, $tunnels, new RequestAuditContext(new RequestStack())))->open($user, $key, $saved->getId());
+            $this->target = (new TargetOpener($manager, $drivers, $policy, $tunnels, new RequestAuditContext(new RequestStack()), new \App\Connection\TunnelQuota(new \Symfony\Component\Cache\Adapter\ArrayAdapter(), new MockClock('2026-11-14 10:00:00 UTC'))))->open($user, $key, $saved->getId());
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }

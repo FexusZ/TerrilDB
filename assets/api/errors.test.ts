@@ -31,6 +31,10 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(403, 'forbidden_bastion'))).toContain('bastion')
   })
 
+  it('says when the account already holds its tunnels', () => {
+    expect(messageFor(new ApiError(429, 'too_many_tunnels'))).toContain('rebond')
+  })
+
   it('explains why a tunnel did not open, from the stable reason only', () => {
     expect(messageFor(new ApiError(502, 'tunnel_failed', { reason: 'host_key_unconfirmed' }))).toContain('empreinte')
     const changed = messageFor(new ApiError(502, 'tunnel_failed', { reason: 'host_key_changed' }))
