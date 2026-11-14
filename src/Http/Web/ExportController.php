@@ -6,8 +6,7 @@ namespace App\Http\Web;
 
 use App\Audit\AuditedQueries;
 use App\Core\Driver\TargetConnection;
-use App\Core\Export\CsvExporter;
-use App\Core\Export\JsonExporter;
+use App\Core\Export\ExportFormat;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Http\Json\BadRequestException;
@@ -40,23 +39,20 @@ final readonly class ExportController
     {
         $input = JsonInput::fromRequest($request);
         $sql = $input->string('sql');
-        $format = $input->string('format');
-        if (!\in_array($format, ['csv', 'json'], true)) {
-            throw new BadRequestException('The format must be "csv" or "json".');
-        }
+        $format = ExportFormat::tryFrom($input->string('format')) ?? throw new BadRequestException('The format must be "csv" or "json".');
         $bom = $input->bool('bom', false);
         $options = new QueryOptions(QueryMode::ReadOnly, (new QueryOptions())->timeoutMs, $input->optionalInt('maxRows', self::DEFAULT_ROWS) ?? self::DEFAULT_ROWS);
 
         $uuid = Uuid::fromString($id);
         $result = $this->targets->withSaved(
             $uuid,
-            fn (TargetConnection $target) => $this->queries->execute($this->session->auditContext(), $uuid, $target, $sql, $options, extra: ['purpose' => 'export', 'format' => $format]),
+            fn (TargetConnection $target) => $this->queries->execute($this->session->auditContext(), $uuid, $target, $sql, $options, extra: ['purpose' => 'export', 'format' => $format->value]),
         );
 
-        $body = 'csv' === $format ? (new CsvExporter())->export($result, $bom) : (new JsonExporter())->export($result);
-        $filename = \sprintf('terrildb-export-%s.%s', $this->clock->now()->format('Ymd-His'), $format);
+        $body = $format->render($result, $bom);
+        $filename = \sprintf('terrildb-export-%s.%s', $this->clock->now()->format('Ymd-His'), $format->value);
         $headers = [
-            'Content-Type' => 'csv' === $format ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
+            'Content-Type' => $format->contentType(),
             'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_ATTACHMENT, $filename),
         ];
         if ($result->truncated) {
