@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/types'
-import { describeStatus, enableHint, flattenBlocking, formatMs, formatRatio, formatSeconds, isLongTransaction } from './diagnostics'
+import { describeStatus, enableHint, flattenBlocking, formatMs, formatRatio, formatSeconds, isLongTransaction, describeRestart, describeSource } from './diagnostics'
 
 const status = (availability: DiagnosticStatus['availability'], extra: Partial<DiagnosticStatus> = {}): DiagnosticStatus => ({ availability, reason: null, privilege: null, ...extra })
 
@@ -104,5 +104,24 @@ describe('top queries helpers', () => {
     expect(formatRatio(1)).toBe('1')
     expect(formatRatio(1000)).toBe('1 000')
     expect(formatRatio(2.5)).toBe('2,5')
+  })
+})
+
+describe('describeRestart', () => {
+  it('says what a restart changes, and says nothing when the engine does not', () => {
+    expect(describeRestart('required')).toBe('Redémarrage nécessaire')
+    expect(describeRestart('pending')).toBe('Valeur en attente de redémarrage')
+    expect(describeRestart(null)).toBe('')
+  })
+})
+
+describe('describeSource', () => {
+  it('names the usual origins in French and keeps an unknown one as the engine says it', () => {
+    expect(describeSource('COMPILED')).toBe('défaut compilé')
+    expect(describeSource('DYNAMIC')).toBe('modifiée à chaud')
+    expect(describeSource('COMPILE-TIME')).toBe('défaut compilé')
+    expect(describeSource('configuration file')).toBe('fichier de configuration')
+    expect(describeSource('weird')).toBe('weird')
+    expect(describeSource(null)).toBe('')
   })
 })

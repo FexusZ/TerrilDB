@@ -553,6 +553,10 @@ final class ApiV1Test extends WebApiTestCase
         $queries = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries');
         self::assertSame(403, $this->statusCode());
         self::assertSame(['error' => 'permission_denied'], $queries);
+
+        $variables = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $variables);
     }
 
     #[DataProvider('targets')]
@@ -563,10 +567,10 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
-        self::assertSame(['sessions', 'locks', 'statements'], array_keys(self::arrayOf($capabilities['capabilities'])));
+        self::assertSame(['sessions', 'locks', 'statements', 'variables'], array_keys(self::arrayOf($capabilities['capabilities'])));
         self::assertSame($locks, self::arrayOf(self::arrayOf($capabilities['capabilities'])['locks'])['availability']);
         self::assertSame('available', self::arrayOf(self::arrayOf($capabilities['capabilities'])['sessions'])['availability']);
-        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => self::arrayOf(self::arrayOf($capabilities['capabilities'])['statements'])['availability']], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => self::arrayOf(self::arrayOf($capabilities['capabilities'])['statements'])['availability'], 'variables' => 'available'], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
@@ -663,5 +667,30 @@ final class ApiV1Test extends WebApiTestCase
         self::assertSame('api', $events[0]->getActor()->value);
         self::assertArrayNotHasKey('query', $events[0]->getDetails());
         self::assertArrayNotHasKey('text', $events[0]->getDetails());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheVariables(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables?q=ssl_key&limit=5');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'truncated', 'variables'], array_keys($body));
+        $variable = self::arrayOf(self::arrayOf($body['variables'])[0]);
+        self::assertNull($variable['value']);
+        self::assertTrue($variable['masked']);
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables?limit=0');
+        self::assertSame(422, $this->statusCode());
+    }
+
+    public function testTheVariablesOfAConnectionOutsideTheListAreNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/variables');
+
+        self::assertSame(404, $this->statusCode());
     }
 }

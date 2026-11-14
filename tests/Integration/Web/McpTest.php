@@ -327,6 +327,7 @@ final class McpTest extends WebApiTestCase
         self::assertNotContains('list_sessions', $this->toolNames());
         self::assertNotContains('list_locks', $this->toolNames());
         self::assertNotContains('top_queries', $this->toolNames());
+        self::assertNotContains('list_variables', $this->toolNames());
         $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
         self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
         self::assertArrayNotHasKey('structuredContent', $refused);
@@ -393,6 +394,27 @@ final class McpTest extends WebApiTestCase
 
         $other = $this->callTool('top_queries', ['connection' => $this->otherConnectionId]);
         self::assertTrue($other['isError']);
+    }
+
+    public function testListsTheVariablesThroughMcpWithoutSettingAnything(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_variables', $this->toolNames());
+        $report = self::textOf($this->callTool('list_variables', ['connection' => $this->connectionId, 'search' => 'ssl_key', 'changedOnly' => false, 'limit' => 5]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        $variable = self::obj(self::first($report['variables']));
+        self::assertTrue($variable['masked']);
+        self::assertNull($variable['value']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_variables', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+
+        $bad = $this->callTool('list_variables', ['connection' => $this->connectionId, 'limit' => 0]);
+        self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'A limit out of bounds is refused.');
     }
 
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void

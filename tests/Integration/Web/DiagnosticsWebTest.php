@@ -52,12 +52,13 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
         $capabilities = self::arrayOf($body['capabilities']);
-        self::assertSame(['sessions', 'locks', 'statements'], array_keys($capabilities));
+        self::assertSame(['sessions', 'locks', 'statements', 'variables'], array_keys($capabilities));
         self::assertSame(['availability' => 'available', 'reason' => null, 'privilege' => null], $capabilities['sessions']);
         self::assertSame($locks, $capabilities['locks']);
         // La source des empreintes dépend de la cible (performance_schema, extension, journal) : elle dit la même chose que sa page.
         $queries = $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries');
         self::assertSame($queries['status'], $capabilities['statements']);
+        self::assertSame(['availability' => 'available', 'reason' => null, 'privilege' => null], $capabilities['variables']);
     }
 
     #[DataProvider('targets')]
@@ -103,6 +104,11 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['sessions'])['availability']);
         self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['locks'])['availability']);
         self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['statements'])['availability']);
+
+        self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['variables'])['availability']);
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables');
+        self::assertSame(501, $this->statusCode());
 
         $this->call('GET', '/web/connections/'.$id.'/diagnostics/locks');
         self::assertSame(501, $this->statusCode());
@@ -234,6 +240,13 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame(401, $this->statusCode());
     }
 
+    public function testVariablesRequireASession(): void
+    {
+        $this->call('GET', '/web/connections/00000000-0000-7000-8000-000000000000/diagnostics/variables');
+
+        self::assertSame(401, $this->statusCode());
+    }
+
     /**
      * @return iterable<string, array{string}>
      */
@@ -322,5 +335,93 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries');
 
         self::assertSame(501, $this->statusCode());
+    }
+
+    #[DataProvider('targets')]
+    public function testListsTheVariablesOfTheServer(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $name = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'max_threads' : 'max_connections';
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?q='.$name);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertFalse($body['truncated']);
+        $variables = $body['variables'];
+        self::assertIsArray($variables);
+        self::assertNotEmpty($variables);
+        $first = self::arrayOf($variables[0]);
+        self::assertSame(['name', 'value', 'default', 'changed', 'masked', 'source', 'restart', 'scope', 'unit'], array_keys($first));
+    }
+
+    public function testChangedOnlyAndTheLimitAreHonoured(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?changed=1&limit=2');
+
+        self::assertSame(200, $this->statusCode());
+        $variables = $body['variables'];
+        self::assertIsArray($variables);
+        self::assertCount(2, $variables);
+        self::assertTrue($body['truncated']);
+        foreach ($variables as $variable) {
+            self::assertTrue(self::arrayOf($variable)['changed']);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function badInputs(): iterable
+    {
+        yield 'zero limit' => ['limit=0'];
+        yield 'huge limit' => ['limit=100000'];
+        yield 'text limit' => ['limit=abc'];
+        yield 'long search' => ['q='.str_repeat('a', 65)];
+    }
+
+    #[DataProvider('badInputs')]
+    public function testRefusesABadQuery(string $query): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?'.$query);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+    }
+
+    public function testASecretIsNeverServed(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?q=ssl_key');
+
+        $variable = self::arrayOf(self::arrayOf($body['variables'])[0]);
+        self::assertSame('ssl_key_file', $variable['name']);
+        self::assertTrue($variable['masked']);
+        self::assertNull($variable['value']);
+        self::assertNull($variable['default']);
+    }
+
+    public function testVariablesAreAuditedWithoutValuesNorSearchText(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?q=wal_level');
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'variables' === ($e->getDetails()['topic'] ?? null)));
+        self::assertCount(1, $events);
+        $details = $events[0]->getDetails();
+        self::assertSame('available', $details['status']);
+        self::assertSame(1, $details['rows']);
+        self::assertStringNotContainsString('wal_level', json_encode($details, \JSON_THROW_ON_ERROR));
     }
 }

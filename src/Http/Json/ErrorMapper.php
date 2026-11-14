@@ -18,6 +18,7 @@ use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
 use App\Core\Data\Exception\InvalidDataChangeException;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\Exception\InvalidDigestQueryException;
+use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -85,6 +86,7 @@ final class ErrorMapper
             $error instanceof InvalidConnectionParametersException,
             $error instanceof InvalidKeyException,
             $error instanceof InvalidDigestQueryException,
+            $error instanceof InvalidVariableQueryException,
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
             $error instanceof InvalidRecoveryException => new ErrorResponse(403, 'invalid_recovery'),
             $error instanceof MailDisabledException => new ErrorResponse(409, 'mail_disabled'),

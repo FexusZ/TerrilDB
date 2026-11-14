@@ -10,9 +10,11 @@ use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
 use App\Core\Diagnostics\ServerSession;
+use App\Core\Diagnostics\ServerVariable;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Diagnostics\StatementDigest;
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Diagnostics\VariableReport;
 
 final class DiagnosticsPresenter
 {
@@ -95,6 +97,31 @@ final class DiagnosticsPresenter
             ], $report->transactions),
             'blocking' => array_map(self::node(...), $forest->roots),
             'blockingTruncated' => $forest->truncated,
+        ];
+    }
+
+    /**
+     * Les variables d'un serveur : la valeur d'un nom qui évoque un secret est déjà absente du modèle (`masked`). Rien ici n'est
+     * une instruction à exécuter.
+     *
+     * @return array<string, mixed>
+     */
+    public static function variables(VariableReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'truncated' => $report->truncated,
+            'variables' => array_map(static fn (ServerVariable $v): array => [
+                'name' => $v->name,
+                'value' => $v->value,
+                'default' => $v->default,
+                'changed' => $v->changed,
+                'masked' => $v->masked,
+                'source' => $v->source,
+                'restart' => $v->restart?->value,
+                'scope' => $v->scope,
+                'unit' => $v->unit,
+            ], $report->variables),
         ];
     }
 

@@ -24,6 +24,7 @@ use App\Http\Json\ErrorMapper;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
+use App\Http\Json\VariableQueryParser;
 use Mcp\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
 
@@ -163,6 +164,19 @@ final readonly class McpTools
             $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
 
             return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listVariables(string $connection, ?string $search = null, ?bool $changedOnly = null, ?int $limit = null): array
+    {
+        return $this->guard(function () use ($connection, $search, $changedOnly, $limit): array {
+            $this->request->get()->requireDiagnostic();
+            $query = VariableQueryParser::build($search, $changedOnly ? '1' : null, null === $limit ? null : (string) $limit);
+
+            return DiagnosticsPresenter::variables($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
         });
     }
 
