@@ -25,10 +25,12 @@ fi
 
 site=/etc/nginx/sites-available/terrildb
 if [ ! -e "$site" ]; then
-    sed -e "s/__DOMAIN__/$TERRILDB_DOMAIN/g" -e "s/__PORT__/$TERRILDB_PORT/g" "$root/docker/prod/nginx.conf.template" | sudo tee "$site" >/dev/null
+    sed -e "s/__DOMAIN__/$TERRILDB_DOMAIN/g" -e "s/__PORT__/$TERRILDB_PORT/g" -e "s/__PROXY_TIMEOUT__/${TERRILDB_PROXY_TIMEOUT:-120}/g" "$root/docker/prod/nginx.conf.template" | sudo tee "$site" >/dev/null
     sudo ln -sf "$site" /etc/nginx/sites-enabled/terrildb
 else
     echo "$site existe déjà : conservé."
+    # Un site créé avant la valeur partagée garde son ancien délai : sync-nginx.sh l'accorde sans refaire le certificat.
+    sh "$root/docker/prod/proxy-timeout.sh" check "$site" "${TERRILDB_PROXY_TIMEOUT:-120}" || true
 fi
 sudo nginx -t
 sudo systemctl reload nginx

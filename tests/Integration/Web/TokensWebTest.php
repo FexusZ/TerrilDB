@@ -177,7 +177,22 @@ final class TokensWebTest extends WebApiTestCase
         self::assertFalse($info['writeData']);
         self::assertFalse($info['writeSchema']);
         self::assertFalse($info['createConnections']);
+        self::assertFalse($info['diagnostic']);
         self::assertFalse($info['singleStep'], 'une écriture passe par prepare puis execute, sauf choix contraire');
+    }
+
+    public function testCreatesATokenWithTheDiagnosticRight(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Supervision', 'connectionIds' => [$connection], 'diagnostic' => true]);
+
+        $info = self::arrayOf($created['tokenInfo']);
+        self::assertTrue($info['diagnostic']);
+        self::assertFalse($info['writeData']);
+        $listed = self::arrayOf($this->call('GET', '/web/tokens')['tokens']);
+        self::assertTrue(self::arrayOf($listed[0])['diagnostic']);
     }
 
     public function testASingleStepTokenIsAnExplicitChoiceOfTheOwner(): void

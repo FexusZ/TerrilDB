@@ -31,9 +31,9 @@ final class ApiV1Test extends WebApiTestCase
     /**
      * @param array<string, bool> $rights droits du jeton (writeData, writeSchema, createConnections)
      */
-    private function prepare(string $envVar = 'TARGET_POSTGRES_URL', int $lifetimeDays = 30, array $rights = []): void
+    private function prepare(string $envVar = 'TARGET_POSTGRES_URL', int $lifetimeDays = 30, array $rights = []): \App\Entity\User
     {
-        $this->seedAndLogin();
+        $user = $this->seedAndLogin();
         $parameters = TargetDatabase::parameters($envVar);
         $body = ['name' => 'Target', 'engine' => TargetDatabase::engine($envVar)->value, 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
         $this->connectionId = $this->idOf($this->call('POST', '/web/connections', $body)['connection']);
@@ -46,6 +46,8 @@ final class ApiV1Test extends WebApiTestCase
         $this->tokenId = $this->idOf($created['tokenInfo']);
 
         $this->client->getCookieJar()->clear();
+
+        return $user;
     }
 
     /**
@@ -543,5 +545,179 @@ final class ApiV1Test extends WebApiTestCase
 
         self::assertSame(429, $this->statusCode());
         self::assertSame('too_many_attempts', $body['error']);
+    }
+
+    public function testATokenWithoutTheDiagnosticRightSeesNothingOfTheServer(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'writeSchema' => true, 'createConnections' => true]);
+
+        $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $capabilities);
+
+        $sessions = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $sessions);
+
+        $locks = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/locks');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $locks);
+
+        $queries = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $queries);
+
+        $variables = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $variables);
+    }
+
+    #[DataProvider('targets')]
+    public function testATokenWithTheDiagnosticRightListsTheSessions(string $envVar): void
+    {
+        $this->prepare($envVar, rights: ['diagnostic' => true]);
+
+        $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
+        self::assertSame(200, $this->statusCode());
+        $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
+        self::assertSame(['sessions', 'locks', 'statements', 'variables'], array_keys(self::arrayOf($capabilities['capabilities'])));
+        self::assertSame($locks, self::arrayOf(self::arrayOf($capabilities['capabilities'])['locks'])['availability']);
+        self::assertSame('available', self::arrayOf(self::arrayOf($capabilities['capabilities'])['sessions'])['availability']);
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => self::arrayOf(self::arrayOf($capabilities['capabilities'])['statements'])['availability'], 'variables' => 'available'], array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities'])));
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertIsArray($body['sessions']);
+        self::assertNotEmpty($body['sessions']);
+    }
+
+    public function testTheDiagnosticRightDoesNotOpenAConnectionOutsideTheList(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/sessions');
+
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testTheDiagnosticRightDoesNotWrite(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/execute', ['sql' => 'update categories set name = name where id = 1']);
+
+        self::assertSame(403, $this->statusCode());
+    }
+
+    public function testTheReadIsAuditedAsTheApiWithoutTheTexts(): void
+    {
+        $user = $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
+
+        $events = $this->auditEvents($user, 'diagnostic');
+        self::assertCount(1, $events);
+        self::assertSame('api', $events[0]->getActor()->value);
+        self::assertSame($this->tokenId, $events[0]->getTokenId()?->toRfc4122());
+        self::assertArrayNotHasKey('sql', $events[0]->getDetails());
+        self::assertArrayNotHasKey('query', $events[0]->getDetails());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheLocks(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/locks');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertSame(['status', 'truncated', 'transactions', 'blocking', 'blockingTruncated'], array_keys($body));
+    }
+
+    public function testTheLocksOfAConnectionOutsideTheListAreNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/locks');
+
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheCostliestQueries(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries?order=total_time&limit=3');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'order', 'windowHours', 'digests'], array_keys($body));
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertNotEmpty($body['digests']);
+        self::assertLessThanOrEqual(3, \count(self::listOf($body['digests'])));
+    }
+
+    public function testTheQueriesRouteRefusesBadInputAndOtherConnections(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $bad = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries?limit=1000');
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $bad['error']);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/queries');
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testTheQueriesReadIsAuditedAsTheApiWithoutTheTexts(): void
+    {
+        $user = $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/queries');
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'top_queries' === ($e->getDetails()['topic'] ?? null)));
+        self::assertCount(1, $events);
+        self::assertSame('api', $events[0]->getActor()->value);
+        self::assertArrayNotHasKey('query', $events[0]->getDetails());
+        self::assertArrayNotHasKey('text', $events[0]->getDetails());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheVariables(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables?q=ssl_key&limit=5');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'truncated', 'variables'], array_keys($body));
+        $variable = self::arrayOf(self::arrayOf($body['variables'])[0]);
+        self::assertNull($variable['value']);
+        self::assertTrue($variable['masked']);
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables?limit=0');
+        self::assertSame(422, $this->statusCode());
+    }
+
+    public function testTheVariablesOfAConnectionOutsideTheListAreNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/variables');
+
+        self::assertSame(404, $this->statusCode());
+    }
+
+    public function testADurationAboveWhatTheProxyAllowsIsRefused(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+
+        foreach (['query', 'execute'] as $route) {
+            $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/'.$route, ['sql' => 'select 1', 'timeoutMs' => 100_001]);
+            self::assertSame(422, $this->statusCode(), $route);
+            self::assertSame('invalid_input', $body['error'], $route);
+        }
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select 1', 'timeoutMs' => 100_000]);
+        self::assertSame(200, $this->statusCode());
     }
 }

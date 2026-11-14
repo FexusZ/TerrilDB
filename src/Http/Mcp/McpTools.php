@@ -6,6 +6,7 @@ namespace App\Http\Mcp;
 
 use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
+use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
@@ -13,16 +14,20 @@ use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Diagnostics\DigestQuery;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
+use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
 use App\Http\Json\PreparedWritePresenter;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
+use App\Http\Json\VariableQueryParser;
 use Mcp\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
 
@@ -40,6 +45,8 @@ final readonly class McpTools
         private AuditedQueries $queries,
         private ErrorMapper $errors,
         private TokenConnections $created,
+        private AuditedDiagnostics $diagnostics,
+        private RequestTimeLimit $limit,
         private WriteApproval $approval,
     ) {
     }
@@ -90,7 +97,7 @@ final readonly class McpTools
     {
         return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs): array {
             $defaults = new QueryOptions();
-            $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
         });
@@ -122,7 +129,7 @@ final readonly class McpTools
     {
         return $this->guard(function () use ($connection, $sql, $confirmed, $maxRows, $timeoutMs, $confirmationToken): array {
             $defaults = new QueryOptions();
-            $options = $this->request->get()->writeOptions($timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+            $options = $this->request->get()->writeOptions($this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, function (TargetConnection $target) use ($connection, $sql, $options, $confirmed, $confirmationToken) {
                 $context = $this->request->auditContext(AuditActor::Mcp);
@@ -130,6 +137,56 @@ final readonly class McpTools
 
                 return $this->queries->execute($context, Uuid::fromString($connection), $target, $sql, $options, $confirmed ?? false);
             }));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listSessions(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::sessions($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listLocks(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::locks($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null): array
+    {
+        return $this->guard(function () use ($connection, $order, $limit, $hours): array {
+            $this->request->get()->requireDiagnostic();
+            $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
+
+            return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listVariables(string $connection, ?string $search = null, ?bool $changedOnly = null, ?int $limit = null): array
+    {
+        return $this->guard(function () use ($connection, $search, $changedOnly, $limit): array {
+            $this->request->get()->requireDiagnostic();
+            $query = VariableQueryParser::build($search, $changedOnly ? '1' : null, null === $limit ? null : (string) $limit);
+
+            return DiagnosticsPresenter::variables($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
         });
     }
 

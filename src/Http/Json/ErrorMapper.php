@@ -18,9 +18,16 @@ use App\Core\Data\Exception\DataChangeConflictException;
 use App\Core\Data\Exception\DataChangeFailedException;
 use App\Core\Data\Exception\DataChangeNeedsConfirmationException;
 use App\Core\Data\Exception\InvalidDataChangeException;
+use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\Exception\InvalidDigestQueryException;
+use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Driver\LockConflict;
+use App\Core\Guard\Exception\ScriptTooLargeException;
+use App\Core\Guard\Exception\UnsplittableScriptException;
 use App\Core\KeyValue\Exception\InvalidKeyException;
 use App\Core\KeyValue\Exception\KeyNotFoundException;
 use App\Core\Optimizer\Exception\PlanNotAvailableException;
@@ -30,6 +37,9 @@ use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
+use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
+use App\Core\Query\Script\Exception\ScriptRefusedException;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
@@ -82,6 +92,8 @@ final class ErrorMapper
             $error instanceof InvalidConnectionOrderException,
             $error instanceof InvalidConnectionParametersException,
             $error instanceof InvalidKeyException,
+            $error instanceof InvalidDigestQueryException,
+            $error instanceof InvalidVariableQueryException,
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
             $error instanceof InvalidRecoveryException => new ErrorResponse(403, 'invalid_recovery'),
             $error instanceof MailDisabledException => new ErrorResponse(409, 'mail_disabled'),
@@ -94,24 +106,43 @@ final class ErrorMapper
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
+            $error instanceof ScriptRefusedException => new ErrorResponse(403, 'script_refused', ['reason' => $error->reason->value, 'statement' => $error->statementIndex]),
+            $error instanceof ScriptNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_script', 'destructiveCount' => $error->destructiveCount]),
+            $error instanceof ScriptDryRunUnavailableException => new ErrorResponse(409, 'dry_run_unavailable', ['reason' => $error->reason]),
+            $error instanceof UnsplittableScriptException => new ErrorResponse(422, 'invalid_script', ['detail' => $error->getMessage()]),
+            $error instanceof ScriptTooLargeException => new ErrorResponse(422, 'script_too_large', ['detail' => $error->getMessage()]),
             $error instanceof ConfirmationRequiredException => new ErrorResponse(409, 'preparation_required'),
             $error instanceof InvalidConfirmationException => new ErrorResponse(403, 'invalid_confirmation'),
             $error instanceof InvalidDataChangeException => new ErrorResponse(422, 'invalid_data_change', ['detail' => $error->getMessage()]),
             $error instanceof DataChangeConflictException => new ErrorResponse(409, 'data_changed', ['statement' => $error->statementIndex, 'matched' => $error->matched]),
             $error instanceof DataChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'delete_rows'] + DataPlanPresenter::plan($error->plan)),
-            $error instanceof DataChangeFailedException => new ErrorResponse(409, 'data_change_failed', [
-                'message' => $error->getMessage(),
-                'applied' => $error->applied,
-                'failed' => DataPlanPresenter::statement($error->failed, null),
-            ]),
+            $error instanceof LockConflictException => new ErrorResponse(409, $error->conflict->code(), ['retryable' => true]),
+            $error instanceof DataChangeFailedException => null !== $error->lock
+                ? new ErrorResponse(409, $error->lock->code(), ['retryable' => true, 'applied' => $error->applied, 'failed' => DataPlanPresenter::statement($error->failed, null)])
+                : new ErrorResponse(409, 'data_change_failed', [
+                    'message' => $error->getMessage(),
+                    'retryable' => false,
+                    'applied' => $error->applied,
+                    'failed' => DataPlanPresenter::statement($error->failed, null),
+                ]),
             $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
-            $error instanceof SchemaChangeFailedException => new ErrorResponse(409, 'schema_change_failed', [
-                'message' => $error->getMessage(),
-                'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
-                'failed' => ChangePlanPresenter::statement($error->failed),
-            ]),
+            $error instanceof SchemaChangeFailedException => null !== $error->lock
+                ? new ErrorResponse(409, $error->lock->code(), [
+                    'retryable' => [] === $error->applied,
+                    'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
+                    'failed' => ChangePlanPresenter::statement($error->failed),
+                    'lockTimeout' => LockConflict::LockTimeout === $error->lock,
+                    'lockCheck' => null === $error->holders ? null : DiagnosticsPresenter::tableHolders($error->holders),
+                ])
+                : new ErrorResponse(409, 'schema_change_failed', [
+                    'message' => $error->getMessage(),
+                    'retryable' => false,
+                    'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
+                    'failed' => ChangePlanPresenter::statement($error->failed),
+                ]),
+            $error instanceof DiagnosticsFailedException => new ErrorResponse(502, 'diagnostics_failed'),
             $error instanceof UnsupportedOperationException => new ErrorResponse(501, 'unsupported_operation'),
             $error instanceof PlanNotAvailableException => new ErrorResponse(501, 'plan_unavailable'),
             $error instanceof UnreadablePlanException => new ErrorResponse(502, 'unreadable_plan'),
