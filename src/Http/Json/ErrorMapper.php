@@ -109,7 +109,7 @@ final class ErrorMapper
             $error instanceof ScriptRefusedException => new ErrorResponse(403, 'script_refused', ['reason' => $error->reason->value, 'statement' => $error->statementIndex]),
             $error instanceof ScriptNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_script', 'destructiveCount' => $error->destructiveCount]),
             $error instanceof ScriptDryRunUnavailableException => new ErrorResponse(409, 'dry_run_unavailable', ['reason' => $error->reason]),
-            $error instanceof UnsplittableScriptException => new ErrorResponse(422, 'invalid_script', ['detail' => $error->getMessage()]),
+            $error instanceof UnsplittableScriptException => new ErrorResponse(422, 'invalid_script', ['detail' => $error->getMessage(), 'reason' => $error->reason]),
             $error instanceof ScriptTooLargeException => new ErrorResponse(422, 'script_too_large', ['detail' => $error->getMessage()]),
             $error instanceof ConfirmationRequiredException => new ErrorResponse(409, 'preparation_required'),
             $error instanceof InvalidConfirmationException => new ErrorResponse(403, 'invalid_confirmation'),
