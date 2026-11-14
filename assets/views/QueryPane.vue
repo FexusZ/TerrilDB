@@ -83,6 +83,7 @@ function toggleMode(): void {
       :connection-id="workspace.connectionId"
       :script="tab.sql"
       :scope="{ database: workspace.database, schema: workspace.schema }"
+      @import="workspace.setSql(tab.id, $event)"
     />
 
     <HistoryPanel

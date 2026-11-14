@@ -4,10 +4,13 @@ import { reasonText, messageFor } from '../api/errors'
 import { executeScript, previewScript } from '../api/script'
 import type { ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
 import type { StructureScope } from '../api/structure'
+import { readSqlFile, SQL_FILE_MESSAGES } from '../utils/sqlFile'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 
 const props = defineProps<{ connectionId: string; script: string; scope: StructureScope }>()
+// Le texte lu d'un fichier est rendu à l'éditeur : il ne part nulle part avant l'aperçu, que l'on déclenche ensuite.
+const emit = defineEmits<{ import: [text: string] }>()
 
 const preview = ref<ScriptPreview | null>(null)
 const run = ref<ScriptRun | null>(null)
@@ -15,6 +18,9 @@ const error = ref<string | null>(null)
 const busy = ref(false)
 const dryRun = ref(false)
 const confirming = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
+const fileError = ref<string | null>(null)
+const pendingImport = ref<{ text: string; name: string } | null>(null)
 
 const VERDICTS: Record<StepVerdict, string> = { allowed: 'Autorisée', needs_confirmation: 'À confirmer', refused: 'Refusée' }
 const STATUSES: Record<ScriptStepStatus, string> = { applied: 'Appliquée', rolled_back: 'Annulée', failed: 'En échec', not_run: 'Non lancée' }
@@ -47,6 +53,34 @@ watch(() => props.script, () => {
   error.value = null
   dryRun.value = false
 })
+
+async function onFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  fileError.value = null
+  if (!file) {
+    return
+  }
+  const result = await readSqlFile(file)
+  // Même fichier choisi deux fois de suite : sans remise à zéro, le navigateur ne signalerait rien.
+  input.value = ''
+  if (!result.ok) {
+    fileError.value = SQL_FILE_MESSAGES[result.reason]
+    return
+  }
+  if (props.script.trim() === '') {
+    emit('import', result.text)
+    return
+  }
+  pendingImport.value = { text: result.text, name: file.name }
+}
+
+function confirmImport(): void {
+  if (pendingImport.value) {
+    emit('import', pendingImport.value.text)
+  }
+  pendingImport.value = null
+}
 
 async function doPreview(): Promise<void> {
   busy.value = true
@@ -88,6 +122,23 @@ function execute(): void {
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n > 1 ? many : one}`
 
+// Lignes et durée d'une instruction partie ; rien pour une instruction jamais lancée.
+function metrics(step: ScriptRun['steps'][number]): string {
+  if (step.status === 'not_run') {
+    return ''
+  }
+  const parts: string[] = []
+  if (step.affectedRows !== null) {
+    parts.push(plural(step.affectedRows, 'ligne affectée', 'lignes affectées'))
+  }
+  if (step.returnedRows !== null) {
+    parts.push(`${plural(step.returnedRows, 'ligne lue', 'lignes lues')}${step.truncated ? ' (tronquée)' : ''}`)
+  }
+  parts.push(`${String(step.durationMs)} ms`)
+
+  return parts.join(' · ')
+}
+
 const outcome = computed(() => {
   const r = run.value
   if (r === null) {
@@ -112,9 +163,11 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
 
 <template>
   <section class="script" aria-label="Exécuter un script">
-    <p class="intro">Le texte de l’éditeur est découpé en instructions, chacune jugée avant que quoi que ce soit parte. Le script s’arrête à la première erreur.</p>
+    <p class="intro">Le texte de l’éditeur est découpé en instructions, chacune jugée avant que quoi que ce soit parte. Le script s’arrête à la première erreur. La directive DELIMITER n’est pas prise en charge.</p>
 
     <div class="actions">
+      <AppButton class="import" small @click="fileInput?.click()">Importer un fichier .sql</AppButton>
+      <input ref="fileInput" class="file" type="file" accept=".sql,.txt,text/plain,application/sql" hidden aria-label="Fichier SQL à importer" @change="onFile">
       <AppButton class="preview" small :busy="busy" :disabled="script.trim() === ''" @click="doPreview">Aperçu du script</AppButton>
       <label class="dry">
         <input v-model="dryRun" class="dry-run" type="checkbox" :disabled="!preview || !preview.dryRun.available">
@@ -128,6 +181,7 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
     <ul v-if="preview && preview.warnings.length > 0" class="warnings">
       <li v-for="warning in preview.warnings" :key="warning">{{ WARNINGS[warning] }}</li>
     </ul>
+    <p v-if="fileError" class="file-error error" role="alert">{{ fileError }}</p>
     <p v-if="refusedRank !== null" class="refused-note" role="alert">L’instruction {{ refusedRank }} est refusée : {{ reasonText(preview?.firstRefused?.reason) }} Rien ne partira.</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
@@ -136,6 +190,7 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
         <span class="rank">{{ step.index + 1 }}</span>
         <code>{{ step.sql }}</code>
         <span class="chip">{{ STATUSES[step.status] }}</span>
+        <span v-if="metrics(step)" class="metrics">{{ metrics(step) }}</span>
         <span v-if="step.error" class="step-error">{{ step.error }}</span>
       </li>
     </ol>
@@ -150,6 +205,14 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
       </li>
     </ol>
 
+    <ConfirmDialog
+      v-if="pendingImport"
+      title="Remplacer le contenu de l’éditeur ?"
+      :message="`Le texte actuel de l’éditeur sera remplacé par celui de « ${pendingImport.name} ». Rien ne sera exécuté : il faudra d’abord en demander l’aperçu.`"
+      confirm-label="Remplacer"
+      @confirm="confirmImport"
+      @cancel="pendingImport = null"
+    />
     <ConfirmDialog
       v-if="confirming && preview"
       title="Exécuter ce script ?"
@@ -176,6 +239,7 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
 .chip { font-size: 11px; color: var(--mut); }
 .step[data-verdict='refused'] .chip, .step[data-status='failed'] .chip { color: var(--bad); }
 .step[data-verdict='needs_confirmation'] .chip { color: var(--sec); }
+.metrics { grid-column: 2 / -1; font-size: 12px; color: var(--mut); }
 .step-error { grid-column: 2 / -1; font-size: 12px; color: var(--bad); white-space: pre-wrap; }
 .outcome { font-weight: 600; font-size: 14px; }
 .outcome.bad { color: var(--bad); }
