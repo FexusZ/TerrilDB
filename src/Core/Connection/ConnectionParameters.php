@@ -30,6 +30,7 @@ final readonly class ConnectionParameters
         private ?string $pinnedAddress = null,
         public ?string $schema = null,
         public ?Transport $transport = null,
+        private ?string $socketPath = null,
     ) {
         if ('' === $host || \strlen($host) > self::HOST_MAX_LENGTH || 1 !== preg_match('/^[^\s\p{Cc}]+$/uD', $host)) {
             throw new InvalidConnectionParametersException('The host is not valid.');
@@ -51,6 +52,9 @@ final readonly class ConnectionParameters
         if (null !== $pinnedAddress && false === filter_var($pinnedAddress, \FILTER_VALIDATE_IP)) {
             throw new InvalidConnectionParametersException('The pinned address is not an IP address.');
         }
+        if (null !== $socketPath && ('' === $socketPath || !str_starts_with($socketPath, '/') || str_contains($socketPath, '..') || str_contains($socketPath, "\0"))) {
+            throw new InvalidConnectionParametersException('The tunnel socket is not valid.');
+        }
     }
 
     public function password(): string
@@ -60,7 +64,7 @@ final readonly class ConnectionParameters
 
     public function withPassword(#[\SensitiveParameter] string $password): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema, $this->transport);
+        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath);
     }
 
     /**
@@ -78,7 +82,7 @@ final readonly class ConnectionParameters
      */
     public function withAddress(string $address): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema, $this->transport);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema, $this->transport, $this->socketPath);
     }
 
     /**
@@ -86,7 +90,7 @@ final readonly class ConnectionParameters
      */
     public function withDatabase(string $database): self
     {
-        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport);
+        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath);
     }
 
     /**
@@ -95,7 +99,21 @@ final readonly class ConnectionParameters
      */
     public function withSchema(?string $schema): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema, $this->transport);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema, $this->transport, $this->socketPath);
+    }
+
+    /**
+     * Le socket Unix du tunnel ouvert vers la cible : le driver s'y connecte à la place de l'hôte et du port. Comme l'adresse
+     * épinglée, il ne vit que le temps de l'ouverture et n'entre jamais dans le JSON chiffré.
+     */
+    public function withSocket(string $socketPath): self
+    {
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $socketPath);
+    }
+
+    public function socketPath(): ?string
+    {
+        return $this->socketPath;
     }
 
     /**
