@@ -127,7 +127,14 @@ final class MySqlDdlDialect extends AbstractDdlDialect
 
     protected function modifyColumn(string $table, ModifyColumn $operation): array
     {
-        $definition = $this->columnDefinition($operation->after, $operation->defaultChanged ? null : $operation->before->default);
+        $definition = $this->columnDefinition($operation->after, $operation->defaultChanged ? null : $operation->before->default, $operation->before->compressed);
+        // MODIFY COLUMN redit toute la définition : ce que le modèle ne dit pas doit être redit, sinon il disparaît.
+        if (null !== $operation->before->onUpdate) {
+            $definition .= ' ON UPDATE '.$operation->before->onUpdate;
+        }
+        if ($operation->before->invisible) {
+            $definition .= ' INVISIBLE';
+        }
         if (null !== $operation->before->comment && '' !== $operation->before->comment) {
             $definition .= ' COMMENT '.$this->stringLiteral($operation->before->comment);
         }
@@ -207,9 +214,9 @@ final class MySqlDdlDialect extends AbstractDdlDialect
      * @param ?string $unchanged le défaut tel que le moteur le rend, quand l'utilisateur n'y a pas touché : une expression entre
      *                           parenthèses (« (1 + 1) ») est alors redite telle quelle, jamais lue comme du texte tapé
      */
-    private function columnDefinition(ColumnDraft $column, ?string $unchanged = null): string
+    private function columnDefinition(ColumnDraft $column, ?string $unchanged = null, bool $compressed = false): string
     {
-        $sql = \sprintf('%s %s %s', $this->quote($column->name), $column->validatedType(), $column->nullable ? 'NULL' : 'NOT NULL');
+        $sql = \sprintf('%s %s%s %s', $this->quote($column->name), $column->validatedType(), $compressed ? ' COMPRESSED' : '', $column->nullable ? 'NULL' : 'NOT NULL');
         $default = $column->defaultValue();
         if (null !== $unchanged && null !== $default && self::isParenthesised($unchanged)) {
             $sql .= ' DEFAULT '.$unchanged;

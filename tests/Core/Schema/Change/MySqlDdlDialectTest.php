@@ -89,6 +89,39 @@ final class MySqlDdlDialectTest extends TestCase
         );
     }
 
+    public function testModifyingAnInvisibleColumnRestatesItAsInvisible(): void
+    {
+        $before = new ColumnDefinition('hid', 'int', true, null, false, null, true);
+        $after = new ColumnDraft('hid', 'hid', 'bigint', true, null, false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `hid` bigint NULL INVISIBLE'],
+            self::sql([new ModifyColumn($before, $after, true, false, false, false)]),
+        );
+    }
+
+    public function testModifyingAColumnRestatesItsOnUpdateClause(): void
+    {
+        $before = new ColumnDefinition('seen_at', 'timestamp(3)', false, 'CURRENT_TIMESTAMP(3)', false, null, false, 'CURRENT_TIMESTAMP(3)');
+        $after = new ColumnDraft('seen_at', 'seen_at', 'timestamp(3)', true, 'CURRENT_TIMESTAMP(3)', false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `seen_at` timestamp(3) NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)'],
+            self::sql([new ModifyColumn($before, $after, false, true, false, false)]),
+        );
+    }
+
+    public function testModifyingACompressedColumnRestatesItAsCompressed(): void
+    {
+        $before = new ColumnDefinition('payload', 'text', true, null, false, null, false, null, true);
+        $after = new ColumnDraft('payload', 'payload', 'text', false, null, false);
+
+        self::assertSame(
+            ['ALTER TABLE `orders` MODIFY COLUMN `payload` text COMPRESSED NOT NULL'],
+            self::sql([new ModifyColumn($before, $after, false, true, false, false)]),
+        );
+    }
+
     public function testPrimaryKey(): void
     {
         $old = new IndexDefinition('PRIMARY', ['id'], true, true);

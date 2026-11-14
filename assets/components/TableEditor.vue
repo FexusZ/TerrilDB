@@ -4,6 +4,7 @@ import { ApiError } from '../api/client'
 import { messageFor } from '../api/errors'
 import { describeHolder, describeStatus } from '../utils/diagnostics'
 import { formatBytes } from '../utils/format'
+import { lockShort } from '../utils/lock'
 import { applyStructure, previewStructure, type StructureScope } from '../api/structure'
 import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructureLockCheck, type StructurePreview, type TableDetail, type TableHolder } from '../api/types'
 import { useWorkspaceStore } from '../stores/workspace'
@@ -419,11 +420,14 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
           </thead>
           <tbody>
             <tr v-for="column in draft.columns" :key="column.uid" :data-status="markOf(column).status">
-              <td><input v-model="column.name" class="field mono" :class="{ edited: edited(markOf(column), 'name') }" :disabled="column.removed" aria-label="Nom de la colonne" spellcheck="false" autocomplete="off"></td>
-              <td><input v-model="column.type" class="field mono" :class="{ edited: edited(markOf(column), 'type') }" :list="typeListId" :disabled="column.removed" aria-label="Type de la colonne" spellcheck="false" autocomplete="off"></td>
-              <td><input v-model="column.nullable" type="checkbox" :class="{ edited: edited(markOf(column), 'nullable') }" :disabled="column.removed" aria-label="Accepte NULL"></td>
-              <td><input v-model="column.default" class="field mono" :class="{ edited: edited(markOf(column), 'default') }" :disabled="column.removed || column.autoIncrement" placeholder="aucun" aria-label="Valeur par défaut" spellcheck="false" autocomplete="off"></td>
-              <td v-if="features.autoIncrement"><input v-model="column.autoIncrement" type="checkbox" :class="{ edited: edited(markOf(column), 'autoIncrement') }" :disabled="column.removed" aria-label="Auto-incrément"></td>
+              <td>
+                <input v-model="column.name" class="field mono" :class="{ edited: edited(markOf(column), 'name') }" :disabled="column.removed" aria-label="Nom de la colonne" spellcheck="false" autocomplete="off">
+                <span v-if="column.lock" class="tag" :title="`${lockShort(column.lock)} : TerrilDB la redirait sans cette particularité, donc il ne la redéfinit pas`">{{ lockShort(column.lock) }} : lecture seule</span>
+              </td>
+              <td><input v-model="column.type" class="field mono" :class="{ edited: edited(markOf(column), 'type') }" :list="typeListId" :disabled="column.removed || !!column.lock" aria-label="Type de la colonne" spellcheck="false" autocomplete="off"></td>
+              <td><input v-model="column.nullable" type="checkbox" :class="{ edited: edited(markOf(column), 'nullable') }" :disabled="column.removed || !!column.lock" aria-label="Accepte NULL"></td>
+              <td><input v-model="column.default" class="field mono" :class="{ edited: edited(markOf(column), 'default') }" :disabled="column.removed || column.autoIncrement || !!column.lock" placeholder="aucun" aria-label="Valeur par défaut" spellcheck="false" autocomplete="off"></td>
+              <td v-if="features.autoIncrement"><input v-model="column.autoIncrement" type="checkbox" :class="{ edited: edited(markOf(column), 'autoIncrement') }" :disabled="column.removed || !!column.lock" aria-label="Auto-incrément"></td>
               <td v-if="features.primaryKey"><input type="checkbox" :checked="isPrimary(column)" :class="{ edited: edited(markOf(column), 'primary') }" :disabled="column.removed" aria-label="Dans la clé primaire" @change="togglePrimary(draft, column)"></td>
               <td class="act">
                 <AppButton v-if="column.removed" variant="ghost" small @click="restore(column)">Restaurer</AppButton>
@@ -449,7 +453,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
             <template v-if="row.kind === 'locked'">
               <tr class="col-row">
                 <td class="mono">{{ row.name }}</td>
-                <td class="type"><span class="tag">clé de tri : lecture seule</span></td>
+                <td class="type"><span class="tag">{{ row.item?.lock ? lockShort(row.item.lock) : 'clé de tri' }} : lecture seule</span></td>
                 <td v-if="features.uniqueIndex" />
                 <td v-if="showSize" class="size-cell">{{ sizeOf(row) }}</td>
                 <td colspan="3" class="mono dim">{{ row.locked.join(', ') }}</td>
