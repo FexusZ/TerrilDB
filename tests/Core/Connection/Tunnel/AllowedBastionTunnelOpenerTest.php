@@ -81,4 +81,28 @@ final class AllowedBastionTunnelOpenerTest extends TestCase
         self::assertSame(4, $refused);
         self::assertSame('.s.PGSQL.5432', (new TunnelRequest($jump, 'db.internal', 5432, '.s.PGSQL.5432'))->socketName);
     }
+
+    public function testTheHostKeyOfAnAllowedBastionIsRead(): void
+    {
+        $inner = $this->inner();
+        $opener = new AllowedBastionTunnelOpener($inner, BastionAllowList::fromString('bastion.example:2222'));
+
+        $key = $opener->hostKey('Bastion.Example', 2222);
+
+        self::assertSame(RecordingTunnelOpener::FINGERPRINT, $key->fingerprint);
+        self::assertSame(1, $inner->scanned);
+    }
+
+    public function testTheHostKeyOfAnUnlistedBastionIsNeverRead(): void
+    {
+        $inner = $this->inner();
+        $opener = new AllowedBastionTunnelOpener($inner, BastionAllowList::fromString('bastion.example'));
+
+        try {
+            $opener->hostKey('bastion.example', 2222);
+            self::fail('refused expected');
+        } catch (ForbiddenBastionException) {
+            self::assertSame(0, $inner->scanned);
+        }
+    }
 }

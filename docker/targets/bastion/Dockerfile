@@ -7,7 +7,7 @@ RUN apk add --no-cache openssh-server \
     && echo "jump:$(head -c 32 /dev/urandom | base64)" | chpasswd \
     && printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' 'PermitRootLogin no' \
         'AllowUsers jump' 'AllowTcpForwarding local' 'AllowAgentForwarding no' 'X11Forwarding no' \
-        'PermitTTY no' 'ForceCommand /bin/false' > /etc/ssh/sshd_config.d/test.conf
+        'PermitTTY no' 'ForceCommand /bin/false' 'PerSourcePenalties no' > /etc/ssh/sshd_config.d/test.conf
 
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]

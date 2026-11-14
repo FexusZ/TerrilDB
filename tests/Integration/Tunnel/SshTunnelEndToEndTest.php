@@ -143,4 +143,19 @@ final class SshTunnelEndToEndTest extends TestCase
             self::assertSame(TunnelFailedException::UNAVAILABLE, $failure->reason);
         }
     }
+
+    public function testTheRelayReadsTheHostKeyFingerprintOfTheBastion(): void
+    {
+        $key = $this->opener()->hostKey('target-bastion', 22);
+
+        self::assertSame($this->fingerprint, $key->fingerprint);
+        self::assertSame('ed25519', $key->type);
+    }
+
+    public function testTheHostKeyOfAnUnlistedBastionIsNotRead(): void
+    {
+        $this->expectException(ForbiddenBastionException::class);
+
+        $this->relay->hostKey('other.example', 22);
+    }
 }
