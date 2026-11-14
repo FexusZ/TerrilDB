@@ -88,6 +88,9 @@ export function messageFor(error: unknown): string {
       return `L’instruction ${String(rank)} est refusée : ${reasonText(error.details.reason)} Rien n’a été exécuté.`
     }
     case 'invalid_script':
+      if (error.details.reason === 'delimiter_directive') {
+        return 'La directive DELIMITER (une commande du client mysql, pas du moteur) n’est pas prise en charge : envoyez le corps de la procédure ou du déclencheur comme une seule instruction, sans DELIMITER. Rien n’a été exécuté.'
+      }
       return 'Le script ne peut pas être découpé avec certitude : une chaîne, un commentaire ou un nom entre guillemets n’est pas refermé. Rien n’a été exécuté.'
     case 'script_too_large':
       return 'Le script est trop long (500 instructions et 1 Mo au plus).'

@@ -100,6 +100,7 @@ describe('error messages', () => {
 
   it('explains a malformed, oversized or untestable script', () => {
     expect(messageFor(new ApiError(422, 'invalid_script'))).toContain('chaîne')
+    expect(messageFor(new ApiError(422, 'invalid_script', { reason: 'delimiter_directive' }))).toContain('DELIMITER')
     expect(messageFor(new ApiError(422, 'script_too_large'))).toContain('500')
     expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'implicit_commit' }))).toContain('valide')
     expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'no_transaction' }))).toContain('transaction')
