@@ -242,6 +242,22 @@ final class JumpConnectionsWebTest extends WebApiTestCase
         self::assertSame(400, $this->statusCode());
     }
 
+    public function testHostKeyReadsAreCappedPerAccountRefusedOnesIncluded(): void
+    {
+        $this->loginAsMember();
+
+        for ($attempt = 0; $attempt < 20; ++$attempt) {
+            $this->call('POST', '/web/connections/host-key', ['host' => 'other.example', 'port' => 22]);
+            self::assertSame(403, $this->statusCode());
+        }
+        $body = $this->call('POST', '/web/connections/host-key', ['host' => 'other.example', 'port' => 22]);
+
+        self::assertSame(429, $this->statusCode());
+        self::assertSame('too_many_attempts', $body['error']);
+        $this->call('POST', '/web/connections/host-key', ['host' => 'target-bastion', 'port' => 22]);
+        self::assertSame(429, $this->statusCode());
+    }
+
     public function testAnUpdateWithoutKeyOrFingerprintKeepsThemAndNullRemovesTheJump(): void
     {
         $this->seedAndLogin();

@@ -68,7 +68,7 @@ n'y est pas (voir « Ce qui reste »).
 - **Adresse du bastion** : le relais résout lui-même le nom du bastion (la règle d'adresses d'ici est une vérification, pas
   l'adresse épinglée) ; la liste de bastions est le rempart contre un DNS qui changerait.
 - **Lecture de l'empreinte** : chaque lecture lance un `ssh-keyscan` depuis le conteneur (au plus 32 demandes en parallèle) ;
-  pas encore de plafond par compte. Un sshd récent pénalise les connexions sans authentification d'une même source
+  plafonnées à 20 par 10 minutes et par compte, refusées comprises (limiteur `host_key_read`). Un sshd récent pénalise les connexions sans authentification d'une même source
   (`PerSourcePenalties`) : le relais ne tente qu'un type de clé par connexion et s'arrête au premier.
 - **Pare-feu de sortie** : le réseau du tunnel (`bastion-net`) sort librement ; les règles de `docs/deploy.md` doivent viser
   aussi le conteneur `tunnel`, et n'autoriser que les bastions déclarés.
@@ -114,7 +114,7 @@ Les clés du bastion de test sont générées à chaque démarrage (volume `bast
    + `JumpConnectionsWebTest` (profil `targets`, hôte de CI à nommer).
 3. ClickHouse et Redis : repli sur un port local (loopback) pour les pilotes qui ne savent pas se connecter par un socket Unix.
 4. Outil MCP `create_connection` : pas de rebond (l'API à jetons l'accepte) ; lecture de l'empreinte par l'API à jetons.
-5. Plafond de lectures d'empreinte par compte ; changement d'empreinte : parcours dédié (aujourd'hui, l'utilisateur relit et
+5. Changement d'empreinte : parcours dédié (aujourd'hui, l'utilisateur relit et
    enregistre la nouvelle dans le formulaire, après avoir vérifié auprès de l'administrateur du bastion).
 6. Clé protégée par phrase : non prise en charge (`BatchMode`) ; décision à prendre. Génération de clé côté navigateur à étudier.
 7. SOCKS5 : avec le compagnon VPN (#14/#15).
