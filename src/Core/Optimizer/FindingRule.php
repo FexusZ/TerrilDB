@@ -15,4 +15,5 @@ enum FindingRule: string
     case ForeignKeyTypeMismatch = 'foreign_key_type_mismatch';
     case TextPrimaryKey = 'text_primary_key';
     case FloatAmount = 'float_amount';
+    case UnusedIndex = 'unused_index';
 }

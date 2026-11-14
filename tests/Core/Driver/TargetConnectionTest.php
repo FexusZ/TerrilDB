@@ -33,6 +33,11 @@ final class TargetConnectionTest extends TestCase
                 return new \App\Core\Schema\TablePage([], null, 0);
             }
 
+            public function indexUsage(): \App\Core\Schema\IndexUsageReport
+            {
+                return \App\Core\Schema\IndexUsageReport::unavailable('not_supported');
+            }
+
             public function listSchemas(): array
             {
                 return [];

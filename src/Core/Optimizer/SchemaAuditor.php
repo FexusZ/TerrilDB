@@ -7,6 +7,7 @@ namespace App\Core\Optimizer;
 use App\Core\Connection\Engine;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 
@@ -23,10 +24,11 @@ final class SchemaAuditor
 
     /**
      * @param list<TableDefinition> $tables
+     * @param ?IndexUsageReport     $usage  l'usage des index lu au catalogue (sans lui, la règle des index jamais lus se tait)
      *
      * @return list<Finding>
      */
-    public function audit(Engine $engine, array $tables): array
+    public function audit(Engine $engine, array $tables, ?IndexUsageReport $usage = null): array
     {
         if (Engine::ClickHouse === $engine) {
             // Ni clé primaire, ni clé étrangère, ni unicité : les règles relationnelles ne s'appliquent pas.
@@ -38,7 +40,7 @@ final class SchemaAuditor
             if (TableKind::Table !== $table->kind) {
                 continue;
             }
-            array_push($findings, ...$this->auditTable($engine, $table, $tables));
+            array_push($findings, ...$this->auditTable($engine, $table, $tables), ...$this->unusedIndexes($engine, $table, $usage));
         }
 
         // Par table, puis les constats graves d'abord.
@@ -46,6 +48,100 @@ final class SchemaAuditor
         usort($findings, static fn (Finding $a, Finding $b): int => $rank($a) <=> $rank($b));
 
         return $findings;
+    }
+
+    /**
+     * Les vérifications d'exploitation qui n'ont pas pu juger (source illisible, collecte trop récente) : à montrer, jamais à
+     * confondre avec « rien à signaler ».
+     *
+     * @return list<AuditCheck>
+     */
+    public function checks(Engine $engine, ?IndexUsageReport $usage): array
+    {
+        if (null === $usage || !$engine->speaksSql() || Engine::ClickHouse === $engine || 'not_supported' === $usage->reason) {
+            return [];
+        }
+        if (!$usage->available) {
+            return [new AuditCheck(FindingRule::UnusedIndex, CheckState::Unavailable, $usage->reason)];
+        }
+        if ($usage->observedSeconds < self::OBSERVATION_SECONDS) {
+            return [new AuditCheck(FindingRule::UnusedIndex, CheckState::TooShort, detail: (string) $usage->observedSeconds)];
+        }
+
+        return [];
+    }
+
+    private const OBSERVATION_SECONDS = 604800;
+
+    /**
+     * Index jamais lu depuis le début de la collecte, après au moins sept jours : la clé primaire, un index unique et celui qui
+     * porte une clé étrangère ne sont jamais proposés (ils servent aux contraintes même sans lecture). Rien n'est supprimé :
+     * MySQL et MariaDB proposent de le rendre invisible d'abord pour essayer sans risque.
+     *
+     * @return list<Finding>
+     */
+    private function unusedIndexes(Engine $engine, TableDefinition $table, ?IndexUsageReport $usage): array
+    {
+        if (null === $usage || !$usage->available || $usage->observedSeconds < self::OBSERVATION_SECONDS) {
+            return [];
+        }
+
+        $findings = [];
+        foreach ($usage->usages as $used) {
+            if ($used->table !== $table->name || $used->reads > 0) {
+                continue;
+            }
+            foreach ($table->indexes as $index) {
+                if ($index->name !== $used->index || $index->primary || $index->unique || $this->carriesForeignKey($index, $table)) {
+                    continue;
+                }
+                $findings[] = new Finding(
+                    FindingRule::UnusedIndex,
+                    Severity::Info,
+                    $table->name,
+                    $index->columns,
+                    $index->name,
+                    suggestion: $this->retire($engine, $table->name, $index->name),
+                    detail: 'aucune lecture en '.self::days($usage->observedSeconds),
+                );
+            }
+        }
+
+        return $findings;
+    }
+
+    private function carriesForeignKey(IndexDefinition $index, TableDefinition $table): bool
+    {
+        foreach ($table->foreignKeys as $key) {
+            $leading = \array_slice($index->columns, 0, \count($key->columns));
+            $wanted = $key->columns;
+            sort($leading);
+            sort($wanted);
+            if ($leading === $wanted) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static function days(int $seconds): string
+    {
+        $days = intdiv($seconds, 86400);
+
+        return $days.(1 === $days ? ' jour' : ' jours');
+    }
+
+    private function retire(Engine $engine, string $table, string $index): string
+    {
+        $note = '-- après une période représentative, si rien n\'a ralenti :';
+        $quotedTable = self::quote($engine, $table);
+        $quotedIndex = self::quote($engine, $index);
+        if (Engine::PostgreSql === $engine) {
+            return "-- PostgreSQL n'a pas d'index invisible : à supprimer seulement après une période représentative.\n-- DROP INDEX {$quotedIndex};";
+        }
+
+        return \sprintf("ALTER TABLE %s ALTER INDEX %s %s;\n%s\n-- ALTER TABLE %s DROP INDEX %s;", $quotedTable, $quotedIndex, Engine::MariaDb === $engine ? 'IGNORED' : 'INVISIBLE', $note, $quotedTable, $quotedIndex);
     }
 
     /**

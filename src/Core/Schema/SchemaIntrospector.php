@@ -46,6 +46,13 @@ interface SchemaIntrospector
     public function listTablesPage(TablePageRequest $request): TablePage;
 
     /**
+     * Les lectures comptées par le moteur pour chaque index (compteurs du serveur, lus sans rien modifier) et la durée de la
+     * collecte. Un état « indisponible » avec sa raison, jamais une exception, quand la source ne se lit pas (compteurs éteints,
+     * droit manquant, moteur sans ces compteurs).
+     */
+    public function indexUsage(): IndexUsageReport;
+
+    /**
      * @throws TableNotFoundException
      */
     public function describeTable(string $name): TableDefinition;

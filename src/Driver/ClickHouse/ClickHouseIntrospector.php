@@ -10,6 +10,7 @@ use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
@@ -48,6 +49,11 @@ final readonly class ClickHouseIntrospector implements SchemaIntrospector
         usort($databases, static fn (DatabaseSummary $a, DatabaseSummary $b): int => strcmp($a->name, $b->name));
 
         return $databases;
+    }
+
+    public function indexUsage(): IndexUsageReport
+    {
+        return IndexUsageReport::unavailable('not_supported');
     }
 
     public function listSchemas(): array

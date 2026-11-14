@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { PlanFindingInfo, SchemaFinding } from '../api/types'
-import { describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
+import type { AuditCheck, PlanFindingInfo, SchemaFinding } from '../api/types'
+import { describeCheck, describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
 
 const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
 
@@ -34,6 +34,26 @@ describe('optimizer wording', () => {
     expect(money.title).toBe('La colonne « price » de « invoices » est un nombre à virgule flottante (double) alors que son nom évoque une somme d’argent.')
     expect(money.help).toContain('DECIMAL')
     expect(money.help).toContain('À vérifier')
+  })
+
+  it('words an index never read, with the observed duration and the reset caveat', () => {
+    const unused = describeSchemaFinding(finding({ rule: 'unused_index', severity: 'info', table: 'orders', columns: ['a'], index: 'idx_a', detail: 'aucune lecture en 12 jours' }))
+
+    expect(unused.title).toBe('L’index « idx_a » de « orders » n’a servi à aucune lecture (aucune lecture en 12 jours).')
+    expect(unused.help).toContain('redémarrage')
+    expect(unused.help).toContain('invisible')
+    expect(unused.help).toContain('écritures')
+  })
+
+  it('says why an operations check could not judge', () => {
+    const check = (extra: Partial<AuditCheck>): AuditCheck => ({ rule: 'unused_index', state: 'unavailable', reason: null, detail: null, ...extra })
+
+    expect(describeCheck(check({ reason: 'performance_schema_off' }))).toBe('Index jamais lus : non vérifiable, performance_schema est désactivé sur ce serveur.')
+    expect(describeCheck(check({ reason: 'permission_denied' }))).toContain('droit')
+    expect(describeCheck(check({ reason: 'instrument_off' }))).toContain('instrument')
+    expect(describeCheck(check({ reason: 'unreadable' }))).toContain('n’ont pas pu être lus')
+    expect(describeCheck(check({ state: 'too_short', detail: '5400' }))).toBe('Index jamais lus : non vérifiable, la collecte des compteurs ne date que de 1 h 30 min (il en faut 7 jours).')
+    expect(describeCheck(check({ state: 'too_short', detail: '90000' }))).toContain('1 j 1 h')
   })
 
   it('words a big full scan, with its condition when there is one', () => {
