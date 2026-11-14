@@ -70,7 +70,7 @@ export interface ConnectionInput {
   password?: string
 }
 
-export type TableKind = 'table' | 'view' | 'materialized_view'
+export type TableKind = 'table' | 'view' | 'materialized_view' | 'sequence'
 
 export interface DatabaseInfo {
   name: string
