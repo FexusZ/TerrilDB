@@ -208,9 +208,56 @@ final class TargetHostPolicyTest extends TestCase
         $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new SshJump('db', 22, 'u', self::KEY)));
     }
 
-    public function testTheFinalTargetBehindAJumpIsTheJumpsBusiness(): void
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function finalTargets(): iterable
     {
-        $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('127.0.0.1', new SshJump('93.184.216.34', 22, 'u', self::KEY)));
+        yield 'IPv4 loopback' => ['127.0.0.1'];
+        yield 'IPv6 loopback' => ['::1'];
+        yield 'unspecified' => ['0.0.0.0'];
+        yield 'cloud metadata' => ['169.254.169.254'];
+        yield 'localhost' => ['localhost'];
+        yield 'the internal database by name' => ['db'];
+        yield 'the internal database by address' => ['172.18.0.2'];
+        yield 'name resolving to loopback' => ['sneaky.example'];
+    }
+
+    #[DataProvider('finalTargets')]
+    public function testAMemberCannotAimTheServerItselfBehindAJump(string $target): void
+    {
+        $policy = $this->policy(['sneaky.example' => ['127.0.0.1']]);
+
+        try {
+            $policy->assertAllowed($this->user(Role::Member), $this->withTransport($target, new SshJump('93.184.216.34', 22, 'u', self::KEY)));
+            self::fail('refused expected');
+        } catch (ForbiddenTargetHostException $refused) {
+            self::assertTrue($refused->behindJump);
+        }
+    }
+
+    public function testARefusedJumpIsNotMarkedAsBehindTheJump(): void
+    {
+        try {
+            $this->policy()->assertAllowed($this->user(Role::Member), $this->withTransport('db.example', new SshJump('127.0.0.1', 22, 'u', self::KEY)));
+            self::fail('refused expected');
+        } catch (ForbiddenTargetHostException $refused) {
+            self::assertFalse($refused->behindJump);
+        }
+    }
+
+    public function testAMemberKeepsPrivateNetworksBehindAJump(): void
+    {
+        $policy = $this->policy(['db.example' => ['93.184.216.34']]);
+
+        foreach (['10.0.0.5', '192.168.1.20', 'db.example', 'unknown.invalid'] as $target) {
+            self::assertSame('93.184.216.34', $policy->pinnedAddress($this->user(Role::Member), $this->withTransport($target, new SshJump('93.184.216.34', 22, 'u', self::KEY))));
+        }
+    }
+
+    public function testAnAdministratorMayAimTheMachineItselfBehindAJump(): void
+    {
+        $this->policy()->assertAllowed($this->user(Role::Admin), $this->withTransport('127.0.0.1', new SshJump('93.184.216.34', 22, 'u', self::KEY)));
 
         $this->addToAssertionCount(1);
     }

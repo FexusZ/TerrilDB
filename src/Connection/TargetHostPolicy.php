@@ -43,11 +43,33 @@ final readonly class TargetHostPolicy
      */
     public function pinnedAddress(User $user, ConnectionParameters $parameters): ?string
     {
-        // Le premier saut est ce que le serveur joint vraiment : le bastion s'il y en a un. La cible finale, derrière
-        // lui, est résolue par lui (sa « boucle locale » est la sienne) : elle n'est pas du ressort de cette règle.
-        $host = strtolower(trim($parameters->firstHop()[0], "[] .\t"));
+        // Le premier saut est ce que le serveur joint vraiment : le bastion s'il y en a un. Sa résolution est la nôtre : c'est
+        // elle qui est épinglée et rendue.
+        $addresses = $this->assertNotTheMachine($user, $parameters->firstHop()[0], false);
+        if (null !== $parameters->transport) {
+            // La cible finale est résolue par le bastion, dont la « boucle locale » est la sienne : on ne peut pas la juger
+            // exactement. Par prudence, un membre ne peut pas la nommer comme le serveur de TerrilDB (nom ou adresse
+            // littérale, ou nom qui se résout ICI vers lui) ; un nom que seul le bastion connaît passe, et le serveur de
+            // TerrilDB n'est de toute façon joignable que si le bastion y mène.
+            $this->assertNotTheMachine($user, $parameters->host, true);
+        }
+
+        $ipv4 = array_values(array_filter($addresses, static fn (string $address): bool => false !== filter_var($address, \FILTER_VALIDATE_IP, \FILTER_FLAG_IPV4)));
+        $ipv6 = array_values(array_filter($addresses, static fn (string $address): bool => false !== filter_var($address, \FILTER_VALIDATE_IP, \FILTER_FLAG_IPV6)));
+
+        return [...$ipv4, ...$ipv6][0] ?? null;
+    }
+
+    /**
+     * @return list<string> les adresses du nom, résolues une fois
+     *
+     * @throws ForbiddenTargetHostException
+     */
+    private function assertNotTheMachine(User $user, string $name, bool $behindJump): array
+    {
+        $host = strtolower(trim($name, "[] .\t"));
         if (!$user->isAdmin() && ('localhost' === $host || str_ends_with($host, '.localhost'))) {
-            throw ForbiddenTargetHostException::create();
+            throw ForbiddenTargetHostException::create($behindJump);
         }
 
         $addresses = $this->resolver->resolve($host);
@@ -62,15 +84,12 @@ final readonly class TargetHostPolicy
                     continue;
                 }
                 if (self::isTheMachineItself($normalized) || \in_array($normalized, $internal, true)) {
-                    throw ForbiddenTargetHostException::create();
+                    throw ForbiddenTargetHostException::create($behindJump);
                 }
             }
         }
 
-        $ipv4 = array_values(array_filter($addresses, static fn (string $address): bool => false !== filter_var($address, \FILTER_VALIDATE_IP, \FILTER_FLAG_IPV4)));
-        $ipv6 = array_values(array_filter($addresses, static fn (string $address): bool => false !== filter_var($address, \FILTER_VALIDATE_IP, \FILTER_FLAG_IPV6)));
-
-        return [...$ipv4, ...$ipv6][0] ?? null;
+        return $addresses;
     }
 
     /**
