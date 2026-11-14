@@ -1,0 +1,127 @@
+import { describe, expect, it } from 'vitest'
+import type { BlockingNode, DiagnosticStatus, OpenTransaction } from '../api/types'
+import { describeStatus, enableHint, flattenBlocking, formatMs, formatRatio, formatSeconds, isLongTransaction, describeRestart, describeSource } from './diagnostics'
+
+const status = (availability: DiagnosticStatus['availability'], extra: Partial<DiagnosticStatus> = {}): DiagnosticStatus => ({ availability, reason: null, privilege: null, ...extra })
+
+const transaction = (extra: Partial<OpenTransaction> = {}): OpenTransaction => ({ session: '1', user: 'app', state: 'RUNNING', seconds: 10, rowsLocked: null, rowsModified: null, sleeping: false, query: null, queryReason: null, ...extra })
+
+const node = (id: string, blocked: BlockingNode[] = []): BlockingNode => ({ id, user: null, query: null, queryReason: null, seconds: null, kind: null, mode: null, object: null, blocked })
+
+describe('describeStatus', () => {
+  it('says nothing when the source is readable', () => {
+    expect(describeStatus(status('available'), 'les verrous')).toBeNull()
+  })
+
+  it('names the missing privilege', () => {
+    expect(describeStatus(status('permission_denied', { reason: 'insufficient_privilege', privilege: 'PROCESS' }), 'les verrous')).toBe('Le compte de la connexion n’a pas le droit de lire les verrous : il lui manque PROCESS.')
+  })
+
+  it('explains a switched-off source and says it is not an empty list', () => {
+    expect(describeStatus(status('disabled', { reason: 'performance_schema_off' }), 'les verrous')).toContain('performance_schema')
+    expect(describeStatus(status('disabled', { reason: 'performance_schema_off' }), 'les verrous')).toContain('ne veut pas dire')
+  })
+
+  it('explains a missing sys schema', () => {
+    const message = describeStatus(status('disabled', { reason: 'sys_schema_missing' }), 'les verrous')
+    expect(message).toContain('sys')
+    expect(message).toContain('ne veut pas dire')
+  })
+
+  it('says a check failed without knowing why, and never shows the reason code', () => {
+    const message = describeStatus(status('error', { reason: 'check_failed' }), 'les verrous')
+    expect(message).toContain('a échoué')
+    expect(message).toContain('ne veut pas dire')
+    expect(message).not.toContain('check_failed')
+  })
+
+  it('says the engine has no such source', () => {
+    expect(describeStatus(status('unsupported', { reason: 'not_supported' }), 'les verrous')).toBe('Ce moteur ne fournit pas les verrous.')
+  })
+
+  it('never shows an unknown reason as is', () => {
+    expect(describeStatus(status('disabled', { reason: 'something_else' }), 'les verrous')).not.toContain('something_else')
+  })
+})
+
+describe('formatSeconds', () => {
+  it.each([
+    [0, '0 s'],
+    [59, '59 s'],
+    [60, '1 min'],
+    [135, '2 min 15 s'],
+    [3600, '1 h'],
+    [3725, '1 h 2 min'],
+    [90000, '1 j 1 h'],
+  ])('writes %i seconds as %s', (seconds, text) => {
+    expect(formatSeconds(seconds)).toBe(text)
+  })
+})
+
+describe('isLongTransaction', () => {
+  it('flags a transaction at or above the threshold', () => {
+    expect(isLongTransaction(transaction({ seconds: 60 }), 60)).toBe(true)
+    expect(isLongTransaction(transaction({ seconds: 59 }), 60)).toBe(false)
+  })
+
+  it('treats a threshold of zero as flagging nothing wrongly: it flags all', () => {
+    expect(isLongTransaction(transaction({ seconds: 0 }), 0)).toBe(true)
+  })
+})
+
+describe('flattenBlocking', () => {
+  it('lists the tree depth first with the depth of each line', () => {
+    const lines = flattenBlocking([node('1', [node('2', [node('3')]), node('4')]), node('5')])
+
+    expect(lines.map((line) => [line.node.id, line.depth])).toEqual([['1', 0], ['2', 1], ['3', 2], ['4', 1], ['5', 0]])
+  })
+})
+
+describe('top queries helpers', () => {
+  it('explains each switched-off source of the digests', () => {
+    expect(describeStatus(status('disabled', { reason: 'extension_missing' }), 'les requêtes coûteuses')).toContain('pg_stat_statements')
+    expect(describeStatus(status('disabled', { reason: 'library_not_loaded' }), 'les requêtes coûteuses')).toContain('shared_preload_libraries')
+    expect(describeStatus(status('disabled', { reason: 'query_log_off' }), 'les requêtes coûteuses')).toContain('query_log')
+  })
+
+  it('gives the command to switch a source on, as text to read and never to run', () => {
+    expect(enableHint('extension_missing')).toContain('CREATE EXTENSION pg_stat_statements')
+    expect(enableHint('library_not_loaded')).toContain("shared_preload_libraries = 'pg_stat_statements'")
+    expect(enableHint('performance_schema_off')).toContain('performance_schema=ON')
+    expect(enableHint('something_else')).toBeNull()
+    expect(enableHint(null)).toBeNull()
+  })
+
+  it('formats milliseconds in the right unit', () => {
+    expect(formatMs(0.4)).toBe('0,4 ms')
+    expect(formatMs(12.34)).toBe('12 ms')
+    expect(formatMs(1500)).toBe('1,5 s')
+    expect(formatMs(150000)).toBe('2 min 30 s')
+  })
+
+  it('formats the ratio of rows examined over rows returned', () => {
+    expect(formatRatio(null)).toBe('')
+    expect(formatRatio(1)).toBe('1')
+    expect(formatRatio(1000)).toBe('1 000')
+    expect(formatRatio(2.5)).toBe('2,5')
+  })
+})
+
+describe('describeRestart', () => {
+  it('says what a restart changes, and says nothing when the engine does not', () => {
+    expect(describeRestart('required')).toBe('Redémarrage nécessaire')
+    expect(describeRestart('pending')).toBe('Valeur en attente de redémarrage')
+    expect(describeRestart(null)).toBe('')
+  })
+})
+
+describe('describeSource', () => {
+  it('names the usual origins in French and keeps an unknown one as the engine says it', () => {
+    expect(describeSource('COMPILED')).toBe('défaut compilé')
+    expect(describeSource('DYNAMIC')).toBe('modifiée à chaud')
+    expect(describeSource('COMPILE-TIME')).toBe('défaut compilé')
+    expect(describeSource('configuration file')).toBe('fichier de configuration')
+    expect(describeSource('weird')).toBe('weird')
+    expect(describeSource(null)).toBe('')
+  })
+})

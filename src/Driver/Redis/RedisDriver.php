@@ -6,6 +6,7 @@ namespace App\Driver\Redis;
 
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Driver;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
@@ -51,6 +52,7 @@ final readonly class RedisDriver implements Driver
                 $client->disconnect();
             },
             new RedisKeyValueStore($client),
+            diagnostics: new ServerDiagnostics($engine),
         );
     }
 }

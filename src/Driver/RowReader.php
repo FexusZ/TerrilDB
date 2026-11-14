@@ -52,6 +52,24 @@ final readonly class RowReader
         return null === ($this->row[$key] ?? null) ? null : $this->int($key);
     }
 
+    public function float(string $key): float
+    {
+        $value = $this->row[$key] ?? null;
+        if (\is_float($value) || \is_int($value)) {
+            return (float) $value;
+        }
+        if (\is_string($value) && is_numeric($value)) {
+            return (float) $value;
+        }
+
+        throw new \UnexpectedValueException(\sprintf('Column "%s" is not a number.', $key));
+    }
+
+    public function nullableFloat(string $key): ?float
+    {
+        return null === ($this->row[$key] ?? null) ? null : $this->float($key);
+    }
+
     public function bool(string $key): bool
     {
         $value = $this->row[$key] ?? null;

@@ -64,6 +64,16 @@ final class SchemaChangeServiceBigTableTest extends TestCase
                 return new TablePage([], null, 0);
             }
 
+            public function indexUsage(): \App\Core\Schema\IndexUsageReport
+            {
+                return \App\Core\Schema\IndexUsageReport::unavailable('not_supported');
+            }
+
+            public function autoCounters(): array
+            {
+                return [];
+            }
+
             public function describeTable(string $name): TableDefinition
             {
                 return $this->table;
