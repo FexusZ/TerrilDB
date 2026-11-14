@@ -24,6 +24,8 @@ use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Driver\LockConflict;
+use App\Core\Guard\Exception\ScriptTooLargeException;
+use App\Core\Guard\Exception\UnsplittableScriptException;
 use App\Core\KeyValue\Exception\InvalidKeyException;
 use App\Core\KeyValue\Exception\KeyNotFoundException;
 use App\Core\Optimizer\Exception\PlanNotAvailableException;
@@ -33,6 +35,9 @@ use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
 use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
+use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
+use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
+use App\Core\Query\Script\Exception\ScriptRefusedException;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
@@ -99,6 +104,11 @@ final class ErrorMapper
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
+            $error instanceof ScriptRefusedException => new ErrorResponse(403, 'script_refused', ['reason' => $error->reason->value, 'statement' => $error->statementIndex]),
+            $error instanceof ScriptNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_script', 'destructiveCount' => $error->destructiveCount]),
+            $error instanceof ScriptDryRunUnavailableException => new ErrorResponse(409, 'dry_run_unavailable', ['reason' => $error->reason]),
+            $error instanceof UnsplittableScriptException => new ErrorResponse(422, 'invalid_script', ['detail' => $error->getMessage()]),
+            $error instanceof ScriptTooLargeException => new ErrorResponse(422, 'script_too_large', ['detail' => $error->getMessage()]),
             $error instanceof InvalidDataChangeException => new ErrorResponse(422, 'invalid_data_change', ['detail' => $error->getMessage()]),
             $error instanceof DataChangeConflictException => new ErrorResponse(409, 'data_changed', ['statement' => $error->statementIndex, 'matched' => $error->matched]),
             $error instanceof DataChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'delete_rows'] + DataPlanPresenter::plan($error->plan)),

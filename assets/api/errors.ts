@@ -10,6 +10,7 @@ const REASONS: Record<string, string> = {
   unsupported_statement: 'Cette instruction n’est pas prise en charge (transaction, session, verrou…).',
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
+  destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -82,6 +83,21 @@ export function messageFor(error: unknown): string {
     case 'query_refused':
     case 'confirmation_required':
       return reasonText(error.details.reason)
+    case 'script_refused': {
+      const rank = typeof error.details.statement === 'number' ? error.details.statement + 1 : 0
+      return `L’instruction ${String(rank)} est refusée : ${reasonText(error.details.reason)} Rien n’a été exécuté.`
+    }
+    case 'invalid_script':
+      return 'Le script ne peut pas être découpé avec certitude : une chaîne, un commentaire ou un nom entre guillemets n’est pas refermé. Rien n’a été exécuté.'
+    case 'script_too_large':
+      return 'Le script est trop long (500 instructions et 1 Mo au plus).'
+    case 'dry_run_unavailable':
+      if (error.details.reason === 'non_transactional_tables') {
+        return 'Ce script écrit dans une table sans transaction (MyISAM, MEMORY…) : rien ne s’y annule, il ne peut pas être testé sans valider.'
+      }
+      return error.details.reason === 'implicit_commit'
+        ? 'Ce moteur valide la transaction à chaque instruction de structure : ce script ne peut pas être testé sans valider.'
+        : 'Ce moteur n’a pas de transaction : un script ne peut pas être testé sans valider.'
     case 'query_failed':
       return typeof error.details.message === 'string' ? error.details.message : GENERIC
     case 'invalid_schema_change':
