@@ -16,7 +16,7 @@ use Doctrine\DBAL\Connection;
  */
 final readonly class DbalDdlExecutor implements DdlExecutor
 {
-    public function __construct(private Connection $connection, private Engine $engine)
+    public function __construct(private Connection $connection, private Engine $engine, private int $lockTimeoutSeconds = 10)
     {
     }
 
@@ -33,7 +33,7 @@ final readonly class DbalDdlExecutor implements DdlExecutor
             if ($transactional) {
                 $pdo->exec('BEGIN');
             }
-            $pdo->exec(Engine::PostgreSql === $this->engine ? "SET LOCAL lock_timeout = '10s'" : 'SET SESSION lock_wait_timeout = 10');
+            $pdo->exec(Engine::PostgreSql === $this->engine ? \sprintf("SET LOCAL lock_timeout = '%ds'", $this->lockTimeoutSeconds) : \sprintf('SET SESSION lock_wait_timeout = %d', $this->lockTimeoutSeconds));
             foreach ($statements as $statement) {
                 $current = $statement;
                 $pdo->exec($statement->sql);
@@ -54,7 +54,7 @@ final readonly class DbalDdlExecutor implements DdlExecutor
             $info = \is_array($e->errorInfo) ? $e->errorInfo : [];
             $message = \is_string($info[2] ?? null) ? $info[2] : $e->getMessage();
 
-            throw new SchemaChangeFailedException(trim((string) preg_replace('/^ERROR:\s+/', '', $message)), $applied, $current ?? $statements[0], $e);
+            throw new SchemaChangeFailedException(trim((string) preg_replace('/^ERROR:\s+/', '', $message)), $applied, $current ?? $statements[0], $e, EngineLockConflict::of($this->engine, $e));
         }
     }
 }

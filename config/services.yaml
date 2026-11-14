@@ -16,11 +16,19 @@ parameters:
     env(TERRILDB_SESSION_IDLE_SECONDS): '0'
     env(TERRILDB_SESSION_MAX_SECONDS): '0'
     env(TERRILDB_ALLOWED_HOSTS): 'localhost,127.0.0.1,[::1]'
+    # Délai (secondes) après lequel le reverse proxy coupe la réponse ; la même valeur règle nginx (docker/prod/nginx.conf.template).
+    # Une durée demandée par un client ne peut pas dépasser ce délai moins une marge (RequestTimeLimit).
+    env(TERRILDB_PROXY_TIMEOUT): '120'
 
     # Envoi des invitations par e-mail : actif seulement si l'expéditeur ET l'adresse publique sont renseignés
     # (avec MAILER_DSN). Sans cela, l'administrateur transmet le lien lui-même.
     env(TERRILDB_MAIL_FROM): ''
     env(TERRILDB_PUBLIC_URL): ''
+
+    # Grosse table : au-delà de ce nombre de lignes ESTIMÉES (jamais un COUNT), modifier la structure affiche un avertissement ;
+    # au-delà du second seuil il faut en plus retaper le nom de la table. 0 désactive le seuil.
+    env(TERRILDB_BIG_TABLE_WARN_ROWS): '100000'
+    env(TERRILDB_BIG_TABLE_CONFIRM_ROWS): '1000000'
 
 services:
     # default configuration for services in *this* file
@@ -38,6 +46,15 @@ services:
             $from: '%env(TERRILDB_MAIL_FROM)%'
             $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
 
+    App\Http\Json\RequestTimeLimit:
+        arguments:
+            $proxyTimeoutSeconds: '%env(int:TERRILDB_PROXY_TIMEOUT)%'
+
+    App\Core\Schema\Change\BigTablePolicy:
+        arguments:
+            $warnAt: '%env(int:TERRILDB_BIG_TABLE_WARN_ROWS)%'
+            $confirmAt: '%env(int:TERRILDB_BIG_TABLE_CONFIRM_ROWS)%'
+
     App\Http\Web\RegistrationPolicy:
         arguments:
             $mode: '%env(APP_REGISTRATION)%'
@@ -46,6 +63,10 @@ services:
     # please note that last definitions always *replace* previous ones
 
 when@test:
+    parameters:
+        # Seuils bas pour que les tests n'aient pas à remplir des centaines de milliers de lignes
+        env(TERRILDB_BIG_TABLE_WARN_ROWS): '10'
+        env(TERRILDB_BIG_TABLE_CONFIRM_ROWS): '100'
     services:
         # Aucun service n'injecte encore le coffre : sans cela le conteneur compilé retire l'alias.
         App\Crypto\SessionKeyVault:

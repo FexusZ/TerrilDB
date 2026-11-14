@@ -23,6 +23,6 @@ function withScope<T extends object>(body: T, scope: StructureScope): T & Partia
 export const previewStructure = (id: string, table: string, request: StructureRequest, scope: StructureScope): Promise<StructurePreview> =>
   api<StructurePreview>('POST', url(id, table, 'preview'), withScope(request, scope))
 
-/** Applique le brouillon ; `confirmed` est exigé par le serveur pour ce qui détruit. Rend la nouvelle table (nulle si supprimée). */
-export const applyStructure = (id: string, table: string, request: StructureRequest & { confirmed: boolean }, scope: StructureScope): Promise<StructurePlan & { table: TableDetail | null }> =>
+/** Applique le brouillon ; `confirmed` est exigé par le serveur pour ce qui détruit, `confirmedTableName` (nom exact de la table) pour une table très volumineuse. Rend la nouvelle table (nulle si supprimée). */
+export const applyStructure = (id: string, table: string, request: StructureRequest & { confirmed: boolean; confirmedTableName?: string }, scope: StructureScope): Promise<StructurePlan & { table: TableDetail | null }> =>
   api<StructurePlan & { table: TableDetail | null }>('POST', url(id, table, 'apply'), withScope(request, scope))
