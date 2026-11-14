@@ -59,7 +59,7 @@ final readonly class DbalConnector
 
             return $connection;
         } catch (DbalException $e) {
-            throw TargetConnectionFailedException::create($e);
+            throw TargetConnectionFailedException::create($e, EngineFaultReader::ofConnection($engine, $e));
         }
     }
 }

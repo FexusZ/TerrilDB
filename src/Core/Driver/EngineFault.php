@@ -24,7 +24,7 @@ enum EngineFault: string
     private const RETRY_AFTER_SECONDS = 5;
 
     /**
-     * MySQL / MariaDB : 1040 (trop de connexions), 1203 (limite du compte), 1044 / 1142 / 1143 / 1227 / 1370 (droit refusé sur
+     * MySQL / MariaDB : 1040 (trop de connexions), 1203 et 1226 (limite du compte : connexions simultanées, ou autre ressource plafonnée), 1044 / 1142 / 1143 / 1227 / 1370 (droit refusé sur
      * base, table, colonne, privilège, routine), 1062 (doublon), 1045 (identifiants refusés), 3159 (transport non chiffré
      * interdit). PostgreSQL : SQLSTATE 53300, 42501, 23505, 28P01.
      */
@@ -32,7 +32,7 @@ enum EngineFault: string
     {
         return match ($engine) {
             Engine::MySql, Engine::MariaDb => match ($code) {
-                1040, 1203 => self::TooManyConnections,
+                1040, 1203, 1226 => self::TooManyConnections,
                 1044, 1142, 1143, 1227, 1370 => self::PermissionDenied,
                 1062 => self::DuplicateKey,
                 1045 => self::AuthenticationFailed,
@@ -66,6 +66,7 @@ enum EngineFault: string
             1 === preg_match('/no pg_hba\.conf entry.*no encryption|SSL\/TLS required|SSL (?:connection )?is required/i', $message) => self::AuthRequiresTls,
             1 === preg_match('/authentication failed|no password supplied/i', $message) => self::AuthenticationFailed,
             1 === preg_match('/too many clients|remaining connection slots are reserved|too many connections for/i', $message) => self::TooManyConnections,
+            1 === preg_match('/permission denied for database/i', $message) => self::PermissionDenied,
             default => null,
         };
     }

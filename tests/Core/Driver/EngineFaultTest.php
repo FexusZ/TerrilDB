@@ -20,6 +20,7 @@ final class EngineFaultTest extends TestCase
             $name = $engine->value;
             yield "$name too many connections" => [$engine, 'HY000', 1040, EngineFault::TooManyConnections];
             yield "$name user connection limit" => [$engine, '42000', 1203, EngineFault::TooManyConnections];
+            yield "$name account resource limit" => [$engine, 'HY000', 1226, EngineFault::TooManyConnections];
             yield "$name database access denied" => [$engine, '42000', 1044, EngineFault::PermissionDenied];
             yield "$name table access denied" => [$engine, '42000', 1142, EngineFault::PermissionDenied];
             yield "$name column access denied" => [$engine, '42000', 1143, EngineFault::PermissionDenied];
@@ -63,6 +64,8 @@ final class EngineFaultTest extends TestCase
         yield 'PostgreSQL bad password' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  password authentication failed for user "u"', EngineFault::AuthenticationFailed];
         yield 'PostgreSQL reserved slots' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  remaining connection slots are reserved for roles with the SUPERUSER attribute', EngineFault::TooManyConnections];
         yield 'PostgreSQL too many clients' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  sorry, too many clients already', EngineFault::TooManyConnections];
+        yield 'PostgreSQL role limit' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  too many connections for role "u"', EngineFault::TooManyConnections];
+        yield 'PostgreSQL no CONNECT right' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  permission denied for database "d"', EngineFault::PermissionDenied];
         yield 'PostgreSQL pg_hba without TLS wording is not TLS' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  no pg_hba.conf entry for host "x", user "u", database "d", SSL encryption', null];
         yield 'PostgreSQL refused connection is not a fault of this family' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 1 failed: Connection refused', null];
         yield 'PostgreSQL real SQLSTATE wins' => [Engine::PostgreSql, '28P01', 7, 'whatever', EngineFault::AuthenticationFailed];

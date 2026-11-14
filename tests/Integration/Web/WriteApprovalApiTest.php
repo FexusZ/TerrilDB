@@ -211,6 +211,20 @@ final class WriteApprovalApiTest extends WebApiTestCase
         self::assertSame(['error' => 'permission_denied'], $body);
     }
 
+    public function testADuplicateKeyThroughTheApiHasItsStableCodeAndNoEngineMessage(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup-secret-value')", $this->table)]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('duplicate_key', $body['error']);
+        self::assertFalse($body['retryable']);
+        self::assertArrayNotHasKey('message', $body);
+        self::assertStringNotContainsString('dup-secret-value', json_encode($body, \JSON_THROW_ON_ERROR));
+        self::assertSame('a', $this->value());
+    }
+
     public function testASingleStepTokenKeepsTheDirectBehaviourButStillChecksAGivenTicket(): void
     {
         $this->setUpToken(['writeData' => true, 'singleStep' => true]);
