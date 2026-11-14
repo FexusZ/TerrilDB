@@ -454,8 +454,7 @@ final class TargetOpenerTest extends DatabaseTestCase
         } catch (\App\Core\Connection\Tunnel\TooManyTunnelsException) {
         }
         // Le tunnel qui vient d'être ouvert pour rien est refermé.
-        self::assertSame($afterRefusal, $tunnels->closed);
-
+        self::assertSame(1, $tunnels->closed);
         $afterRefusal = $tunnels->closed;
         $bob = $this->user('bob');
         $bobKey = new DerivedKey(random_bytes(DerivedKey::LENGTH));
