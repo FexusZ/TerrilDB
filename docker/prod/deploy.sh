@@ -28,7 +28,9 @@ fi
 
 # Réglages propres à l'installation (domaine, port local) : fournis par l'environnement, puis conservés.
 if [ -n "${TERRILDB_DOMAIN:-}" ]; then
-    printf 'TERRILDB_DOMAIN=%s\nTERRILDB_PORT=%s\nTERRILDB_BIND=%s\n' "$TERRILDB_DOMAIN" "${TERRILDB_PORT:-8090}" "${TERRILDB_BIND:-127.0.0.1}" > "$dir/deploy.env"
+    # Le délai du proxy déjà réglé n'est pas perdu quand on réécrit le fichier.
+    kept_timeout="$(sed -n 's/^TERRILDB_PROXY_TIMEOUT=//p' "$dir/deploy.env" 2>/dev/null | head -n 1 || true)"
+    printf 'TERRILDB_DOMAIN=%s\nTERRILDB_PORT=%s\nTERRILDB_BIND=%s\nTERRILDB_PROXY_TIMEOUT=%s\n' "$TERRILDB_DOMAIN" "${TERRILDB_PORT:-8090}" "${TERRILDB_BIND:-127.0.0.1}" "${TERRILDB_PROXY_TIMEOUT:-${kept_timeout:-120}}" > "$dir/deploy.env"
     chmod 600 "$dir/deploy.env"
 fi
 if [ ! -e "$dir/deploy.env" ]; then
@@ -64,6 +66,9 @@ if TERRILDB_TAG="$tag" compose up -d --wait --remove-orphans app; then
     echo "$tag" > "$dir/current-tag"
     docker image prune -f >/dev/null
     echo "Déployé : $tag"
+    # nginx et l'application doivent tirer la même limite de durée de la même valeur ; un désaccord est signalé, sans faire échouer
+    # un déploiement qu'un retour à l'image précédente ne réparerait pas.
+    sh "$root/docker/prod/proxy-timeout.sh" check "${TERRILDB_NGINX_SITE:-/etc/nginx/sites-available/terrildb}" "${TERRILDB_PROXY_TIMEOUT:-120}" || true
     exit 0
 fi
 
