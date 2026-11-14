@@ -1,0 +1,38 @@
+[
+  {
+    "id": "recursive_ancestors",
+    "label": "WITH RECURSIVE : arbre des ancêtres",
+    "detail": "ancre, UNION ALL, jointure sur la CTE",
+    "requires": "recursive_cte",
+    "engines": ["mysql", "mariadb", "postgresql", "clickhouse"],
+    "body": "WITH RECURSIVE ${tree} AS (\n  SELECT ${id}, ${parent}, 1 AS depth FROM ${table} WHERE ${id} = ${start}\n  UNION ALL\n  SELECT t.${id}, t.${parent}, ${tree}.depth + 1 FROM ${table} t JOIN ${tree} ON t.${id} = ${tree}.${parent}\n)\nSELECT * FROM ${tree}",
+    "example": { "tree": "tree", "id": "id", "parent": "parent_id", "table": "categories", "start": "5" }
+  },
+  {
+    "id": "running_total",
+    "label": "Fonction de fenêtrage : cumul",
+    "detail": "SUM(x) OVER (ORDER BY … ROWS …)",
+    "requires": "window_functions",
+    "engines": ["mysql", "mariadb", "postgresql", "clickhouse"],
+    "body": "SELECT ${order_column}, ${value_column},\n  SUM(${value_column}) OVER (ORDER BY ${order_column} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total\nFROM ${table}\nORDER BY ${order_column}",
+    "example": { "order_column": "id", "value_column": "quantity", "table": "order_items" }
+  },
+  {
+    "id": "last_rows_per_parent",
+    "label": "JOIN LATERAL : n dernières lignes par parent",
+    "detail": "sous-requête corrélée avec LIMIT",
+    "requires": "lateral",
+    "engines": ["mysql", "postgresql"],
+    "body": "SELECT p.*, l.*\nFROM ${parent} p\nJOIN LATERAL (\n  SELECT c.* FROM ${child} c WHERE c.${foreign_key} = p.${parent_key} ORDER BY c.${order_column} DESC LIMIT ${n}\n) l ON TRUE",
+    "example": { "parent": "customers", "child": "orders", "foreign_key": "customer_id", "parent_key": "id", "order_column": "ordered_at", "n": "3" }
+  },
+  {
+    "id": "json_table_rows",
+    "label": "JSON_TABLE : un document JSON en lignes",
+    "detail": "JSON_TABLE(…, '$[*]' COLUMNS (…))",
+    "requires": "json_table",
+    "engines": ["mysql", "mariadb", "postgresql"],
+    "body": "SELECT jt.*\nFROM JSON_TABLE(${document}, '$[*]' COLUMNS (${field} INT PATH '$.${key}')) AS jt",
+    "example": { "document": "'[{\"v\": 1}, {\"v\": 2}]'", "field": "v", "key": "v" }
+  }
+]
