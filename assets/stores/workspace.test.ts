@@ -715,6 +715,15 @@ describe('workspace store capabilities', () => {
     expect(store.capabilities).toBeNull()
   })
 
+  it('stays unknown when the answer carries no capabilities', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({})
+
+    await store.loadCapabilities()
+
+    expect(store.capabilities).toBeNull()
+  })
+
   it('does not ask a key-value connection', async () => {
     useConnectionsStore().items = [{ id: 'conn-r', name: 'Cache', engine: 'redis', createdAt: '', updatedAt: '' }]
     mocked.mockResolvedValueOnce({ keys: [], nextCursor: null, total: 0 })

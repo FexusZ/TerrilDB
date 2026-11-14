@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippetCompletion, type CompletionContext } from '@codemirror/autocomplete'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { MariaSQL, MySQL, PostgreSQL, StandardSQL, sql } from '@codemirror/lang-sql'
 import { bracketMatching, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -8,12 +8,14 @@ import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } f
 import { tags } from '@lezer/highlight'
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Engine } from '../api/types'
+import type { Snippet } from '../utils/snippets'
 
-const props = defineProps<{ modelValue: string; dialect: Engine; tables: string[] }>()
+const props = withDefaults(defineProps<{ modelValue: string; dialect: Engine; tables: string[]; snippets?: Snippet[] }>(), { snippets: () => [] })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; run: [] }>()
 
 const host = ref<HTMLElement | null>(null)
 const language = new Compartment()
+const snippetSource = new Compartment()
 let view: EditorView | null = null
 let applyingExternalChange = false
 
@@ -21,6 +23,25 @@ const DIALECTS = { postgresql: PostgreSQL, mysql: MySQL, mariadb: MariaSQL, clic
 
 function languageFor() {
   return sql({ dialect: DIALECTS[props.dialect], upperCaseKeywords: true, schema: Object.fromEntries(props.tables.map((table) => [table, []])) })
+}
+
+/**
+ * Les extraits déjà filtrés par moteur et par capacité (voir `utils/snippets`) : choisir l'un d'eux INSÈRE le squelette avec ses
+ * champs à remplir (Tab passe au suivant), rien n'est exécuté.
+ */
+function snippetsExtension(snippets: Snippet[]) {
+  const options = snippets.map((snippet) => snippetCompletion(snippet.body, { label: snippet.label, detail: snippet.detail, type: 'text', boost: -1 }))
+
+  return EditorState.languageData.of(() => [{
+    autocomplete: (context: CompletionContext) => {
+      const word = context.matchBefore(/[\w ]*/)
+      if (options.length === 0 || word === null || (word.from === word.to && !context.explicit)) {
+        return null
+      }
+
+      return { from: word.from, options, validFor: /^[\w ]*$/ }
+    },
+  }])
 }
 
 const theme = EditorView.theme(
@@ -66,6 +87,7 @@ onMounted(() => {
         closeBrackets(),
         autocompletion(),
         language.of(languageFor()),
+        snippetSource.of(snippetsExtension(props.snippets)),
         theme,
         syntaxHighlighting(highlight),
         EditorView.contentAttributes.of({ 'aria-label': 'Éditeur de requête SQL' }),
@@ -93,6 +115,11 @@ watch(
       applyingExternalChange = false
     }
   },
+)
+
+watch(
+  () => props.snippets,
+  (snippets) => view?.dispatch({ effects: snippetSource.reconfigure(snippetsExtension(snippets)) }),
 )
 
 watch(

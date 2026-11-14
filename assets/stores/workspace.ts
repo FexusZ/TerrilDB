@@ -335,9 +335,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     }
     capabilitiesLoaded = id
     try {
-      const answer = await api<{ capabilities: Record<string, boolean> }>('GET', `/web/connections/${id}/capabilities`)
+      const answer = await api<{ capabilities?: Record<string, boolean> }>('GET', `/web/connections/${id}/capabilities`)
       if (capabilitiesLoaded === id) {
-        capabilities.value = answer.capabilities
+        capabilities.value = answer.capabilities ?? null
       }
     } catch {
       if (capabilitiesLoaded === id) {
