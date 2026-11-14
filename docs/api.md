@@ -8,8 +8,10 @@ Un jeton « toutes mes connexions » couvre celles du compte au moment de sa cr�
 l'interface y ajoute ensuite les connexions créées depuis (et retire les supprimées) sans changer le texte du jeton,
 donc sans rien reconfigurer côté client. Il est
 supprimé quand le mot de passe du compte change. Par défaut un jeton ne fait que lire : une écriture sur `/query` est refusée par le filtre puis, en dernier recours, par le moteur
-lui-même (transaction en lecture seule). Quatre droits se cochent à la création et ne changent plus (on émet un autre jeton) :
-`writeData`, `writeSchema`, `createConnections` (voir plus bas) et `diagnostic` (supervision du serveur, lecture seule, voir « Diagnostics »).
+lui-même (transaction en lecture seule). Six droits se cochent à la création et ne changent plus (on émet un autre jeton) :
+`writeData`, `writeSchema`, `createConnections` (voir plus bas), `diagnostic` (supervision du serveur, lecture seule, voir « Diagnostics »),
+`readSchema` (liste des bases et des schémas) et `export` (voir « Lecture à cocher »). Tous sont refusés par défaut ; un jeton émis avant
+l'arrivée d'un droit ne l'a pas (aucun élargissement implicite) et un jeton ne gère jamais d'autres jetons.
 
 | Méthode | Chemin | Rôle |
 | --- | --- | --- |
@@ -27,6 +29,9 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/queries?order=&limit=` | (droit `diagnostic`) les requêtes les plus coûteuses par empreinte, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/variables` | (droit `diagnostic`) variables de configuration, lecture seule : `q` (morceau de nom), `changed=1`, `limit` (1 à 500, 100 par défaut) |
+| GET | `/api/v1/connections/{id}/databases` | (droit `readSchema`) les bases du serveur que le compte voit : `default`, `databases[]` `{name, system}` ; bases du moteur masquées sauf `?system=1` |
+| GET | `/api/v1/connections/{id}/schemas` | (droit `readSchema`) les schémas d'une base (PostgreSQL ; 501 `unsupported_operation` ailleurs) : `?database=`, `?system=1` |
+| POST | `/api/v1/connections/{id}/export` | (droit `export`) exporte le résultat d'UNE lecture : `sql`, `format` (`csv` ou `json`), `bom?`, `maxRows` (10 000 par défaut, 100 000 au plus), `timeoutMs` ; réponse = le fichier, en-tête `X-TerrilDB-Truncated: 1` si coupé |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
@@ -54,6 +59,14 @@ l'opération entière : relire la table, puis refaire ce qui manque. `retryable:
 annulée en entier). `serialization_failure` (SQLSTATE PostgreSQL 40001) : deux transactions simultanées ne pouvaient pas rester cohérentes, le moteur
 a annulé celle-ci ; même conduite que `deadlock` (on rejoue l'opération entière), mais ce n'est pas un interblocage. Un délai d'exécution reste `query_timeout`. Les autres échecs d'écriture
 (`data_change_failed`, `schema_change_failed`) portent `retryable: false`.
+
+## Lecture à cocher
+
+Sans droit, `403 permission_denied` (avant même de regarder la connexion). Chaque case est indépendante des autres et ne donne jamais d'écriture.
+`readSchema` : listes de bases et de schémas seulement, aucune donnée de table ; audit `schema.read` (sujet, `topic`, moteur, nombre de lignes, jamais la
+liste). `export` : mêmes garde-fous, lecture seule et audit que `/query` (`purpose: export`, `format`) mais jusqu'à 100 000 lignes : c'est une sortie
+en masse, d'où une case à part. Le contenu exporté vient de la base : une donnée, jamais une instruction. À venir (issue #37) : diagramme, audit du schéma et
+plan d'exécution (`readSchema`), `editData`, `editStructure`, `manageConnections`, `readHistory`, validation humaine par jeton, limites de débit réglables.
 
 ## Écrire
 
