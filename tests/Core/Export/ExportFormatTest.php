@@ -14,7 +14,7 @@ final class ExportFormatTest extends TestCase
     {
         self::assertSame(ExportFormat::Csv, ExportFormat::tryFrom('csv'));
         self::assertSame(ExportFormat::Json, ExportFormat::tryFrom('json'));
-        self::assertNull(ExportFormat::tryFrom('xml'));
+        self::assertSame(['csv', 'json'], array_map(static fn (ExportFormat $f): string => $f->value, ExportFormat::cases()));
     }
 
     public function testRendersWithTheMatchingExporter(): void
