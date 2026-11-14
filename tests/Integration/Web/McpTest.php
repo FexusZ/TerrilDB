@@ -30,7 +30,7 @@ final class McpTest extends WebApiTestCase
         $body = ['name' => 'Target', 'engine' => TargetDatabase::engine($envVar)->value, 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
         $this->connectionId = $this->idOf($this->call('POST', '/web/connections', $body)['connection']);
         $this->otherConnectionId = $this->idOf($this->call('POST', '/web/connections', ['name' => 'Other'] + $body)['connection']);
-        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId]] + $rights);
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Assistant', 'connectionIds' => [$this->connectionId]] + $this->legacyRights($rights));
         self::assertIsString($created['token']);
         $this->token = $created['token'];
         $this->client->getCookieJar()->clear();
@@ -59,6 +59,19 @@ final class McpTest extends WebApiTestCase
         self::assertIsString($value);
 
         return $value;
+    }
+
+    /**
+     * Ces tests couvrent l'écriture directe : leurs jetons d'écriture choisissent « une seule étape » (le défaut est
+     * prepare puis execute, voir WriteApprovalApiTest et les tests de confirmation ci-dessous).
+     *
+     * @param array<string, bool> $rights
+     *
+     * @return array<string, bool>
+     */
+    private function legacyRights(array $rights): array
+    {
+        return ($rights['writeData'] ?? false) || ($rights['writeSchema'] ?? false) ? $rights + ['singleStep' => true] : $rights;
     }
 
     private function idOf(mixed $entity): string
@@ -281,7 +294,7 @@ final class McpTest extends WebApiTestCase
         $message = $this->post(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
         foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
             $tool = self::obj($tool);
-            if ('execute_statement' === $tool['name']) {
+            if (\in_array($tool['name'], ['execute_statement', 'execute_script'], true)) {
                 self::assertFalse(self::obj($tool['annotations'])['readOnlyHint']);
                 self::assertTrue(self::obj($tool['annotations'])['destructiveHint']);
             } else {
@@ -318,6 +331,237 @@ final class McpTest extends WebApiTestCase
         $schema = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => 'create table sneaky (a int)']);
         self::assertTrue($schema['isError']);
         self::assertStringContainsString('write_not_permitted', self::str(self::obj(self::first($schema['content']))['text']));
+    }
+
+    public function testATokenWithoutTheDiagnosticRightDoesNotSeeTheSessionsTool(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'createConnections' => true]);
+        $this->initialize();
+        self::assertNotContains('list_sessions', $this->toolNames());
+        self::assertNotContains('list_locks', $this->toolNames());
+        self::assertNotContains('top_queries', $this->toolNames());
+        self::assertNotContains('list_variables', $this->toolNames());
+        $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
+        self::assertArrayNotHasKey('structuredContent', $refused);
+    }
+
+    public function testATokenWithTheDiagnosticRightSeesTheSessionsTool(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_sessions', $this->toolNames());
+    }
+
+    public function testListsTheSessionsThroughMcpWithoutWriting(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        $report = self::textOf($this->callTool('list_sessions', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertNotEmpty($report['sessions']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_sessions', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+        self::assertStringContainsString('not_found', self::str(self::obj(self::first($other['content']))['text']));
+    }
+
+    public function testListsTheLocksThroughMcpWithoutKilling(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_locks', $this->toolNames());
+        $report = self::textOf($this->callTool('list_locks', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertArrayHasKey('blocking', $report);
+        self::assertArrayHasKey('transactions', $report);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_locks', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+    }
+
+    public function testListsTheCostliestQueriesThroughMcpWithoutWriting(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('top_queries', $this->toolNames());
+        $report = self::textOf($this->callTool('top_queries', ['connection' => $this->connectionId, 'order' => 'calls', 'limit' => 3]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertSame('calls', $report['order']);
+        self::assertNotEmpty($report['digests']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $bad = $this->callTool('top_queries', ['connection' => $this->connectionId, 'limit' => 500]);
+        // Le schéma de l'outil borne déjà la limite ; le cœur la borne encore si le client ne le respecte pas.
+        self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'An out-of-bounds limit must not run.');
+        self::assertArrayNotHasKey('structuredContent', $bad);
+
+        $other = $this->callTool('top_queries', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+    }
+
+    public function testListsTheVariablesThroughMcpWithoutSettingAnything(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_variables', $this->toolNames());
+        $report = self::textOf($this->callTool('list_variables', ['connection' => $this->connectionId, 'search' => 'ssl_key', 'changedOnly' => false, 'limit' => 5]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        $variable = self::obj(self::first($report['variables']));
+        self::assertTrue($variable['masked']);
+        self::assertNull($variable['value']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_variables', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+
+        $bad = $this->callTool('list_variables', ['connection' => $this->connectionId, 'limit' => 0]);
+        self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'A limit out of bounds is refused.');
+    }
+
+    public function testAReadOnlyTokenDoesNotSeePrepareStatement(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('prepare_statement', $this->toolNames());
+    }
+
+    public function testAWritingTokenSeesPrepareStatement(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => false]);
+        $this->initialize();
+
+        self::assertContains('prepare_statement', $this->toolNames());
+    }
+
+    public function testATwoStepTokenWritesOnlyWithAPreparationTicket(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => false]);
+        $this->initialize();
+        $sql = 'update categories set name = name where id = 1';
+
+        $direct = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql]);
+        self::assertTrue($direct['isError']);
+        self::assertStringContainsString('preparation_required', self::str(self::obj(self::first($direct['content']))['text']));
+
+        $prepared = self::textOf($this->callTool('prepare_statement', ['connection' => $this->connectionId, 'sql' => $sql]));
+        self::assertSame(['allowed', 'normal'], [$prepared['decision'], $prepared['danger']]);
+        self::assertIsString($prepared['confirmationToken']);
+
+        $done = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql, 'confirmationToken' => $prepared['confirmationToken']]));
+        self::assertSame(1, $done['affectedRows']);
+
+        $replay = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql, 'confirmationToken' => $prepared['confirmationToken']]);
+        self::assertTrue($replay['isError']);
+        self::assertStringContainsString('invalid_confirmation', self::str(self::obj(self::first($replay['content']))['text']));
+    }
+
+    public function testATicketDoesNotCoverAChangedStatementNorADestructiveOneWithoutConfirmed(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => false]);
+        $this->initialize();
+        $sql = 'update categories set name = name where id = 1';
+        $ticket = self::textOf($this->callTool('prepare_statement', ['connection' => $this->connectionId, 'sql' => $sql]))['confirmationToken'];
+
+        $changed = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $sql.' ', 'confirmationToken' => $ticket]);
+        self::assertTrue($changed['isError']);
+        self::assertStringContainsString('invalid_confirmation', self::str(self::obj(self::first($changed['content']))['text']));
+
+        $wide = 'update categories set name = name';
+        $prepared = self::textOf($this->callTool('prepare_statement', ['connection' => $this->connectionId, 'sql' => $wide]));
+        self::assertSame(['needs_confirmation', 'destructive'], [$prepared['decision'], $prepared['danger']]);
+        $asked = $this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $wide, 'confirmationToken' => $prepared['confirmationToken']]);
+        self::assertTrue($asked['isError']);
+        self::assertStringContainsString('confirmation_required', self::str(self::obj(self::first($asked['content']))['text']));
+        $confirmed = self::textOf($this->callTool('execute_statement', ['connection' => $this->connectionId, 'sql' => $wide, 'confirmationToken' => $prepared['confirmationToken'], 'confirmed' => true]));
+        self::assertGreaterThan(0, $confirmed['affectedRows']);
+    }
+
+    public function testScriptToolsAreOnlyForWritingTokens(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('prepare_script', $this->toolNames());
+        self::assertNotContains('execute_script', $this->toolNames());
+    }
+
+    public function testAWritingTokenSeesTheScriptTools(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => true]);
+        $this->initialize();
+
+        self::assertContains('prepare_script', $this->toolNames());
+        self::assertContains('execute_script', $this->toolNames());
+    }
+
+    public function testAScriptNeedsATicketEvenForASingleStepToken(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'singleStep' => true]);
+        $this->initialize();
+        $script = 'update categories set name = name where id = 1; update categories set name = name where id = 2';
+
+        $direct = $this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script]);
+        self::assertTrue($direct['isError']);
+        self::assertStringContainsString('preparation_required', self::str(self::obj(self::first($direct['content']))['text']));
+
+        $prepared = self::textOf($this->callTool('prepare_script', ['connection' => $this->connectionId, 'script' => $script]));
+        self::assertSame(['allowed', 2], [$prepared['decision'], \count(self::list($prepared['steps']))]);
+        $done = self::textOf($this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken']]));
+        self::assertSame('committed', $done['status']);
+
+        $replay = $this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken']]);
+        self::assertTrue($replay['isError']);
+        self::assertStringContainsString('invalid_confirmation', self::str(self::obj(self::first($replay['content']))['text']));
+    }
+
+    public function testAScriptToolDurationStaysWithinWhatTheProxyAllows(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+
+        $message = $this->post(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+        $schema = null;
+        foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
+            if ('execute_script' === self::str(self::obj($tool)['name'])) {
+                $schema = self::obj(self::obj(self::obj(self::obj($tool)['inputSchema'])['properties'])['timeoutMs']);
+            }
+        }
+        self::assertNotNull($schema);
+        self::assertSame(100_000, $schema['maximum']);
+
+        $script = 'update categories set name = name where id = 1';
+        $prepared = self::textOf($this->callTool('prepare_script', ['connection' => $this->connectionId, 'script' => $script]));
+        $refused = $this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken'], 'timeoutMs' => 100_001]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'A duration above the proxy limit must not run.');
+
+        $done = self::textOf($this->callTool('execute_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken'], 'timeoutMs' => 100_000]));
+        self::assertSame('committed', $done['status'], 'The refused call did not burn the ticket.');
+    }
+
+    public function testAScriptWithAStatementTheTokenMayNotRunIsRefusedWhole(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+
+        $refused = $this->callTool('prepare_script', ['connection' => $this->connectionId, 'script' => 'update categories set name = name where id = 1; create table sneaky (a int)']);
+
+        self::assertTrue($refused['isError']);
+        $text = self::str(self::obj(self::first($refused['content']))['text']);
+        self::assertStringContainsString('script_refused', $text);
+        self::assertStringContainsString('write_not_permitted', $text);
     }
 
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void
@@ -481,5 +725,26 @@ final class McpTest extends WebApiTestCase
         ]]);
 
         self::assertStringContainsString('no-store', (string) $this->client->getResponse()->headers->get('Cache-Control'));
+    }
+
+    public function testTheDurationOfAnToolCallStaysWithinWhatTheProxyAllows(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $message = $this->post(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+        $run = null;
+        foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
+            if ('run_query' === self::str(self::obj($tool)['name'])) {
+                $run = self::obj($tool);
+            }
+        }
+        self::assertNotNull($run);
+        $timeout = self::obj(self::obj(self::obj($run['inputSchema'])['properties'])['timeoutMs']);
+        self::assertSame(100_000, $timeout['maximum']);
+
+        $refused = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select 1', 'timeoutMs' => 100_001]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'A duration above the proxy limit must not run.');
+        self::assertArrayNotHasKey('structuredContent', $refused);
     }
 }

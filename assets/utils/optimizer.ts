@@ -28,6 +28,16 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `La clé étrangère de « ${finding.table} » sur ${finding.columns.join(', ')} n’a pas le type de la colonne qu’elle référence${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Pour comparer les deux colonnes, le moteur convertit celle de cette table sur chaque ligne : son index ne sert plus dans les jointures ni dans les recherches par la clé. Lui donner le type de la colonne référencée règle le problème ; la modification réécrit la colonne, à planifier sur une grosse table.',
       }
+    case 'text_primary_key':
+      return {
+        title: `La clé primaire de « ${finding.table} » (${finding.columns.join(', ')}) est un UUID rangé en texte${finding.detail === null ? '' : ` (${finding.detail})`}.`,
+        help: 'À vérifier : si ces valeurs sont bien des UUID, le texte occupe 36 octets au lieu de 16, et InnoDB recopie la clé primaire dans chaque index secondaire. Le type natif (uuid sur PostgreSQL, BINARY(16) avec UUID_TO_BIN sur MySQL et MariaDB) allège la table et ses index ; la conversion réécrit la colonne et les clés étrangères qui la référencent, à planifier.',
+      }
+    case 'float_amount':
+      return {
+        title: `La colonne « ${finding.columns.join(', ')} » de « ${finding.table} » est un nombre à virgule flottante${finding.detail === null ? '' : ` (${finding.detail})`} alors que son nom évoque une somme d’argent.`,
+        help: 'À vérifier, d’après le nom seul : un flottant binaire n’écrit pas exactement 0,10 et les écarts d’arrondi s’accumulent dans les sommes et les comparaisons. Pour de l’argent, DECIMAL (numeric sur PostgreSQL) est exact ; la conversion réécrit la colonne, à planifier sur une grosse table.',
+      }
     case 'unused_index':
       return {
         title: `L’index « ${finding.index ?? ''} » de « ${finding.table} » n’a servi à aucune lecture${finding.detail === null ? '' : ` (${finding.detail})`}.`,
@@ -69,8 +79,16 @@ export function describeCheck(check: AuditCheck): string {
 export function describePlanFinding(finding: PlanFindingInfo): string {
   const rows = finding.rows === null ? '' : ` (${formatEstimate(finding.rows)} lignes)`
   const condition = finding.condition === null ? '' : `, filtré par ${finding.condition}`
+  const table = `« ${finding.relation ?? 'la table'} »`
 
-  return `Parcours complet de « ${finding.relation ?? 'la table'} »${rows}${condition}. Un index sur les colonnes filtrées peut l’éviter.`
+  switch (finding.rule) {
+    case 'large_sort':
+      return `Tri de ${table}${rows} sans LIMIT. Ce tri n’indique pas un accès disque, mais il lit et ordonne toutes les lignes : un index sur les colonnes triées, ou une limite, peut l’éviter. Estimation du moteur.`
+    case 'leading_wildcard':
+      return `Parcours complet de ${table}${rows}${condition}. Un LIKE dont le motif commence par un joker (%) ne peut pas s’appuyer sur un index ordinaire : chercher un début de texte, ou un index de recherche plein texte, selon le moteur.`
+    default:
+      return `Parcours complet de ${table}${rows}${condition}. Un index sur les colonnes filtrées peut l’éviter.`
+  }
 }
 
 const KINDS: Record<Exclude<PlanKind, 'other'>, string> = {

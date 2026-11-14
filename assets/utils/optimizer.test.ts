@@ -22,6 +22,20 @@ describe('optimizer wording', () => {
     expect(mismatch.help).toContain('convertit')
   })
 
+  it('words a text primary key that looks like an UUID', () => {
+    const text = describeSchemaFinding(finding({ rule: 'text_primary_key', table: 'accounts', columns: ['id'], detail: 'char(36)' }))
+    expect(text.title).toBe('La clé primaire de « accounts » (id) est un UUID rangé en texte (char(36)).')
+    expect(text.help).toContain('BINARY(16)')
+    expect(text.help).toContain('À vérifier')
+  })
+
+  it('words a money column stored as a float, flagged as a guess', () => {
+    const money = describeSchemaFinding(finding({ rule: 'float_amount', severity: 'info', table: 'invoices', columns: ['price'], detail: 'double' }))
+    expect(money.title).toBe('La colonne « price » de « invoices » est un nombre à virgule flottante (double) alors que son nom évoque une somme d’argent.')
+    expect(money.help).toContain('DECIMAL')
+    expect(money.help).toContain('À vérifier')
+  })
+
   it('words an index never read, with the observed duration and the reset caveat', () => {
     const unused = describeSchemaFinding(finding({ rule: 'unused_index', severity: 'info', table: 'orders', columns: ['a'], index: 'idx_a', detail: 'aucune lecture en 12 jours' }))
 
@@ -48,6 +62,18 @@ describe('optimizer wording', () => {
     expect(describePlanFinding(base)).toMatch(/Parcours complet de « orders » \(~\s?11\s?420 lignes\)/)
     expect(describePlanFinding(base)).toContain('(status = 1)')
     expect(describePlanFinding({ ...base, condition: null })).not.toContain('condition')
+  })
+
+  it('words the sort and wildcard findings with the right caution', () => {
+    const sort = describePlanFinding({ rule: 'large_sort', relation: 'order_items', rows: 7000, condition: null })
+    expect(sort).toMatch(/Tri de « order_items » \(~\s?7\s?000 lignes\)/)
+    expect(sort).toContain('LIMIT')
+    expect(sort).toContain('index')
+
+    const like = describePlanFinding({ rule: 'leading_wildcard', relation: 'customers', rows: 1000, condition: "(email like '%a%')" })
+    expect(like).toMatch(/joker/)
+    expect(like).toContain("(email like '%a%')")
+    expect(like).not.toContain('Un index sur les colonnes filtrées peut l’éviter')
   })
 
   it('names the kinds of operation', () => {
