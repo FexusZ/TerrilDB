@@ -324,4 +324,32 @@ describe('QueryPane', () => {
     expect(wrapper.get('[role="alert"]').text()).toContain('lecture seule')
     wrapper.unmount()
   })
+
+  it('opens the script panel on the text of the editor, with the explored base', async () => {
+    const { wrapper, store } = await mountPane()
+    store.database = 'shop'
+    await wrapper.get('.stub').setValue('select 1; select 2')
+    expect(wrapper.find('section[aria-label="Exécuter un script"]').exists()).toBe(false)
+
+    await wrapper.get('button.script-toggle').trigger('click')
+    mocked.mockResolvedValueOnce({ steps: [], canRun: true, needsConfirmation: false, destructiveCount: 0, firstRefused: null, transactional: true, atomic: true, dryRun: { available: true, reason: null }, warnings: [] })
+    await wrapper.get('button.preview').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('button.script-toggle').attributes('aria-pressed')).toBe('true')
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/abc/script/preview', { script: 'select 1; select 2', database: 'shop' })
+    wrapper.unmount()
+  })
+
+  it('offers no script panel on Redis, which does not speak SQL', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useConnectionsStore().items = [{ id: 'r1', name: 'Cache', engine: 'redis', createdAt: '', updatedAt: '' }]
+    mocked.mockResolvedValueOnce({ tables: [] })
+    await useWorkspaceStore().open('r1')
+    const wrapper = mount(QueryPane, { global: { plugins: [pinia], stubs: { SqlEditor: EditorStub } }, attachTo: document.body })
+
+    expect(wrapper.find('button.script-toggle').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

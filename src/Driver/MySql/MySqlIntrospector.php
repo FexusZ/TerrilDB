@@ -6,11 +6,14 @@ namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsage;
+use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\LockReason;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
@@ -21,6 +24,7 @@ use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 
 /**
  * Introspection de MySQL et MariaDB par information_schema, dans la base de la connexion. Les noms de tables
@@ -130,6 +134,71 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
     }
 
+    /**
+     * Lectures par index depuis performance_schema (jamais sys, qui n'existe pas partout). La collecte part du démarrage du
+     * serveur (ou d'une remise à zéro de la table) : la durée donnée est l'uptime, jamais un faux « depuis toujours ». Éteint
+     * (MariaDB l'est par défaut), instrument coupé ou droit manquant : un état indisponible, pas une erreur.
+     */
+    public function indexUsage(): IndexUsageReport
+    {
+        try {
+            $enabled = $this->connection->fetchOne('SELECT @@performance_schema');
+            if (!\is_scalar($enabled) || 1 !== (int) $enabled) {
+                return IndexUsageReport::unavailable('performance_schema_off');
+            }
+            $instrument = $this->connection->fetchOne("SELECT ENABLED FROM performance_schema.setup_instruments WHERE NAME = 'wait/io/table/sql/handler'");
+            if ('YES' !== $instrument) {
+                return IndexUsageReport::unavailable('instrument_off');
+            }
+            $uptime = $this->connection->fetchAssociative("SHOW GLOBAL STATUS LIKE 'Uptime'");
+            $rows = $this->connection->fetchAllAssociative(
+                'SELECT OBJECT_NAME AS tbl, INDEX_NAME AS idx, COUNT_READ AS read_count
+                   FROM performance_schema.table_io_waits_summary_by_index_usage
+                  WHERE OBJECT_SCHEMA = DATABASE() AND INDEX_NAME IS NOT NULL
+                  ORDER BY OBJECT_NAME, INDEX_NAME',
+            );
+        } catch (DriverException $e) {
+            return IndexUsageReport::unavailable(\in_array($e->getCode(), [1044, 1142, 1143, 1227], true) ? 'permission_denied' : 'unreadable');
+        }
+
+        $usages = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $usages[] = new IndexUsage($row->string('tbl'), $row->string('idx'), $row->int('read_count'));
+        }
+
+        return IndexUsageReport::available(false === $uptime ? 0 : (new RowReader($uptime))->int('Value'), $usages);
+    }
+
+    public function autoCounters(): array
+    {
+        // MySQL 8 garde AUTO_INCREMENT en cache jusqu'à 24 h (information_schema_stats_expiry) : on veut la valeur du moment.
+        // MariaDB n'a pas cette variable et lit toujours à jour.
+        try {
+            $this->connection->executeStatement('SET SESSION information_schema_stats_expiry = 0');
+        } catch (\Throwable) {
+        }
+
+        // AUTO_INCREMENT est la PROCHAINE valeur : la dernière attribuée en est le précédent (en décimal, un BIGINT UNSIGNED
+        // dépasse l'entier de PHP). Une table sans ligne ni compteur n'a rien à dire.
+        $rows = $this->connection->fetchAllAssociative(
+            "SELECT t.TABLE_NAME AS tbl, c.COLUMN_NAME AS col, CAST(t.AUTO_INCREMENT AS DECIMAL(21, 0)) - 1 AS used
+               FROM information_schema.TABLES t
+               JOIN information_schema.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME
+              WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE' AND t.AUTO_INCREMENT IS NOT NULL
+                AND c.EXTRA LIKE '%auto_increment%'
+              ORDER BY t.TABLE_NAME",
+        );
+
+        $counters = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $counters[] = new AutoCounter($row->string('tbl'), $row->string('col'), $row->string('used'));
+        }
+
+        return $counters;
+    }
+
     public function describeTable(string $name): TableDefinition
     {
         $header = $this->connection->fetchAssociative(
@@ -162,7 +231,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 
     private static function kind(string $type): TableKind
     {
-        return 'VIEW' === $type ? TableKind::View : TableKind::Table;
+        return match ($type) {
+            'VIEW' => TableKind::View,
+            'SEQUENCE' => TableKind::Sequence,
+            default => TableKind::Table,
+        };
     }
 
     /**
