@@ -63,4 +63,13 @@ final readonly class DiagnosticsController
 
         return new JsonResponse(DiagnosticsPresenter::health($report));
     }
+
+    #[Route('/web/connections/{id}/diagnostics/logs', requirements: self::ID, methods: ['GET'])]
+    public function logs(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        [$error, $slow] = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->logs($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::logs($error, $slow));
+    }
 }

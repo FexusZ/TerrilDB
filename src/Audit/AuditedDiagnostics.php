@@ -10,6 +10,8 @@ use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\Health\HealthSampler;
 use App\Core\Diagnostics\Health\HealthSlots;
 use App\Core\Diagnostics\LockReport;
+use App\Core\Diagnostics\Log\ErrorLogReport;
+use App\Core\Diagnostics\Log\SlowQueryReport;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Driver\TargetConnection;
 use Symfony\Component\Uid\Uuid;
@@ -86,5 +88,37 @@ final readonly class AuditedDiagnostics
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'seconds' => $seconds, 'discarded' => null !== $report->discarded]);
 
         return $report;
+    }
+
+    /**
+     * Journaux du serveur : le journal d'audit garde l'état et le nombre de lignes de chaque source, JAMAIS une ligne ni un texte
+     * (un journal d'erreurs ou de requêtes lentes peut citer des comptes, des adresses, des valeurs).
+     *
+     * @return array{ErrorLogReport, SlowQueryReport}
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function logs(AuditContext $context, Uuid $connectionId, TargetConnection $target): array
+    {
+        $base = ['topic' => 'logs', 'engine' => $target->engine->value];
+
+        try {
+            $logs = $target->diagnostics()->logs();
+            $error = $logs->errorLog();
+            $slow = $logs->slowQueries();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + [
+            'errorStatus' => $error->status->availability->value,
+            'errorRows' => \count($error->entries),
+            'slowStatus' => $slow->status->availability->value,
+            'slowRows' => \count($slow->queries),
+        ]);
+
+        return [$error, $slow];
     }
 }

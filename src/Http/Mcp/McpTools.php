@@ -156,6 +156,19 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function listLogs(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+            [$error, $slow] = $this->open($connection, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target));
+
+            return DiagnosticsPresenter::logs($error, $slow);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function serverHealth(string $connection, ?int $seconds = null): array
     {
         return $this->guard(function () use ($connection, $seconds): array {
