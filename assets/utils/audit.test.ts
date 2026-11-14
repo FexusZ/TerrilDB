@@ -55,6 +55,11 @@ describe('audit labels', () => {
     expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('diagnostic')
   })
 
+  it('describes a read of the database or schema list without its content', () => {
+    expect(describeEvent(entry('schema.read', { topic: 'databases', engine: 'mysql', rows: 4 }))).toBe('Liste des bases lue')
+    expect(describeEvent(entry('schema.read', { topic: 'schemas', engine: 'postgresql', rows: 2 }))).toBe('Liste des schémas lue')
+  })
+
   it('does not break on an action it does not know', () => {
     expect(describeEvent(entry('something.new'))).toBe('something.new')
   })
