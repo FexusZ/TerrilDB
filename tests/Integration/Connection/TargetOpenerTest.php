@@ -463,7 +463,7 @@ final class TargetOpenerTest extends DatabaseTestCase
             $opener->open($bob, $bobKey, $bobSaved->getId());
         } catch (TargetConnectionFailedException) {
         }
-        self::assertSame(1, $tunnels->closed);
+        self::assertCount($afterRefusal, $tunnels->closedIds);
     }
 
     public function testAReusedTunnelOverTheQuotaIsRefusedButNotClosedBecauseItIsNotOurs(): void
