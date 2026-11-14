@@ -158,7 +158,7 @@ class Relay:
                 entry = self.by_identity.get(identity)
                 if entry is not None and entry["tunnel"].alive():
                     entry["last_used"] = self.clock()
-                    return self._reply(entry)
+                    return self._reply(entry, True)
                 if entry is not None:
                     self._drop(entry)
                 waiting = self.pending.get(identity)
@@ -191,7 +191,7 @@ class Relay:
                          "last_used": self.clock(), "bastion": bastion}
                 self.by_identity[identity] = entry
                 self.by_id[tunnel_id] = entry
-                return self._reply(entry)
+                return self._reply(entry, False)
         raise RelayError("unavailable")
 
     def _scan(self, host, port):
@@ -217,8 +217,9 @@ class Relay:
             raise RelayError("too_many_tunnels")
 
     @staticmethod
-    def _reply(entry):
-        return {"ok": True, "id": entry["id"], "socket": entry["socket"]}
+    def _reply(entry, reused):
+        """`reused` : le tunnel existait déjà (celui d'un autre usage) ; qui l'a créé peut le refermer, pas les autres."""
+        return {"ok": True, "id": entry["id"], "socket": entry["socket"], "reused": reused}
 
     def _close(self, tunnel_id):
         if not isinstance(tunnel_id, str) or not ID_RE.fullmatch(tunnel_id):

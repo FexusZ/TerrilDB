@@ -139,8 +139,13 @@ class RelayTest(unittest.TestCase):
         first = r.handle(message())
         second = r.handle(message())
 
-        self.assertEqual(first, second)
+        self.assertEqual((first["id"], first["socket"]), (second["id"], second["socket"]))
         self.assertEqual(1, len(self.factory.created))
+
+    def test_the_reply_says_whether_the_tunnel_already_existed(self):
+        r = self.relay()
+        self.assertIs(False, r.handle(message())["reused"])
+        self.assertIs(True, r.handle(message())["reused"])
 
     def test_another_key_or_target_is_another_tunnel(self):
         r = self.relay()
@@ -266,7 +271,8 @@ class RelayTest(unittest.TestCase):
         for thread in threads:
             thread.join(5)
         self.assertEqual(1, len(base.created))
-        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[0]["id"], results[1]["id"])
+        self.assertEqual([False, True], sorted(result["reused"] for result in results))
 
     def test_the_total_number_of_tunnels_is_capped(self):
         r = self.relay(max_tunnels=2)
