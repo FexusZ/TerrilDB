@@ -40,6 +40,7 @@ use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
 use App\Core\Query\Script\Exception\ScriptRefusedException;
+use App\Core\Schema\Change\Exception\BigTableNeedsConfirmationException;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
@@ -129,6 +130,7 @@ final class ErrorMapper
             $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
             $error instanceof UnsupportedSchemaChangeException => new ErrorResponse(422, 'unsupported_schema_change', ['reason' => $error->reason->value, 'subject' => $error->subject]),
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
+            $error instanceof BigTableNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'big_table_name', 'bigTable' => ChangePlanPresenter::bigTable($error->assessment)]),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
             $error instanceof SchemaChangeFailedException => null !== $error->lock
                 ? new ErrorResponse(409, $error->lock->code(), [

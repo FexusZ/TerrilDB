@@ -35,10 +35,10 @@ final readonly class AuditedSchemaChanges
     /**
      * @return array{ChangePlan, ?string}
      */
-    public function apply(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $table, ?TableDraft $draft, string $fingerprint, bool $confirmed): array
+    public function apply(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $table, ?TableDraft $draft, string $fingerprint, bool $confirmed, ?string $confirmedTableName = null): array
     {
         try {
-            [$plan, $after] = $this->changes->apply($target, $table, $draft, $fingerprint, $confirmed);
+            [$plan, $after] = $this->changes->apply($target, $table, $draft, $fingerprint, $confirmed, $confirmedTableName);
         } catch (SchemaChangeFailedException $e) {
             $this->audit->record($context, AuditAction::SchemaChangeFailed, AuditOutcome::Failed, $connectionId, [
                 'table' => $table,

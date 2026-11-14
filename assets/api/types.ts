@@ -468,7 +468,17 @@ export interface StructureLockCheck {
   holders: TableHolder[]
 }
 
+/** Ce que la taille estimée de la table demande avant de la modifier (seuils d’installation, 0 = désactivé). */
+export interface BigTableAssessment {
+  level: 'none' | 'warning' | 'confirm_name'
+  /** Estimation du moteur, nulle s’il n’en donne pas. */
+  estimatedRows: number | null
+  warnAt: number
+  confirmAt: number
+}
+
 export interface StructurePreview extends StructurePlan {
+  bigTable: BigTableAssessment
   fingerprint: string
   /** La table a changé depuis qu’on l’a chargée. */
   stale: boolean

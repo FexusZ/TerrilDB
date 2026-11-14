@@ -12,6 +12,7 @@ const REASONS: Record<string, string> = {
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
   destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
+  big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 

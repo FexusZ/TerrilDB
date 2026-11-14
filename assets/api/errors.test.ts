@@ -69,6 +69,7 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(422, 'invalid_data_change', { detail: 'The column "x" does not exist.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
+    expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'big_table_name' }))).toContain('nom de la table')
   })
 
   it('gives advice for lock conflicts without echoing anything from the engine', () => {
