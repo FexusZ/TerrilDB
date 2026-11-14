@@ -7,7 +7,7 @@ namespace App\Core\Diagnostics\Log;
 /**
  * Le texte d'une ligne du journal d'erreurs d'un serveur peut citer des valeurs, des comptes, des adresses (`Access denied for
  * user 'alice'@'10.1.2.3'`). Avant d'entrer dans un modèle de diagnostic, il perd ses chaînes entre guillemets (y compris une
- * chaîne coupée en son milieu), ses adresses IP, ses `utilisateur@hôte` et ce qui suit un mot de passe ou un jeton, PUIS il est
+ * chaîne coupée en son milieu), ses adresses IP, ses `utilisateur@hôte`, les chemins de fichiers, les noms pointés (`base.table`, nom d'hôte), la valeur d'un champ nommé (`host:`, `user=`, `db:`, `Source_Host=`) et ce qui suit un mot de passe ou un jeton, PUIS il est
  * raccourci. Défaut prudent : on masque trop plutôt que pas assez. Ce n'est pas un SQL : aucun dialecte, aucune lecture lexicale.
  */
 final class LogMessage
@@ -30,9 +30,13 @@ final class LogMessage
                 "/(?<![\\p{L}\\p{N}])['\"`][^'\"`]*\$/u",
                 '/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?![\d.])/',
                 '/[\w.+\-]+@[\w.\-]+/u',
-                '/(?<!using )\b(password|passwd|pwd|secret|token)\b\s*[=:]\s*\S+/iu',
+                '/\bbearer\s+\S+/iu',
+                '/(?<!using )\b(password|passwd|pwd|secret|token|api[_-]?key|authorization)\b\s*[=:]\s*\S+/iu',
+                '/(\b(?:source_|master_)?(?:host|hostname|user|db|database|schema|table|channel)\b\s*[=:]\s*)[^\s,;)]+/iu',
+                '~(?<![\w/])(?:\.{0,2}/|[A-Za-z]:\\\\+)[^\s\'"`,;)]+~u',
+                '/\b[A-Za-z_][\w-]*(?:\.[A-Za-z_][\w-]+)+\b/u',
             ],
-            ['?', '?', '?', '?', '$1=?'],
+            ['?', '?', '?', '?', 'bearer ?', '$1=?', '${1}?', '?', '?'],
             $text,
         );
         $text = (string) preg_replace_callback(
