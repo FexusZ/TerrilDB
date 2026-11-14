@@ -395,7 +395,7 @@ ni push forcé de `main` : la désactiver le temps d'une réécriture d'historiq
 Dependabot, secret scanning et protection des pushs, signalement privé des failles. Les journaux d'Actions d'un dépôt public sont lisibles de
 tous : le job de déploiement masque le compte et les chemins de la machine (`add-mask`), mais l'en-tête du job imprime le nom de la machine
 (`Machine name`) AVANT toute étape : ce nom doit rester neutre (nom d'hôte et dossier du runner sans rapport avec un projet ou une personne).
-Chaque job a un délai maximum (le déploiement occupe l'unique runner de production).
+Chaque job a un délai maximum (le déploiement occupe l'unique runner de production). Durée maximale d'une requête : UNE valeur, `TERRILDB_PROXY_TIMEOUT` (secondes, 120 par défaut, 30 à 3600, `deploy.env`), règle `proxy_read_timeout` de nginx ET la limite de l'application (`RequestTimeLimit` : valeur moins 20 s = 100 s par défaut ; un `timeoutMs` de la console, des scripts, de l'API ou du MCP au-dessus est REFUSÉ 422 `invalid_input`, jamais ramené en silence ; le schéma MCP porte la valeur du serveur). Contrôle d'accord : `docker/prod/proxy-timeout.sh check|apply` (testé par `tests/Deploy`), appelé par `deploy.sh` (avertit, n'échoue pas) et `sync-nginx.sh` (sudo : aligne l'hôte virtuel existant, `nginx -t`, recharge, restaure l'ancien fichier si nginx refuse) ; à l'exécution `ProxyTimeoutListener` relit l'en-tête `X-TerrilDB-Proxy-Timeout` que nginx remplace toujours et journalise une erreur par heure si la valeur diffère. Un site nginx créé avant cette valeur n'envoie pas l'en-tête : lancer `sync-nginx.sh` une fois.
 
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
