@@ -579,4 +579,25 @@ final class McpTest extends WebApiTestCase
 
         self::assertStringContainsString('no-store', (string) $this->client->getResponse()->headers->get('Cache-Control'));
     }
+
+    public function testTheDurationOfAnToolCallStaysWithinWhatTheProxyAllows(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        $message = $this->post(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+        $run = null;
+        foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
+            if ('run_query' === self::str(self::obj($tool)['name'])) {
+                $run = self::obj($tool);
+            }
+        }
+        self::assertNotNull($run);
+        $timeout = self::obj(self::obj(self::obj($run['inputSchema'])['properties'])['timeoutMs']);
+        self::assertSame(100_000, $timeout['maximum']);
+
+        $refused = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select 1', 'timeoutMs' => 100_001]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'A duration above the proxy limit must not run.');
+        self::assertArrayNotHasKey('structuredContent', $refused);
+    }
 }

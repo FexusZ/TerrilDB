@@ -207,6 +207,19 @@ final class ScriptWebTest extends WebApiTestCase
         self::assertSame('script_too_large', $body['error']);
     }
 
+    public function testAScriptDurationAboveWhatTheProxyAllowsIsRefusedBeforeAnythingRuns(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/script/execute', ['script' => 'INSERT INTO '.$table.' VALUES (1)', 'timeoutMs' => 100_001]);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+        self::assertSame(0, $this->rows($table));
+    }
+
     public function testADryRunTheEngineCannotDoIsRefusedWithItsReason(): void
     {
         $this->seedAndLogin();
