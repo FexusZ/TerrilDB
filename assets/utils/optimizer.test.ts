@@ -30,6 +30,18 @@ describe('optimizer wording', () => {
     expect(describePlanFinding({ ...base, condition: null })).not.toContain('condition')
   })
 
+  it('words the sort and wildcard findings with the right caution', () => {
+    const sort = describePlanFinding({ rule: 'large_sort', relation: 'order_items', rows: 7000, condition: null })
+    expect(sort).toMatch(/Tri de « order_items » \(~\s?7\s?000 lignes\)/)
+    expect(sort).toContain('LIMIT')
+    expect(sort).toContain('index')
+
+    const like = describePlanFinding({ rule: 'leading_wildcard', relation: 'customers', rows: 1000, condition: "(email like '%a%')" })
+    expect(like).toMatch(/joker/)
+    expect(like).toContain("(email like '%a%')")
+    expect(like).not.toContain('Un index sur les colonnes filtrées peut l’éviter')
+  })
+
   it('names the kinds of operation', () => {
     expect(planKindLabel('full_scan', 'Seq Scan')).toBe('Parcours complet')
     expect(planKindLabel('index_full_scan', 'index')).toBe('Parcours d’index complet')
