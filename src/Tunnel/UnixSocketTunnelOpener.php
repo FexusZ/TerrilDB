@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tunnel;
 
 use App\Core\Connection\Exception\ForbiddenBastionException;
+use App\Core\Connection\Tunnel\HostKey;
 use App\Core\Connection\Tunnel\TunnelEndpoint;
 use App\Core\Connection\Tunnel\TunnelFailedException;
 use App\Core\Connection\Tunnel\TunnelOpener;
@@ -58,6 +59,27 @@ final readonly class UnixSocketTunnelOpener implements TunnelOpener
         }
 
         return new TunnelEndpoint($id, $socket);
+    }
+
+    public function hostKey(string $host, int $port): HostKey
+    {
+        $reply = $this->call(['op' => 'scan', 'host' => $host, 'port' => $port]);
+
+        if (true !== ($reply['ok'] ?? null)) {
+            $error = $reply['error'] ?? null;
+            if ('forbidden_bastion' === $error) {
+                throw ForbiddenBastionException::create();
+            }
+
+            throw new TunnelFailedException();
+        }
+        $fingerprint = $reply['fingerprint'] ?? null;
+        $type = $reply['key_type'] ?? null;
+        if (!\is_string($fingerprint) || 1 !== preg_match('/^SHA256:[A-Za-z0-9+\/]{43}$/D', $fingerprint) || !\is_string($type) || !\in_array($type, HostKey::TYPES, true)) {
+            throw new TunnelFailedException();
+        }
+
+        return new HostKey($fingerprint, $type);
     }
 
     public function close(TunnelEndpoint $endpoint): void

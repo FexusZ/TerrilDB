@@ -23,6 +23,13 @@ final readonly class AllowedBastionTunnelOpener implements TunnelOpener
         return $this->inner->open($request);
     }
 
+    public function hostKey(string $host, int $port): HostKey
+    {
+        $this->allowed->assertAddressAllowed($host, $port);
+
+        return $this->inner->hostKey($host, $port);
+    }
+
     public function close(TunnelEndpoint $endpoint): void
     {
         $this->inner->close($endpoint);

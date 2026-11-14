@@ -46,7 +46,15 @@ final readonly class BastionAllowList
      */
     public function assertAllowed(SshJump $jump): void
     {
-        if (!\in_array(self::key($jump->host, $jump->port), $this->entries, true)) {
+        $this->assertAddressAllowed($jump->host, $jump->port);
+    }
+
+    /**
+     * @throws ForbiddenBastionException
+     */
+    public function assertAddressAllowed(string $host, int $port): void
+    {
+        if (!\in_array(self::key($host, $port), $this->entries, true)) {
             throw ForbiddenBastionException::create();
         }
     }
