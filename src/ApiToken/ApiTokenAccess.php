@@ -25,6 +25,18 @@ final readonly class ApiTokenAccess
     }
 
     /**
+     * Les diagnostics du serveur (sessions…) ne se lisent qu'avec le droit `diagnostic`, refusé par défaut.
+     *
+     * @throws ApiTokenPermissionException
+     */
+    public function requireDiagnostic(): void
+    {
+        if (!$this->token->getPermissions()->diagnostic) {
+            throw ApiTokenPermissionException::create();
+        }
+    }
+
+    /**
      * Les options d'une exécution d'écriture : lecture-écriture bornée aux droits du jeton. Un jeton sans aucun
      * droit d'écriture n'exécute rien par cette voie (la lecture seule garde sa route, tenue par le moteur).
      *

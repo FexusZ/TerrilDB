@@ -320,6 +320,103 @@ final class McpTest extends WebApiTestCase
         self::assertStringContainsString('write_not_permitted', self::str(self::obj(self::first($schema['content']))['text']));
     }
 
+    public function testATokenWithoutTheDiagnosticRightDoesNotSeeTheSessionsTool(): void
+    {
+        $this->prepare(rights: ['writeData' => true, 'createConnections' => true]);
+        $this->initialize();
+        self::assertNotContains('list_sessions', $this->toolNames());
+        self::assertNotContains('list_locks', $this->toolNames());
+        self::assertNotContains('top_queries', $this->toolNames());
+        self::assertNotContains('list_variables', $this->toolNames());
+        $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
+        self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
+        self::assertArrayNotHasKey('structuredContent', $refused);
+    }
+
+    public function testATokenWithTheDiagnosticRightSeesTheSessionsTool(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_sessions', $this->toolNames());
+    }
+
+    public function testListsTheSessionsThroughMcpWithoutWriting(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        $report = self::textOf($this->callTool('list_sessions', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertNotEmpty($report['sessions']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_sessions', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+        self::assertStringContainsString('not_found', self::str(self::obj(self::first($other['content']))['text']));
+    }
+
+    public function testListsTheLocksThroughMcpWithoutKilling(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_locks', $this->toolNames());
+        $report = self::textOf($this->callTool('list_locks', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertArrayHasKey('blocking', $report);
+        self::assertArrayHasKey('transactions', $report);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_locks', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+    }
+
+    public function testListsTheCostliestQueriesThroughMcpWithoutWriting(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('top_queries', $this->toolNames());
+        $report = self::textOf($this->callTool('top_queries', ['connection' => $this->connectionId, 'order' => 'calls', 'limit' => 3]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        self::assertSame('calls', $report['order']);
+        self::assertNotEmpty($report['digests']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $bad = $this->callTool('top_queries', ['connection' => $this->connectionId, 'limit' => 500]);
+        // Le schéma de l'outil borne déjà la limite ; le cœur la borne encore si le client ne le respecte pas.
+        self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'An out-of-bounds limit must not run.');
+        self::assertArrayNotHasKey('structuredContent', $bad);
+
+        $other = $this->callTool('top_queries', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+    }
+
+    public function testListsTheVariablesThroughMcpWithoutSettingAnything(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_variables', $this->toolNames());
+        $report = self::textOf($this->callTool('list_variables', ['connection' => $this->connectionId, 'search' => 'ssl_key', 'changedOnly' => false, 'limit' => 5]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        $variable = self::obj(self::first($report['variables']));
+        self::assertTrue($variable['masked']);
+        self::assertNull($variable['value']);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('list_variables', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+
+        $bad = $this->callTool('list_variables', ['connection' => $this->connectionId, 'limit' => 0]);
+        self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'A limit out of bounds is refused.');
+    }
+
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void
     {
         $this->prepare();

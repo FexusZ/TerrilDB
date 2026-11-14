@@ -48,6 +48,12 @@ describe('audit labels', () => {
     expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('schema')
   })
 
+  it('describes a read of the server diagnostics without its content', () => {
+    expect(describeEvent(entry('diagnostic.read', { topic: 'sessions', engine: 'mysql', status: 'available', rows: 3 }))).toBe('Supervision lue : sessions')
+    expect(describeEvent(entry('diagnostic.read', { topic: 'sessions' }, { outcome: 'failed' }))).toBe('Lecture de la supervision en échec : sessions')
+    expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('diagnostic')
+  })
+
   it('does not break on an action it does not know', () => {
     expect(describeEvent(entry('something.new'))).toBe('something.new')
   })
@@ -60,6 +66,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query', 'schema'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query', 'schema', 'diagnostic'])
   })
 })

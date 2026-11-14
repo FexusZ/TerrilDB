@@ -154,6 +154,7 @@ final class ApiTokenTest extends TestCase
         self::assertFalse($permissions->writeData);
         self::assertFalse($permissions->writeSchema);
         self::assertFalse($permissions->createConnections);
+        self::assertFalse($permissions->diagnostic);
         self::assertFalse($permissions->canWrite());
     }
 
@@ -165,6 +166,15 @@ final class ApiTokenTest extends TestCase
         self::assertFalse($token->getPermissions()->writeSchema);
         self::assertTrue($token->getPermissions()->createConnections);
         self::assertTrue($token->getPermissions()->canWrite());
+    }
+
+    public function testDiagnosticIsARightApartThatNeverWrites(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [], new \DateTimeImmutable(self::NOW), null, permissions: new TokenPermissions(diagnostic: true));
+
+        self::assertTrue($token->getPermissions()->diagnostic);
+        self::assertFalse($token->getPermissions()->writeData);
+        self::assertFalse($token->getPermissions()->canWrite());
     }
 
     public function testGrantingAConnectionAddsItOnce(): void
