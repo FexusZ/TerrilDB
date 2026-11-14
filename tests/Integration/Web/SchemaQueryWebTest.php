@@ -227,6 +227,19 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertSame(400, $this->statusCode());
     }
 
+    public function testADurationAboveWhatTheProxyAllowsIsRefusedNotCutOff(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->query($id, 'select 1', ['timeoutMs' => 100_001]);
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+
+        $this->query($id, 'select 1', ['timeoutMs' => 100_000]);
+        self::assertSame(200, $this->statusCode());
+    }
+
     public function testASlowQueryIsStopped(): void
     {
         $this->seedAndLogin();

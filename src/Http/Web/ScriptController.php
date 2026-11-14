@@ -10,6 +10,7 @@ use App\Core\Query\Script\ScriptOptions;
 use App\Core\Query\Script\ScriptService;
 use App\Core\Query\WritePermissions;
 use App\Http\Json\JsonInput;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ScriptPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -28,6 +29,7 @@ final readonly class ScriptController
         private ScriptService $scripts,
         private AuditedScripts $audited,
         private WebSession $session,
+        private RequestTimeLimit $limit,
     ) {
     }
 
@@ -54,7 +56,7 @@ final readonly class ScriptController
         $script = $input->string('script');
         $options = new ScriptOptions(
             WritePermissions::all(),
-            $input->optionalInt('timeoutMs', ScriptOptions::DEFAULT_TIMEOUT_MS) ?? ScriptOptions::DEFAULT_TIMEOUT_MS,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), ScriptOptions::DEFAULT_TIMEOUT_MS),
             $input->bool('dryRun', false),
         );
         $confirmed = $input->bool('confirmed', false);

@@ -6,6 +6,7 @@ namespace App\Http\Mcp;
 
 use App\Core\Connection\Engine;
 use App\Http\Api\ApiRequestAccess;
+use App\Http\Json\RequestTimeLimit;
 use Mcp\Schema\ToolAnnotations;
 use Mcp\Server;
 use Mcp\Server\Session\FileSessionStore;
@@ -24,6 +25,7 @@ final readonly class McpServerFactory
     public function __construct(
         private McpTools $tools,
         private ApiRequestAccess $access,
+        private RequestTimeLimit $limit,
         #[Autowire('%kernel.cache_dir%/mcp-sessions')] private string $sessionDirectory,
     ) {
     }
@@ -70,7 +72,7 @@ final readonly class McpServerFactory
                         'connection' => $connection,
                         'sql' => ['type' => 'string', 'description' => 'Une instruction SQL de lecture, dans le dialecte du moteur de la connexion.'],
                         'maxRows' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000, 'description' => 'Nombre maximal de lignes rendues (1000 par défaut).'],
-                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => 600000, 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => $this->limit->maxMs(), 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
                     ],
                     'required' => ['connection', 'sql'],
                     'additionalProperties' => false,
@@ -154,7 +156,7 @@ final readonly class McpServerFactory
                         'sql' => ['type' => 'string', 'description' => 'Une instruction SQL d’écriture, dans le dialecte du moteur de la connexion.'],
                         'confirmed' => ['type' => 'boolean', 'description' => 'Vrai pour confirmer une instruction destructrice que l’utilisateur a demandée expressément (faux par défaut).'],
                         'maxRows' => ['type' => 'integer', 'minimum' => 1, 'maximum' => 100000, 'description' => 'Nombre maximal de lignes rendues (1000 par défaut).'],
-                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => 600000, 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => $this->limit->maxMs(), 'description' => 'Durée maximale en millisecondes (30000 par défaut).'],
                     ],
                     'required' => ['connection', 'sql'],
                     'additionalProperties' => false,

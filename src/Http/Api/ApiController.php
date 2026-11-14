@@ -19,6 +19,7 @@ use App\Http\Json\ConnectionInput;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
 use App\Http\Json\JsonInput;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
@@ -46,6 +47,7 @@ final readonly class ApiController
         private AuditedQueries $queries,
         private TokenConnections $created,
         private AuditedDiagnostics $diagnostics,
+        private RequestTimeLimit $limit,
     ) {
     }
 
@@ -109,7 +111,7 @@ final readonly class ApiController
         $defaults = new QueryOptions();
         $options = new QueryOptions(
             QueryMode::ReadOnly,
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
@@ -126,7 +128,7 @@ final readonly class ApiController
         $confirmed = $input->bool('confirmed', false);
         $defaults = new QueryOptions();
         $options = $this->request->get()->writeOptions(
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 

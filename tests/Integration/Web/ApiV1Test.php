@@ -693,4 +693,18 @@ final class ApiV1Test extends WebApiTestCase
 
         self::assertSame(404, $this->statusCode());
     }
+
+    public function testADurationAboveWhatTheProxyAllowsIsRefused(): void
+    {
+        $this->prepare(rights: ['writeData' => true]);
+
+        foreach (['query', 'execute'] as $route) {
+            $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/'.$route, ['sql' => 'select 1', 'timeoutMs' => 100_001]);
+            self::assertSame(422, $this->statusCode(), $route);
+            self::assertSame('invalid_input', $body['error'], $route);
+        }
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select 1', 'timeoutMs' => 100_000]);
+        self::assertSame(200, $this->statusCode());
+    }
 }

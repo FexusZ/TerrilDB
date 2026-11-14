@@ -21,6 +21,7 @@ use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
 use App\Http\Json\TargetSession;
@@ -43,6 +44,7 @@ final readonly class McpTools
         private ErrorMapper $errors,
         private TokenConnections $created,
         private AuditedDiagnostics $diagnostics,
+        private RequestTimeLimit $limit,
     ) {
     }
 
@@ -92,7 +94,7 @@ final readonly class McpTools
     {
         return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs): array {
             $defaults = new QueryOptions();
-            $options = new QueryOptions(QueryMode::ReadOnly, $timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
         });
@@ -124,7 +126,7 @@ final readonly class McpTools
     {
         return $this->guard(function () use ($connection, $sql, $confirmed, $maxRows, $timeoutMs): array {
             $defaults = new QueryOptions();
-            $options = $this->request->get()->writeOptions($timeoutMs ?? $defaults->timeoutMs, $maxRows ?? $defaults->maxRows);
+            $options = $this->request->get()->writeOptions($this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
 
             return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options, $confirmed ?? false)));
         });
