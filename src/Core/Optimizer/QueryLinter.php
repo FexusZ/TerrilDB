@@ -52,25 +52,49 @@ final class QueryLinter
     ];
 
     /**
+     * Le texte est UNE lecture que le linter juge (SELECT, ou WITH … SELECT), sur un moteur SQL. Tout le reste (écriture,
+     * plusieurs instructions, texte incomplet, commentaire exécutable) n'est pas jugé : `lint()` n'y dit rien.
+     */
+    public function judges(Engine $engine, string $sql): bool
+    {
+        $spans = [];
+
+        return $this->judgedDialect($engine, $sql, $spans) instanceof SqlDialect;
+    }
+
+    /**
+     * @param list<array{int, int, string}> $spans zones rendues par le scanner (commentaires et chaînes)
+     */
+    private function judgedDialect(Engine $engine, string $sql, array &$spans): ?SqlDialect
+    {
+        if (!$engine->speaksSql()) {
+            return null;
+        }
+        $dialect = SqlDialect::forEngine($engine);
+        if (SqlDialect::MySql === $dialect && (str_contains($sql, '/*!') || str_contains($sql, '/*M!'))) {
+            return null;
+        }
+
+        $scanned = (new SqlScanner())->scan($sql, $dialect, $spans);
+        if (!$scanned->complete || 1 !== \count($scanned->statements)) {
+            return null;
+        }
+        $statement = $scanned->statements[0];
+        if (!\in_array($statement->first(), ['SELECT', 'WITH'], true) || ('WITH' === $statement->first() && 'SELECT' !== $statement->withHead())) {
+            return null;
+        }
+
+        return $dialect;
+    }
+
+    /**
      * @return list<LintFinding>
      */
     public function lint(Engine $engine, string $sql): array
     {
-        if (!$engine->speaksSql()) {
-            return [];
-        }
-        $dialect = SqlDialect::forEngine($engine);
-        if (SqlDialect::MySql === $dialect && (str_contains($sql, '/*!') || str_contains($sql, '/*M!'))) {
-            return [];
-        }
-
         $spans = [];
-        $scanned = (new SqlScanner())->scan($sql, $dialect, $spans);
-        if (!$scanned->complete || 1 !== \count($scanned->statements)) {
-            return [];
-        }
-        $statement = $scanned->statements[0];
-        if (!\in_array($statement->first(), ['SELECT', 'WITH'], true) || ('WITH' === $statement->first() && 'SELECT' !== $statement->withHead())) {
+        $dialect = $this->judgedDialect($engine, $sql, $spans);
+        if (null === $dialect) {
             return [];
         }
 
