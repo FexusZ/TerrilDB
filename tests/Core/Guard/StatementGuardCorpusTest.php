@@ -659,7 +659,9 @@ final class StatementGuardCorpusTest extends TestCase
             'pg_switch_wal()', "pg_create_restore_point('r')", "pg_backup_start('b')", 'pg_backup_stop()', "pg_start_backup('b')", 'pg_stop_backup()', 'pg_promote()',
             'pg_wal_replay_pause()', 'pg_wal_replay_resume()', 'pg_log_standby_snapshot()', 'pg_log_backend_memory_contexts(1)', 'pg_sync_replication_slots()',
             'pg_stat_reset()', "pg_stat_reset_shared('slru')", "pg_stat_reset_slru('CommitTs')", 'pg_stat_reset_single_table_counters(1)',
-            "pg_stat_reset_replication_slot('s')",
+            "pg_stat_reset_replication_slot('s')", 'pg_stat_statements_reset()', 'pg_stat_statements_reset(0, 0, 0)', "pg_restore_relation_stats('schemaname', 'public', 'relname', 't', 'relpages', 1::int)",
+            "pg_restore_attribute_stats('schemaname', 'public', 'relname', 't', 'attname', 'a', 'inherited', false)", "pg_clear_relation_stats('public', 't')",
+            "pg_clear_attribute_stats('public', 't', 'a', false)", "pg_import_system_collations('pg_catalog')", 'public.pg_stat_statements_reset()',
             'pg_ls_waldir()', 'pg_ls_logdir()', 'pg_ls_tmpdir()', 'pg_ls_archive_statusdir()', "pg_ls_replslotdir('s')", 'pg_ls_logicalsnapdir()', 'pg_ls_logicalmapdir()',
             '"pg_switch_wal"()', 'pg_catalog.pg_switch_wal()', 'pg_catalog."pg_create_physical_replication_slot"(\'s\')', 'PG_SWITCH_WAL()', 'U&"pg_switch_\\0077al"()',
         ] as $call) {
