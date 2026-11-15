@@ -115,4 +115,28 @@ final class DbalConnectorTest extends TestCase
         self::assertNotContains('NO_BACKSLASH_ESCAPES', $modes);
         self::assertNotContains('ANSI_QUOTES', $modes);
     }
+
+    /**
+     * Même raison pour PostgreSQL : avec `standard_conforming_strings = off` (réglage de rôle ou de base), l'antislash échappe
+     * le guillemet dans '…' pour le moteur mais pas pour le garde. La session impose donc `on`.
+     */
+    public function testThePostgreSqlSessionKeepsStandardConformingStrings(): void
+    {
+        $this->skipIfUnreachable('TARGET_POSTGRES_URL');
+        $admin = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+        $user = TargetDatabase::parameters('TARGET_POSTGRES_URL')->username;
+        if (0 !== (int) $admin->fetchOne('SELECT count(*) FROM pg_db_role_setting')) {
+            self::markTestSkipped('The target already carries role or database settings.');
+        }
+
+        try {
+            $admin->executeStatement(\sprintf('ALTER ROLE %s SET standard_conforming_strings = off', $admin->quoteSingleIdentifier($user)));
+
+            $value = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'))->fetchOne('SHOW standard_conforming_strings');
+        } finally {
+            $admin->executeStatement(\sprintf('ALTER ROLE %s RESET standard_conforming_strings', $admin->quoteSingleIdentifier($user)));
+        }
+
+        self::assertSame('on', $value);
+    }
 }
