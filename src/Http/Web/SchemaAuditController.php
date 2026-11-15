@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\Core\Driver\TargetConnection;
+use App\Core\Optimizer\AuditCheck;
+use App\Core\Optimizer\CheckState;
 use App\Core\Optimizer\Finding;
 use App\Core\Optimizer\FindingRule;
 use App\Core\Optimizer\OperationsCheck;
@@ -33,7 +35,7 @@ final readonly class SchemaAuditController
     #[Route('/web/connections/{id}/audit', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]
     public function audit(string $id, Request $request): JsonResponse
     {
-        [$findings, $audited, $truncated, $checks] = $this->targets->withSaved(Uuid::fromString($id), function (TargetConnection $target): array {
+        [$findings, $checks, $audited, $truncated] = $this->targets->withSaved(Uuid::fromString($id), function (TargetConnection $target): array {
             $introspector = $target->introspector();
             $names = [];
             foreach ($introspector->listTables() as $summary) {
@@ -48,8 +50,9 @@ final readonly class SchemaAuditController
                 $definitions[] = $introspector->describeTable($name);
             }
 
-            $findings = $this->auditor->audit($target->engine, $definitions);
-            $checks = [];
+            $usage = $introspector->indexUsage();
+            $findings = $this->auditor->audit($target->engine, $definitions, $usage, $introspector->autoCounters());
+            $checks = $this->auditor->checks($target->engine, $usage);
             // L'exploitation (statistiques, place libre, créateurs) : une source illisible devient un « non vérifié », jamais une erreur.
             if ($introspector instanceof OperationsSource) {
                 $upkeep = $introspector->upkeep();
@@ -60,10 +63,10 @@ final readonly class SchemaAuditController
                     $this->auditor->operations($target->engine, $upkeep, $definers),
                     static fn (Finding $f): bool => FindingRule::OrphanDefiner === $f->rule || isset($audited[$f->table]),
                 )));
-                $checks = $this->auditor->operationsChecks($target->engine, $upkeep, $definers);
+                array_push($checks, ...array_map(static fn (OperationsCheck $c): AuditCheck => new AuditCheck($c->rule, CheckState::Unavailable, $c->reason), $this->auditor->operationsChecks($target->engine, $upkeep, $definers)));
             }
 
-            return [$findings, \count($definitions), $truncated, $checks];
+            return [$findings, $checks, \count($definitions), $truncated];
         }, DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse([
@@ -79,11 +82,11 @@ final readonly class SchemaAuditController
                 'suggestion' => $f->suggestion,
                 'detail' => $f->detail,
             ], $findings),
-            'checks' => array_map(static fn (OperationsCheck $c): array => [
+            'checks' => array_map(static fn (AuditCheck $c): array => [
                 'rule' => $c->rule->value,
-                'state' => 'unavailable',
+                'state' => $c->state->value,
                 'reason' => $c->reason,
-                'detail' => null,
+                'detail' => $c->detail,
             ], $checks),
         ]);
     }

@@ -1,3 +1,4 @@
+import { lockSentence } from '../utils/lock'
 import { ApiError } from './client'
 
 const REASONS: Record<string, string> = {
@@ -10,6 +11,8 @@ const REASONS: Record<string, string> = {
   unsupported_statement: 'Cette instruction n’est pas prise en charge (transaction, session, verrou…).',
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
+  destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
+  big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -50,6 +53,10 @@ export function messageFor(error: unknown): string {
       return 'Les inscriptions sont fermées : il faut une invitation.'
     case 'invalid_invitation':
       return 'Cette invitation n’est pas valable : elle a peut-être déjà servi, expiré ou été révoquée.'
+    case 'cannot_disable_self':
+      return 'Vous ne pouvez pas désactiver votre propre compte.'
+    case 'last_administrator':
+      return 'Impossible : ce compte est le dernier administrateur actif.'
     case 'invalid_recovery':
       return 'La phrase de récupération n’est pas valable, ou ce compte n’en a pas.'
     case 'mail_disabled':
@@ -82,10 +89,31 @@ export function messageFor(error: unknown): string {
     case 'query_refused':
     case 'confirmation_required':
       return reasonText(error.details.reason)
+    case 'script_refused': {
+      const rank = typeof error.details.statement === 'number' ? error.details.statement + 1 : 0
+      return `L’instruction ${String(rank)} est refusée : ${reasonText(error.details.reason)} Rien n’a été exécuté.`
+    }
+    case 'invalid_script':
+      return 'Le script ne peut pas être découpé avec certitude : une chaîne, un commentaire ou un nom entre guillemets n’est pas refermé. Rien n’a été exécuté.'
+    case 'script_too_large':
+      return 'Le script est trop long (500 instructions et 1 Mo au plus).'
+    case 'dry_run_unavailable':
+      if (error.details.reason === 'non_transactional_tables') {
+        return 'Ce script écrit dans une table sans transaction (MyISAM, MEMORY…) : rien ne s’y annule, il ne peut pas être testé sans valider.'
+      }
+      return error.details.reason === 'implicit_commit'
+        ? 'Ce moteur valide la transaction à chaque instruction de structure : ce script ne peut pas être testé sans valider.'
+        : 'Ce moteur n’a pas de transaction : un script ne peut pas être testé sans valider.'
     case 'query_failed':
       return typeof error.details.message === 'string' ? error.details.message : GENERIC
     case 'invalid_schema_change':
       return 'Cette modification de la structure est invalide.'
+    case 'unsupported_schema_change': {
+      const why = lockSentence(error.details.reason)
+      const subject = typeof error.details.subject === 'string' ? `« ${error.details.subject} » : ` : ''
+
+      return why === null ? 'Cette modification n’est pas prise en charge pour une colonne ou un index à la définition particulière.' : `${subject}${why}, sa modification n’est pas prise en charge.`
+    }
     case 'schema_changed':
       return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
     case 'schema_change_failed':

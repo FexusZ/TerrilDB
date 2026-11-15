@@ -19,4 +19,8 @@ enum FindingRule: string
     case DeadTuples = 'dead_tuples';
     case ReclaimableSpace = 'reclaimable_space';
     case OrphanDefiner = 'orphan_definer';
+    case TextPrimaryKey = 'text_primary_key';
+    case FloatAmount = 'float_amount';
+    case UnusedIndex = 'unused_index';
+    case CounterNearLimit = 'counter_near_limit';
 }

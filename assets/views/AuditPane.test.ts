@@ -14,6 +14,7 @@ const mocked = vi.mocked(api)
 const audit: SchemaAudit = {
   tablesAudited: 5,
   truncated: false,
+  checks: [],
   findings: [
     { rule: 'foreign_key_without_index', severity: 'warning', table: 'orders', columns: ['customer_id'], index: null, coveredBy: null, suggestion: 'CREATE INDEX idx_orders_customer_id ON "orders" ("customer_id");', detail: null },
     { rule: 'redundant_index', severity: 'info', table: 'orders', columns: ['a'], index: 'idx_a', coveredBy: 'idx_ab', suggestion: 'DROP INDEX "idx_a";', detail: null },
@@ -77,6 +78,22 @@ describe('AuditPane', () => {
     expect(wrapper.text()).toContain('cascade')
   })
 
+  it('puts a nearly saturated counter in an urgent group above the others', async () => {
+    const { wrapper } = await mountPane({
+      ...audit,
+      findings: [
+        ...audit.findings,
+        { rule: 'counter_near_limit', severity: 'critical', table: 'events', columns: ['id'], index: null, coveredBy: null, suggestion: 'ALTER TABLE `events` MODIFY `id` BIGINT NOT NULL AUTO_INCREMENT;', detail: 'int : 2100000000 sur 2147483647 (97 %)' },
+      ],
+    })
+
+    const sections = wrapper.findAll('section.group')
+    expect(sections[0]?.get('h2').text()).toContain('Urgent')
+    expect(sections[0]?.get('li.finding').classes()).toContain('critical')
+    expect(sections[1]?.get('h2').text()).toContain('À corriger')
+    expect(wrapper.text()).toContain('approche de la limite')
+  })
+
   it('shows the suggested statement and what it was checked against', async () => {
     const { wrapper } = await mountPane()
 
@@ -104,7 +121,7 @@ describe('AuditPane', () => {
   })
 
   it('congratulates a clean schema', async () => {
-    const { wrapper } = await mountPane({ tablesAudited: 5, truncated: false, findings: [] })
+    const { wrapper } = await mountPane({ tablesAudited: 5, truncated: false, findings: [], checks: [] })
 
     expect(wrapper.get('.clean').text()).toContain('Rien à signaler')
   })
@@ -114,6 +131,13 @@ describe('AuditPane', () => {
 
     expect(wrapper.get('.checks').text()).toContain('Non vérifié')
     expect(wrapper.get('.checks').text()).toContain('Créateurs d’objets : non vérifiable')
+  })
+
+  it('lists the checks that could not judge, so a quiet audit is not mistaken for a verified one', async () => {
+    const { wrapper } = await mountPane({ tablesAudited: 5, truncated: false, findings: [], checks: [{ rule: 'unused_index', state: 'unavailable', reason: 'performance_schema_off', detail: null }] })
+
+    expect(wrapper.get('.checks').text()).toContain('Non vérifié')
+    expect(wrapper.get('.checks').text()).toContain('performance_schema est désactivé')
   })
 
   it('says when the audit stopped early', async () => {

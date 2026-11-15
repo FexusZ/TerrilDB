@@ -15,7 +15,12 @@ use App\Core\Optimizer\Exception\UnreadablePlanException;
  */
 final class MySqlPlanParser implements PlanParser
 {
-    /** @var array<string, array{PlanKind, string}> */
+    /**
+     * Un tri sans index (`using_filesort`, `filesort`) est un nœud Sort qui prend les lignes de son entrée ; un
+     * `ordering_operation` dont l'index donne l'ordre n'est pas un tri.
+     *
+     * @var array<string, array{PlanKind, string}>
+     */
     private const WRAPPERS = [
         'ordering_operation' => [PlanKind::Sort, 'Ordering'],
         'filesort' => [PlanKind::Sort, 'Filesort'],
@@ -133,7 +138,13 @@ final class MySqlPlanParser implements PlanParser
                 $nodes[] = 1 === \count($members) ? $members[0] : new PlanNode(PlanKind::Join, 'Nested loop', children: $members);
             } elseif (isset(self::WRAPPERS[$key])) {
                 [$kind, $label] = self::WRAPPERS[$key];
-                $nodes[] = new PlanNode($kind, $label, children: $this->collect($value));
+                if ('ordering_operation' === $key && false === ($value['using_filesort'] ?? null)) {
+                    $kind = PlanKind::Other;
+                }
+                $children = $this->collect($value);
+                $nodes[] = new PlanNode($kind, $label, rows: PlanKind::Sort === $kind && 1 === \count($children) ? $children[0]->rows : null, children: $children);
+            } elseif ('read_sorted_file' === $key) {
+                array_push($nodes, ...$this->collect($value));
             } elseif ('materialized_from_subquery' === $key && \is_array($value['query_block'] ?? null)) {
                 array_push($nodes, ...$this->collect($value['query_block']));
             }

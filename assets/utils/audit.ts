@@ -11,6 +11,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'token', label: 'Jetons' },
   { value: 'target', label: 'Adresses refusées' },
   { value: 'invitation', label: 'Invitations' },
+  { value: 'account', label: 'Comptes' },
   { value: 'query', label: 'Requêtes' },
   { value: 'schema', label: 'Structure des tables' },
   { value: 'diagnostic', label: 'Supervision du serveur' },
@@ -25,6 +26,10 @@ export function describeEvent(entry: AuditEntry): string {
   switch (entry.action) {
     case 'account.registered':
       return 'Compte créé'
+    case 'account.disabled':
+      return 'Compte désactivé'
+    case 'account.enabled':
+      return 'Compte réactivé'
     case 'login.success':
       return 'Connexion'
     case 'login.failure':
@@ -73,6 +78,8 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Invitation révoquée'
     case 'query.executed':
       return 'Requête exécutée'
+    case 'query.prepared':
+      return 'Écriture préparée (rien n’a été exécuté)'
     case 'query.refused':
       return 'Requête refusée'
     case 'query.failed':

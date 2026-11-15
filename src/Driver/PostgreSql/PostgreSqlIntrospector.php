@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Driver\PostgreSql;
 
+use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\DefinerReport;
@@ -11,6 +12,9 @@ use App\Core\Schema\Exception\InvalidSchemaException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsage;
+use App\Core\Schema\IndexUsageReport;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\OperationsSource;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
@@ -23,6 +27,7 @@ use App\Core\Schema\TableSummary;
 use App\Core\Schema\UpkeepReport;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 
 /**
  * Introspection de PostgreSQL par les catalogues pg_catalog, dans le schéma courant de la connexion.
@@ -143,6 +148,73 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector, Opera
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
     }
 
+    /**
+     * `idx_scan` de pg_stat_user_indexes, sans les index qui portent une contrainte d'exclusion. La collecte part de la dernière
+     * remise à zéro des statistiques de la base, à défaut du démarrage du serveur (les statistiques survivent à un arrêt propre :
+     * c'est alors une durée minimale, jamais trop longue).
+     */
+    public function indexUsage(): IndexUsageReport
+    {
+        try {
+            $seconds = $this->connection->fetchOne(
+                'SELECT EXTRACT(EPOCH FROM now() - COALESCE((SELECT stats_reset FROM pg_stat_database WHERE datname = current_database()), pg_postmaster_start_time()))::bigint',
+            );
+            $rows = $this->connection->fetchAllAssociative(
+                'SELECT s.relname AS tbl, s.indexrelname AS idx, s.idx_scan AS read_count
+                   FROM pg_stat_user_indexes s
+                   JOIN pg_index i ON i.indexrelid = s.indexrelid
+                  WHERE s.schemaname = current_schema() AND NOT i.indisexclusion AND i.indisvalid
+                  ORDER BY s.relname, s.indexrelname',
+            );
+        } catch (DriverException $e) {
+            return IndexUsageReport::unavailable('42501' === $e->getSQLState() ? 'permission_denied' : 'unreadable');
+        }
+
+        $usages = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $usages[] = new IndexUsage($row->string('tbl'), $row->string('idx'), $row->int('read_count'));
+        }
+
+        return IndexUsageReport::available(is_numeric($seconds) ? (int) $seconds : 0, $usages);
+    }
+
+    public function autoCounters(): array
+    {
+        // Séquences possédées par une colonne (serial = dépendance « a », identité = « i ») ; pg_sequences donne last_value
+        // (nul tant que la séquence n'a servi à rien) et max_value sans toucher à la table.
+        $rows = $this->connection->fetchAllAssociative(
+            "SELECT c.relname AS tbl, a.attname AS col, s.last_value::text AS last_value, s.max_value::text AS max_value,
+                    s.schemaname || '.' || s.sequencename AS sequence, d.deptype = 'i' AS identity
+               FROM pg_depend d
+               JOIN pg_class sc ON sc.oid = d.objid AND sc.relkind = 'S'
+               JOIN pg_namespace sn ON sn.oid = sc.relnamespace
+               JOIN pg_sequences s ON s.schemaname = sn.nspname AND s.sequencename = sc.relname
+               JOIN pg_class c ON c.oid = d.refobjid
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = d.refobjsubid
+              WHERE d.classid = 'pg_class'::regclass AND d.refclassid = 'pg_class'::regclass AND d.deptype IN ('a', 'i')
+                AND c.relkind IN ('r', 'p') AND n.nspname = current_schema()
+                AND s.last_value IS NOT NULL AND s.increment_by > 0
+              ORDER BY c.relname, a.attnum",
+        );
+
+        $counters = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $counters[] = new AutoCounter(
+                $row->string('tbl'),
+                $row->string('col'),
+                $row->string('last_value'),
+                $row->nullableString('max_value'),
+                $row->string('sequence'),
+                $row->bool('identity'),
+            );
+        }
+
+        return $counters;
+    }
+
     public function describeTable(string $name): TableDefinition
     {
         $header = $this->connection->fetchAssociative(
@@ -172,7 +244,18 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector, Opera
             self::estimate($kind, $header),
             $header->nullableInt('data_bytes'),
             $header->nullableInt('index_bytes'),
+            null,
+            null,
+            TableKind::Table === $kind ? $this->triggerCount($oid) : null,
         );
+    }
+
+    /** Les déclencheurs écrits par l'utilisateur : ceux des clés étrangères (internes) ne comptent pas. */
+    private function triggerCount(int $oid): int
+    {
+        $count = $this->connection->fetchOne('SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = ? AND NOT tgisinternal', [$oid]);
+
+        return is_numeric($count) ? (int) $count : 0;
     }
 
     private static function kind(string $relkind): TableKind
@@ -207,7 +290,8 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector, Opera
             "SELECT a.attname AS name,
                     format_type(a.atttypid, a.atttypmod) AS type,
                     NOT a.attnotnull AS nullable,
-                    pg_get_expr(d.adbin, d.adrelid) AS col_default,
+                    CASE WHEN a.attgenerated = '' THEN pg_get_expr(d.adbin, d.adrelid) END AS col_default,
+                    (a.attgenerated <> '') AS generated,
                     (a.attidentity <> '' OR COALESCE(pg_get_expr(d.adbin, d.adrelid), '') LIKE 'nextval(%') AS auto_increment,
                     col_description(a.attrelid, a.attnum) AS comment
                FROM pg_attribute a
@@ -227,6 +311,7 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector, Opera
                 $row->nullableString('col_default'),
                 $row->bool('auto_increment'),
                 $row->nullableString('comment'),
+                lock: $row->bool('generated') ? LockReason::Generated : null,
             );
         }
 
@@ -239,29 +324,58 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector, Opera
     private function indexes(int $oid): array
     {
         // indnkeyatts exclut les colonnes INCLUDE ; pg_get_indexdef(…, n, true) rend la colonne ou le texte de l'expression.
+        // Les particularités que le modèle ne sait pas redire sont lues ici (indices des vecteurs indkey/indclass/indcollation/indoption
+        // : base zéro) ; indnullsnotdistinct n'existe qu'à partir de PostgreSQL 15, d'où to_jsonb.
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT ic.relname AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
-                    pg_get_indexdef(i.indexrelid, k.n, true) AS col, pg_relation_size(i.indexrelid) AS size
+            "SELECT ic.relname AS name, i.indisunique AS is_unique, i.indisprimary AS is_primary,
+                    pg_get_indexdef(i.indexrelid, k.n, true) AS col, pg_relation_size(i.indexrelid) AS size,
+                    am.amname AS method, (i.indpred IS NOT NULL) AS is_partial, (i.indnatts > i.indnkeyatts) AS has_include,
+                    COALESCE((to_jsonb(i) ->> 'indnullsnotdistinct')::boolean, false) AS nulls_not_distinct,
+                    (i.indkey[k.n - 1] = 0) AS is_expression, NOT oc.opcdefault AS custom_opclass,
+                    (a.attnum IS NOT NULL AND i.indcollation[k.n - 1] <> a.attcollation) AS custom_collation,
+                    i.indoption[k.n - 1] AS option
                FROM pg_index i
                JOIN pg_class ic ON ic.oid = i.indexrelid
+               JOIN pg_am am ON am.oid = ic.relam
               CROSS JOIN LATERAL generate_series(1, i.indnkeyatts) AS k(n)
+               JOIN pg_opclass oc ON oc.oid = i.indclass[k.n - 1]
+               LEFT JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[k.n - 1] AND a.attnum > 0
               WHERE i.indrelid = ?
-              ORDER BY ic.relname, k.n',
+              ORDER BY ic.relname, k.n",
             [$oid],
         );
 
-        /** @var array<string, array{unique: bool, primary: bool, columns: list<string>, size: ?int}> $grouped */
+        /** @var array<string, array{unique: bool, primary: bool, columns: list<string>, size: ?int, lock: ?LockReason}> $grouped */
         $grouped = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $name = $row->string('name');
-            $grouped[$name] ??= ['unique' => $row->bool('is_unique'), 'primary' => $row->bool('is_primary'), 'columns' => [], 'size' => $row->nullableInt('size')];
-            $grouped[$name]['columns'][] = $row->string('col');
+            $grouped[$name] ??= ['unique' => $row->bool('is_unique'), 'primary' => $row->bool('is_primary'), 'columns' => [], 'size' => $row->nullableInt('size'), 'lock' => null];
+            // Le texte d'une expression n'est pas une colonne : un brouillon qui le citerait serait invalide (comme côté MySQL, on l'omet).
+            if (!$row->bool('is_expression')) {
+                $grouped[$name]['columns'][] = $row->string('col');
+            }
+            $option = $row->nullableInt('option') ?? 0;
+            $grouped[$name]['lock'] ??= match (true) {
+                'btree' !== $row->string('method') => LockReason::AccessMethod,
+                $row->bool('is_partial') => LockReason::Partial,
+                $row->bool('has_include') => LockReason::Include,
+                $row->bool('nulls_not_distinct') => LockReason::NullsNotDistinct,
+                $row->bool('is_expression') => LockReason::Expression,
+                $row->bool('custom_opclass') => LockReason::OperatorClass,
+                $row->bool('custom_collation') => LockReason::Collation,
+                0 !== ($option & 1) => LockReason::Descending,
+                0 !== ($option & 2) => LockReason::NullsOrder,
+                default => null,
+            };
         }
 
         $indexes = [];
         foreach ($grouped as $name => $index) {
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], $index['primary'], $index['size']);
+            if ([] === $index['columns']) {
+                continue;
+            }
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], $index['primary'], $index['size'], $index['lock']);
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 

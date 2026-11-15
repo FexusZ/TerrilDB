@@ -6,12 +6,16 @@ namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
 use App\Core\Driver\Exception\UnsupportedOperationException;
+use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\DefinerReport;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\IndexUsage;
+use App\Core\Schema\IndexUsageReport;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\OperationsSource;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
@@ -23,6 +27,7 @@ use App\Core\Schema\TableSummary;
 use App\Core\Schema\UpkeepReport;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 
 /**
  * Introspection de MySQL et MariaDB par information_schema, dans la base de la connexion. Les noms de tables
@@ -36,6 +41,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
     public function __construct(private Connection $connection)
     {
     }
+
+    private const COMPRESSED = '~\s*/\*M?!\d+\s+COMPRESSED(?:=\w+)?\s*\*/~i';
 
     private const SYSTEM_DATABASES = ['information_schema', 'mysql', 'performance_schema', 'sys'];
 
@@ -140,12 +147,79 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
         return new TablePage($tables, $more ? $tables[\count($tables) - 1]->name : null, $total);
     }
 
+    /**
+     * Lectures par index depuis performance_schema (jamais sys, qui n'existe pas partout). La collecte part du démarrage du
+     * serveur (ou d'une remise à zéro de la table) : la durée donnée est l'uptime, jamais un faux « depuis toujours ». Éteint
+     * (MariaDB l'est par défaut), instrument coupé ou droit manquant : un état indisponible, pas une erreur.
+     */
+    public function indexUsage(): IndexUsageReport
+    {
+        try {
+            $enabled = $this->connection->fetchOne('SELECT @@performance_schema');
+            if (!\is_scalar($enabled) || 1 !== (int) $enabled) {
+                return IndexUsageReport::unavailable('performance_schema_off');
+            }
+            $instrument = $this->connection->fetchOne("SELECT ENABLED FROM performance_schema.setup_instruments WHERE NAME = 'wait/io/table/sql/handler'");
+            if ('YES' !== $instrument) {
+                return IndexUsageReport::unavailable('instrument_off');
+            }
+            $uptime = $this->connection->fetchAssociative("SHOW GLOBAL STATUS LIKE 'Uptime'");
+            $rows = $this->connection->fetchAllAssociative(
+                'SELECT OBJECT_NAME AS tbl, INDEX_NAME AS idx, COUNT_READ AS read_count
+                   FROM performance_schema.table_io_waits_summary_by_index_usage
+                  WHERE OBJECT_SCHEMA = DATABASE() AND INDEX_NAME IS NOT NULL
+                  ORDER BY OBJECT_NAME, INDEX_NAME',
+            );
+        } catch (DriverException $e) {
+            return IndexUsageReport::unavailable(\in_array($e->getCode(), [1044, 1142, 1143, 1227], true) ? 'permission_denied' : 'unreadable');
+        }
+
+        $usages = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $usages[] = new IndexUsage($row->string('tbl'), $row->string('idx'), $row->int('read_count'));
+        }
+
+        return IndexUsageReport::available(false === $uptime ? 0 : (new RowReader($uptime))->int('Value'), $usages);
+    }
+
+    public function autoCounters(): array
+    {
+        // MySQL 8 garde AUTO_INCREMENT en cache jusqu'à 24 h (information_schema_stats_expiry) : on veut la valeur du moment.
+        // MariaDB n'a pas cette variable et lit toujours à jour.
+        try {
+            $this->connection->executeStatement('SET SESSION information_schema_stats_expiry = 0');
+        } catch (\Throwable) {
+        }
+
+        // AUTO_INCREMENT est la PROCHAINE valeur : la dernière attribuée en est le précédent (en décimal, un BIGINT UNSIGNED
+        // dépasse l'entier de PHP). Une table sans ligne ni compteur n'a rien à dire.
+        $rows = $this->connection->fetchAllAssociative(
+            "SELECT t.TABLE_NAME AS tbl, c.COLUMN_NAME AS col, CAST(t.AUTO_INCREMENT AS DECIMAL(21, 0)) - 1 AS used
+               FROM information_schema.TABLES t
+               JOIN information_schema.COLUMNS c ON c.TABLE_SCHEMA = t.TABLE_SCHEMA AND c.TABLE_NAME = t.TABLE_NAME
+              WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_TYPE = 'BASE TABLE' AND t.AUTO_INCREMENT IS NOT NULL
+                AND c.EXTRA LIKE '%auto_increment%'
+              ORDER BY t.TABLE_NAME",
+        );
+
+        $counters = [];
+        foreach ($rows as $row) {
+            $row = new RowReader($row);
+            $counters[] = new AutoCounter($row->string('tbl'), $row->string('col'), $row->string('used'));
+        }
+
+        return $counters;
+    }
+
     public function describeTable(string $name): TableDefinition
     {
         $header = $this->connection->fetchAssociative(
-            'SELECT TABLE_NAME AS name, TABLE_TYPE AS kind, TABLE_ROWS AS estimate, DATA_LENGTH AS data_bytes, INDEX_LENGTH AS index_bytes
-               FROM information_schema.TABLES
-              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            'SELECT t.TABLE_NAME AS name, t.TABLE_TYPE AS kind, t.TABLE_ROWS AS estimate, t.DATA_LENGTH AS data_bytes, t.INDEX_LENGTH AS index_bytes,
+                    t.ENGINE AS storage_engine, e.TRANSACTIONS AS engine_transactions
+               FROM information_schema.TABLES t
+               LEFT JOIN information_schema.ENGINES e ON e.ENGINE = t.ENGINE
+              WHERE t.TABLE_SCHEMA = DATABASE() AND t.TABLE_NAME = ?',
             [$name],
         );
         if (false === $header) {
@@ -167,12 +241,32 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
             TableKind::View === $kind ? null : $header->nullableInt('estimate'),
             TableKind::View === $kind ? null : $header->nullableInt('data_bytes'),
             TableKind::View === $kind ? null : $header->nullableInt('index_bytes'),
+            TableKind::View === $kind ? null : $header->nullableString('storage_engine'),
+            TableKind::View === $kind ? null : self::transactional($header->nullableString('engine_transactions')),
+            TableKind::View === $kind ? null : $this->triggerCount($name),
         );
+    }
+
+    private static function transactional(?string $flag): ?bool
+    {
+        return null === $flag ? null : 'YES' === strtoupper($flag);
+    }
+
+    private function triggerCount(string $table): int
+    {
+        return self::count($this->connection->fetchOne(
+            'SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE EVENT_OBJECT_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = ?',
+            [$table],
+        ));
     }
 
     private static function kind(string $type): TableKind
     {
-        return 'VIEW' === $type ? TableKind::View : TableKind::Table;
+        return match ($type) {
+            'VIEW' => TableKind::View,
+            'SEQUENCE' => TableKind::Sequence,
+            default => TableKind::Table,
+        };
     }
 
     /**
@@ -182,30 +276,65 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
     {
         $rows = $this->connection->fetchAllAssociative(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
-                    EXTRA AS extra, COLUMN_COMMENT AS comment
+                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation
                FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION',
             [$table],
         );
 
+        $checked = $this->columnsWithACheck($table);
         $columns = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $nullable = $row->bool('nullable');
             $default = $row->nullableString('col_default');
+            // MariaDB écrit la compression en commentaire exécutable dans le type : on la lit à part.
+            $type = $row->string('type');
+            $compressed = 1 === preg_match(self::COMPRESSED, $type);
             $columns[] = new ColumnDefinition(
                 $row->string('name'),
-                $row->string('type'),
+                $compressed ? trim((string) preg_replace(self::COMPRESSED, '', $type)) : $type,
                 $nullable,
                 // MariaDB écrit le littéral NULL pour « pas de défaut » sur une colonne nullable.
                 $nullable && 'NULL' === $default ? null : $default,
                 str_contains($row->string('extra'), 'auto_increment'),
                 $row->nullableString('comment'),
+                str_contains($row->string('extra'), 'INVISIBLE'),
+                1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
+                $compressed,
+                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : (isset($checked[$row->string('name')]) ? LockReason::ColumnCheck : null),
             );
         }
 
         return $columns;
+    }
+
+    /**
+     * MariaDB : les colonnes qui portent une contrainte CHECK écrite sur la colonne (niveau « Column », nommée comme elle) ;
+     * MODIFY COLUMN la ferait disparaître. MySQL la garde, et son catalogue n'a pas ce niveau : rien à verrouiller.
+     *
+     * @return array<string, true>
+     */
+    private function columnsWithACheck(string $table): array
+    {
+        $levels = $this->connection->fetchOne(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'CHECK_CONSTRAINTS' AND COLUMN_NAME = 'LEVEL'",
+        );
+        if (!is_numeric($levels) || (int) $levels < 1) {
+            return [];
+        }
+
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT CONSTRAINT_NAME FROM information_schema.CHECK_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND LEVEL = 'Column'",
+            [$table],
+        );
+        $checked = [];
+        foreach ($names as $name) {
+            $checked[(new RowReader(['name' => $name]))->string('name')] = true;
+        }
+
+        return $checked;
     }
 
     /**
@@ -240,28 +369,65 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
     }
 
     /**
+     * Les colonnes de information_schema.STATISTICS selon la version : MySQL 8 a IS_VISIBLE et EXPRESSION, MariaDB a IGNORED.
+     *
+     * @return array<string, true>
+     */
+    private function statisticsColumns(): array
+    {
+        $names = $this->connection->fetchFirstColumn(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'STATISTICS'",
+        );
+
+        $available = [];
+        foreach ($names as $name) {
+            $available[strtoupper((new RowReader(['name' => $name]))->string('name'))] = true;
+        }
+
+        return $available;
+    }
+
+    /**
      * @return list<IndexDefinition>
      */
     private function indexes(string $table): array
     {
+        $available = $this->statisticsColumns();
+        $hidden = match (true) {
+            isset($available['IS_VISIBLE']) => "IS_VISIBLE = 'NO'",
+            isset($available['IGNORED']) => "IGNORED = 'YES'",
+            default => '0',
+        };
+        $expression = isset($available['EXPRESSION']) ? 'EXPRESSION IS NOT NULL' : '0';
         $rows = $this->connection->fetchAllAssociative(
-            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col
+            'SELECT INDEX_NAME AS name, NON_UNIQUE AS non_unique, COLUMN_NAME AS col, ('.$hidden.') AS hidden,
+                    COLLATION AS direction, SUB_PART AS prefix, INDEX_TYPE AS method, ('.$expression.') AS expression
                FROM information_schema.STATISTICS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY INDEX_NAME, SEQ_IN_INDEX',
             [$table],
         );
 
-        /** @var array<string, array{unique: bool, columns: list<string>}> $grouped */
+        /** @var array<string, array{unique: bool, columns: list<string>, lock: ?LockReason}> $grouped */
         $grouped = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
             $name = $row->string('name');
-            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => []];
+            $grouped[$name] ??= ['unique' => !$row->bool('non_unique'), 'columns' => [], 'lock' => null];
             $column = $row->nullableString('col');
             if (null !== $column) {
                 $grouped[$name]['columns'][] = $column;
             }
+            // Ce que `CREATE INDEX (colonnes)` ne dit pas : recréer l'index sur ces seules colonnes le dégraderait.
+            $grouped[$name]['lock'] ??= match (true) {
+                $row->bool('hidden') => isset($available['IS_VISIBLE']) ? LockReason::IndexInvisible : LockReason::IndexIgnored,
+                'FULLTEXT' === strtoupper($row->string('method')) => LockReason::Fulltext,
+                \in_array(strtoupper($row->string('method')), ['SPATIAL', 'RTREE'], true) => LockReason::Spatial,
+                $row->bool('expression') => LockReason::Expression,
+                null !== $row->nullableString('prefix') => LockReason::Prefix,
+                'D' === $row->nullableString('direction') => LockReason::Descending,
+                default => null,
+            };
         }
 
         $sizes = $this->indexSizes($table);
@@ -271,7 +437,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
                 continue;
             }
             // La clé primaire InnoDB est la table elle-même : sa place est déjà dans les données.
-            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null));
+            $indexes[] = new IndexDefinition((string) $name, $index['columns'], $index['unique'], 'PRIMARY' === $name, 'PRIMARY' === $name ? null : ($sizes[(string) $name] ?? null), $index['lock']);
         }
         usort($indexes, static fn (IndexDefinition $a, IndexDefinition $b): int => [!$a->primary, 0] <=> [!$b->primary, 0] ?: strcmp($a->name, $b->name));
 

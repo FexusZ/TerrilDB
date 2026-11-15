@@ -195,6 +195,66 @@ final class TableStructureWebTest extends WebApiTestCase
         self::assertSame(['id', 'name'], $this->columnsOf($table));
     }
 
+    private function scratchWithRows(int $rows): string
+    {
+        $table = $this->scratch();
+        $this->target()->executeStatement(\sprintf('INSERT INTO "%s" SELECT g, \'n\', NULL FROM generate_series(1, %d) g', $table, $rows));
+        $this->target()->executeStatement(\sprintf('ANALYZE "%s"', $table));
+
+        return $table;
+    }
+
+    public function testPreviewOfASmallTableAsksForNothing(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratchWithRows(3);
+        [$detail, $fingerprint] = $this->load($id, $table);
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+
+        self::assertSame(['level' => 'none', 'estimatedRows' => 3, 'warnAt' => 10, 'confirmAt' => 100], $body['bigTable']);
+    }
+
+    public function testPreviewOfABigTableWarnsThenAsksForTheName(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $warned = $this->scratchWithRows(20);
+        $big = $this->scratchWithRows(150);
+
+        [$detail, $fingerprint] = $this->load($id, $warned);
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$warned.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+        self::assertSame(['level' => 'warning', 'estimatedRows' => 20, 'warnAt' => 10, 'confirmAt' => 100], $body['bigTable']);
+
+        [$detail, $fingerprint] = $this->load($id, $big);
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$big.'/structure/preview', ['drop' => true, 'fingerprint' => $fingerprint]);
+        self::assertSame(['level' => 'confirm_name', 'estimatedRows' => 150, 'warnAt' => 10, 'confirmAt' => 100], $body['bigTable']);
+    }
+
+    public function testABigTableIsOnlyChangedOnceItsNameIsTyped(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratchWithRows(150);
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $request = ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint];
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', $request);
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $body['error'] ?? null);
+        self::assertSame('big_table_name', $body['reason'] ?? null);
+        self::assertSame(150, self::arrayOf($body['bigTable'])['estimatedRows']);
+
+        $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', $request + ['confirmedTableName' => strtoupper($table)]);
+        self::assertSame(409, $this->statusCode());
+        self::assertSame(['id', 'name', 'note'], $this->columnsOf($table));
+
+        $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', $request + ['confirmedTableName' => $table]);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['id', 'name', 'note', 'qty'], $this->columnsOf($table));
+    }
+
     public function testRefusesAnApplyBasedOnAStaleFingerprint(): void
     {
         $this->seedAndLogin();
@@ -332,5 +392,78 @@ final class TableStructureWebTest extends WebApiTestCase
         $this->call('POST', '/web/connections/'.$id.'/tables/t/structure/preview', ['drop' => true, 'fingerprint' => str_repeat('a', 64)]);
 
         self::assertSame(501, $this->statusCode());
+    }
+
+    public function testPreviewWarnsAboutAnOpenTransactionThatHoldsTheTable(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $holder = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        try {
+            $holder->executeStatement('BEGIN');
+            $holder->fetchAllAssociative(\sprintf('SELECT * FROM "%s"', $table));
+            $holderPid = (string) (\is_scalar($pid = $holder->fetchOne('SELECT pg_backend_pid()')) ? $pid : '');
+
+            $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+        } finally {
+            $holder->executeStatement('ROLLBACK');
+            $holder->close();
+        }
+
+        self::assertSame(200, $this->statusCode(), 'The warning never blocks the preview.');
+        self::assertCount(1, self::arrayOf($body['statements']));
+        $check = self::arrayOf($body['lockCheck']);
+        self::assertSame('available', self::arrayOf($check['status'])['availability']);
+        $holders = self::arrayOf($check['holders']);
+        self::assertCount(1, $holders);
+        $first = self::arrayOf($holders[0]);
+        self::assertSame($holderPid, $first['session']);
+        self::assertTrue($first['sleeping']);
+        self::assertArrayNotHasKey('query', $first, 'No query text of another session.');
+    }
+
+    public function testPreviewOfAFreeTableSaysNobodyHoldsIt(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        [$detail, $fingerprint] = $this->load($id, $table);
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
+
+        $check = self::arrayOf($body['lockCheck']);
+        self::assertSame('available', self::arrayOf($check['status'])['availability']);
+        self::assertSame([], $check['holders']);
+    }
+
+    public function testATimedOutApplyExplainsWhichSessionHoldsTheTable(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $holder = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+
+        try {
+            $holder->executeStatement('BEGIN');
+            $holder->fetchAllAssociative(\sprintf('SELECT * FROM "%s"', $table));
+            $holderPid = (string) (\is_scalar($pid = $holder->fetchOne('SELECT pg_backend_pid()')) ? $pid : '');
+
+            $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/apply', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint, 'confirmed' => true]);
+        } finally {
+            $holder->executeStatement('ROLLBACK');
+            $holder->close();
+        }
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('lock_timeout', $body['error']);
+        self::assertTrue($body['lockTimeout']);
+        self::assertTrue($body['retryable']);
+        self::assertSame([], $body['applied']);
+        $holders = self::arrayOf(self::arrayOf($body['lockCheck'])['holders']);
+        self::assertSame($holderPid, self::arrayOf($holders[0])['session']);
     }
 }

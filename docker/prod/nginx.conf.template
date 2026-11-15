@@ -1,4 +1,4 @@
-# Hôte virtuel du reverse proxy de la machine (rendu par docker/prod/setup-host.sh ; __DOMAIN__ et __PORT__ y sont remplacés).
+# Hôte virtuel du reverse proxy de la machine (rendu par docker/prod/setup-host.sh ; __DOMAIN__, __PORT__ et __PROXY_TIMEOUT__ y sont remplacés).
 # Certbot y ajoute ensuite le TLS et la redirection HTTP -> HTTPS.
 server {
     server_name __DOMAIN__;
@@ -14,7 +14,9 @@ server {
         proxy_set_header   X-Real-IP $remote_addr;
         proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
-        # Une requête SQL peut durer jusqu'à son délai maximal.
-        proxy_read_timeout 120s;
+        # Une requête SQL peut durer jusqu'à son délai maximal. La valeur vient de TERRILDB_PROXY_TIMEOUT (deploy.env) ; l'application
+        # la relit dans l'en-tête ci-dessous pour en tirer la limite de durée des requêtes et signaler un désaccord (ProxyTimeoutListener).
+        proxy_read_timeout __PROXY_TIMEOUT__s;
+        proxy_set_header   X-TerrilDB-Proxy-Timeout __PROXY_TIMEOUT__;
     }
 }
