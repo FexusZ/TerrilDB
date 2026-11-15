@@ -30,6 +30,7 @@ export function createAppRouter(history: RouterHistory): Router {
         props: true,
         children: [
           { path: '', name: 'workspace', component: () => import('./views/QueryPane.vue') },
+          { path: 'accounts', name: 'accounts', component: () => import('./views/AccountsPane.vue'), props: true },
           { path: 'activity', name: 'server-activity', component: () => import('./views/ServerActivityPane.vue'), props: true },
           { path: 'variables', name: 'server-variables', component: () => import('./views/ServerVariablesPane.vue'), props: true },
           { path: 'audit', name: 'audit', component: () => import('./views/AuditPane.vue'), props: true },

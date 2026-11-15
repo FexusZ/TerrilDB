@@ -339,6 +339,8 @@ final class McpTest extends WebApiTestCase
         $this->initialize();
         self::assertNotContains('list_sessions', $this->toolNames());
         self::assertNotContains('list_locks', $this->toolNames());
+        self::assertNotContains('list_accounts', $this->toolNames());
+        self::assertNotContains('connection_encryption', $this->toolNames());
         self::assertNotContains('top_queries', $this->toolNames());
         self::assertNotContains('list_variables', $this->toolNames());
         $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
@@ -562,6 +564,24 @@ final class McpTest extends WebApiTestCase
         $text = self::str(self::obj(self::first($refused['content']))['text']);
         self::assertStringContainsString('script_refused', $text);
         self::assertStringContainsString('write_not_permitted', $text);
+    }
+
+    public function testListsTheAccountsAndTheEncryptionThroughMcp(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_accounts', $this->toolNames());
+        self::assertContains('connection_encryption', $this->toolNames());
+        $accounts = self::textOf($this->callTool('list_accounts', ['connection' => $this->connectionId]));
+        self::assertSame('available', self::obj($accounts['status'])['availability']);
+        self::assertNotEmpty($accounts['accounts']);
+        self::assertArrayHasKey('findings', $accounts);
+        $encryption = self::textOf($this->callTool('connection_encryption', ['connection' => $this->connectionId]));
+        self::assertArrayHasKey('encrypted', $encryption);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        self::assertTrue($this->callTool('list_accounts', ['connection' => $this->otherConnectionId])['isError']);
     }
 
     public function testAPlainTokenDoesNotSeeTheConnectionTool(): void

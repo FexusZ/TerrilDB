@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableReport } from './types'
+import type { AccountReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableReport } from './types'
 
 export interface DiagnosticScope {
   database: string | null
@@ -49,3 +49,9 @@ export function fetchVariables(id: string, scope: DiagnosticScope, filter: Varia
 
   return api<VariableReport>('GET', `/web/connections/${id}/diagnostics/variables?${parts.join('&')}`)
 }
+
+/** Comptes, rôles et privilèges du serveur et l'audit de sécurité (MySQL, MariaDB) : lecture seule, jamais une empreinte de mot de passe. */
+export const fetchAccounts = (id: string, scope: DiagnosticScope): Promise<AccountReport> => api<AccountReport>('GET', `/web/connections/${id}/diagnostics/accounts${suffix(scope)}`)
+
+/** La connexion de TerrilDB vers la cible est-elle chiffrée ? Une observation. */
+export const fetchEncryption = (id: string, scope: DiagnosticScope): Promise<ConnectionEncryption> => api<ConnectionEncryption>('GET', `/web/connections/${id}/diagnostics/encryption${suffix(scope)}`)

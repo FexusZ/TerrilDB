@@ -20,6 +20,8 @@ final readonly class ServerDiagnostics
         private ?LockDiagnostics $locks = null,
         private ?StatementDiagnostics $statements = null,
         private ?VariableDiagnostics $variables = null,
+        private ?AccountDiagnostics $accounts = null,
+        private ?EncryptionDiagnostics $encryption = null,
     ) {
     }
 
@@ -50,9 +52,25 @@ final readonly class ServerDiagnostics
     /**
      * @throws UnsupportedOperationException
      */
+    public function accounts(): AccountDiagnostics
+    {
+        return $this->accounts ?? throw UnsupportedOperationException::for($this->engine, 'accounts');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
     public function variables(): VariableDiagnostics
     {
         return $this->variables ?? throw UnsupportedOperationException::for($this->engine, 'variables');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function encryption(): EncryptionDiagnostics
+    {
+        return $this->encryption ?? throw UnsupportedOperationException::for($this->engine, 'encryption');
     }
 
     /**
@@ -65,7 +83,7 @@ final readonly class ServerDiagnostics
      */
     public function capabilities(?\Closure $onFailure = null): array
     {
-        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables];
+        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption];
         $capabilities = [];
         foreach ($themes as $name => $theme) {
             if (null === $theme) {
