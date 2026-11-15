@@ -254,6 +254,19 @@ final readonly class ApiController
     }
 
     /**
+     * Audit de la configuration du serveur de la connexion : des règles sur les variables lues, chacune avec sa gravité, son
+     * explication, la valeur recommandée et une suggestion à lire (jamais exécutée). Aucun SET.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/config-audit', requirements: self::ID, methods: ['GET'])]
+    public function configAudit(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::configAudit($report));
+    }
+
+    /**
      * Première étape d'une écriture : juge l'instruction sans l'exécuter et rend un jeton de confirmation, lié à ce texte exact,
      * à cette connexion et à ce jeton d'API, à usage unique et valable cinq minutes.
      */

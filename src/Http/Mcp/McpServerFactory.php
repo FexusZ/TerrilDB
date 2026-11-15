@@ -157,6 +157,13 @@ final readonly class McpServerFactory
                     'additionalProperties' => false,
                 ],
             );
+            $builder->addTool(
+                [$this->tools, 'auditConfig'],
+                name: 'audit_config',
+                description: 'Audite la configuration du serveur de la connexion (MySQL, MariaDB, PostgreSQL) : des règles sur les variables lues, chacune avec sa gravité, une explication, la valeur recommandée et une commande à LIRE (rien n’est exécuté, aucun SET). Une règle dont la variable est masquée, absente ou illisible se tait ; `evaluated` sur `rulesTotal` dit combien ont pu être jugées. L’état dit si la source est éteinte ou illisible, ou si le moteur n’a pas de règle.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
+            );
         }
 
         if ($this->access->get()->token->getPermissions()->diagnostic) {
