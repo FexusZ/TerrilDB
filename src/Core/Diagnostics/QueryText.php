@@ -18,7 +18,7 @@ final readonly class QueryText
 {
     public const MAX_LENGTH = 200;
 
-    private function __construct(public ?string $text, public bool $redacted)
+    private function __construct(public ?string $text, public bool $redacted, public bool $shortened = false)
     {
     }
 
@@ -47,6 +47,8 @@ final readonly class QueryText
         $masked .= substr($raw, $position);
         $masked = mb_scrub($masked, 'UTF-8');
 
-        return new self(mb_strlen($masked) > self::MAX_LENGTH ? mb_substr($masked, 0, self::MAX_LENGTH - 1).'…' : $masked, false);
+        $shortened = mb_strlen($masked) > self::MAX_LENGTH;
+
+        return new self($shortened ? mb_substr($masked, 0, self::MAX_LENGTH - 1).'…' : $masked, false, $shortened);
     }
 }

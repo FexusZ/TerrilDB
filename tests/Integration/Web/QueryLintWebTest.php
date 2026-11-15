@@ -35,6 +35,16 @@ final class QueryLintWebTest extends WebApiTestCase
         $this->connectionId = $id;
     }
 
+    /**
+     * @param array<string, mixed> $details
+     */
+    private static function sqlOf(array $details): string
+    {
+        self::assertIsString($details['sql'] ?? null);
+
+        return $details['sql'];
+    }
+
     #[DataProvider('targets')]
     public function testReportsPatternsWithoutRunningAnything(string $envVar): void
     {
@@ -57,7 +67,7 @@ final class QueryLintWebTest extends WebApiTestCase
         self::assertCount(1, $events);
         self::assertSame(AuditAction::QueryLinted, $events[0]->getAction());
         self::assertSame(AuditOutcome::Success, $events[0]->getOutcome());
-        self::assertSame($sql, $events[0]->getDetails()['sql']);
+        self::assertSame('select * from orders where year(ordered_at) = ?', $events[0]->getDetails()['sql']);
         self::assertSame(2, $events[0]->getDetails()['findings']);
     }
 
@@ -72,7 +82,7 @@ final class QueryLintWebTest extends WebApiTestCase
         self::assertSame(AuditAction::QueryLinted, $this->auditEvents($this->user, 'query')[0]->getAction());
     }
 
-    public function testALongSelectIsAuditedTruncatedWithItsLength(): void
+    public function testALongSelectIsAuditedMaskedThenTruncatedWithItsLength(): void
     {
         $this->prepare('TARGET_POSTGRES_URL');
         $sql = 'select '.str_repeat('id, ', 120).'id from orders';
@@ -80,8 +90,9 @@ final class QueryLintWebTest extends WebApiTestCase
         $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
 
         $details = $this->auditEvents($this->user, 'query')[0]->getDetails();
-        self::assertSame(mb_substr($sql, 0, 200), $details['sql']);
-        self::assertSame(200, mb_strlen((string) $details['sql']));
+        self::assertSame(200, mb_strlen(self::sqlOf($details)));
+        self::assertStringStartsWith('select id, id, id,', self::sqlOf($details));
+        self::assertStringEndsWith('…', self::sqlOf($details));
         self::assertSame(mb_strlen($sql), $details['length']);
         self::assertTrue($details['truncated']);
     }
@@ -95,6 +106,37 @@ final class QueryLintWebTest extends WebApiTestCase
         $details = $this->auditEvents($this->user, 'query')[0]->getDetails();
         self::assertSame('select id from orders', $details['sql']);
         self::assertFalse($details['truncated']);
+    }
+
+    #[DataProvider('targets')]
+    public function testTheValuesOfASelectNeverReachTheAudit(string $envVar): void
+    {
+        $this->prepare($envVar);
+        $sql = "select id from customers where email = 'jean.dupont@example.org' and phone = '0612345678' and id = 4242 -- jean.dupont@example.org";
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertIsArray($body['findings']);
+        $details = $this->auditEvents($this->user, 'query')[0]->getDetails();
+        self::assertSame('select id from customers where email = ? and phone = ? and id = ?', trim((string) preg_replace('/\s+/', ' ', self::sqlOf($details))));
+        $all = json_encode($details, \JSON_THROW_ON_ERROR);
+        foreach (['jean.dupont', 'example.org', '0612345678', '4242'] as $value) {
+            self::assertStringNotContainsString($value, $all);
+        }
+        self::assertSame(mb_strlen($sql), $details['length']);
+    }
+
+    public function testAValueBeyondTheCutIsMaskedBeforeTheCutNotAfter(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL');
+        $sql = 'select '.str_repeat('a', 180)." from t where email = 'zz-secret-value-zz'";
+
+        $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
+
+        $details = $this->auditEvents($this->user, 'query')[0]->getDetails();
+        self::assertStringNotContainsString('zz-secret', json_encode($details, \JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString("'", self::sqlOf($details));
     }
 
     public function testWhatIsNotASelectLeavesNoTextInTheAudit(): void
