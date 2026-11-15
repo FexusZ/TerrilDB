@@ -142,7 +142,8 @@ MySQL / MariaDB : `queries_per_second` (Questions), `connections_used_percent` (
 de la base de la connexion) : `transactions_per_second`, `rollback_percent` (10 %, dès 100 transactions), `cache_hit_percent` (sous 99 %, dès 1000 blocs),
 `connections_used_percent` (80 %), `temp_files_per_second` (1), `deadlocks` (au moins 1), `rows_returned_per_second`. Aucun droit particulier n'est attendu (un refus du
 serveur sur la lecture des compteurs est rendu `permission_denied`). PostgreSQL publie les statistiques d'une session avec un léger retard (de l'ordre de la seconde, jusqu'à
-10 s pour une session inactive) : sur un intervalle très court, une activité récente peut ne pas encore y figurer. ClickHouse et Redis : `unsupported`, route 501. À
+10 s pour une session inactive) : sur un intervalle très court, une activité récente peut ne pas encore y figurer. Les taux PostgreSQL sont donc des ordres de grandeur (mesuré : de 1 à 2 fois
+la charge réelle sur 3 à 5 s, un rattrapage du paquet précédent sur 2 s, rien pour une session qui ne touche aucune table) : à lire sur 10 s ou plus ; MySQL et MariaDB comptent exactement. ClickHouse et Redis : `unsupported`, route 501. À
 suivre (non livré) : longueur de l'historique d'annulation InnoDB, journaux (requêtes lentes, journal général, journal d'erreurs SQL), préparation à la reprise. L'audit
 (`diagnostic.read`, `topic: health`) garde l'état, l'intervalle demandé et si la mesure a été écartée, jamais un compteur. Un délai maximal de requête côté serveur web inférieur
 à l'intervalle choisi (plus 2 s) interrompt la mesure : laissez la marge.
