@@ -231,6 +231,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             TableKind::View === $kind ? null : $header->nullableString('storage_engine'),
             TableKind::View === $kind ? null : self::transactional($header->nullableString('engine_transactions')),
             TableKind::View === $kind ? null : $this->triggerCount($name),
+            versioned: 'SYSTEM VERSIONED' === $header->string('kind'),
         );
     }
 
@@ -290,11 +291,27 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 str_contains($row->string('extra'), 'INVISIBLE'),
                 1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
                 $compressed,
-                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : (isset($checked[$row->string('name')]) ? LockReason::ColumnCheck : null),
+                self::lock($row->string('extra'), (string) $row->nullableString('generation'), isset($checked[$row->string('name')])),
             );
         }
 
         return $columns;
+    }
+
+    /**
+     * Pourquoi la colonne ne se redéfinit pas. MariaDB rend les colonnes de période d'une table versionnée comme des colonnes générées
+     * dont l'expression est « ROW START » / « ROW END » : on les distingue d'une colonne générée ordinaire.
+     */
+    private static function lock(string $extra, string $generation, bool $checked): ?LockReason
+    {
+        if (1 === preg_match('/^ROW\s+(?:START|END)$/i', trim($generation))) {
+            return LockReason::SystemPeriod;
+        }
+        if (1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $extra) || '' !== $generation) {
+            return LockReason::Generated;
+        }
+
+        return $checked ? LockReason::ColumnCheck : null;
     }
 
     /**
