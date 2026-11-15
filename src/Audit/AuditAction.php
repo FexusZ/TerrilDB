@@ -39,6 +39,7 @@ enum AuditAction: string
     case QueryFailed = 'query.failed';
     /** Une écriture jugée par `prepare`, sans exécution : le jeton de confirmation n'est jamais journalisé. */
     case QueryPrepared = 'query.prepared';
+    case QueryLinted = 'query.linted';
     case TargetForbidden = 'target.forbidden';
     case SchemaChanged = 'schema.changed';
     case SchemaChangeFailed = 'schema.failed';
