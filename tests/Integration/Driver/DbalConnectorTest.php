@@ -79,4 +79,40 @@ final class DbalConnectorTest extends TestCase
 
         (new DbalConnector())->connect(TargetDatabase::engine($envVar), $parameters);
     }
+
+    /**
+     * Le garde lit les chaînes avec l'échappement par antislash (MySQL par défaut) : un serveur réglé sur NO_BACKSLASH_ESCAPES
+     * ou ANSI_QUOTES lirait le même texte autrement et cacherait des constructions refusées au garde. La session est donc
+     * ramenée au comportement que le garde suppose, quel que soit le réglage du serveur.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function mysqlFamily(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testTheSessionDropsSqlModesThatChangeHowTextIsRead(string $envVar): void
+    {
+        $this->skipIfUnreachable($envVar);
+        $admin = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
+        $global = $admin->fetchOne('SELECT @@GLOBAL.sql_mode');
+        $original = \is_string($global) ? $global : '';
+
+        try {
+            $admin->executeStatement(\sprintf('SET GLOBAL sql_mode = %s', $admin->quote(trim($original.',NO_BACKSLASH_ESCAPES,ANSI_QUOTES', ','))));
+
+            $session = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar))->fetchOne('SELECT @@SESSION.sql_mode');
+            $modes = explode(',', \is_string($session) ? $session : '');
+        } finally {
+            $admin->executeStatement(\sprintf('SET GLOBAL sql_mode = %s', $admin->quote($original)));
+        }
+
+        self::assertNotContains('NO_BACKSLASH_ESCAPES', $modes);
+        self::assertNotContains('ANSI_QUOTES', $modes);
+    }
 }
