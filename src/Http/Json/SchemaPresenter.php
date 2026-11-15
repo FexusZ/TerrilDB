@@ -48,6 +48,7 @@ final class SchemaPresenter
             'name' => $table->name,
             'fingerprint' => SchemaChangePlanner::fingerprint($table),
             'kind' => $table->kind->value,
+            'versioned' => $table->versioned,
             'estimatedRows' => $table->estimatedRows,
             'dataBytes' => $table->dataBytes,
             'indexBytes' => $table->indexBytes,
