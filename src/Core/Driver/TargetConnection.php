@@ -37,6 +37,7 @@ final class TargetConnection
         private readonly ?DataExecutor $data = null,
         private readonly ?ServerDiagnostics $diagnostics = null,
         private readonly ?ScriptExecutor $script = null,
+        private readonly ?ServerVersion $version = null,
     ) {
         $this->release = $release;
     }
@@ -89,6 +90,19 @@ final class TargetConnection
     public function script(): ScriptExecutor
     {
         return $this->script ?? throw UnsupportedOperationException::for($this->engine, 'script');
+    }
+
+    /**
+     * La version lue à l'ouverture ; nulle si le serveur ne l'a pas donnée (ou pas de façon lisible).
+     */
+    public function version(): ?ServerVersion
+    {
+        return $this->version;
+    }
+
+    public function capabilities(): ServerCapabilities
+    {
+        return CapabilityMatrix::for($this->engine, $this->version);
     }
 
     public function runner(): QueryRunner
