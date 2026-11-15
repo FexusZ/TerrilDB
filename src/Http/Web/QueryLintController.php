@@ -7,7 +7,9 @@ namespace App\Http\Web;
 use App\Audit\AuditAction;
 use App\Audit\AuditLog;
 use App\Audit\AuditOutcome;
+use App\Core\Diagnostics\QueryText;
 use App\Core\Driver\TargetConnection;
+use App\Core\Guard\SqlDialect;
 use App\Core\Optimizer\LintFinding;
 use App\Core\Optimizer\QueryLinter;
 use App\Http\Json\JsonInput;
@@ -23,8 +25,6 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class QueryLintController
 {
-    private const MAX_SQL_LENGTH = 200;
-
     public function __construct(
         private TargetAccess $targets,
         private QueryLinter $linter,
@@ -41,7 +41,7 @@ final readonly class QueryLintController
 
         [$engine, $findings] = $this->targets->withSaved($uuid, fn (TargetConnection $target): array => [$target->engine, $this->linter->lint($target->engine, $sql)]);
 
-        // Un conseil n'envoie rien à la base : le texte du brouillon ne se garde que pour une lecture que le linter juge, et
+        // Un conseil n'envoie rien à la base : le texte du brouillon ne se garde que pour une lecture que le linter juge, masqué et
         // coupé (un CREATE USER … IDENTIFIED BY collé dans l'éditeur ne doit pas finir un an dans le journal). Le reste : le nombre.
         $details = [
             'engine' => $engine->value,
@@ -50,8 +50,10 @@ final readonly class QueryLintController
             'length' => mb_strlen(mb_scrub($sql, 'UTF-8')),
         ];
         if ($this->linter->judges($engine, $sql)) {
-            $details['sql'] = mb_substr(mb_scrub($sql, 'UTF-8'), 0, self::MAX_SQL_LENGTH);
-            $details['truncated'] = $details['length'] > self::MAX_SQL_LENGTH;
+            // Valeurs masquées (`?`) et commentaires retirés AVANT de couper : une adresse e-mail ou un numéro dans un WHERE ne se garde pas.
+            $text = QueryText::of($sql, SqlDialect::forEngine($engine));
+            $details['sql'] = $text->text;
+            $details['truncated'] = $text->shortened;
         }
         $this->audit->record($this->session->auditContext(), AuditAction::QueryLinted, AuditOutcome::Success, $uuid, $details);
 
