@@ -182,6 +182,20 @@ final class OperationsAuditTest extends TestCase
         }
     }
 
+    #[DataProvider('hostileNames')]
+    public function testAMaintenanceSuggestionRefusesAHostileTableName(string $name): void
+    {
+        $findings = $this->upkeep(Engine::PostgreSql, new TableUpkeep($name, liveRows: 20000, modifiedSinceAnalyze: 20000, deadRows: 20000));
+
+        self::assertNotSame([], $findings);
+        foreach ($findings as $finding) {
+            self::assertNull($finding->suggestion);
+        }
+        $mysql = $this->upkeep(Engine::MySql, new TableUpkeep($name, dataBytes: 1000, indexBytes: 0, freeBytes: 200000000));
+        self::assertNotSame([], $mysql);
+        self::assertNull($mysql[0]->suggestion);
+    }
+
     public function testDefinersAreNotJudgedOnPostgreSql(): void
     {
         self::assertSame([], (new SchemaAuditor())->operations(Engine::PostgreSql, null, DefinerReport::of([new DefinerObject(DefinerKind::View, 'v', null, 'x@%')])));
