@@ -119,6 +119,8 @@ export interface TableDetail {
   /** Empreinte de la structure : renvoyée à l’API pour refuser un brouillon bâti sur une table qui a changé. */
   fingerprint: string
   kind: TableKind
+  /** Table à versionnement système (MariaDB) : elle garde l’historique de ses lignes. */
+  versioned?: boolean
   estimatedRows: number | null
   viewDefinition: string | null
   /** Place sur disque des données et de tous les index, quand le moteur la donne. */
@@ -515,8 +517,16 @@ export interface StructureStatement {
   destructive: boolean
 }
 
+/** Ce qu'un plan fait perdre au-delà de son SQL (historique d'une table versionnée, valeurs retirées d'un ENUM/SET). */
+export interface StructureLoss {
+  code: string
+  subject: string
+  values: string[]
+}
+
 export interface StructurePlan {
   statements: StructureStatement[]
+  losses?: StructureLoss[]
   /** Tout ou rien (une transaction) ; sinon chaque instruction est validée seule. */
   transactional: boolean
   destructive: boolean
