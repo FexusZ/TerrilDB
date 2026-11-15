@@ -98,7 +98,7 @@ final class SkewedTableTest extends TestCase
         $counts = $table->rows(\sprintf('SELECT status, COUNT(*) FROM %s GROUP BY status ORDER BY status', $table->name));
         $out = [];
         foreach ($counts as $row) {
-            $out[\is_scalar($row[0]) ? (string) $row[0] : ''] = \is_numeric($row[1]) ? (int) $row[1] : 0;
+            $out[\is_scalar($row[0]) ? (string) $row[0] : ''] = is_numeric($row[1]) ? (int) $row[1] : 0;
         }
 
         return $out;

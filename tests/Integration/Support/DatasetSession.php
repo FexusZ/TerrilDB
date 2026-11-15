@@ -65,6 +65,7 @@ final class DatasetSession
         if (null !== $this->http) {
             return $this->http->query($sql, timeoutSeconds: 120.0)->rows;
         }
+
         return $this->connection()->fetchAllNumeric($sql);
     }
 
