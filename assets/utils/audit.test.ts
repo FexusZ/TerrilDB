@@ -33,6 +33,7 @@ describe('audit labels', () => {
     expect(describeEvent(entry('invitation.revoked'))).toBe('Invitation révoquée')
     expect(describeEvent(entry('account.disabled'))).toBe('Compte désactivé')
     expect(describeEvent(entry('account.enabled'))).toBe('Compte réactivé')
+    expect(describeEvent(entry('admin.token_revoked'))).toBe('Jeton d’un autre compte révoqué')
   })
 
   it('tells a query that ran from one that was refused or failed', () => {
@@ -69,6 +70,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'account', 'query', 'schema', 'diagnostic'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'account', 'admin', 'query', 'schema', 'diagnostic'])
   })
 })

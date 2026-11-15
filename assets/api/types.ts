@@ -534,3 +534,28 @@ export const COLUMN_TYPES: Record<Engine, string[]> = {
   clickhouse: ['UInt8', 'UInt32', 'UInt64', 'Int32', 'Int64', 'Float64', 'Decimal(18, 4)', 'String', 'UUID', 'Date', 'DateTime', 'DateTime64(3)', 'Bool', 'Array(String)', 'LowCardinality(String)'],
   redis: [],
 }
+
+/** Un jeton d’API vu par un administrateur : métadonnées seulement, jamais le texte du jeton ni sa clé. */
+export interface AdminTokenInfo {
+  id: string
+  name: string
+  owner: { id: string; username: string; disabled: boolean }
+  /** Un nom de droit par entrée (writeData, diagnostic…) ; un droit ajouté côté serveur arrive ici sans autre changement. */
+  permissions: Record<string, boolean>
+  allConnections: boolean
+  connectionCount: number
+  status: 'active' | 'expired'
+  createdAt: string
+  expiresAt: string | null
+  lastUsedAt: string | null
+}
+
+export interface AdminJournalEvent {
+  id: string
+  occurredAt: string
+  action: 'account.disabled' | 'account.enabled' | 'admin.token_revoked'
+  actor: { id: string; username: string | null } | null
+  subjectId: string | null
+  /** Propriétaire du jeton révoqué (identifiant de compte). */
+  owner: string | null
+}
