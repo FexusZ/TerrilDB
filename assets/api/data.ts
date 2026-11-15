@@ -19,7 +19,14 @@ export interface DataPlan {
   destructive: boolean
 }
 
+/** Une alerte, jamais un blocage : `not_transactional` (valeur = moteur de stockage) ou `triggers` (valeur = nombre de déclencheurs). */
+export interface DataWarning {
+  code: 'not_transactional' | 'triggers'
+  value: string | number | null
+}
+
 export interface DataPreview extends DataPlan {
+  warnings: DataWarning[]
   /** Chaque modification ou suppression retrouve exactement une ligne. */
   ok: boolean
 }

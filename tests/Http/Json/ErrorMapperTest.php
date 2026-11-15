@@ -12,6 +12,8 @@ use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Data\DataStatement;
 use App\Core\Data\Exception\DataChangeFailedException;
+use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -29,7 +31,9 @@ use App\Core\Query\Exception\QueryRefusedException;
 use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Schema\Change\DdlStatement;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
+use App\Core\Schema\Change\Exception\UnsupportedSchemaChangeException;
 use App\Core\Schema\Exception\TableNotFoundException;
+use App\Core\Schema\LockReason;
 use App\Crypto\Exception\DecryptionFailedException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
@@ -96,6 +100,16 @@ final class ErrorMapperTest extends TestCase
         self::assertSame($code, $response->code);
     }
 
+    public function testAnUnsupportedSchemaChangeNamesTheObjectAndTheReason(): void
+    {
+        $response = (new ErrorMapper())->map(new UnsupportedSchemaChangeException(LockReason::Generated, 'total'));
+
+        self::assertNotNull($response);
+        self::assertSame(422, $response->status);
+        self::assertSame('unsupported_schema_change', $response->code);
+        self::assertSame(['reason' => 'generated', 'subject' => 'total'], $response->extra);
+    }
+
     public function testRefusedQueriesCarryTheirReason(): void
     {
         $response = (new ErrorMapper())->map(new QueryRefusedException(GuardReason::NotReadOnly));
@@ -124,6 +138,16 @@ final class ErrorMapperTest extends TestCase
         self::assertSame(400, $response->status);
         self::assertSame('query_failed', $response->code);
         self::assertSame(['message' => 'syntax error at or near "selec"'], $response->extra);
+    }
+
+    public function testBusyHealthMeasurementsAreRetryable(): void
+    {
+        $response = (new ErrorMapper())->map(new \App\Core\Diagnostics\Health\HealthBusyException(30));
+
+        self::assertNotNull($response);
+        self::assertSame(429, $response->status);
+        self::assertSame('too_many_attempts', $response->code);
+        self::assertSame(['Retry-After' => '30'], $response->headers);
     }
 
     public function testTooManyAttemptsTellWhenToRetry(): void
@@ -227,5 +251,23 @@ final class ErrorMapperTest extends TestCase
         self::assertFalse($response->extra['retryable']);
         self::assertIsArray($response->extra['applied']);
         self::assertCount(1, $response->extra['applied']);
+    }
+
+    public function testLockTimeoutOfAStructureChangeKeepsTheHolderReport(): void
+    {
+        $statement = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $error = (new SchemaChangeFailedException('Lock wait timeout', [], $statement, null, LockConflict::LockTimeout))
+            ->withHolders(TableHolders::unreadable(DiagnosticStatus::unsupported('lock_check_failed')));
+
+        $response = (new ErrorMapper())->map($error);
+
+        self::assertSame('lock_timeout', $response?->code);
+        self::assertTrue($response->extra['lockTimeout']);
+        self::assertTrue($response->extra['retryable']);
+        self::assertIsArray($response->extra['lockCheck']);
+        self::assertArrayNotHasKey('message', $response->extra);
+        $deadlock = (new ErrorMapper())->map(new SchemaChangeFailedException('x', [], $statement, null, LockConflict::Deadlock));
+        self::assertFalse($deadlock?->extra['lockTimeout']);
+        self::assertNull($deadlock->extra['lockCheck']);
     }
 }

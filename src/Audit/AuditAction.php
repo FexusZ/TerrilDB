@@ -10,6 +10,8 @@ namespace App\Audit;
 enum AuditAction: string
 {
     case AccountRegistered = 'account.registered';
+    case AccountDisabled = 'account.disabled';
+    case AccountEnabled = 'account.enabled';
     case LoginSuccess = 'login.success';
     case LoginFailure = 'login.failure';
     case LoginThrottled = 'login.throttled';
@@ -35,6 +37,9 @@ enum AuditAction: string
     case QueryExecuted = 'query.executed';
     case QueryRefused = 'query.refused';
     case QueryFailed = 'query.failed';
+    /** Une écriture jugée par `prepare`, sans exécution : le jeton de confirmation n'est jamais journalisé. */
+    case QueryPrepared = 'query.prepared';
+    case QueryLinted = 'query.linted';
     case TargetForbidden = 'target.forbidden';
     case SchemaChanged = 'schema.changed';
     case SchemaChangeFailed = 'schema.failed';

@@ -68,4 +68,17 @@ final class RowReaderTest extends TestCase
         }
         $this->addToAssertionCount(1);
     }
+
+    public function testReadsDecimalsWhateverTheDriverReturns(): void
+    {
+        $row = new RowReader(['f' => 12.5, 'i' => 7, 's' => '1234.5678', 'e' => '1.5e3', 'n' => null, 'x' => 'abc']);
+
+        self::assertSame(12.5, $row->float('f'));
+        self::assertSame(7.0, $row->float('i'));
+        self::assertSame(1234.5678, $row->float('s'));
+        self::assertSame(1500.0, $row->float('e'));
+        self::assertNull($row->nullableFloat('n'));
+        $this->expectException(\UnexpectedValueException::class);
+        $row->float('x');
+    }
 }

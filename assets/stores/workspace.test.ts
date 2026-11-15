@@ -513,6 +513,44 @@ describe('workspace store', () => {
     })
   })
 
+  describe('lint', () => {
+    const lint = { findings: [{ rule: 'select_star', severity: 'info', message: 'SELECT *', suggestion: 'Lister les colonnes.', columns: [] }] }
+
+    it('asks for advice on the statement of the tab, without running it', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      mocked.mockResolvedValueOnce(lint)
+
+      await store.lintTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/lint', { sql: 'select * from orders' })
+      expect(store.activeTab.lint).toEqual(lint)
+      expect(store.activeTab.view).toBe('lint')
+      expect(store.activeTab.linting).toBe(false)
+    })
+
+    it('forgets the advice when the text changes', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select 1')
+      mocked.mockResolvedValueOnce(lint)
+      await store.lintTab(store.activeTab.id)
+
+      store.setSql(store.activeTab.id, 'select 2')
+
+      expect(store.activeTab.lint).toBeNull()
+      expect(store.activeTab.view).toBe('result')
+    })
+
+    it('does not ask for advice on an empty statement', async () => {
+      const store = await opened()
+
+      await store.lintTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenCalledTimes(1)
+      expect(store.activeTab.error).toBe('Saisissez une instruction.')
+    })
+  })
+
   describe('plan', () => {
     const plan: PlanResult = { plan: { totalCost: 5, root: { kind: 'full_scan', label: 'Seq Scan', relation: 'orders', index: null, rows: 3800, cost: 5, condition: null, fullScan: true, children: [] } }, findings: [{ rule: 'full_scan', relation: 'orders', rows: 3800, condition: null }] }
 

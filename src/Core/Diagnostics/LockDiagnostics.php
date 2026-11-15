@@ -13,4 +13,10 @@ interface LockDiagnostics
     public function status(): DiagnosticStatus;
 
     public function locks(): LockReport;
+
+    /**
+     * Les sessions qui tiennent la table (dans la base ou le schéma de la connexion) : un ALTER attendrait leur fin. Lecture
+     * seule ; une source éteinte ou un droit manquant se dit dans l'état.
+     */
+    public function tableHolders(string $table): TableHolders;
 }

@@ -217,6 +217,39 @@ final class DataChangeTest extends TestCase
         self::assertSame([[1, 'alpha', null], [2, 'beta', 'b'], [3, 'gamma', 'g']], $this->rows());
     }
 
+    /** Une connexion neuve par lecture : la session de lecture de MySQL reste en lecture seule. */
+    private function readDoc(string $quotedTable): string
+    {
+        $reader = $this->connect();
+        try {
+            $value = $reader->runner()->run(\sprintf('SELECT doc FROM %s WHERE id = 1', $quotedTable), StatementKind::Read, new QueryOptions())->rows[0][0];
+        } finally {
+            $reader->close();
+        }
+        self::assertIsString($value);
+
+        return $value;
+    }
+
+    #[DataProvider('relationalEngines')]
+    public function testAJsonColumnIsEditedWhateverTheEngineCallsIt(string $env): void
+    {
+        $this->open($env);
+        \assert(null !== $this->target);
+        $t = $this->q($this->table);
+        // MariaDB : « json » est un alias de longtext (le type relu s'appelle longtext) ; MySQL et PostgreSQL gardent json.
+        $this->raw(\sprintf('ALTER TABLE %s ADD COLUMN doc json', $t));
+        $this->raw(\sprintf('UPDATE %s SET doc = \'{"a": 1, "b": [1, 2]}\' WHERE id = 1', $t));
+        $original = $this->readDoc($t);
+
+        \assert(null !== $this->target);
+        $draft = new DataDraft([new RowUpdate(['id' => 1, 'doc' => $original], ['doc' => '{"a": 2}'])], [], []);
+        $this->service()->apply($this->target, $this->table, $draft, false);
+
+        $now = $this->readDoc($t);
+        self::assertSame(['a' => 2], json_decode($now, true));
+    }
+
     /**
      * @return iterable<string, array{string}>
      */
