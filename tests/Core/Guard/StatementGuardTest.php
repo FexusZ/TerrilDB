@@ -274,6 +274,32 @@ final class StatementGuardTest extends TestCase
         }
     }
 
+    public function testDataRightsDoNotReachTheSchemaThroughSelectIntoOrExplainAnalyze(): void
+    {
+        $data = new WritePermissions(data: true);
+        $schema = new WritePermissions(schema: true);
+
+        foreach ([
+            'select * into newt from t',
+            'with x as (select 1 as a) select * into newt from x',
+            'explain analyze create table z as select 1',
+            'explain (analyze, verbose) create table z as select 1',
+            'explain analyze select * into z from t',
+            'explain analyze drop table t',
+            'explain analyze call p()',
+        ] as $sql) {
+            $verdict = $this->checkWith($sql, Engine::PostgreSql, $data);
+            self::assertSame(Decision::Refused, $verdict->decision, $sql);
+            self::assertSame(GuardReason::WriteNotPermitted, $verdict->reason, $sql);
+        }
+        foreach (['analyze delete from t where a = 1', 'explain analyze select 1', 'insert into t select * from u'] as $sql) {
+            self::assertSame(Decision::Allowed, $this->checkWith($sql, Engine::PostgreSql, $data)->decision, $sql);
+        }
+        // Le droit sur la structure ne couvre pas les lignes : une écriture reste refusée sous EXPLAIN ANALYZE.
+        self::assertSame(GuardReason::WriteNotPermitted, $this->checkWith('explain analyze delete from t where a = 1', Engine::PostgreSql, $schema)->reason);
+        self::assertSame(GuardReason::WriteNotPermitted, $this->checkWith('analyze delete from t where a = 1', Engine::MariaDb, $schema)->reason);
+    }
+
     #[DataProvider('engines')]
     public function testSchemaRightsAllowTheSchemaButNotRowChanges(Engine $engine): void
     {

@@ -34,6 +34,7 @@ COPY --from=front /app/public/app public/app
 COPY docker/prod/php.ini $PHP_INI_DIR/conf.d/zz-terrildb.ini
 COPY docker/prod/Caddyfile /etc/frankenphp/Caddyfile
 COPY docker/prod/entrypoint.sh /usr/local/bin/terrildb-entrypoint
+COPY docker/prod/trusted-hosts.sh /usr/local/bin/terrildb-trusted-hosts
 
 RUN mkdir -p var/cache var/log /data/sessions \
     && chown -R www-data:www-data var /data/sessions \

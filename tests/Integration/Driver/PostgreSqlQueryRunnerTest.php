@@ -207,4 +207,33 @@ final class PostgreSqlQueryRunnerTest extends TestCase
 
         self::assertSame([[1]], $this->write('select count(*) from scratch', StatementKind::Read)->rows);
     }
+
+    public function testMeasuringReadsEveryRowButKeepsOnlyAPreview(): void
+    {
+        $result = $this->runner->run('select * from order_items', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+
+        self::assertSame(100, $result->rowCount());
+        self::assertGreaterThan(5000, $result->totalRows);
+        self::assertTrue($result->truncated);
+    }
+
+    public function testMeasuringKeepsTheSqlLimitAndTheReadOnlyTransaction(): void
+    {
+        $limited = $this->runner->run('select * from order_items limit 250', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+        self::assertSame(250, $limited->totalRows);
+
+        $this->expectException(QueryFailedException::class);
+        $this->runner->run('create table terril_measure (id int)', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+    }
+
+    public function testMeasuringStillHonoursTheTimeout(): void
+    {
+        $this->expectException(QueryTimeoutException::class);
+        $this->runner->run('select pg_sleep(5)', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 300, 100, measure: true));
+    }
+
+    public function testWithoutMeasuringTheTotalIsUnknown(): void
+    {
+        self::assertNull($this->read('select * from order_items', 10)->totalRows);
+    }
 }

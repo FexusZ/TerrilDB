@@ -1,0 +1,19 @@
+{
+  "query_block": {
+    "select_id": 1,
+    "cost": 0.1781288,
+    "nested_loop": [
+      {
+        "table": {
+          "table_name": "customers",
+          "access_type": "ALL",
+          "loops": 1,
+          "rows": 1000,
+          "cost": 0.1781288,
+          "filtered": 100,
+          "attached_condition": "customers.email like '%a%'"
+        }
+      }
+    ]
+  }
+}
