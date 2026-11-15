@@ -121,6 +121,7 @@ watch(() => [route.query.database, route.query.schema], () => {
       <RouterLink :to="{ name: 'diagram', params: { id }, query: scope }" active-class="on">Diagramme</RouterLink>
       <RouterLink :to="{ name: 'audit', params: { id }, query: scope }" active-class="on">Audit du schéma</RouterLink>
       <RouterLink :to="{ name: 'server-activity', params: { id }, query: scope }" active-class="on">Activité</RouterLink>
+      <RouterLink :to="{ name: 'server-variables', params: { id }, query: scope }" active-class="on">Variables</RouterLink>
       <RouterLink :to="{ name: 'server-health', params: { id }, query: scope }" active-class="on">Santé</RouterLink>
     </nav>
 

@@ -51,8 +51,16 @@ final class DiagnosticsWebTest extends WebApiTestCase
 
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
+        $capabilities = self::arrayOf($body['capabilities']);
+        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'health'], array_keys($capabilities));
+        self::assertSame(['availability' => 'available', 'reason' => null, 'privilege' => null], $capabilities['sessions']);
+        self::assertSame($locks, $capabilities['locks']);
+        // La source des empreintes dépend de la cible (performance_schema, extension, journal) : elle dit la même chose que sa page.
+        $queries = $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries');
+        self::assertSame($queries['status'], $capabilities['statements']);
+        self::assertSame(['availability' => 'available', 'reason' => null, 'privilege' => null], $capabilities['variables']);
         $health = \in_array($envVar, ['TARGET_CLICKHOUSE_URL', 'TARGET_REDIS_URL'], true) ? ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null] : ['availability' => 'available', 'reason' => null, 'privilege' => null];
-        self::assertSame(['sessions' => ['availability' => 'available', 'reason' => null, 'privilege' => null], 'locks' => $locks, 'health' => $health], $body['capabilities']);
+        self::assertSame($health, $capabilities['health']);
     }
 
     #[DataProvider('targets')]
@@ -173,6 +181,12 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame(200, $this->statusCode());
         self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['sessions'])['availability']);
         self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['locks'])['availability']);
+        self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['statements'])['availability']);
+
+        self::assertSame('unsupported', self::arrayOf(self::arrayOf($capabilities['capabilities'])['variables'])['availability']);
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables');
+        self::assertSame(501, $this->statusCode());
 
         $this->call('GET', '/web/connections/'.$id.'/diagnostics/locks');
         self::assertSame(501, $this->statusCode());
@@ -295,5 +309,197 @@ final class DiagnosticsWebTest extends WebApiTestCase
 
         self::assertSame(501, $this->statusCode());
         self::assertSame('unsupported_operation', $body['error']);
+    }
+
+    public function testTopQueriesRequireASession(): void
+    {
+        $this->call('GET', '/web/connections/00000000-0000-7000-8000-000000000000/diagnostics/queries');
+
+        self::assertSame(401, $this->statusCode());
+    }
+
+    public function testVariablesRequireASession(): void
+    {
+        $this->call('GET', '/web/connections/00000000-0000-7000-8000-000000000000/diagnostics/variables');
+
+        self::assertSame(401, $this->statusCode());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function withDigests(): iterable
+    {
+        yield 'MySQL' => ['TARGET_MYSQL_URL'];
+        yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
+        yield 'ClickHouse' => ['TARGET_CLICKHOUSE_URL'];
+    }
+
+    #[DataProvider('withDigests')]
+    public function testListsTheCostliestQueriesByDigest(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $this->call('GET', '/web/connections/'.$id.'/tables');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries?order=calls&limit=5');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'order', 'windowHours', 'digests'], array_keys($body));
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertSame('calls', $body['order']);
+        $digests = self::listOf($body['digests']);
+        self::assertNotEmpty($digests);
+        self::assertLessThanOrEqual(5, \count($digests));
+        self::assertSame(['text', 'textReason', 'database', 'calls', 'totalMs', 'meanMs', 'maxMs', 'rowsExamined', 'rowsReturned', 'ratio', 'noIndexUsed', 'tmpDiskTables', 'sortMergePasses', 'firstSeen', 'lastSeen'], array_keys(self::arrayOf($digests[0])));
+    }
+
+    public function testTopQueriesRefuseAnOrderOrALimitOutOfBounds(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_MYSQL_URL');
+
+        foreach (['order=slowest', 'limit=0', 'limit=101', 'limit=abc'] as $query) {
+            $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries?'.$query);
+
+            self::assertSame(422, $this->statusCode(), $query);
+            self::assertSame('invalid_input', $body['error']);
+        }
+    }
+
+    public function testPostgreSqlWithoutTheExtensionIsNoConclusionNotAnEmptyList(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries');
+
+        self::assertSame(200, $this->statusCode());
+        $status = self::arrayOf($body['status']);
+        if ('available' === $status['availability']) {
+            self::markTestSkipped('This PostgreSQL target has pg_stat_statements.');
+        }
+        self::assertSame('disabled', $status['availability']);
+        self::assertContains($status['reason'], ['extension_missing', 'library_not_loaded']);
+        self::assertSame([], $body['digests']);
+    }
+
+    public function testTopQueriesAreAuditedWithoutAnyQueryText(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_MYSQL_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries?order=mean_time&limit=7');
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'top_queries' === ($e->getDetails()['topic'] ?? null)));
+        self::assertCount(1, $events);
+        $details = $events[0]->getDetails();
+        self::assertSame('available', $details['status']);
+        self::assertSame('mean_time', $details['order']);
+        self::assertSame(7, $details['limit']);
+        self::assertIsInt($details['rows']);
+        self::assertStringNotContainsString('SELECT', strtoupper(json_encode($details, \JSON_THROW_ON_ERROR)));
+    }
+
+    public function testRedisHasNoDigests(): void
+    {
+        RedisTarget::seeded();
+        $this->seedAndLogin();
+        $parameters = TargetDatabase::parameters(RedisTarget::ENV);
+        $created = $this->call('POST', '/web/connections', ['name' => 'Cache', 'engine' => 'redis', 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()]);
+        $id = self::arrayOf($created['connection'])['id'];
+        self::assertIsString($id);
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/queries');
+
+        self::assertSame(501, $this->statusCode());
+    }
+
+    #[DataProvider('targets')]
+    public function testListsTheVariablesOfTheServer(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+        $name = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'max_threads' : 'max_connections';
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?q='.$name);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertFalse($body['truncated']);
+        $variables = $body['variables'];
+        self::assertIsArray($variables);
+        self::assertNotEmpty($variables);
+        $first = self::arrayOf($variables[0]);
+        self::assertSame(['name', 'value', 'default', 'changed', 'masked', 'source', 'restart', 'scope', 'unit'], array_keys($first));
+    }
+
+    public function testChangedOnlyAndTheLimitAreHonoured(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?changed=1&limit=2');
+
+        self::assertSame(200, $this->statusCode());
+        $variables = $body['variables'];
+        self::assertIsArray($variables);
+        self::assertCount(2, $variables);
+        self::assertTrue($body['truncated']);
+        foreach ($variables as $variable) {
+            self::assertTrue(self::arrayOf($variable)['changed']);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function badInputs(): iterable
+    {
+        yield 'zero limit' => ['limit=0'];
+        yield 'huge limit' => ['limit=100000'];
+        yield 'text limit' => ['limit=abc'];
+        yield 'long search' => ['q='.str_repeat('a', 65)];
+    }
+
+    #[DataProvider('badInputs')]
+    public function testRefusesABadQuery(string $query): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?'.$query);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+    }
+
+    public function testASecretIsNeverServed(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?q=ssl_key');
+
+        $variable = self::arrayOf(self::arrayOf($body['variables'])[0]);
+        self::assertSame('ssl_key_file', $variable['name']);
+        self::assertTrue($variable['masked']);
+        self::assertNull($variable['value']);
+        self::assertNull($variable['default']);
+    }
+
+    public function testVariablesAreAuditedWithoutValuesNorSearchText(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/variables?q=wal_level');
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => 'variables' === ($e->getDetails()['topic'] ?? null)));
+        self::assertCount(1, $events);
+        $details = $events[0]->getDetails();
+        self::assertSame('available', $details['status']);
+        self::assertSame(1, $details['rows']);
+        self::assertStringNotContainsString('wal_level', json_encode($details, \JSON_THROW_ON_ERROR));
     }
 }
