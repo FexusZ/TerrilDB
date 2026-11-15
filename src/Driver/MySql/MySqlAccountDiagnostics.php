@@ -28,6 +28,21 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
     private const LIMIT = 300;
     private const PRIVILEGE_ROWS = 20000;
     private const REFUSALS = [1044, 1142, 1143, 1227];
+    /**
+     * Les droits GLOBAUX d'un rôle MariaDB : `information_schema.USER_PRIVILEGES` ne les liste pas (seulement ceux des comptes),
+     * la vue `mysql.user` les porte en colonnes `*_priv` sur la ligne du rôle. Colonnes nommées une à une : la vue contient aussi
+     * l'empreinte du mot de passe, qu'un SELECT * ramènerait. Noms de droits = ceux d'information_schema.
+     */
+    private const MARIADB_ROLE_COLUMNS = [
+        'Select_priv' => 'SELECT', 'Insert_priv' => 'INSERT', 'Update_priv' => 'UPDATE', 'Delete_priv' => 'DELETE',
+        'Create_priv' => 'CREATE', 'Drop_priv' => 'DROP', 'Reload_priv' => 'RELOAD', 'Shutdown_priv' => 'SHUTDOWN',
+        'Process_priv' => 'PROCESS', 'File_priv' => 'FILE', 'References_priv' => 'REFERENCES', 'Index_priv' => 'INDEX',
+        'Alter_priv' => 'ALTER', 'Show_db_priv' => 'SHOW DATABASES', 'Super_priv' => 'SUPER',
+        'Create_tmp_table_priv' => 'CREATE TEMPORARY TABLES', 'Lock_tables_priv' => 'LOCK TABLES', 'Execute_priv' => 'EXECUTE',
+        'Repl_slave_priv' => 'REPLICATION SLAVE', 'Repl_client_priv' => 'BINLOG MONITOR', 'Create_view_priv' => 'CREATE VIEW',
+        'Show_view_priv' => 'SHOW VIEW', 'Create_routine_priv' => 'CREATE ROUTINE', 'Alter_routine_priv' => 'ALTER ROUTINE',
+        'Create_user_priv' => 'CREATE USER', 'Event_priv' => 'EVENT', 'Trigger_priv' => 'TRIGGER', 'Delete_history_priv' => 'DELETE HISTORY',
+    ];
 
     private DbalCatalogReader $catalog;
 
@@ -69,7 +84,7 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
 
     private function check(Connection $connection): DiagnosticStatus
     {
-        $tables = Engine::MariaDb === $this->engine ? ['mysql.global_priv', 'mysql.roles_mapping'] : ['mysql.user', 'mysql.role_edges', 'mysql.default_roles'];
+        $tables = Engine::MariaDb === $this->engine ? ['mysql.global_priv', 'mysql.roles_mapping', 'mysql.user'] : ['mysql.user', 'mysql.role_edges', 'mysql.default_roles'];
         foreach ($tables as $table) {
             try {
                 $connection->fetchOne(\sprintf('SELECT 1 FROM %s LIMIT 1', $table));
@@ -103,6 +118,9 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
             if ($row->bool('gr')) {
                 $grantable[$row->string('g')]['*.*'] = true;
             }
+        }
+        if ($mariadb && $this->addMariaDbRolePrivileges($c, $global, $grantable)) {
+            $incomplete = true;
         }
         $schemas = [];
         $schemaRows = $c->fetchAllAssociative("SELECT GRANTEE AS g, TABLE_SCHEMA AS s, PRIVILEGE_TYPE AS p, IS_GRANTABLE AS gr FROM information_schema.SCHEMA_PRIVILEGES WHERE PRIVILEGE_TYPE <> 'USAGE' ORDER BY GRANTEE, TABLE_SCHEMA, PRIVILEGE_TYPE LIMIT ".($this->privilegeLimit + 1));
@@ -230,6 +248,31 @@ final readonly class MySqlAccountDiagnostics implements AccountDiagnostics
               ORDER BY User, Host
               LIMIT ".(self::LIMIT + 1),
         );
+    }
+
+    /**
+     * Ajoute aux droits globaux ceux des RÔLES MariaDB. Rend vrai si la lecture a été coupée (plus de rôles que la limite).
+     *
+     * @param array<string, list<string>>        $global
+     * @param array<string, array<string, true>> $grantable
+     */
+    private function addMariaDbRolePrivileges(Connection $c, array &$global, array &$grantable): bool
+    {
+        $columns = implode(', ', array_keys(self::MARIADB_ROLE_COLUMNS));
+        $rows = $c->fetchAllAssociative(\sprintf("SELECT User AS usr, Host AS host, Grant_priv AS grantable, %s FROM mysql.user WHERE is_role = 'Y' ORDER BY User, Host LIMIT %d", $columns, self::LIMIT + 1));
+        foreach (\array_slice($rows, 0, self::LIMIT) as $row) {
+            $key = AccountKeys::of((new RowReader($row))->string('usr'), (new RowReader($row))->string('host'));
+            foreach (self::MARIADB_ROLE_COLUMNS as $column => $privilege) {
+                if ('Y' === ($row[$column] ?? null)) {
+                    $global[$key][] = $privilege;
+                }
+            }
+            if ('Y' === ($row['grantable'] ?? null)) {
+                $grantable[$key]['*.*'] = true;
+            }
+        }
+
+        return \count($rows) > self::LIMIT;
     }
 
     /**

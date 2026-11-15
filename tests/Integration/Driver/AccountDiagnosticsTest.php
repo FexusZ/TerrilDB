@@ -8,6 +8,7 @@ use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\Account;
 use App\Core\Diagnostics\AccountReport;
+use App\Core\Diagnostics\AccountRule;
 use App\Core\Diagnostics\Availability;
 use App\Core\Diagnostics\SecurityFinding;
 use App\Core\Diagnostics\TlsRequirement;
@@ -275,6 +276,43 @@ final class AccountDiagnosticsTest extends TestCase
         self::assertContains('PROCESS', $seen->globalPrivileges);
         self::assertContains('SELECT', $seen->databasePrivileges['shop']);
         self::assertTrue(self::find($report->accounts, $name, '%')->current);
+    }
+
+    #[DataProvider('targets')]
+    public function testGlobalPrivilegesReceivedThroughARoleAreReadAndAudited(string $envVar): void
+    {
+        $admin = $this->admin($envVar);
+        $mariadb = Engine::MariaDb === TargetDatabase::engine($envVar);
+        $name = self::unique();
+        $role = $name.'_role';
+        $roleRef = $mariadb ? $role : "'".$role."'@'%'";
+        $holder = $this->user($name, 'localhost');
+        $this->roles[] = $roleRef;
+
+        $admin->executeStatement(\sprintf('CREATE ROLE %s', $roleRef));
+        $admin->executeStatement(\sprintf('GRANT SHUTDOWN, PROCESS, SELECT ON *.* TO %s', $roleRef));
+        $admin->executeStatement(\sprintf('GRANT DROP ON shop.* TO %s', $roleRef));
+        $admin->executeStatement(\sprintf("CREATE USER %s IDENTIFIED BY '%s'", $holder, bin2hex(random_bytes(10))));
+        $admin->executeStatement(\sprintf('GRANT %s TO %s', $roleRef, $holder));
+
+        $report = $this->report($envVar);
+
+        $r = self::find($report->accounts, $role, $mariadb ? '' : '%');
+        self::assertTrue($r->isRole);
+        self::assertContains('SHUTDOWN', $r->globalPrivileges);
+        self::assertContains('PROCESS', $r->globalPrivileges);
+        self::assertContains('SELECT', $r->globalPrivileges);
+        self::assertContains('DROP', $r->databasePrivileges['shop']);
+        $details = [];
+        foreach ($report->findings() as $f) {
+            if (AccountRule::DangerousPrivilege === $f->rule && null !== $f->account && str_starts_with($f->account, $name.'@localhost')) {
+                $details[] = (string) $f->detail;
+            }
+        }
+        self::assertNotSame([], $details, 'The holder of the role must be reported for what the role gives.');
+        self::assertStringContainsString('SHUTDOWN', implode(' ', $details));
+        self::assertStringContainsString('via '.$role, implode(' ', $details));
+        self::assertFalse($report->privilegesIncomplete);
     }
 
     #[DataProvider('targets')]
