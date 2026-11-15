@@ -19,7 +19,7 @@ async function mountView(user: User = alice) {
   useSessionStore().user = user
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: ['connections', 'security', 'login', 'tokens', 'activity', 'invitations', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
+    routes: ['connections', 'security', 'login', 'tokens', 'activity', 'invitations', 'accounts', 'workspace-home'].map((name) => ({ path: `/${name}`, name, component: { template: '<p />' } })),
   })
   await router.push('/security')
   const wrapper = mount(SecurityView, { global: { plugins: [pinia, router] } })
@@ -49,6 +49,14 @@ describe('SecurityView', () => {
 
     expect(admin.get('section.invitations a.more').attributes('href')).toBe('/invitations')
     expect(member.find('section.invitations').exists()).toBe(false)
+  })
+
+  it('leads an administrator to the accounts, and nobody else', async () => {
+    const admin = await mountView()
+    const member = await mountView({ ...alice, role: 'member' })
+
+    expect(admin.get('section.accounts a.more').attributes('href')).toBe('/accounts')
+    expect(member.find('section.accounts').exists()).toBe(false)
   })
 
   it('leads to the API tokens', async () => {

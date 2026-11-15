@@ -27,8 +27,14 @@ const scope = computed(() => ({ database: workspace.database, schema: workspace.
 watch(
   () => props.name,
   async (name) => {
-    const { id, created } = workspace.openTableData(name, previewQuery(dialect.value, name))
-    if (created) {
+    let sql = ''
+    try {
+      sql = previewQuery(dialect.value, name)
+    } catch {
+      // Un nom qui ne peut pas s'écrire en SQL (saut de ligne, contrôle) : onglet vide, rien n'est lancé.
+    }
+    const { id, created } = workspace.openTableData(name, sql)
+    if (created && sql !== '') {
       await workspace.run(id)
     }
   },

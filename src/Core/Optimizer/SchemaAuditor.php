@@ -11,6 +11,8 @@ use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Sql\SqlText;
+use App\Core\Sql\UnsafeSqlNameException;
 
 /**
  * Audit d'un schéma par règles simples et sûres, à partir de ce que l'introspection sait déjà : tables sans clé
@@ -136,11 +138,16 @@ final class SchemaAuditor
         return $days.(1 === $days ? ' jour' : ' jours');
     }
 
-    private function retire(Engine $engine, string $table, string $index): string
+    private function retire(Engine $engine, string $table, string $index): ?string
+    {
+        return self::safely(fn (): string => $this->retireSql($engine, $table, $index));
+    }
+
+    private function retireSql(Engine $engine, string $table, string $index): string
     {
         $note = '-- après une période représentative, si rien n\'a ralenti :';
-        $quotedTable = self::quote($engine, $table);
-        $quotedIndex = self::quote($engine, $index);
+        $quotedTable = SqlText::quoteIdentifier($engine, $table);
+        $quotedIndex = SqlText::quoteIdentifier($engine, $index);
         if (Engine::PostgreSql === $engine) {
             return "-- PostgreSQL n'a pas d'index invisible : à supprimer seulement après une période représentative.\n-- DROP INDEX {$quotedIndex};";
         }
@@ -277,8 +284,17 @@ final class SchemaAuditor
 
     private function widen(Engine $engine, string $table, string $column, string $width, bool $unsigned, AutoCounter $counter, bool $cappedBySequence): ?string
     {
+        try {
+            return $this->widenSql($engine, $table, $column, $width, $unsigned, $counter, $cappedBySequence);
+        } catch (UnsafeSqlNameException) {
+            return null;
+        }
+    }
+
+    private function widenSql(Engine $engine, string $table, string $column, string $width, bool $unsigned, AutoCounter $counter, bool $cappedBySequence): ?string
+    {
         if (Engine::PostgreSql === $engine) {
-            $sequence = null === $counter->sequence ? null : implode('.', array_map(static fn (string $part): string => self::quote($engine, $part), explode('.', $counter->sequence, 2)));
+            $sequence = null === $counter->sequence ? null : implode('.', array_map(static fn (string $part): string => SqlText::quoteIdentifier($engine, $part), explode('.', $counter->sequence, 2)));
             if ($cappedBySequence && null !== $sequence) {
                 // La séquence est plafonnée plus bas que son type : on lève le plafond (un bigint porte jusque-là).
                 return \sprintf('ALTER SEQUENCE %s MAXVALUE %s;', $sequence, self::BIGINT_MAX);
@@ -286,7 +302,7 @@ final class SchemaAuditor
             if ('bigint' === $width) {
                 return null;
             }
-            $alter = \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE bigint;', self::quote($engine, $table), self::quote($engine, $column));
+            $alter = \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE bigint;', SqlText::quoteIdentifier($engine, $table), SqlText::quoteIdentifier($engine, $column));
 
             // Une identité suit le type de sa colonne ; la séquence d'un serial reste un entier tant qu'on ne la change pas.
             return null === $sequence || $counter->identity ? $alter : $alter.'
@@ -299,8 +315,8 @@ final class SchemaAuditor
 
         return \sprintf(
             'ALTER TABLE %s MODIFY %s BIGINT%s NOT NULL AUTO_INCREMENT;',
-            self::quote($engine, $table),
-            self::quote($engine, $column),
+            SqlText::quoteIdentifier($engine, $table),
+            SqlText::quoteIdentifier($engine, $column),
             $unsigned || 'bigint' === $width ? ' UNSIGNED' : '',
         );
     }
@@ -328,7 +344,7 @@ final class SchemaAuditor
             $table->name,
             [$column->name],
             suggestion: Engine::PostgreSql === $engine
-                ? \sprintf('ALTER TABLE %1$s ALTER COLUMN %2$s TYPE uuid USING %2$s::uuid;', self::quote($engine, $table->name), self::quote($engine, $column->name))
+                ? self::safely(static fn (): string => \sprintf('ALTER TABLE %1$s ALTER COLUMN %2$s TYPE uuid USING %2$s::uuid;', SqlText::quoteIdentifier($engine, $table->name), SqlText::quoteIdentifier($engine, $column->name)))
                 : null,
             detail: $column->type,
         );
@@ -363,9 +379,9 @@ final class SchemaAuditor
 
             $suggestion = null;
             if (Engine::PostgreSql === $engine) {
-                $suggestion = \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE numeric(12,2);', self::quote($engine, $table->name), self::quote($engine, $column->name));
+                $suggestion = self::safely(static fn (): string => \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE numeric(12,2);', SqlText::quoteIdentifier($engine, $table->name), SqlText::quoteIdentifier($engine, $column->name)));
             } elseif (null === $column->default && null === $column->comment && !$column->autoIncrement) {
-                $suggestion = \sprintf('ALTER TABLE %s MODIFY %s DECIMAL(12,2) %s;', self::quote($engine, $table->name), self::quote($engine, $column->name), $column->nullable ? 'NULL' : 'NOT NULL');
+                $suggestion = self::safely(static fn (): string => \sprintf('ALTER TABLE %s MODIFY %s DECIMAL(12,2) %s;', SqlText::quoteIdentifier($engine, $table->name), SqlText::quoteIdentifier($engine, $column->name), $column->nullable ? 'NULL' : 'NOT NULL'));
             }
 
             $findings[] = new Finding(FindingRule::FloatAmount, Severity::Info, $table->name, [$column->name], suggestion: $suggestion, detail: $column->type);
@@ -440,7 +456,7 @@ final class SchemaAuditor
                 Severity::Warning,
                 $table->name,
                 [$name],
-                suggestion: \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s;', self::quote($engine, $table->name), self::quote($engine, $name), $referenced->type),
+                suggestion: self::safely(static fn (): string => \sprintf('ALTER TABLE %s ALTER COLUMN %s TYPE %s;', SqlText::quoteIdentifier($engine, $table->name), SqlText::quoteIdentifier($engine, $name), self::plainType($referenced->type))),
                 detail: $own->type.' → '.$referenced->type,
             );
         }
@@ -507,21 +523,48 @@ final class SchemaAuditor
     /**
      * @param list<string> $columns
      */
-    private function createIndex(Engine $engine, string $table, array $columns): string
+    private function createIndex(Engine $engine, string $table, array $columns): ?string
     {
-        return \sprintf(
+        return self::safely(static fn (): string => \sprintf(
             'CREATE INDEX %s ON %s (%s);',
             self::indexName($table, $columns),
-            self::quote($engine, $table),
-            implode(', ', array_map(static fn (string $column): string => self::quote($engine, $column), $columns)),
-        );
+            SqlText::quoteIdentifier($engine, $table),
+            implode(', ', array_map(static fn (string $column): string => SqlText::quoteIdentifier($engine, $column), $columns)),
+        ));
     }
 
-    private function dropIndex(Engine $engine, string $table, string $index): string
+    private function dropIndex(Engine $engine, string $table, string $index): ?string
     {
-        return Engine::PostgreSql === $engine
-            ? \sprintf('DROP INDEX %s;', self::quote($engine, $index))
-            : \sprintf('ALTER TABLE %s DROP INDEX %s;', self::quote($engine, $table), self::quote($engine, $index));
+        return self::safely(static fn (): string => Engine::PostgreSql === $engine
+            ? \sprintf('DROP INDEX %s;', SqlText::quoteIdentifier($engine, $index))
+            : \sprintf('ALTER TABLE %s DROP INDEX %s;', SqlText::quoteIdentifier($engine, $table), SqlText::quoteIdentifier($engine, $index)));
+    }
+
+    /**
+     * Une suggestion est du texte à copier : si l'un des noms qu'elle cite n'est pas sûr (saut de ligne, contrôle, texte invalide,
+     * démesure), on n'en propose pas, plutôt que d'en écrire une qui pourrait agir autrement qu'annoncé.
+     *
+     * @param \Closure(): string $build
+     */
+    private static function safely(\Closure $build): ?string
+    {
+        try {
+            return $build();
+        } catch (UnsafeSqlNameException) {
+            return null;
+        }
+    }
+
+    /**
+     * Un type lu dans le catalogue, recopié tel quel dans la suggestion seulement s'il a la forme d'un type usuel.
+     */
+    private static function plainType(string $type): string
+    {
+        if (1 !== preg_match('/\A[A-Za-z0-9_ ,()]{1,100}\z/', $type)) {
+            throw new UnsafeSqlNameException('Unusual type.');
+        }
+
+        return $type;
     }
 
     /**
@@ -536,10 +579,5 @@ final class SchemaAuditor
         }
 
         return $name;
-    }
-
-    private static function quote(Engine $engine, string $identifier): string
-    {
-        return Engine::PostgreSql === $engine ? '"'.str_replace('"', '""', $identifier).'"' : '`'.str_replace('`', '``', $identifier).'`';
     }
 }
