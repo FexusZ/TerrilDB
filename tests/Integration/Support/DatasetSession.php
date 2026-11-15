@@ -124,7 +124,7 @@ final class DatasetSession
     }
 
     /**
-     * Les tables et vues jetables encore présentes dans la base de la connexion.
+     * Les tables, vues, fonctions et déclencheurs jetables encore présents dans la base de la connexion.
      *
      * @return list<string>
      */
@@ -132,8 +132,13 @@ final class DatasetSession
     {
         $sql = match ($this->engine) {
             Engine::ClickHouse => "SELECT name FROM system.tables WHERE database = currentDatabase() AND left(name, 7) = 'tdb_ds_' ORDER BY name",
-            Engine::PostgreSql => "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND left(table_name, 7) = 'tdb_ds_' ORDER BY table_name",
-            default => "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND LEFT(TABLE_NAME, 7) = 'tdb_ds_' ORDER BY TABLE_NAME",
+            Engine::PostgreSql => "SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND left(table_name, 7) = 'tdb_ds_'
+                UNION ALL SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = current_schema() AND left(p.proname, 7) = 'tdb_ds_'
+                ORDER BY 1",
+            default => "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND LEFT(TABLE_NAME, 7) = 'tdb_ds_'
+                UNION ALL SELECT ROUTINE_NAME FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND LEFT(ROUTINE_NAME, 7) = 'tdb_ds_'
+                UNION ALL SELECT TRIGGER_NAME FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE() AND LEFT(TRIGGER_NAME, 7) = 'tdb_ds_'
+                ORDER BY 1",
         };
 
         return array_map(static fn (array $row): string => \is_scalar($row[0]) ? (string) $row[0] : '', $this->rows($sql));
