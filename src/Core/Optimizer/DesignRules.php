@@ -8,6 +8,8 @@ use App\Core\Connection\Engine;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
+use App\Core\Sql\SqlText;
+use App\Core\Sql\UnsafeSqlNameException;
 
 /**
  * Règles de CONCEPTION de l'audit de schéma (suite de #78) : ce qu'une table dit d'elle-même, jugé sans exécuter quoi que ce
@@ -311,18 +313,14 @@ final class DesignRules
     }
 
     /**
-     * Un identifiant cité, ou null s'il porte un caractère de contrôle (retour à la ligne, NUL…) qui ferait dire autre chose
-     * au texte montré.
+     * Un identifiant cité par SqlText, ou null si son nom ne peut pas s'écrire dans du SQL montré.
      */
     private static function quote(Engine $engine, string $identifier): ?string
     {
-        // Contrôles C0 et C1 (dont NEL), séparateurs de ligne et de paragraphe, contrôles bidirectionnels, UTF-8 invalide,
-        // nom vide ou démesuré : tout ce qui ferait lire autre chose que ce qui sera exécuté.
-        if ('' === $identifier || \strlen($identifier) > 1024 || !mb_check_encoding($identifier, 'UTF-8')
-            || 0 !== preg_match('/[\x00-\x1F\x7F-\x9F\x{061C}\x{200E}\x{200F}\x{2028}-\x{202E}\x{2066}-\x{2069}]/u', $identifier)) {
+        try {
+            return SqlText::quoteIdentifier($engine, $identifier);
+        } catch (UnsafeSqlNameException) {
             return null;
         }
-
-        return Engine::PostgreSql === $engine ? '"'.str_replace('"', '""', $identifier).'"' : '`'.str_replace('`', '``', $identifier).'`';
     }
 }

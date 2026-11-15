@@ -26,7 +26,7 @@ final class DesignAuditTest extends TestCase
 {
     private static function column(string $name, string $type = 'int', ?string $characterSet = null, ?string $collation = null): ColumnDefinition
     {
-        return new ColumnDefinition($name, $type, false, null, false, null, $characterSet, $collation);
+        return new ColumnDefinition($name, $type, false, null, false, null, characterSet: $characterSet, collation: $collation);
     }
 
     /**
