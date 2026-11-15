@@ -47,6 +47,10 @@ final readonly class ClickHouseVariableDiagnostics implements VariableDiagnostic
             $filter .= ' AND positionCaseInsensitive(name, {q:String}) > 0';
             $params['q'] = $query->search;
         }
+        if ([] !== $query->names) {
+            $filter .= ' AND lower(name) IN {names:Array(String)}';
+            $params['names'] = '['.implode(',', array_map(static fn (string $n): string => "'".$n."'", $query->names)).']';
+        }
         if ($query->changedOnly) {
             $filter .= ' AND changed = 1';
         }

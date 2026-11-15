@@ -44,6 +44,10 @@ final readonly class PostgreSqlVariableDiagnostics implements VariableDiagnostic
                 $where .= ' AND strpos(lower(name), lower(?)) > 0';
                 $params[] = $query->search;
             }
+            if ([] !== $query->names) {
+                $where .= ' AND lower(name) IN ('.implode(', ', array_fill(0, \count($query->names), '?')).')';
+                array_push($params, ...$query->names);
+            }
             if ($query->changedOnly) {
                 $where .= " AND source NOT IN ('default', 'override')";
             }

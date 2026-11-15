@@ -156,6 +156,20 @@ final class VariableDiagnosticsTest extends TestCase
         $target->close();
     }
 
+    #[DataProvider('targets')]
+    public function testNamesReadExactlyThoseVariablesWhateverTheCase(string $envVar, string $name): void
+    {
+        $target = $this->open($envVar);
+
+        $report = $target->diagnostics()->variables()->variables(new VariableQuery(limit: 500, names: [strtoupper($name), 'no_such_variable_here']));
+
+        self::assertSame(Availability::Available, $report->status->availability);
+        self::assertCount(1, $report->variables);
+        self::assertSame($name, $report->variables[0]->name);
+        self::assertFalse($report->truncated);
+        $target->close();
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */
