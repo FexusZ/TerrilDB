@@ -495,7 +495,7 @@ final class StatementGuardCorpusTest extends TestCase
         ] as $sql) {
             yield from self::rows($sql, $my, $ro, 'refuse:ForbiddenConstruct');
         }
-        foreach (["SELECT SLEEP(1)", 'SELECT BENCHMARK(1, 1)', "SELECT MASTER_POS_WAIT('a', 1)", "SELECT SOURCE_POS_WAIT('a', 1)"] as $sql) {
+        foreach (['SELECT SLEEP(1)', 'SELECT BENCHMARK(1, 1)', "SELECT MASTER_POS_WAIT('a', 1)", "SELECT SOURCE_POS_WAIT('a', 1)"] as $sql) {
             yield from self::rows($sql, $my, $ro, 'allow:Read');
         }
         yield from self::rows('SELECT 1 /*! /* nested */ */', $my, $ro, 'allow:Read');
@@ -619,6 +619,26 @@ final class StatementGuardCorpusTest extends TestCase
         }
         yield from self::rows('SELECT PREVIOUS VALUE FOR s', [Engine::MariaDb], $ro, 'allow:Read');
         yield from self::rows('SELECT next, value FROM t', [Engine::MariaDb], $ro, 'allow:Read');
+
+        // ClickHouse : fonctions de table qui lisent des fichiers du serveur ou ouvrent des connexions (le moteur ne les refuse
+        // qu'avec readonly = 1, donc pas en lecture-écriture)
+        foreach ([
+            "filesystem('/')", "icebergLocal('/etc')", "icebergHDFS('hdfs://h/x')", "icebergS3('http://h/b/k')", "icebergAzure('a', 'b', 'c')", "icebergCluster('c', 'x')",
+            "deltaLakeLocal('/etc')", "deltaLakeS3('http://h/b/k')", "deltaLakeAzure('a', 'b', 'c')", "deltaLakeS3Cluster('c', 'x')", "paimon('x')", "paimonLocal('/etc')",
+            "paimonS3('http://h/b/k')", "paimonHDFS('x')", "hudiCluster('c', 'x')", "hive('thrift://h', 'd', 't', 'a Int', 'p')", "oss('x')", "cosn('x')", "bigquery('a', 'b', 'c')",
+            "elasticsearch('http://h', 'i', 'u', 'p')", "eval('select 1')", "prometheusQuery('a', 'b', 'c')", "prometheusQueryRange('a', 'b', 'c')", "azureBlobStorageCluster('c', 'a', 'b')",
+            "ICEBERGLOCAL('/etc')", "`filesystem`('/')", "db.filesystem('/')",
+        ] as $call) {
+            foreach ([$ro, $rw] as $mode) {
+                yield from self::rows('SELECT * FROM '.$call, [Engine::ClickHouse], $mode, 'refuse:ForbiddenConstruct');
+            }
+        }
+        foreach (['SELECT * FROM numbers(3)', 'SELECT * FROM numbers_mt(3)', 'SELECT * FROM zeros(3)', 'SELECT * FROM generateRandom(\'a Int\')', 'SELECT * FROM generateSeries(1, 3)',
+            'SELECT * FROM view(SELECT 1)', 'SELECT * FROM values(\'a Int\', 1)', 'SELECT * FROM primes(3)', 'SELECT * FROM mergeTreeIndex(\'system\', \'t\')', 'SELECT iceberg, filesystem, hive FROM t',
+            "SELECT format('{}', 1)",
+        ] as $sql) {
+            yield from self::rows($sql, [Engine::ClickHouse], $ro, 'allow:Read');
+        }
 
         // PostgreSQL : slots et origines de réplication, WAL, sauvegarde, notification, statistiques, fichiers du serveur
         foreach ([

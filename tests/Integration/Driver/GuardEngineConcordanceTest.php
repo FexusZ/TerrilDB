@@ -168,6 +168,7 @@ final class GuardEngineConcordanceTest extends TestCase
             }
         }
     }
+
     public function testPostgreSqlRunsServerStateFunctionsInReadOnlySoOnlyTheGuardRefusesThem(): void
     {
         $runner = $this->postgres();

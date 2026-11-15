@@ -55,8 +55,11 @@ final class StatementGuard
         'FILE', 'FILECLUSTER', 'URL', 'URLCLUSTER', 'S3', 'S3CLUSTER', 'GCS', 'HDFS', 'HDFSCLUSTER', 'REMOTE', 'REMOTESECURE',
         'CLUSTER', 'CLUSTERALLREPLICAS', 'MYSQL', 'POSTGRESQL', 'MONGODB', 'REDIS', 'SQLITE', 'ODBC', 'JDBC', 'EXECUTABLE',
         'INPUT', 'AZUREBLOBSTORAGE', 'AZUREBLOBSTORAGECLUSTER', 'DELTALAKE', 'ICEBERG', 'HUDI', 'MERGE', 'YTSAURUS',
-        'ARROWFLIGHT', 'NATS', 'KAFKA', 'RABBITMQ',
+        'ARROWFLIGHT', 'NATS', 'KAFKA', 'RABBITMQ', 'FILESYSTEM', 'HIVE', 'OSS', 'COSN', 'BIGQUERY', 'ELASTICSEARCH', 'EVAL', 'PROMETHEUSQUERY',
+        'PROMETHEUSQUERYRANGE',
     ];
+    // Familles de fonctions de table (lacs de données : iceberg, deltaLake, paimon, hudi et leurs variantes Local/S3/HDFS/Azure/Cluster).
+    private const CLICKHOUSE_TABLE_FUNCTION_PREFIXES = ['ICEBERG', 'DELTALAKE', 'PAIMON', 'HUDI'];
     // MySQL : indices d'optimiseur (`/*+ … */`) qui relèvent le délai du moteur ou changent une variable le temps de l'instruction.
     private const HINTS_REFUSED = ['MAX_EXECUTION_TIME', 'SET_VAR'];
     private const LOCKING_CLAUSES = [
@@ -175,6 +178,13 @@ final class StatementGuard
         foreach (self::CLICKHOUSE_TABLE_FUNCTIONS as $function) {
             if ($statement->calls($function)) {
                 return true;
+            }
+        }
+        foreach ($statement->calledNames() as $name) {
+            foreach (self::CLICKHOUSE_TABLE_FUNCTION_PREFIXES as $prefix) {
+                if (str_starts_with($name, $prefix)) {
+                    return true;
+                }
             }
         }
 
