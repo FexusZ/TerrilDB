@@ -29,6 +29,7 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/diagnostics/locks` | (droit `diagnostic`) transactions ouvertes et arbre « qui bloque qui », lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/queries?order=&limit=` | (droit `diagnostic`) les requêtes les plus coûteuses par empreinte, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/variables` | (droit `diagnostic`) variables de configuration, lecture seule : `q` (morceau de nom), `changed=1`, `limit` (1 à 500, 100 par défaut) |
+| GET | `/api/v1/connections/{id}/diagnostics/config-audit` | (droit `diagnostic`) audit de la configuration : constats sur les variables lues, lecture seule, rien n'est exécuté |
 | GET | `/api/v1/connections/{id}/diagnostics/health?seconds=5` | (droit `diagnostic`) santé du serveur sur un intervalle de 1 à 30 s (5 par défaut) : la requête dure l'intervalle, lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
@@ -124,6 +125,23 @@ clé (liste fermée) est rendu `masked: true` avec `value` et `default` nuls**, 
 `server` ; la lecture en `readonly=1` de TerrilDB y compte elle-même). MySQL : `performance_schema` éteint = `disabled`. ClickHouse : droit
 `SELECT ON system.server_settings`. Redis : `unsupported` (501). Rien n'est modifié (ni `SET`, ni `SET PERSIST`) ; l'audit note le thème, l'état, le
 nombre de lignes et le filtre « modifiées », jamais une valeur ni le nom cherché.
+
+**Audit de configuration** (`/diagnostics/config-audit`, outil MCP `audit_config`) : `ConfigAuditor` applique des règles PURES aux variables déjà lisibles
+(lues par nom exact, pas toute la liste). Réponse : `status`, `engine`, `evaluated` / `rulesTotal` (combien de règles avaient leurs variables ; « aucun
+constat » avec peu de règles évaluées ne prouve rien) et `findings` : `rule` (code stable), `severity` (`high` / `medium` / `low`), `variable`, `value`
+(ce que le serveur annonce), `recommended`, `suggestion` (une commande à LIRE, jamais exécutée par TerrilDB ; nulle quand la variable ne se change
+qu'au redémarrage, dans le fichier de configuration), `explanation` (texte français fixe). Une variable masquée, absente ou illisible n'est pas jugée.
+Règles MySQL / MariaDB : `sql_mode_not_strict`, `local_infile_enabled`, `skip_name_resolve_missing`, `binlog_never_expires` (journal binaire actif, ni
+`binlog_expire_logs_seconds` ni `expire_logs_days` > 0), `flush_log_at_commit_relaxed`, `sync_binlog_relaxed` (journal actif seulement),
+`performance_schema_off`, `slow_query_log_off`, `general_log_on`, `max_allowed_packet_tiny` (< 1 Mio), `tmp_table_above_heap_table` (MariaDB seulement),
+`secure_file_priv_empty` (moyen sur MySQL, faible sur MariaDB où c'est le défaut), `doublewrite_off`. PostgreSQL : `fsync_off`, `autovacuum_off`,
+`zero_damaged_pages_on`, `ignore_checksum_failure_on` (graves), `full_page_writes_off`, `ssl_off`, `ssl_min_protocol_old` (seulement si `ssl` est actif),
+`track_counts_off` (moyens), `synchronous_commit_off`, `slow_statement_log_off`, `data_checksums_off` (faibles). Écartées volontairement : taille du cache
+(`innodb_buffer_pool_size`, `shared_buffers`) et plafond de connexions, qui demandent la RAM et les compteurs d'état (pas lus ici) ; `password_encryption`
+(son nom est masqué, donc illisible). ClickHouse : `unsupported` / `no_rules` ; Redis : 501. Un compte sans droit particulier lit les mêmes variables
+(MySQL, MariaDB, PostgreSQL ; PostgreSQL laisse vides celles que seul `pg_read_all_settings` lit : la règle concernée se tait) ; ClickHouse sans
+`SELECT ON system.server_settings` = `permission_denied`. Audit `diagnostic.read` : `topic: config_audit`, `status`, `rows` (règles évaluées),
+`findings`, jamais un nom de variable ni une valeur.
 
 ### Santé du serveur (`/diagnostics/health`, outil MCP `server_health`)
 
