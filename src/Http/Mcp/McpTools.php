@@ -25,6 +25,7 @@ use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
+use App\Http\Json\HealthInterval;
 use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
@@ -172,6 +173,19 @@ final readonly class McpTools
             $this->request->get()->requireDiagnostic();
 
             return DiagnosticsPresenter::locks($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function serverHealth(string $connection, ?int $seconds = null): array
+    {
+        return $this->guard(function () use ($connection, $seconds): array {
+            $this->request->get()->requireDiagnostic();
+            $interval = HealthInterval::parse($seconds);
+
+            return DiagnosticsPresenter::health($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $interval)));
         });
     }
 

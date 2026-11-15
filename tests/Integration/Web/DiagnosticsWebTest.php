@@ -54,7 +54,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $unsupported = ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null];
         $availableStatus = ['availability' => 'available', 'reason' => null, 'privilege' => null];
         $capabilities = self::arrayOf($body['capabilities']);
-        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption'], array_keys($capabilities));
+        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption', 'health'], array_keys($capabilities));
         self::assertSame($availableStatus, $capabilities['sessions']);
         self::assertSame($locks, $capabilities['locks']);
         // La source des empreintes dépend de la cible (performance_schema, extension, journal) : elle dit la même chose que sa page.
@@ -63,6 +63,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame($availableStatus, $capabilities['variables']);
         self::assertSame(\in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? $unsupported : $availableStatus, $capabilities['accounts']);
         self::assertSame('TARGET_CLICKHOUSE_URL' === $envVar ? $unsupported : $availableStatus, $capabilities['encryption']);
+        self::assertSame(\in_array($envVar, ['TARGET_CLICKHOUSE_URL', 'TARGET_REDIS_URL'], true) ? $unsupported : $availableStatus, $capabilities['health']);
     }
 
     #[DataProvider('targets')]
@@ -92,6 +93,82 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $this->call('GET', '/web/connections/'.$id.'/diagnostics/sessions?database=postgres');
 
         self::assertSame(200, $this->statusCode());
+    }
+
+    #[DataProvider('relationalTargets')]
+    public function testMeasuresTheHealthOverAnInterval(string $envVar): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget($envVar);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/health?seconds=1');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'seconds', 'startedAt', 'endedAt', 'discarded', 'indicators'], array_keys($body));
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertGreaterThanOrEqual(1.0, $body['seconds']);
+        self::assertNull($body['discarded']);
+        $indicators = $body['indicators'];
+        self::assertIsArray($indicators);
+        self::assertGreaterThanOrEqual(7, \count($indicators));
+        self::assertSame(['key', 'value', 'unit', 'level', 'threshold'], array_keys(self::arrayOf($indicators[0])));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
+    #[DataProvider('badIntervals')]
+    public function testAnIntervalOutsideOneToThirtySecondsIsRefused(string $seconds): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/health?seconds='.$seconds);
+
+        self::assertSame(422, $this->statusCode());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function badIntervals(): iterable
+    {
+        yield 'zero' => ['0'];
+        yield 'too long' => ['31'];
+        yield 'negative' => ['-1'];
+        yield 'text' => ['abc'];
+    }
+
+    public function testHealthIsUnsupportedWhereTheEngineHasNoCounters(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/health?seconds=1');
+
+        self::assertSame(501, $this->statusCode());
+        self::assertSame('unsupported_operation', $body['error']);
+    }
+
+    public function testTheHealthReadIsAuditedWithoutTheCounters(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/health?seconds=1');
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => AuditAction::DiagnosticRead === $e->getAction()));
+        self::assertCount(1, $events);
+        $details = $events[0]->getDetails();
+        self::assertSame('health', $details['topic']);
+        self::assertSame('available', $details['status']);
+        self::assertSame(1, $details['seconds']);
+        self::assertArrayNotHasKey('indicators', $details);
     }
 
     public function testRedisIsUnsupported(): void

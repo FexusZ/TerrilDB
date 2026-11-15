@@ -21,6 +21,7 @@ use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
+use App\Http\Json\HealthInterval;
 use App\Http\Json\JsonInput;
 use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\RequestTimeLimit;
@@ -209,6 +210,20 @@ final readonly class ApiController
         $encryption = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
 
         return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
+    }
+
+    /**
+     * Santé du serveur sur un intervalle (`?seconds=`, 1 à 30, 5 par défaut) : deux relevés de compteurs, des taux par seconde et des
+     * repères. Aucun historique ; la requête dure l'intervalle.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/health', requirements: self::ID, methods: ['GET'])]
+    public function health(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $seconds = HealthInterval::parse($request->query->get('seconds'));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $seconds));
+
+        return new JsonResponse(DiagnosticsPresenter::health($report));
     }
 
     /**

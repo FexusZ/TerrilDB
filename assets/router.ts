@@ -33,6 +33,7 @@ export function createAppRouter(history: RouterHistory): Router {
           { path: 'accounts', name: 'accounts', component: () => import('./views/AccountsPane.vue'), props: true },
           { path: 'activity', name: 'server-activity', component: () => import('./views/ServerActivityPane.vue'), props: true },
           { path: 'variables', name: 'server-variables', component: () => import('./views/ServerVariablesPane.vue'), props: true },
+          { path: 'health', name: 'server-health', component: () => import('./views/ServerHealthPane.vue'), props: true },
           { path: 'audit', name: 'audit', component: () => import('./views/AuditPane.vue'), props: true },
           { path: 'diagram', name: 'diagram', component: () => import('./views/DiagramPane.vue'), props: true },
           { path: 'key', name: 'key', component: () => import('./views/KeyPane.vue'), props: (route) => ({ id: route.params.id, name: route.query.name }) },

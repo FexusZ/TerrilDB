@@ -8,6 +8,7 @@ use App\Audit\AuditedDiagnostics;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
+use App\Http\Json\HealthInterval;
 use App\Http\Json\VariableQueryParser;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -91,5 +92,15 @@ final readonly class DiagnosticsController
         $encryption = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->encryption($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
+    }
+
+    #[Route('/web/connections/{id}/diagnostics/health', requirements: self::ID, methods: ['GET'])]
+    public function health(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $seconds = HealthInterval::parse($request->query->get('seconds'));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->health($this->session->auditContext(), $uuid, $target, $seconds), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::health($report));
     }
 }
