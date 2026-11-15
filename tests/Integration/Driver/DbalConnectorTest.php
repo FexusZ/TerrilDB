@@ -125,7 +125,7 @@ final class DbalConnectorTest extends TestCase
         $this->skipIfUnreachable('TARGET_POSTGRES_URL');
         $admin = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
         $user = TargetDatabase::parameters('TARGET_POSTGRES_URL')->username;
-        if (0 !== (int) $admin->fetchOne('SELECT count(*) FROM pg_db_role_setting')) {
+        if ([] !== $admin->fetchAllAssociative('SELECT 1 FROM pg_db_role_setting')) {
             self::markTestSkipped('The target already carries role or database settings.');
         }
 
@@ -138,5 +138,29 @@ final class DbalConnectorTest extends TestCase
         }
 
         self::assertSame('on', $value);
+    }
+
+    /**
+     * Un jeu de caractères client multi-octets (SJIS, BIG5, GBK…) peut contenir l'octet de l'antislash dans un caractère : dans
+     * E'…' le moteur lirait alors un échappement que le garde ne voit pas. La session PostgreSQL impose UTF8.
+     */
+    public function testThePostgreSqlSessionReadsTextAsUtf8(): void
+    {
+        $this->skipIfUnreachable('TARGET_POSTGRES_URL');
+        $admin = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'));
+        $user = TargetDatabase::parameters('TARGET_POSTGRES_URL')->username;
+        if ([] !== $admin->fetchAllAssociative('SELECT 1 FROM pg_db_role_setting')) {
+            self::markTestSkipped('The target already carries role or database settings.');
+        }
+
+        try {
+            $admin->executeStatement(\sprintf("ALTER ROLE %s SET client_encoding = 'SJIS'", $admin->quoteSingleIdentifier($user)));
+
+            $value = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_POSTGRES_URL'), TargetDatabase::parameters('TARGET_POSTGRES_URL'))->fetchOne('SHOW client_encoding');
+        } finally {
+            $admin->executeStatement(\sprintf('ALTER ROLE %s RESET client_encoding', $admin->quoteSingleIdentifier($user)));
+        }
+
+        self::assertSame('UTF8', $value);
     }
 }

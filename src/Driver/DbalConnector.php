@@ -56,8 +56,8 @@ final readonly class DbalConnector
                 $this->readTextLikeTheGuard($connection);
             }
             if (Engine::PostgreSql === $engine) {
-                // Le garde lit '…' sans échappement par antislash : la session le fait aussi, quel que soit le réglage du rôle ou de la base.
-                $connection->executeQuery("SELECT set_config('standard_conforming_strings', 'on', false)");
+                // Le garde lit '…' sans échappement par antislash et en UTF-8 : la session aussi, quel que soit le réglage du rôle ou de la base.
+                $connection->executeQuery("SELECT set_config('standard_conforming_strings', 'on', false), set_config('client_encoding', 'UTF8', false)");
             }
             if (Engine::PostgreSql === $engine && null !== $parameters->schema) {
                 // quote_ident : le nom est une donnée, jamais du SQL.
