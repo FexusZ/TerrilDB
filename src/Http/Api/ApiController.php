@@ -189,6 +189,30 @@ final readonly class ApiController
     }
 
     /**
+     * Comptes, rôles et privilèges du serveur, avec l'audit de sécurité : lecture seule, jamais une empreinte de mot de passe.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/accounts', requirements: self::ID, methods: ['GET'])]
+    public function accounts(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::accounts($report));
+    }
+
+    /**
+     * Si la connexion de TerrilDB vers la cible est chiffrée (protocole, suite) : une observation, rien ne change.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/encryption', requirements: self::ID, methods: ['GET'])]
+    public function encryption(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $encryption = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
+    }
+
+    /**
      * Santé du serveur sur un intervalle (`?seconds=`, 1 à 30, 5 par défaut) : deux relevés de compteurs, des taux par seconde et des
      * repères. Aucun historique ; la requête dure l'intervalle.
      */

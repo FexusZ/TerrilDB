@@ -30,6 +30,7 @@ export function createAppRouter(history: RouterHistory): Router {
         props: true,
         children: [
           { path: '', name: 'workspace', component: () => import('./views/QueryPane.vue') },
+          { path: 'accounts', name: 'accounts', component: () => import('./views/AccountsPane.vue'), props: true },
           { path: 'activity', name: 'server-activity', component: () => import('./views/ServerActivityPane.vue'), props: true },
           { path: 'variables', name: 'server-variables', component: () => import('./views/ServerVariablesPane.vue'), props: true },
           { path: 'health', name: 'server-health', component: () => import('./views/ServerHealthPane.vue'), props: true },
@@ -42,6 +43,7 @@ export function createAppRouter(history: RouterHistory): Router {
       },
       { path: '/security', name: 'security', component: () => import('./views/SecurityView.vue') },
       { path: '/security/activity', name: 'activity', component: () => import('./views/ActivityView.vue') },
+      { path: '/security/accounts', name: 'accounts', component: () => import('./views/AccountsView.vue') },
       { path: '/security/invitations', name: 'invitations', component: () => import('./views/InvitationsView.vue') },
       { path: '/security/tokens', name: 'tokens', component: () => import('./views/TokensView.vue') },
       { path: '/:pathMatch(.*)*', redirect: { name: 'connections' } },

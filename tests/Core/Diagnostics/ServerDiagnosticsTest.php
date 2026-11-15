@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Tests\Core\Diagnostics;
 
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\AccountDiagnostics;
+use App\Core\Diagnostics\AccountReport;
+use App\Core\Diagnostics\ConnectionEncryption;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\DigestOrder;
 use App\Core\Diagnostics\DigestQuery;
 use App\Core\Diagnostics\DigestReport;
+use App\Core\Diagnostics\EncryptionDiagnostics;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\Health\HealthSample;
 use App\Core\Diagnostics\Health\HealthWindow;
@@ -56,7 +60,7 @@ final class ServerDiagnosticsTest extends TestCase
     {
         $diagnostics = new ServerDiagnostics(Engine::Redis);
 
-        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'statements' => 'unsupported', 'variables' => 'unsupported', 'health' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
+        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'statements' => 'unsupported', 'variables' => 'unsupported', 'accounts' => 'unsupported', 'encryption' => 'unsupported', 'health' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
     }
 
     public function testCapabilitiesAskTheThemeForItsStatus(): void
@@ -204,6 +208,41 @@ final class ServerDiagnosticsTest extends TestCase
 
         $this->expectException(UnsupportedOperationException::class);
         (new ServerDiagnostics(Engine::Redis))->variables();
+    }
+
+    public function testAccountsAndEncryptionAreServedOrUnsupported(): void
+    {
+        $accounts = new class implements AccountDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::denied('SELECT ON mysql');
+            }
+
+            public function accounts(): AccountReport
+            {
+                return new AccountReport(DiagnosticStatus::available(), Engine::MySql, [], false);
+            }
+        };
+        $encryption = new class implements EncryptionDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::available();
+            }
+
+            public function encryption(): ConnectionEncryption
+            {
+                return new ConnectionEncryption(true, 'TLSv1.3', 'TLS_AES_256_GCM_SHA384');
+            }
+        };
+
+        $diagnostics = new ServerDiagnostics(Engine::MySql, accounts: $accounts, encryption: $encryption);
+
+        self::assertSame($accounts, $diagnostics->accounts());
+        self::assertSame($encryption, $diagnostics->encryption());
+        self::assertSame('SELECT ON mysql', $diagnostics->capabilities()['accounts']->privilege);
+        self::assertSame('available', $diagnostics->capabilities()['encryption']->availability->value);
+        $this->expectException(UnsupportedOperationException::class);
+        (new ServerDiagnostics(Engine::Redis))->accounts();
     }
 
     public function testHealthIsServedOrUnsupported(): void

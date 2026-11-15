@@ -61,6 +61,10 @@ final readonly class RecoveryPhraseService
     public function reset(User $user, #[\SensitiveParameter] string $typedPhrase, #[\SensitiveParameter] string $newPassword): DerivedKey
     {
         $wrapped = $user->getRecoveryKey();
+        // Un compte désactivé ne se rouvre pas par la phrase : même réponse qu'une phrase fausse.
+        if ($user->isDisabled()) {
+            throw InvalidRecoveryException::create();
+        }
 
         try {
             $phrase = RecoveryPhrase::parse($typedPhrase);

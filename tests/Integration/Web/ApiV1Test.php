@@ -580,9 +580,10 @@ final class ApiV1Test extends WebApiTestCase
         $capabilities = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics');
         self::assertSame(200, $this->statusCode());
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
+        $accounts = \in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? 'unsupported' : 'available';
         $statuses = array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities']));
-        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'health'], array_keys($statuses));
-        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => $statuses['statements'], 'variables' => 'available', 'health' => 'available' === $locks ? 'available' : 'unsupported'], $statuses);
+        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption', 'health'], array_keys($statuses));
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => $statuses['statements'], 'variables' => 'available', 'accounts' => $accounts, 'encryption' => 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available', 'health' => 'available' === $locks ? 'available' : 'unsupported'], $statuses);
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
@@ -748,5 +749,39 @@ final class ApiV1Test extends WebApiTestCase
 
         $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select 1', 'timeoutMs' => 100_000]);
         self::assertSame(200, $this->statusCode());
+    }
+
+    public function testATokenWithTheDiagnosticRightListsTheAccountsAndTheEncryption(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $accounts = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/accounts');
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf($accounts['status'])['availability']);
+        self::assertNotEmpty($accounts['accounts']);
+        self::assertArrayHasKey('findings', $accounts);
+
+        $encryption = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/encryption');
+        self::assertSame(200, $this->statusCode());
+        self::assertArrayHasKey('encrypted', $encryption);
+    }
+
+    public function testAccountsAndEncryptionNeedTheDiagnosticRight(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL');
+
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/accounts');
+        self::assertSame(403, $this->statusCode());
+        $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/encryption');
+        self::assertSame(403, $this->statusCode());
+    }
+
+    public function testTheAccountsOfAConnectionOutsideTheListAreNotFound(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/accounts');
+
+        self::assertSame(404, $this->statusCode());
     }
 }

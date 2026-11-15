@@ -320,6 +320,53 @@ export interface VariableReport {
   variables: ServerVariable[]
 }
 
+/** Un compte (ou un rôle) d'un serveur SQL. Jamais d'empreinte de mot de passe : `passwordSet` n'est qu'un booléen. */
+export interface AccountEntry {
+  user: string
+  host: string
+  name: string
+  plugin: string
+  passwordSet: boolean
+  passwordExpired: boolean
+  locked: boolean
+  tls: 'none' | 'any' | 'x509' | 'specified'
+  isRole: boolean
+  /** Le compte que TerrilDB utilise pour cette connexion. */
+  current: boolean
+  roles: string[]
+  defaultRoles: string[]
+  globalPrivileges: string[]
+  databasePrivileges: Record<string, string[]>
+  grantOptionOn: string[]
+  limits: Record<string, number>
+}
+
+/** Une constatation de l'audit de sécurité des comptes ; `rule` est un code stable. */
+export interface SecurityFinding {
+  rule: string
+  severity: 'high' | 'medium' | 'low'
+  account: string | null
+  detail: string | null
+  currentAccount: boolean
+}
+
+export interface AccountReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  /** Les droits lus sont incomplets : l'absence d'un droit n'est pas prouvée. */
+  privilegesIncomplete: boolean
+  activatesAllRoles: boolean
+  accounts: AccountEntry[]
+  findings: SecurityFinding[]
+}
+
+export interface ConnectionEncryption {
+  status: DiagnosticStatus
+  encrypted: boolean
+  protocol: string | null
+  cipher: string | null
+}
+
 export type AuditOutcome = 'success' | 'refused' | 'failed'
 export type AuditActor = 'web' | 'api' | 'mcp' | 'system'
 
@@ -375,6 +422,18 @@ export interface PlanResult {
   findings: PlanFindingInfo[]
 }
 
+export interface LintFindingInfo {
+  rule: string
+  severity: 'warning' | 'info'
+  message: string
+  suggestion: string | null
+  columns: string[]
+}
+
+export interface LintResult {
+  findings: LintFindingInfo[]
+}
+
 export interface SchemaFinding {
   rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
   severity: 'critical' | 'warning' | 'info'
@@ -425,6 +484,17 @@ export interface SchemaDiagram {
   truncated: boolean
   tables: DiagramTable[]
   relations: DiagramRelation[]
+}
+
+/** Un compte tel que le voit un administrateur : rien de chiffré, pas d’e-mail. */
+export interface AccountInfo {
+  id: string
+  username: string
+  role: 'admin' | 'member'
+  totpEnabled: boolean
+  lastLoginAt: string | null
+  disabled: boolean
+  current: boolean
 }
 
 export interface InvitationInfo {

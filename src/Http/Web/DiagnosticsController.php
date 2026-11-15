@@ -76,6 +76,24 @@ final readonly class DiagnosticsController
         return new JsonResponse(DiagnosticsPresenter::variables($report));
     }
 
+    #[Route('/web/connections/{id}/diagnostics/accounts', requirements: self::ID, methods: ['GET'])]
+    public function accounts(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->accounts($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::accounts($report));
+    }
+
+    #[Route('/web/connections/{id}/diagnostics/encryption', requirements: self::ID, methods: ['GET'])]
+    public function encryption(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $encryption = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->encryption($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
+    }
+
     #[Route('/web/connections/{id}/diagnostics/health', requirements: self::ID, methods: ['GET'])]
     public function health(string $id, Request $request): JsonResponse
     {
