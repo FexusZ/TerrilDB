@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Support;
 
 use App\Core\Connection\Engine;
+use App\Core\Schema\TableDefinition;
 use App\Driver\ClickHouse\ClickHouseHttp;
 use App\Driver\DbalConnector;
+use App\Driver\MySql\MySqlIntrospector;
+use App\Driver\PostgreSql\PostgreSqlIntrospector;
 use App\Tests\Integration\Driver\TargetDatabase;
 use Doctrine\DBAL\Connection;
 use Symfony\Component\HttpClient\HttpClient;
@@ -49,14 +52,57 @@ final class DatasetSession
         return $this->dbal ?? throw new \LogicException('ClickHouse has no DBAL connection.');
     }
 
-    public function exec(string $sql): void
+    /** Exécute et rend le nombre de lignes touchées (0 sur ClickHouse, qui ne le dit pas pour une écriture asynchrone). */
+    public function exec(string $sql): int
     {
         if (null !== $this->http) {
             $this->http->query($sql, timeoutSeconds: 120.0);
 
+            return 0;
+        }
+
+        return (int) $this->connection()->executeStatement($sql);
+    }
+
+    public function describe(string $table): TableDefinition
+    {
+        $introspector = Engine::PostgreSql === $this->engine
+            ? new PostgreSqlIntrospector($this->connection())
+            : new MySqlIntrospector($this->connection());
+
+        return $introspector->describeTable($table);
+    }
+
+    /**
+     * Les noms des index d'une table autres que la clé primaire.
+     *
+     * @return list<string>
+     */
+    public function secondaryIndexes(string $table): array
+    {
+        $names = [];
+        foreach ($this->describe($table)->indexes as $index) {
+            if (!$index->primary) {
+                $names[] = $index->name;
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * Insère `$count` lignes numérotées de 1 à `$count` : `$values` est la liste des expressions en fonction de `n`. CTE récursive
+     * (MySQL, MariaDB : profondeur levée pour la session) ou `generate_series` (PostgreSQL).
+     */
+    public function insertSeries(string $table, string $columns, string $values, int $count): void
+    {
+        if (Engine::PostgreSql === $this->engine) {
+            $this->exec(\sprintf('INSERT INTO %s (%s) SELECT %s FROM generate_series(1, %d) AS g(n)', $table, $columns, $values, $count));
+
             return;
         }
-        $this->connection()->executeStatement($sql);
+        $this->exec(Engine::MariaDb === $this->engine ? 'SET SESSION max_recursive_iterations = 1000000' : 'SET SESSION cte_max_recursion_depth = 1000000');
+        $this->exec(\sprintf('INSERT INTO %s (%s) WITH RECURSIVE s (n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM s WHERE n < %d) SELECT %s FROM s', $table, $columns, $count, $values));
     }
 
     /** @return list<list<mixed>> */

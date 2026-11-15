@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Support;
 
 use App\Core\Connection\Engine;
-use App\Driver\MySql\MySqlIntrospector;
-use App\Driver\PostgreSql\PostgreSqlIntrospector;
 
 /**
  * La grande table déséquilibrée : 200 000 lignes, un état à trois valeurs dont une rare (5 %), 365 dates, un renvoi vers une petite
@@ -80,22 +78,7 @@ final class SkewedTable
      */
     public function secondaryIndexes(): array
     {
-        $introspector = match ($this->session->engine) {
-            Engine::ClickHouse => null,
-            Engine::PostgreSql => new PostgreSqlIntrospector($this->session->connection()),
-            default => new MySqlIntrospector($this->session->connection()),
-        };
-        if (null === $introspector) {
-            return [];
-        }
-        $names = [];
-        foreach ($introspector->describeTable($this->name)->indexes as $index) {
-            if (!$index->primary) {
-                $names[] = $index->name;
-            }
-        }
-
-        return $names;
+        return Engine::ClickHouse === $this->session->engine ? [] : $this->session->secondaryIndexes($this->name);
     }
 
     /** Supprime les deux tables ; sans effet si elles n'existent plus. */
