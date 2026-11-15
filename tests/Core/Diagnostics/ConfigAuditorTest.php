@@ -203,6 +203,14 @@ final class ConfigAuditorTest extends TestCase
         }
     }
 
+    public function testAnEngineWithoutRulesStillSaysWhenItsSourceCannotBeRead(): void
+    {
+        $denied = (new ConfigAuditor())->audit(Engine::ClickHouse, self::report([], DiagnosticStatus::denied('SELECT ON system.server_settings')));
+
+        self::assertSame(Availability::PermissionDenied, $denied->status->availability);
+        self::assertSame('SELECT ON system.server_settings', $denied->status->privilege);
+    }
+
     public function testNamesAreTheVariablesTheRulesRead(): void
     {
         self::assertContains('sql_mode', ConfigAuditor::namesFor(Engine::MySql));

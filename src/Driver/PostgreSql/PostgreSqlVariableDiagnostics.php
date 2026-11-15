@@ -67,8 +67,8 @@ final readonly class PostgreSqlVariableDiagnostics implements VariableDiagnostic
                 $row = new RowReader($row);
                 $variables[] = new ServerVariable(
                     $row->string('name'),
-                    $row->nullableString('value'),
-                    $row->nullableString('default_value'),
+                    $row->nullableText('value'),
+                    $row->nullableText('default_value'),
                     $row->bool('changed'),
                     $row->nullableString('source'),
                     $row->bool('pending_restart') ? RestartNeed::Pending : ('postmaster' === $row->string('context') ? RestartNeed::Required : null),

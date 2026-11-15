@@ -14,12 +14,16 @@ use App\Core\Diagnostics\Health\HealthIndicator;
 use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\ConfigAuditReport;
+use App\Core\Diagnostics\ConfigFinding;
 use App\Core\Diagnostics\SecurityFinding;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\ServerVariable;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Diagnostics\StatementDigest;
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Diagnostics\VariableComparison;
+use App\Core\Diagnostics\VariableDifference;
 use App\Core\Diagnostics\VariableReport;
 
 final class DiagnosticsPresenter
@@ -128,6 +132,56 @@ final class DiagnosticsPresenter
                 'scope' => $v->scope,
                 'unit' => $v->unit,
             ], $report->variables),
+        ];
+    }
+
+    /**
+     * L'audit de configuration : des constats avec leur explication fixe et une suggestion à LIRE (jamais exécutée). `value` est ce
+     * que le serveur annonce pour une variable que le modèle n'a pas masquée.
+     *
+     * @return array<string, mixed>
+     */
+    public static function configAudit(ConfigAuditReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'engine' => $report->engine->value,
+            'evaluated' => $report->evaluated,
+            'rulesTotal' => $report->rulesTotal,
+            'findings' => array_map(static fn (ConfigFinding $f): array => [
+                'rule' => $f->rule->value,
+                'severity' => $f->severity->value,
+                'variable' => $f->variable,
+                'value' => $f->value,
+                'recommended' => $f->recommended,
+                'suggestion' => $f->suggestion,
+                'explanation' => $f->rule->explanation(),
+            ], $report->findings),
+        ];
+    }
+
+    /**
+     * L'écart de variables de deux serveurs : aucune variable masquée n'y figure (elles sont seulement comptées).
+     *
+     * @return array<string, mixed>
+     */
+    public static function comparison(VariableComparison $comparison): array
+    {
+        return [
+            'status' => self::status($comparison->status),
+            'unavailableSide' => $comparison->unavailableSide,
+            'masked' => $comparison->masked,
+            'truncated' => $comparison->truncated,
+            'differences' => array_map(static fn (VariableDifference $d): array => [
+                'name' => $d->name,
+                'presentA' => $d->presentA,
+                'valueA' => $d->valueA,
+                'changedA' => $d->changedA,
+                'presentB' => $d->presentB,
+                'valueB' => $d->valueB,
+                'changedB' => $d->changedB,
+                'unit' => $d->unit,
+            ], $comparison->differences),
         ];
     }
 

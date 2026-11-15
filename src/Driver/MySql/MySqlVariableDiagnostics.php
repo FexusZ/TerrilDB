@@ -53,8 +53,8 @@ final readonly class MySqlVariableDiagnostics implements VariableDiagnostics
                 $row = new RowReader($row);
                 $variables[] = new ServerVariable(
                     $row->string('name'),
-                    $row->nullableString('value'),
-                    $row->nullableString('default_value'),
+                    $row->nullableText('value'),
+                    $row->nullableText('default_value'),
                     $row->bool('changed'),
                     $row->nullableString('source'),
                     $row->bool('read_only') ? RestartNeed::Required : null,

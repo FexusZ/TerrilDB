@@ -74,8 +74,8 @@ final readonly class ClickHouseVariableDiagnostics implements VariableDiagnostic
             $row = new RowReader($record);
             $variables[] = new ServerVariable(
                 $row->string('name'),
-                $row->nullableString('value'),
-                $row->nullableString('default_value'),
+                $row->nullableText('value'),
+                $row->nullableText('default_value'),
                 $row->bool('changed'),
                 null,
                 $row->bool('restart') ? RestartNeed::Required : null,

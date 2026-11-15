@@ -264,6 +264,27 @@ final class VariableDiagnosticsTest extends TestCase
         $target->close();
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function mariaDbTargets(): iterable
+    {
+        yield 'MariaDB' => ['TARGET_MARIADB_URL'];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
+    }
+
+    #[DataProvider('mariaDbTargets')]
+    public function testAnEmptyValueStaysAnEmptyStringAndIsNotNull(string $envVar): void
+    {
+        $target = $this->open($envVar);
+
+        $variable = self::find($target->diagnostics()->variables()->variables(new VariableQuery(names: ['secure_file_priv']))->variables, 'secure_file_priv');
+
+        self::assertNotNull($variable);
+        self::assertSame('', $variable->value);
+        $target->close();
+    }
+
     public function testMariaDbGivesTheDefaultAndReadOnly(): void
     {
         $target = $this->open('TARGET_MARIADB_URL');

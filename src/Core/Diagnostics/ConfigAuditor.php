@@ -43,7 +43,7 @@ final class ConfigAuditor
     {
         $rules = ConfigRule::forEngine($engine);
         if ([] === $rules) {
-            return new ConfigAuditReport(DiagnosticStatus::unsupported('no_rules'), $engine, [], 0, 0);
+            return new ConfigAuditReport($report->status->isAvailable() ? DiagnosticStatus::unsupported('no_rules') : $report->status, $engine, [], 0, 0);
         }
         if (!$report->status->isAvailable()) {
             return new ConfigAuditReport($report->status, $engine, [], 0, \count($rules));
