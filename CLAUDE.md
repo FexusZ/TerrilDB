@@ -138,7 +138,7 @@ tromper : le moteur fait foi. PostgreSQL : `BEGIN READ ONLY` + `statement_timeou
 lignes). MySQL/MariaDB : `SET SESSION TRANSACTION READ ONLY` (et non `START TRANSACTION READ ONLY`, qui laisse passer
 le DDL), `MAX_EXECUTION_TIME` / `max_statement_time`, lecture non tamponnée, instructions multiples désactivées. Une
 lecture est toujours annulée ; une écriture est validée si tout réussit. Limites connues : MySQL n'a pas de délai moteur
-pour une écriture ; un DDL MySQL en lecture-écriture valide implicitement ; l'opérateur `?` de jsonb ne passe pas dans
+pour une écriture (MariaDB en a un : `max_statement_time` coupe aussi les écritures, qui sont alors annulées, mesuré) ; un DDL MySQL en lecture-écriture valide implicitement ; l'opérateur `?` de jsonb ne passe pas dans
 EXPLAIN/SHOW sur PostgreSQL (il passe dans les SELECT).
 
 Verrous : `LockConflict` (Core/Driver, `fromEngineError(Engine, sqlState, code)`, codes du moteur seulement : MySQL/MariaDB 1213 = `deadlock`, 1205 = `lock_timeout` ; PostgreSQL 40P01 = `deadlock`, 40001 = `serialization_failure` (réessayable, code propre : ce n'est pas un interblocage), 55P03 = `lock_timeout` ; 57014 et 3024 restent `query_timeout`) ; les runners lèvent `LockConflictException`, `DbalDataExecutor` / `DbalDdlExecutor` posent `lock` sur `DataChangeFailedException` / `SchemaChangeFailedException` (`EngineLockConflict` lit PDO). `ErrorMapper` : 409 `deadlock` / `serialization_failure` / `lock_timeout` avec `retryable` (vrai SEULEMENT si `applied` est vide : un DDL MySQL/MariaDB/ClickHouse joué instruction par instruction qui a déjà appliqué quelque chose répond `retryable: false`, et le front dit de ne pas rejouer), sans message du moteur (il peut citer une valeur), `applied` et `failed` conservés ; `data_change_failed` / `schema_change_failed` portent `retryable: false` ; TerrilDB ne rejoue jamais seul ; journal `query.failed` avec `reason` = le code. Tests : `tests/Integration/Driver/LockConflictTest` (vrais verrous et vrai interblocage, pair en sous-processus `lock_peer.php`). Restent (#73) : conseils pour 1040/53300/1044/1142/1062 et `auth_requires_tls`.
@@ -263,6 +263,27 @@ ou un contrôle bidirectionnel ; `SqlText::commentSafe()` est la seule façon d'
 fin de commentaire, tronqué. `NameRule`, `AbstractDdlDialect::quoteName`, `Binder::quote` et `SchemaAuditor` (suggestion nulle plutôt que
 risquée) passent par là ; côté front `assets/utils/sql.ts` (`isSafeName`, `quoteIdentifier`) en est le miroir. Ne jamais recopier un
 nom dans du SQL par `sprintf` sans eux.
+
+## Différences MySQL / MariaDB mesurées (#86, tests/Integration/Driver/MySqlFamily*Test)
+
+Rejouées sur les quatre cibles (MySQL 8.4 et 26, MariaDB 11.8 et 13), objets jetables retirés en `tearDown`. Socle : trait `MySqlFamilyTarget`.
+Largeur d'affichage : MariaDB rend `int(11)`, `smallint(5)`, `bigint(20)`, MySQL 8.0.19+ `int`, `smallint`, `bigint` (`tinyint(1)` et `zerofill` gardés, `timestamp(n)`/`time(n)` toujours) ;
+l'empreinte de structure est stable d'une lecture à l'autre et après un `MODIFY COLUMN` d'une autre colonne (rien n'est corrigé : pas de défaut). Collations : défaut du serveur
+`utf8mb4_0900_ai_ci` (MySQL) contre `utf8mb4_uca1400_ai_ci` (MariaDB) ; `MODIFY COLUMN` remet jeu de caractères ET collation d'une colonne texte à ceux de la table (une colonne latin1 ou
+`utf8mb4_bin` les perd : c'est le comportement documenté de l'éditeur, verrouillé). `SHOW` : aucun SHOW du code de production n'est une forme renommée (test qui les relit dans `src/` et les
+exécute) ; `SHOW MASTER STATUS` et `SHOW SLAVE STATUS` n'existent plus en MySQL 8.4/26, MariaDB les accepte avec les nouveaux noms : seuls `BINARY LOG STATUS` et `REPLICA STATUS` sont
+communs, et `SHOW PROCESSLIST` a une colonne `Progress` en plus chez MariaDB. `performance_schema` est éteint par défaut chez MariaDB (`sys` y existe pourtant) : requêtes coûteuses,
+usage des index et pré-contrôle des verrous de table rendent `disabled` / `performance_schema_off`, sessions, transactions, variables et santé se lisent par une autre source. Délais :
+lecture coupée au délai demandé sur les quatre (250 ms, 1 s) ; une ÉCRITURE n'est coupée que par MariaDB (annulée), MySQL va au bout. Cache de statistiques : MySQL 8 garde
+`TABLES`/`STATISTICS` 24 h (`information_schema_stats_expiry`) et rendait un nombre de lignes d'avant (0 après un chargement de 2000 lignes, vérifié) : `DbalConnector` pose `0` pour la
+session MySQL (coût mesuré : environ 3 ms de plus pour deux pages de cent tables) ; MariaDB n'a pas la variable. Les tailles (`DATA_LENGTH`, `INDEX_LENGTH`) retardent aussi sur les
+statistiques InnoDB persistantes (échantillonnées, jusqu'à `ANALYZE TABLE`), indépendamment du cache : ce sont des estimations. Session : `utf8mb4` de bout en bout (émoji et ZWJ
+intacts, octets identiques) ; le fuseau de session est celui du serveur (`SYSTEM`) et n'est pas fixé (TIMESTAMP suit le fuseau, DATETIME non) ; `sql_mode` = celui du serveur moins
+`NO_BACKSLASH_ESCAPES` et `ANSI_QUOTES` (mode strict gardé : valeur invalide refusée) ; dates zéro refusées par MySQL (`NO_ZERO_DATE`), acceptées par MariaDB. Noms exotiques : tiret,
+espace, point, backtick, accents, CJK, `Tx`/`tx`/`TX` distincts (`lower_case_table_names = 0` sur les cibles : une valeur 1 ou 2 n'est pas testable ici), pagination par `BINARY TABLE_NAME`,
+recherche, éditeur de structure (renommage de colonne, ajout) et export CSV/JSON tiennent ; `#mysql50#…` est accepté par MySQL (base et table) et refusé par MariaDB (1102/1103) ;
+les noms sont stockés en utf8mb3 : MariaDB refuse un émoji, MySQL l'accepte et le range en `?` (inadressable), et comparer un nom ou une recherche sur 4 octets à une colonne utf8mb3
+faisait échouer la requête (500) : `describeTable` rend `TableNotFound`, la recherche rend une liste vide. Tables système de MariaDB en Aria : toutes se décrivent, taille d'index nulle.
 
 ## Optimiseur local (src/Core/Optimizer)
 
