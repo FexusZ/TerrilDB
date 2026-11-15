@@ -57,6 +57,8 @@ final class StatementGuard
         'INPUT', 'AZUREBLOBSTORAGE', 'AZUREBLOBSTORAGECLUSTER', 'DELTALAKE', 'ICEBERG', 'HUDI', 'MERGE', 'YTSAURUS',
         'ARROWFLIGHT', 'NATS', 'KAFKA', 'RABBITMQ',
     ];
+    // MySQL : indices d'optimiseur (`/*+ … */`) qui relèvent le délai du moteur ou changent une variable le temps de l'instruction.
+    private const HINTS_REFUSED = ['MAX_EXECUTION_TIME', 'SET_VAR'];
     private const LOCKING_CLAUSES = [
         ['FOR', 'UPDATE'], ['FOR', 'SHARE'], ['FOR', 'NO', 'KEY', 'UPDATE'], ['FOR', 'KEY', 'SHARE'], ['LOCK', 'IN', 'SHARE', 'MODE'],
     ];
@@ -274,6 +276,11 @@ final class StatementGuard
 
     private function usesDangerousFunction(ScannedStatement $statement): bool
     {
+        foreach ($statement->calledNames() as $name) {
+            if (\in_array($name, self::HINTS_REFUSED, true)) {
+                return true;
+            }
+        }
         // Les noms appelés comptent aussi quand ils sont écrits entre guillemets (« "pg_read_file"(…) » : le moteur les appelle).
         foreach ([...$statement->words, ...$statement->calledNames()] as $word) {
             if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || \in_array($word, self::LOCK_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {

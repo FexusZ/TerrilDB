@@ -596,6 +596,22 @@ final class StatementGuardCorpusTest extends TestCase
         $rw = QueryMode::ReadWrite;
         $pg = [Engine::PostgreSql];
 
+        // MySQL : un indice d'optimiseur peut relever, voire lever, le délai du moteur ou changer une variable le temps de l'instruction
+        $my = self::MYSQL_FAMILY;
+        foreach ([
+            'SELECT /*+ MAX_EXECUTION_TIME(60000) */ 1 FROM t', 'SELECT /*+ max_execution_time(1) */ 1', 'SELECT /*+ SET_VAR(max_execution_time=0) */ SLEEP(6)',
+            "SELECT /*+ set_var(sql_mode = '') */ 1", 'SELECT /*+ NO_INDEX(t) MAX_EXECUTION_TIME(1) */ 1 FROM t', 'SELECT * FROM t WHERE a IN (SELECT /*+ MAX_EXECUTION_TIME(60000) */ 1)',
+            'SELECT 1 UNION SELECT /*+ SET_VAR(max_execution_time=0) */ 2', 'WITH x AS (SELECT /*+ SET_VAR(max_execution_time=0) */ 1) SELECT * FROM x',
+        ] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $my, $rw, 'refuse:ForbiddenConstruct');
+        }
+        yield from self::rows('UPDATE /*+ SET_VAR(foreign_key_checks=0) */ t SET a = 1 WHERE id = 1', $my, $rw, 'refuse:ForbiddenConstruct');
+        foreach (['SELECT /*+ NO_INDEX(t) */ * FROM t', 'SELECT /*+ JOIN_ORDER(a, b) */ 1 FROM a, b', 'SELECT /* MAX_EXECUTION_TIME(1) */ 1', "SELECT 'MAX_EXECUTION_TIME(1)'", 'SELECT max_execution_time, set_var FROM t'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'allow:Read');
+        }
+        yield from self::rows('SELECT /*+ NO_INDEX(t) ; DROP TABLE t */ 1', $my, $ro, 'refuse:MultipleStatements');
+
         // PostgreSQL : slots et origines de réplication, WAL, sauvegarde, notification, statistiques, fichiers du serveur
         foreach ([
             "pg_create_physical_replication_slot('s')", "pg_create_logical_replication_slot('s', 'test_decoding')", "pg_drop_replication_slot('s')",

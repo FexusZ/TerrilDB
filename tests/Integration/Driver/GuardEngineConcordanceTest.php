@@ -221,4 +221,25 @@ final class GuardEngineConcordanceTest extends TestCase
         self::assertSame(Decision::Allowed, (new StatementGuard())->check($sql, Engine::PostgreSql, QueryMode::ReadOnly)->decision);
         self::assertSame([[1]], $runner->run($sql, StatementKind::Read, $this->readOnly())->rows);
     }
+
+    #[DataProvider('mysqlTargets')]
+    public function testMySqlLetsAHintLiftTheDelayOfTheEngineSoTheGuardMustRefuseIt(string $envVar): void
+    {
+        $runner = $this->mysql($envVar);
+        $engine = TargetDatabase::engine($envVar);
+        $hints = ['select /*+ MAX_EXECUTION_TIME(60000) */ sleep(3)', 'select /*+ SET_VAR(max_execution_time=0) */ sleep(3)'];
+
+        foreach ($hints as $sql) {
+            self::assertSame(Decision::Refused, (new StatementGuard())->check($sql, $engine, QueryMode::ReadOnly)->decision, $sql);
+        }
+        if (Engine::MySql !== $engine) {
+            self::markTestSkipped('MariaDB reads the hint as a plain comment: its delay holds.');
+        }
+        foreach ($hints as $sql) {
+            $started = microtime(true);
+            $runner->run($sql, StatementKind::Read, $this->readOnly(300));
+            // Le délai demandé est de 300 ms : l'indice l'a écarté, la pause est allée à son terme.
+            self::assertGreaterThan(2.5, microtime(true) - $started, $sql);
+        }
+    }
 }
