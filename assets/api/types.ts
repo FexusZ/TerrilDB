@@ -422,6 +422,18 @@ export interface PlanResult {
   findings: PlanFindingInfo[]
 }
 
+export interface LintFindingInfo {
+  rule: string
+  severity: 'warning' | 'info'
+  message: string
+  suggestion: string | null
+  columns: string[]
+}
+
+export interface LintResult {
+  findings: LintFindingInfo[]
+}
+
 export interface SchemaFinding {
   rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
   severity: 'critical' | 'warning' | 'info'
@@ -472,6 +484,17 @@ export interface SchemaDiagram {
   truncated: boolean
   tables: DiagramTable[]
   relations: DiagramRelation[]
+}
+
+/** Un compte tel que le voit un administrateur : rien de chiffré, pas d’e-mail. */
+export interface AccountInfo {
+  id: string
+  username: string
+  role: 'admin' | 'member'
+  totpEnabled: boolean
+  lastLoginAt: string | null
+  disabled: boolean
+  current: boolean
 }
 
 export interface InvitationInfo {
