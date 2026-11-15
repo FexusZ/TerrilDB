@@ -180,7 +180,7 @@ final class MySqlFamilyCatalogTest extends TestCase
         }
         self::assertArrayHasKey($this->mariaDb() ? 'Aria' : 'InnoDB', $engines);
         // Une lecture ordinaire d'une table système passe le garde et le runner.
-        self::assertIsInt((int) $this->query('SELECT COUNT(*) FROM mysql.help_topic')[0][0]);
+        self::assertGreaterThanOrEqual(0, (int) $this->query('SELECT COUNT(*) FROM mysql.help_topic')[0][0]);
     }
 
     /**

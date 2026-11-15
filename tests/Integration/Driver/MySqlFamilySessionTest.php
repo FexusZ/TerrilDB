@@ -153,8 +153,8 @@ final class MySqlFamilySessionTest extends TestCase
             try {
                 $this->query($sql, self::write());
                 self::fail('Le mode strict doit refuser : '.$sql);
-            } catch (QueryFailedException) {
-                self::assertTrue(true);
+            } catch (QueryFailedException $e) {
+                self::assertNotSame('', $e->getMessage());
             }
         }
         self::assertSame([], $this->query('SELECT id FROM `'.$name.'`'), 'rien n\'a été écrit à moitié');

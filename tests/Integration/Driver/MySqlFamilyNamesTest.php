@@ -163,7 +163,7 @@ final class MySqlFamilyNamesTest extends TestCase
         self::assertSame(['t-x'], $found('t-'));
         self::assertSame(['ty`z'], $found('`'));
         self::assertSame(['a.b'], $found('.'));
-        self::assertSame(['TX', 'Tx', 'tx', 'tx_'], $found('X' === 'X' ? 'tx' : ''), 'sans casse, par octets');
+        self::assertSame(['TX', 'Tx', 'tx', 'tx_'], $found('tx'), 'sans casse, par octets');
         self::assertContains('Été', $found('é'), 'la recherche ne se limite pas à l\'ASCII');
         self::assertGreaterThan(0, \count($created));
     }
