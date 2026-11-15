@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Query;
 
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryTimeoutException;
@@ -18,6 +19,7 @@ interface QueryRunner
     /**
      * @throws QueryFailedException
      * @throws QueryTimeoutException
+     * @throws LockConflictException
      */
     public function run(string $sql, StatementKind $kind, QueryOptions $options): QueryResult;
 }
