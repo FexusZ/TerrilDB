@@ -36,6 +36,19 @@ final class StatementGuard
     // moteur les interrompt. IS_FREE_LOCK / IS_USED_LOCK ne font que lire.
     private const LOCK_FUNCTIONS = ['GET_LOCK', 'RELEASE_LOCK', 'RELEASE_ALL_LOCKS'];
     private const LOCK_FUNCTION_PREFIXES = ['PG_ADVISORY_', 'PG_TRY_ADVISORY_'];
+    // PostgreSQL : fonctions que le moteur exécute même dans une transaction en lecture seule et qui changent l'état du serveur
+    // (un slot de réplication survit à la transaction et retient du WAL, un message ou un point de restauration est écrit dans le WAL,
+    // les statistiques se remettent à zéro) ou qui listent ses répertoires. Refusées dans les deux modes. Les vues et
+    // les fonctions de lecture voisines (pg_replication_slots, pg_current_wal_lsn…) restent permises : noms exacts ou préfixes
+    // qui ne désignent que des fonctions.
+    private const SERVER_STATE_FUNCTIONS = [
+        'PG_CREATE_PHYSICAL_REPLICATION_SLOT', 'PG_CREATE_LOGICAL_REPLICATION_SLOT', 'PG_DROP_REPLICATION_SLOT', 'PG_COPY_PHYSICAL_REPLICATION_SLOT',
+        'PG_COPY_LOGICAL_REPLICATION_SLOT', 'PG_REPLICATION_SLOT_ADVANCE', 'PG_REPLICATION_ORIGIN_CREATE', 'PG_REPLICATION_ORIGIN_DROP',
+        'PG_REPLICATION_ORIGIN_ADVANCE', 'PG_REPLICATION_ORIGIN_SESSION_SETUP', 'PG_REPLICATION_ORIGIN_SESSION_RESET', 'PG_REPLICATION_ORIGIN_XACT_SETUP',
+        'PG_REPLICATION_ORIGIN_XACT_RESET', 'PG_LOGICAL_EMIT_MESSAGE', 'PG_SWITCH_WAL', 'PG_CREATE_RESTORE_POINT', 'PG_BACKUP_START', 'PG_BACKUP_STOP',
+        'PG_START_BACKUP', 'PG_STOP_BACKUP', 'PG_PROMOTE', 'PG_LOG_STANDBY_SNAPSHOT', 'PG_LOG_BACKEND_MEMORY_CONTEXTS', 'PG_SYNC_REPLICATION_SLOTS',
+    ];
+    private const SERVER_STATE_PREFIXES = ['PG_LOGICAL_SLOT_', 'PG_STAT_RESET', 'PG_WAL_REPLAY_', 'PG_LS_'];
     // Fonctions de table ClickHouse qui lisent des fichiers du serveur ou ouvrent des connexions sortantes : elles ne
     // sont refusées que lorsqu'elles sont appelées (« file(…) »), une colonne nommée « file » reste lisible.
     private const CLICKHOUSE_TABLE_FUNCTIONS = [
@@ -266,7 +279,10 @@ final class StatementGuard
             if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || \in_array($word, self::LOCK_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {
                 return true;
             }
-            foreach (self::LOCK_FUNCTION_PREFIXES as $prefix) {
+            if (\in_array($word, self::SERVER_STATE_FUNCTIONS, true)) {
+                return true;
+            }
+            foreach ([...self::LOCK_FUNCTION_PREFIXES, ...self::SERVER_STATE_PREFIXES] as $prefix) {
                 if (str_starts_with($word, $prefix)) {
                     return true;
                 }

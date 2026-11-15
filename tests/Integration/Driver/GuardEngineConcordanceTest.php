@@ -168,4 +168,57 @@ final class GuardEngineConcordanceTest extends TestCase
             }
         }
     }
+    public function testPostgreSqlRunsServerStateFunctionsInReadOnlySoOnlyTheGuardRefusesThem(): void
+    {
+        $runner = $this->postgres();
+        $guard = new StatementGuard();
+        $write = new QueryOptions(QueryMode::ReadWrite, 30_000, 10);
+        $calls = [
+            "pg_create_physical_replication_slot('guard_probe_slot')", "pg_logical_emit_message(false, 'guard_probe', 'x')",
+            "pg_create_restore_point('guard_probe')", 'pg_switch_wal()', "pg_stat_reset_shared('slru')", 'pg_ls_waldir()',
+            'pg_log_backend_memory_contexts(pg_backend_pid())', "pg_drop_replication_slot('guard_probe_slot')",
+        ];
+        foreach ($calls as $call) {
+            self::assertSame(Decision::Refused, $guard->check('select '.$call, Engine::PostgreSql, QueryMode::ReadOnly)->decision, $call);
+            self::assertSame(Decision::Refused, $guard->check('select '.$call, Engine::PostgreSql, QueryMode::ReadWrite)->decision, $call);
+        }
+
+        $isSuperuser = true === $runner->run('select rolsuper from pg_roles where rolname = current_user', StatementKind::Read, $this->readOnly())->rows[0][0];
+        if (!$isSuperuser) {
+            self::markTestSkipped('The PostgreSQL target account is not a superuser: the engine refuses these itself.');
+        }
+
+        try {
+            // Le moteur, en lecture seule, crée un slot de réplication : il survit à la transaction et retient du WAL.
+            $runner->run("select pg_create_physical_replication_slot('guard_probe_slot')", StatementKind::Read, $this->readOnly());
+            self::assertSame(1, $runner->run("select 1 from pg_replication_slots where slot_name = 'guard_probe_slot'", StatementKind::Read, $this->readOnly())->rowCount());
+            foreach (["pg_logical_emit_message(false, 'guard_probe', 'x')", "pg_create_restore_point('guard_probe')", 'pg_switch_wal()', "pg_stat_reset_shared('slru')"] as $call) {
+                self::assertSame(1, $runner->run('select '.$call, StatementKind::Read, $this->readOnly())->rowCount(), $call);
+            }
+            // Il liste le répertoire des journaux du serveur.
+            self::assertGreaterThan(0, $runner->run('select name from pg_ls_waldir()', StatementKind::Read, $this->readOnly())->rowCount());
+        } finally {
+            $runner->run("select pg_drop_replication_slot(slot_name) from pg_replication_slots where slot_name = 'guard_probe_slot'", StatementKind::Write, $write);
+        }
+    }
+
+    public function testPostgreSqlRefusesAnExecutedTextInReadOnlyLikeTheDocumentedLimit(): void
+    {
+        $runner = $this->postgres();
+        $sql = "select query_to_xml('delete from categories where id = -1', true, true, '')";
+
+        // Le garde ne voit qu'un SELECT (limite documentée en lecture-écriture) : en lecture seule c'est le moteur qui refuse.
+        self::assertSame(Decision::Allowed, (new StatementGuard())->check($sql, Engine::PostgreSql, QueryMode::ReadOnly)->decision);
+        $this->expectException(QueryFailedException::class);
+        $runner->run($sql, StatementKind::Read, $this->readOnly());
+    }
+
+    public function testPostgreSqlReadsNestedCommentsAsTheGuardDoes(): void
+    {
+        $runner = $this->postgres();
+        $sql = 'select 1 /* /* */ ; select 2/0 */';
+
+        self::assertSame(Decision::Allowed, (new StatementGuard())->check($sql, Engine::PostgreSql, QueryMode::ReadOnly)->decision);
+        self::assertSame([[1]], $runner->run($sql, StatementKind::Read, $this->readOnly())->rows);
+    }
 }

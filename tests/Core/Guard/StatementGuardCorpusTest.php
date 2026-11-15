@@ -41,7 +41,7 @@ final class StatementGuardCorpusTest extends TestCase
     public static function corpus(): iterable
     {
         $seen = [];
-        foreach ([self::firstBatch(), self::secondBatch()] as $batch) {
+        foreach ([self::firstBatch(), self::secondBatch(), self::thirdBatch()] as $batch) {
             foreach ($batch as $name => $row) {
                 if (!isset($seen[$name])) {
                     $seen[$name] = true;
@@ -581,6 +581,46 @@ final class StatementGuardCorpusTest extends TestCase
         foreach (['LPOP k 5', 'SPOP k 5', 'INCR k', 'EXPIRE k 10', 'GETEX k PERSIST', 'RENAME a b', 'SETRANGE k 10 x', 'SETBIT k 10 1'] as $sql) {
             yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:NotReadOnly');
             yield from self::rows($sql, [Engine::Redis], $rw, 'allow:Write');
+        }
+    }
+
+    /**
+     * Troisième lot : des fonctions que le moteur exécute même dans une transaction en lecture seule et qui changent
+     * l'état du serveur (preuves dans GuardEngineConcordanceTest).
+     *
+     * @return iterable<string, array{string, Engine, QueryMode, string}>
+     */
+    private static function thirdBatch(): iterable
+    {
+        $ro = QueryMode::ReadOnly;
+        $rw = QueryMode::ReadWrite;
+        $pg = [Engine::PostgreSql];
+
+        // PostgreSQL : slots et origines de réplication, WAL, sauvegarde, notification, statistiques, fichiers du serveur
+        foreach ([
+            "pg_create_physical_replication_slot('s')", "pg_create_logical_replication_slot('s', 'test_decoding')", "pg_drop_replication_slot('s')",
+            "pg_copy_physical_replication_slot('a', 'b')", "pg_copy_logical_replication_slot('a', 'b')", "pg_replication_slot_advance('s', '0/0')",
+            "pg_replication_origin_create('o')", "pg_replication_origin_drop('o')", "pg_replication_origin_advance('o', '0/0')", "pg_replication_origin_session_setup('o')",
+            "pg_logical_slot_get_changes('s', NULL, NULL)", "pg_logical_slot_peek_changes('s', NULL, NULL)", "pg_logical_emit_message(false, 'p', 'm')",
+            'pg_switch_wal()', "pg_create_restore_point('r')", "pg_backup_start('b')", 'pg_backup_stop()', "pg_start_backup('b')", 'pg_stop_backup()', 'pg_promote()',
+            'pg_wal_replay_pause()', 'pg_wal_replay_resume()', 'pg_log_standby_snapshot()', 'pg_log_backend_memory_contexts(1)', 'pg_sync_replication_slots()',
+            'pg_stat_reset()', "pg_stat_reset_shared('slru')", "pg_stat_reset_slru('CommitTs')", 'pg_stat_reset_single_table_counters(1)',
+            "pg_stat_reset_replication_slot('s')",
+            'pg_ls_waldir()', 'pg_ls_logdir()', 'pg_ls_tmpdir()', 'pg_ls_archive_statusdir()', "pg_ls_replslotdir('s')", 'pg_ls_logicalsnapdir()', 'pg_ls_logicalmapdir()',
+            '"pg_switch_wal"()', 'pg_catalog.pg_switch_wal()', 'pg_catalog."pg_create_physical_replication_slot"(\'s\')', 'PG_SWITCH_WAL()', 'U&"pg_switch_\\0077al"()',
+        ] as $call) {
+            yield from self::rows('SELECT '.$call, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows('SELECT '.$call, $pg, $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach (['SELECT * FROM pg_ls_waldir()', 'SELECT * FROM pg_logical_slot_get_changes(\'s\', NULL, NULL)', 'WITH x AS (SELECT pg_switch_wal()) SELECT * FROM x'] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+        }
+        // Lectures voisines qui ne changent rien : permises.
+        foreach (['SELECT pg_current_wal_lsn()', 'SELECT pg_is_in_recovery()', 'SELECT * FROM pg_replication_slots', 'SELECT * FROM pg_stat_replication', 'SELECT pg_relation_size(\'t\')',
+            'SELECT pg_database_size(\'d\')', 'SELECT pg_backend_pid()', 'SELECT txid_current()', 'SELECT currval(\'s\')', 'SELECT lastval()', "SELECT pg_get_serial_sequence('t', 'a')",
+            'SELECT pg_sleep_for(\'1 s\')', 'SELECT pg_blocking_pids(1)', 'SELECT pg_notification_queue_usage()', 'SELECT pg_stat_get_wal()', 'SELECT pg_walfile_name(\'0/0\')',
+        ] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'allow:Read');
         }
     }
 
