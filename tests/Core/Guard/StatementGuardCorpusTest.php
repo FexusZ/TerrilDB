@@ -640,6 +640,16 @@ final class StatementGuardCorpusTest extends TestCase
             yield from self::rows($sql, [Engine::ClickHouse], $ro, 'allow:Read');
         }
 
+        // Redis : COPY … DB écrit dans une autre base que celle de la connexion
+        foreach (['COPY a b DB 3', 'copy a b db 3', 'COPY a b REPLACE DB 3', 'COPY a b DB 0 REPLACE', 'COPY a b "DB" 3', 'COPY a b DB'] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, [Engine::Redis], $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach (['COPY a b', 'COPY a b REPLACE', 'copy a b replace'] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, [Engine::Redis], $rw, 'allow:Write');
+        }
+
         // PostgreSQL : slots et origines de réplication, WAL, sauvegarde, notification, statistiques, fichiers du serveur
         foreach ([
             "pg_create_physical_replication_slot('s')", "pg_create_logical_replication_slot('s', 'test_decoding')", "pg_drop_replication_slot('s')",
