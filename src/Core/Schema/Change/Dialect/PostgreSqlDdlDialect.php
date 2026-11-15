@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Schema\Change\Dialect;
 
+use App\Core\Connection\Engine;
 use App\Core\Schema\Change\DefaultKind;
 use App\Core\Schema\Change\DefaultValue;
 use App\Core\Schema\Change\ForeignKeyDraft;
@@ -32,7 +33,7 @@ final class PostgreSqlDdlDialect extends AbstractDdlDialect
 
     protected function quote(string $name): string
     {
-        return '"'.str_replace('"', '""', $name).'"';
+        return $this->quoteName(Engine::PostgreSql, $name);
     }
 
     protected function stringLiteral(string $value): string
