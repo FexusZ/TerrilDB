@@ -40,6 +40,23 @@ final class StatementGuardCorpusTest extends TestCase
      */
     public static function corpus(): iterable
     {
+        $seen = [];
+        foreach ([self::firstBatch(), self::secondBatch()] as $batch) {
+            foreach ($batch as $name => $row) {
+                if (!isset($seen[$name])) {
+                    $seen[$name] = true;
+
+                    yield $name => $row;
+                }
+            }
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, Engine, QueryMode, string}>
+     */
+    private static function firstBatch(): iterable
+    {
         $ro = QueryMode::ReadOnly;
         $rw = QueryMode::ReadWrite;
         $all = self::SQL_ENGINES;
@@ -336,6 +353,235 @@ final class StatementGuardCorpusTest extends TestCase
         yield from self::rows("SELECT * FROM url('http://x', CSV)", [Engine::ClickHouse], $ro, 'refuse:ForbiddenConstruct');
         yield from self::rows("SELECT * FROM remote('h', db.t)", [Engine::ClickHouse], $rw, 'refuse:ForbiddenConstruct');
         yield from self::rows('SELECT * FROM t FORMAT JSON', [Engine::ClickHouse], $ro, 'refuse:ForbiddenConstruct');
+    }
+
+    /**
+     * Deuxième lot (issue #87) : instructions de session, de transaction et d'administration, par moteur, et ce que
+     * le moteur RÉEL fait des lectures que le garde laisse passer (voir GuardEngineConcordanceTest).
+     *
+     * @return iterable<string, array{string, Engine, QueryMode, string}>
+     */
+    private static function secondBatch(): iterable
+    {
+        $ro = QueryMode::ReadOnly;
+        $rw = QueryMode::ReadWrite;
+        $pg = [Engine::PostgreSql];
+        $my = self::MYSQL_FAMILY;
+        $ch = [Engine::ClickHouse];
+
+        // ---- PostgreSQL : session, transaction, préparation, notification : jamais prises en charge
+        foreach ([
+            'EXECUTE p', 'PREPARE p AS SELECT 1', 'PREPARE p AS DELETE FROM t', 'DEALLOCATE p', 'DEALLOCATE ALL',
+            'SET ROLE x', 'RESET ROLE', 'SET SESSION AUTHORIZATION x', 'RESET SESSION AUTHORIZATION', 'SET LOCAL ROLE x',
+            'SET search_path = x', 'SET TRANSACTION READ WRITE', 'SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE',
+            'RESET ALL', 'SET default_transaction_read_only = off', 'LISTEN c', 'NOTIFY c', "NOTIFY c, 'x'", 'UNLISTEN *',
+            'DISCARD ALL', 'DISCARD TEMP', 'BEGIN', 'BEGIN READ WRITE', 'START TRANSACTION READ WRITE', 'COMMIT', 'END',
+            'ABORT', 'ROLLBACK', 'SAVEPOINT a', 'RELEASE a', 'ROLLBACK TO a', "COMMIT PREPARED 'x'", "PREPARE TRANSACTION 'x'",
+            'LOCK TABLE t', 'LOCK t IN ACCESS EXCLUSIVE MODE', "SECURITY LABEL ON TABLE t IS 'x'", 'IMPORT FOREIGN SCHEMA s FROM SERVER x INTO y',
+            'CHECKPOINT', 'REASSIGN OWNED BY a TO b',
+        ] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:UnsupportedStatement');
+            yield from self::rows($sql, $pg, $rw, 'refuse:UnsupportedStatement');
+        }
+        foreach (['BEGIN; SELECT 1', 'SELECT 1; COMMIT', 'BEGIN; DELETE FROM t; COMMIT'] as $sql) {
+            yield from self::rows($sql, self::SQL_ENGINES, $ro, 'refuse:MultipleStatements');
+            yield from self::rows($sql, self::SQL_ENGINES, $rw, 'refuse:MultipleStatements');
+        }
+        foreach (["COPY (SELECT 1) TO PROGRAM 'id'", 'COPY (SELECT 1) TO STDOUT', "COPY t FROM PROGRAM 'id'", "COPY (SELECT 1) TO '/tmp/x'", "LOAD 'x'", '\copy t from x'] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $pg, $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach (['DO $$ BEGIN PERFORM 1; END $$', 'DO LANGUAGE plpgsql $$ BEGIN END $$', 'CALL p()'] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $pg, $rw, 'confirm:DestructiveStatement');
+        }
+        yield from self::rows('CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$', $pg, $ro, 'refuse:NotReadOnly');
+        yield from self::rows('CREATE OR REPLACE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$', $pg, $rw, 'confirm:DestructiveStatement');
+        foreach (['CLUSTER t', 'REINDEX TABLE t', 'REINDEX DATABASE d', 'TRUNCATE t', 'DROP OWNED BY a', 'ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO x', "ALTER USER x PASSWORD 'x'"] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $pg, $rw, 'confirm:DestructiveStatement');
+        }
+        foreach (['SELECT lo_import(\'/etc/passwd\')', 'SELECT lo_export(1, \'/tmp/x\')', 'SELECT pg_ls_dir(\'/\')', 'SELECT pg_read_binary_file(\'/x\')', 'SELECT pg_stat_file(\'/x\')',
+            "SELECT * FROM dblink('x', 'select 1') t(a int)", "SELECT dblink_exec('x', 'drop table t')", "SELECT dblink_connect('x')", "SELECT dblink_open('a', 'b', 'c')",
+            "SELECT dblink_send_query('a', 'b')", 'SELECT * FROM dblink_get_notify()', 'SELECT pg_cancel_backend(1)', 'SELECT pg_reload_conf()', 'SELECT pg_rotate_logfile()',
+            "SELECT set_config('x', 'y', true)", 'SELECT pg_advisory_xact_lock_shared(1)', 'SELECT pg_try_advisory_xact_lock(1)',
+        ] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $pg, $rw, 'refuse:ForbiddenConstruct');
+        }
+        // Commentaires imbriqués : PostgreSQL les imbrique, le texte après le premier « */ » est encore du commentaire.
+        yield from self::rows('SELECT 1 /* /* */ ; DROP TABLE t */', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT 1 /* a /* b */ c */', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT 1 /* /* */ */ ; DROP TABLE t', $pg, $ro, 'refuse:MultipleStatements');
+        yield from self::rows('SELECT 1 /* /* */ ; DELETE FROM t', $pg, $ro, 'refuse:IncompleteSql');
+        yield from self::rows('SELECT 1 /* /* */ ; DELETE FROM t', $my, $ro, 'refuse:MultipleStatements');
+        yield from self::rows("SELECT E'a\\'b'", $pg, $ro, 'allow:Read');
+        yield from self::rows("SELECT U&'a\\0027b'", $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT $t$ x $u$ ; DROP TABLE t $u$ $t$', $pg, $ro, 'allow:Read');
+        yield from self::rows('SELECT $t$ x $t$ ; DROP TABLE t', $pg, $ro, 'refuse:MultipleStatements');
+        // Verrous de lecture et CTE modifiantes imbriquées
+        foreach (['SELECT * FROM t FOR KEY SHARE', 'SELECT * FROM t FOR NO KEY UPDATE OF t', 'SELECT * FROM t FOR UPDATE OF t NOWAIT'] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $pg, $rw, 'allow:Read');
+        }
+        yield from self::rows('WITH a AS (WITH b AS (DELETE FROM t RETURNING *) SELECT * FROM b) SELECT * FROM a', $pg, $ro, 'refuse:NotReadOnly');
+        yield from self::rows('WITH a AS (WITH b AS (DELETE FROM t RETURNING *) SELECT * FROM b) SELECT * FROM a', $pg, $rw, 'confirm:DestructiveWithoutWhere');
+        yield from self::rows('SELECT * FROM (WITH d AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM d) s', $pg, $ro, 'refuse:ForbiddenConstruct');
+        foreach ([
+            'EXPLAIN (ANALYZE) DELETE FROM t WHERE a = 1', 'EXPLAIN (ANALYZE true) DELETE FROM t WHERE a = 1', 'EXPLAIN (VERBOSE, ANALYZE) INSERT INTO t VALUES (1)',
+            'EXPLAIN ANALYZE VERBOSE DELETE FROM t WHERE a = 1', 'EXPLAIN (analyse) DELETE FROM t WHERE a = 1', 'EXPLAIN ANALYSE DELETE FROM t WHERE a = 1',
+            "EXPLAIN (ANALYZE 'true') DELETE FROM t WHERE a = 1", 'EXPLAIN (ANALYZE on) DELETE FROM t',
+        ] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
+        }
+        // Limite documentée : une fonction qui exécute le texte qu'on lui donne. Le moteur la refuse en lecture seule
+        // (transaction READ ONLY) ; en lecture-écriture seul le filtre juge, et il ne voit qu'un SELECT.
+        foreach (["SELECT query_to_xml('delete from t', true, true, '')", "SELECT query_to_xml_and_xmlschema('delete from t', true, true, '')", "SELECT table_to_xml('t', true, true, '')"] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'allow:Read');
+            yield from self::rows($sql, $pg, $rw, 'allow:Read');
+        }
+
+        // ---- MySQL / MariaDB : session, administration, programmes stockés
+        foreach ([
+            'SET @x = 1', 'SET @@global.x = 1', 'SET GLOBAL x = 1', 'SET SESSION x = 1', 'SET PERSIST x = 1', 'SET NAMES utf8', 'SET CHARACTER SET utf8',
+            "SET sql_mode = ''", 'SET TRANSACTION READ WRITE', 'HANDLER t READ FIRST', 'HANDLER t CLOSE', 'LOCK TABLES t READ', 'FLUSH LOGS', 'FLUSH STATUS',
+            'RESET REPLICA', 'KILL QUERY 1', 'KILL CONNECTION 1', "INSTALL PLUGIN x SONAME 'y'", 'UNINSTALL PLUGIN x', "INSTALL COMPONENT 'x'", "UNINSTALL COMPONENT 'x'",
+            "CHANGE MASTER TO MASTER_HOST = 'x'", 'START SLAVE', 'STOP SLAVE', 'START GROUP_REPLICATION', 'STOP GROUP_REPLICATION',
+            "XA START 'x'", "XA END 'x'", "XA PREPARE 'x'", "XA COMMIT 'x'", 'XA RECOVER', 'EXECUTE s', "PREPARE s FROM 'DELETE FROM t'", 'PREPARE s FROM @x',
+            "EXECUTE IMMEDIATE 'DELETE FROM t'", "EXECUTE IMMEDIATE 'SELECT 1'", 'EXECUTE s USING @a', 'DEALLOCATE PREPARE s', 'DELIMITER ;;', 'DELIMITER $$ SELECT 1 $$',
+            "BINLOG 'x'", 'CACHE INDEX t IN c', 'SET STATEMENT max_statement_time = 1 FOR SELECT 1', 'SET STATEMENT read_only = 0 FOR DELETE FROM t',
+            "SET STATEMENT x = 1 FOR SELECT GET_LOCK('a', 1)", "IMPORT TABLE FROM 'x'", "CLONE LOCAL DATA DIRECTORY = 'x'",
+        ] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:UnsupportedStatement');
+            yield from self::rows($sql, $my, $rw, 'refuse:UnsupportedStatement');
+        }
+        foreach (["LOAD DATA INFILE 'x' INTO TABLE t", "LOAD DATA LOCAL INFILE 'x' INTO TABLE t", 'LOAD INDEX INTO CACHE t'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $my, $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach ([
+            'CREATE EVENT e ON SCHEDULE EVERY 1 SECOND DO SELECT 1', 'CREATE TRIGGER tr BEFORE INSERT ON t FOR EACH ROW SET NEW.a = 1', 'CREATE PROCEDURE p() SELECT 1',
+            'CREATE FUNCTION f() RETURNS INT RETURN 1', 'CREATE DEFINER = x PROCEDURE p() SELECT 1', "CREATE FUNCTION f RETURNS STRING SONAME 'x'",
+            "CREATE AGGREGATE FUNCTION f RETURNS STRING SONAME 'x'",
+        ] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $my, $rw, 'allow:Schema');
+        }
+        foreach (['DO SLEEP(1)', 'DO 1', 'DO (SELECT 1)', 'CALL p()'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $my, $rw, 'confirm:DestructiveStatement');
+        }
+        yield from self::rows("DO GET_LOCK('a', 1)", $my, $ro, 'refuse:NotReadOnly');
+        yield from self::rows("DO GET_LOCK('a', 1)", $my, $rw, 'refuse:ForbiddenConstruct');
+        foreach (['ALTER EVENT e DISABLE', 'DROP EVENT e', "ALTER PROCEDURE p COMMENT 'x'", 'RENAME USER a TO b', 'RENAME TABLE a TO b', 'DROP PREPARE s', 'ALTER INSTANCE ROTATE INNODB MASTER KEY'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $my, $rw, 'confirm:DestructiveStatement');
+        }
+        foreach (['DELETE FROM t RETURNING *', 'INSERT INTO t VALUES (1) RETURNING *', 'REPLACE INTO t VALUES (1) RETURNING *', 'REPLACE t VALUES (1)', 'REPLACE INTO t SELECT * FROM u'] as $sql) {
+            yield from self::rows($sql, [Engine::MariaDb], $ro, 'refuse:NotReadOnly');
+        }
+        // Lectures qui laissent une trace seulement dans la session (variables utilisateur, compteurs) : permises.
+        foreach (['SELECT @x := 1', 'SELECT @a := 1, @b := 2', 'SELECT @@global.max_connections', 'SELECT @@sql_mode', 'SELECT LAST_INSERT_ID(5)', 'SELECT UUID_SHORT()', 'SELECT UUID()',
+            'SELECT FOUND_ROWS()', 'SELECT SQL_NO_CACHE 1', 'SELECT * FROM t PARTITION (p0)', 'SELECT * FROM t PROCEDURE ANALYSE()', 'SELECT IS_FREE_LOCK(\'a\')', 'SELECT IS_USED_LOCK(\'a\')',
+            'SELECT /*!50000 1 */', 'SELECT /*!80000 SLEEP(1) */', 'SELECT /*M!999999 SLEEP(1) */ 1',
+        ] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'allow:Read');
+        }
+        foreach (['SELECT 1 /*!80000 INTO @v */', 'SELECT /*!80000 1 INTO @v */', 'SELECT * FROM t /*!80000 FOR UPDATE */', 'SELECT * FROM t /*!80000 LOCK IN SHARE MODE */',
+            "SELECT /*!80000 get_lock */('a', 1)", "SELECT get_lock/*!80000 */('a', 1)", "SELECT /*!80000 get_lock('a', 1) */",
+            "SELECT 1 INTO/**/OUTFILE 'x'", "SELECT 1 INTO /*!80000 OUTFILE */ 'x'", 'SELECT 1 INTO /* x */ @v', 'SELECT 1 INTO @`v`', 'SELECT 1 UNION SELECT 2 INTO @v',
+            'SELECT * FROM t FOR UPDATE INTO @v', "SELECT * FROM t FOR\nUPDATE", "SELECT * FROM t FOR\tSHARE", "SELECT * FROM t LOCK\nIN SHARE MODE",
+            'SELECT * FROM t FOR UPDATE /* x */', 'SELECT * FROM t LOCK/**/IN SHARE MODE', 'SELECT * FROM t FOR UPDATE OF t', 'SELECT * FROM t FOR UPDATE WAIT 5',
+        ] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:ForbiddenConstruct');
+        }
+        foreach (["SELECT SLEEP(1)", 'SELECT BENCHMARK(1, 1)', "SELECT MASTER_POS_WAIT('a', 1)", "SELECT SOURCE_POS_WAIT('a', 1)"] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'allow:Read');
+        }
+        yield from self::rows('SELECT 1 /*! /* nested */ */', $my, $ro, 'allow:Read');
+        yield from self::rows('SELECT 1 /*!50000 ; DROP TABLE t */', $my, $ro, 'refuse:MultipleStatements');
+        yield from self::rows('SELECT 1 /*M!999999 ; DROP TABLE t */', $my, $ro, 'refuse:MultipleStatements');
+        yield from self::rows('SELECT /*!50000 1 */ ; DROP TABLE t', $my, $ro, 'refuse:MultipleStatements');
+        // Séquences MariaDB : les fonctions qui avancent le compteur sont des écritures.
+        foreach (['SELECT NEXTVAL(s)', 'SELECT SETVAL(s, 1)', 'SELECT `nextval`(s)'] as $sql) {
+            yield from self::rows($sql, [Engine::MariaDb], $ro, 'refuse:NotReadOnly');
+        }
+
+        // ---- ClickHouse
+        foreach (['INSERT INTO t VALUES (1)', 'INSERT INTO t SELECT 1'] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'refuse:NotReadOnly');
+        }
+        yield from self::rows("INSERT INTO FUNCTION file('x') VALUES (1)", $ch, $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows("INSERT INTO FUNCTION file('x') VALUES (1)", $ch, $rw, 'refuse:ForbiddenConstruct');
+        foreach (['ALTER TABLE t UPDATE a = 1 WHERE 1', 'ALTER TABLE t DELETE WHERE 1', 'ALTER TABLE t DROP PARTITION 1', 'DROP TABLE t', 'DETACH TABLE t', 'TRUNCATE TABLE t', 'RENAME TABLE a TO b', 'EXCHANGE TABLES a AND b', 'GRANT SELECT ON *.* TO x'] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, $ch, $rw, 'confirm:DestructiveStatement');
+        }
+        yield from self::rows('ATTACH TABLE t', $ch, $ro, 'refuse:NotReadOnly');
+        foreach (['SYSTEM FLUSH LOGS', 'SYSTEM RELOAD CONFIG', 'SYSTEM SHUTDOWN', 'SYSTEM DROP DNS CACHE', 'KILL QUERY WHERE 1', 'KILL MUTATION WHERE 1', 'SET max_threads = 1', 'SET readonly = 0', 'USE db', 'WATCH v', 'CHECK TABLE t'] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'refuse:UnsupportedStatement');
+            yield from self::rows($sql, $ch, $rw, 'refuse:UnsupportedStatement');
+        }
+        foreach (['EXPLAIN SELECT 1', 'DESCRIBE TABLE t', 'SHOW TABLES', 'EXISTS TABLE t'] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'allow:Inspect');
+        }
+        // Fonctions de table qui sortent du serveur, quelle que soit la casse ou la forme de l'appel.
+        foreach ([
+            "file('x')", "file('x', CSV, 'a Int')", "url('x', CSV)", "s3('x')", "s3Cluster('c', 'x')", "remote('x', db.t)", "remoteSecure('x', db.t)", "cluster('c', db.t)",
+            "clusterAllReplicas('c', db.t)", "mysql('h', 'd', 't', 'u', 'p')", "postgresql('h', 'd', 't', 'u', 'p')", "jdbc('x', 'y', 'z')", "odbc('x', 'y', 'z')",
+            "executable('x', 'CSV', 'a Int')", "hdfs('x', 'CSV')", "mongodb('a', 'b', 'c', 'd', 'e')", "redis('a', 'b', 'c')", "sqlite('a', 'b')", "azureBlobStorage('x')",
+            "gcs('x')", "deltaLake('x')", "iceberg('x')", "hudi('x')", "input('a Int')", "urlCluster('c', 'x')", "fileCluster('c', 'x')", "hdfsCluster('c', 'x')",
+            "FILE('x')", "fIlE('x')", "mysql ('h', 'd', 't', 'u', 'p')", "mysql /* x */ ('h', 'd', 't', 'u', 'p')", "remote/**/('x')", "`remote`('x')", "db.file('x')",
+        ] as $call) {
+            foreach ([$ro, $rw] as $mode) {
+                yield from self::rows('SELECT * FROM '.$call, $ch, $mode, 'refuse:ForbiddenConstruct');
+            }
+        }
+        foreach (["SELECT * FROM t WHERE a IN (SELECT * FROM url('x', CSV))", "SELECT * FROM t JOIN url('x', CSV) USING a", "SELECT * FROM t, url('x', CSV)", "WITH x AS (SELECT * FROM url('x', CSV)) SELECT * FROM x", "SELECT file('x')"] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $ch, $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach (["SELECT 1 INTO OUTFILE 'x'", "SELECT 1 INTO OUTFILE 'x' FORMAT CSV", 'SELECT 1 FORMAT CSV', 'SELECT 1 FORMAT Null', 'SELECT 1 format JSON', "SELECT 1 FORMAT\nJSON", "SELECT * FROM t INTO OUTFILE 'x' TRUNCATE", "SELECT * FROM t INTO/**/OUTFILE 'x'"] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $ch, $rw, 'refuse:ForbiddenConstruct');
+        }
+        // SETTINGS passe le filtre : en lecture seule le moteur refuse de les changer (readonly = 1, vérifié en intégration).
+        foreach (['SELECT 1 SETTINGS readonly = 0', 'SELECT 1 SETTINGS max_execution_time = 0', 'SELECT 1 SETTINGS max_result_rows = 0, result_overflow_mode = \'throw\''] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'allow:Read');
+        }
+        foreach (['WITH 1 AS x SELECT x', 'WITH (SELECT 1) AS x SELECT x', 'SELECT * FROM numbers(10)', 'SELECT * FROM system.processes', 'SELECT sleep(1)'] as $sql) {
+            yield from self::rows($sql, $ch, $ro, 'allow:Read');
+        }
+        yield from self::rows('WITH x AS (INSERT INTO t VALUES (1)) SELECT 1', $ch, $ro, 'refuse:NotReadOnly');
+
+        // ---- Redis : commandes dangereuses, refusées dans les deux modes
+        foreach ([
+            'EVAL "return 1" 0', 'EVAL_RO "return 1" 0', 'SCRIPT FLUSH', 'FUNCTION LIST', 'MODULE LOAD /x', 'DEBUG SLEEP 1', 'DEBUG OBJECT k', 'CONFIG SET dir /tmp', 'CONFIG GET *',
+            'SLAVEOF no one', 'REPLICAOF host 1', 'MIGRATE h 1 k 0 10', 'RESTORE k 0 x', 'OBJECT HELP', 'XREAD BLOCK 1000 STREAMS s $', 'XREAD STREAMS s 0', 'WAIT 1 100', 'MONITOR',
+            'SUBSCRIBE c', 'CLIENT KILL ID 1', 'CLIENT LIST', 'SHUTDOWN NOSAVE', 'FLUSHALL', 'MEMORY DOCTOR', 'MEMORY PURGE', 'COMMAND GETKEYS GET k', 'LATENCY DOCTOR', 'SLOWLOG GET',
+            'BLPOP k 0', 'KEYS *', 'SWAPDB 0 1', 'HELLO 3', 'AUTH x', 'WAITAOF 1 0 0', 'CLUSTER INFO', 'READONLY', 'FAILOVER', 'PSYNC x 1', 'SYNC', 'LOLWUT', 'SAVE', 'BGSAVE', 'BGREWRITEAOF',
+        ] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, [Engine::Redis], $rw, 'refuse:ForbiddenConstruct');
+        }
+        foreach ([
+            'PUBSUB CHANNELS', 'PUBSUB NUMSUB', 'SORT k STORE d', 'SORT k', 'SINTERSTORE d a b', 'ZRANGESTORE d s 0 -1', 'GEORADIUS k 0 0 1 km STORE d', 'XGROUP CREATE s g $', 'XACK s g 1',
+            'BITFIELD k SET u8 0 1', 'BITOP AND d a b', 'PFMERGE d a b', 'LMPOP 1 k LEFT', 'SELECT 1', 'MOVE k 1', 'RESET', 'WATCH k', 'EXEC', 'MULTI', 'TOUCH k', 'DUMP k', 'ROLE', 'SENTINEL MASTERS',
+        ] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:UnsupportedStatement');
+            yield from self::rows($sql, [Engine::Redis], $rw, 'refuse:UnsupportedStatement');
+        }
+        foreach (['OBJECT ENCODING k', 'OBJECT FREQ k', 'XINFO STREAM s FULL', 'MEMORY USAGE k', 'COMMAND DOCS', 'COMMAND INFO get', 'INFO', 'INFO ALL', 'ECHO x', 'LCS a b', 'SORT_RO k BY nosort GET #'] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'allow:Read');
+        }
+        foreach (['FLUSHDB', 'FLUSHDB ASYNC'] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, [Engine::Redis], $rw, 'confirm:DestructiveStatement');
+        }
+        foreach (['LPOP k 5', 'SPOP k 5', 'INCR k', 'EXPIRE k 10', 'GETEX k PERSIST', 'RENAME a b', 'SETRANGE k 10 x', 'SETBIT k 10 1'] as $sql) {
+            yield from self::rows($sql, [Engine::Redis], $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, [Engine::Redis], $rw, 'allow:Write');
+        }
     }
 
     #[DataProvider('corpus')]
