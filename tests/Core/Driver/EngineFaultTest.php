@@ -68,6 +68,13 @@ final class EngineFaultTest extends TestCase
         yield 'PostgreSQL no CONNECT right' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  permission denied for database "d"', EngineFault::PermissionDenied];
         yield 'PostgreSQL pg_hba without TLS wording is not TLS' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 5432 failed: FATAL:  no pg_hba.conf entry for host "x", user "u", database "d", SSL encryption', null];
         yield 'PostgreSQL refused connection is not a fault of this family' => [Engine::PostgreSql, '08006', 7, 'connection to server at "h", port 1 failed: Connection refused', null];
+        // Un nom de base ou de rôle choisi par l'utilisateur est cité dans le message du serveur : il ne doit pas faire classer une autre erreur.
+        $prefix = 'connection to server at "h", port 5432 failed: ';
+        yield 'PostgreSQL unknown database named like a TLS refusal' => [Engine::PostgreSql, '08006', 7, $prefix.'FATAL:  database "SSL/TLS required" does not exist', null];
+        yield 'PostgreSQL unknown database named like a bad password' => [Engine::PostgreSql, '08006', 7, $prefix.'FATAL:  database "x FATAL:  password authentication failed for user" does not exist', null];
+        yield 'PostgreSQL unknown role named like a full server' => [Engine::PostgreSql, '08006', 7, $prefix.'FATAL:  role "sorry, too many clients already" does not exist', null];
+        yield 'PostgreSQL unknown database named like no encryption' => [Engine::PostgreSql, '08006', 7, $prefix.'FATAL:  database "no pg_hba.conf entry, no encryption" does not exist', null];
+        yield 'PostgreSQL unknown role named like a refused right' => [Engine::PostgreSql, '08006', 7, $prefix.'FATAL:  role "permission denied for database" does not exist', null];
         yield 'PostgreSQL real SQLSTATE wins' => [Engine::PostgreSql, '28P01', 7, 'whatever', EngineFault::AuthenticationFailed];
         yield 'MySQL bad password ignores text' => [Engine::MySql, 'HY000', 1045, "Access denied for user 'jean'@'10.0.0.1'", EngineFault::AuthenticationFailed];
         yield 'MariaDB insecure transport' => [Engine::MariaDb, 'HY000', 3159, 'Connections using insecure transport are prohibited', EngineFault::AuthRequiresTls];

@@ -62,11 +62,19 @@ enum EngineFault: string
             return $byCode;
         }
 
+        // Le refus du serveur suit « FATAL: » ; ce qui précède cite l'hôte, ce qui suit peut citer un nom de base ou de rôle CHOISI par
+        // l'utilisateur : seule la tournure qui OUVRE le message du serveur compte (un nom cité plus loin ne classe rien).
+        $position = strpos($message, 'FATAL:');
+        if (false === $position) {
+            return null;
+        }
+        $refusal = trim((string) preg_replace('/\s+/', ' ', substr($message, $position + 6)));
+
         return match (true) {
-            1 === preg_match('/no pg_hba\.conf entry.*no encryption|SSL\/TLS required|SSL (?:connection )?is required/i', $message) => self::AuthRequiresTls,
-            1 === preg_match('/authentication failed|no password supplied/i', $message) => self::AuthenticationFailed,
-            1 === preg_match('/too many clients|remaining connection slots are reserved|too many connections for/i', $message) => self::TooManyConnections,
-            1 === preg_match('/permission denied for database/i', $message) => self::PermissionDenied,
+            1 === preg_match('/^(?:no pg_hba\.conf entry .*, no encryption$|SSL\/TLS required|SSL (?:connection )?is required)/i', $refusal) => self::AuthRequiresTls,
+            1 === preg_match('/^(?:(?:password |ident |peer )?authentication failed|no password supplied)/i', $refusal) => self::AuthenticationFailed,
+            1 === preg_match('/^(?:sorry, too many clients|remaining connection slots are reserved|too many connections for )/i', $refusal) => self::TooManyConnections,
+            1 === preg_match('/^permission denied for database /i', $refusal) => self::PermissionDenied,
             default => null,
         };
     }
