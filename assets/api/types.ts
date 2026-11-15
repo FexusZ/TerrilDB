@@ -70,7 +70,7 @@ export interface ConnectionInput {
   password?: string
 }
 
-export type TableKind = 'table' | 'view' | 'materialized_view'
+export type TableKind = 'table' | 'view' | 'materialized_view' | 'sequence'
 
 export interface DatabaseInfo {
   name: string
@@ -90,6 +90,8 @@ export interface ColumnInfo {
   default: string | null
   autoIncrement: boolean
   comment: string | null
+  /** Particularité que l’éditeur ne sait pas redire (colonne générée…) : la colonne ne se redéfinit pas. */
+  lock?: string | null
 }
 
 export interface IndexInfo {
@@ -99,6 +101,8 @@ export interface IndexInfo {
   primary: boolean
   /** Place sur disque de l’index, quand le moteur la donne. */
   sizeBytes?: number | null
+  /** Particularité que l’éditeur ne sait pas redire (index invisible…) : l’index ne se recrée pas. */
+  lock?: string | null
 }
 
 export interface ForeignKeyInfo {
@@ -170,6 +174,8 @@ export interface ApiTokenInfo {
   createConnections: boolean
   /** Lit la supervision du serveur (sessions…), sans rien écrire. */
   diagnostic: boolean
+  /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
+  singleStep: boolean
   createdAt: string
   /** Nul : le jeton n'expire jamais. */
   expiresAt: string | null
@@ -188,10 +194,12 @@ export interface ApiTokenInput {
   writeSchema?: boolean
   createConnections?: boolean
   diagnostic?: boolean
+  singleStep?: boolean
 }
 
 /** Pourquoi une source de supervision se lit ou non : « vide » n'est jamais un état. */
-export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled'
+/** `error` : la vérification a échoué pour une cause imprévue (`reason: check_failed`) ; on ne sait pas, et on le dit. */
+export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled' | 'error'
 
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability
@@ -257,6 +265,59 @@ export interface LockReport {
   blocking: BlockingNode[]
   /** L'arbre a été borné (nombre de sessions ou profondeur) : des sessions manquent. */
   blockingTruncated: boolean
+}
+
+export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
+
+/** Une famille de requêtes du serveur, regroupées par empreinte : le texte est normalisé par le moteur et ses littéraux masqués. */
+export interface StatementDigest {
+  text: string | null
+  /** `redacted` : le texte n'a pu être masqué sans risque, il n'est pas rendu. */
+  textReason: 'redacted' | null
+  database: string | null
+  calls: number
+  /** Durées en millisecondes, quelle que soit l'unité de la source. */
+  totalMs: number
+  meanMs: number
+  maxMs: number | null
+  rowsExamined: number | null
+  rowsReturned: number | null
+  /** Lignes examinées pour une ligne renvoyée ; nul si la source ne compte pas les lignes lues. */
+  ratio: number | null
+  noIndexUsed: number | null
+  tmpDiskTables: number | null
+  sortMergePasses: number | null
+  firstSeen: string | null
+  lastSeen: string | null
+}
+
+export interface DigestReport {
+  status: DiagnosticStatus
+  order: DigestOrder
+  /** Fenêtre lue, en heures (ClickHouse) ; nulle quand la source cumule depuis sa remise à zéro. */
+  windowHours: number | null
+  digests: StatementDigest[]
+}
+
+export interface ServerVariable {
+  name: string
+  /** Nul pour un secret (`masked`) ou une valeur que le compte ne peut pas lire. */
+  value: string | null
+  default: string | null
+  /** Diffère du défaut du moteur (ou a une autre origine que la compilation quand il ne donne pas de défaut). */
+  changed: boolean
+  /** Le nom évoque un secret : la valeur n'est jamais servie. */
+  masked: boolean
+  source: string | null
+  restart: 'required' | 'pending' | null
+  scope: 'global' | 'session' | 'server' | null
+  unit: string | null
+}
+
+export interface VariableReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  variables: ServerVariable[]
 }
 
 export type AuditOutcome = 'success' | 'refused' | 'failed'
@@ -327,8 +388,8 @@ export interface LintResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch'
-  severity: 'warning' | 'info'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
+  severity: 'critical' | 'warning' | 'info'
   table: string
   columns: string[]
   index: string | null
@@ -337,10 +398,19 @@ export interface SchemaFinding {
   detail: string | null
 }
 
+/** Une règle d'exploitation qui n'a pas pu juger : une raison, jamais un constat. */
+export interface AuditCheck {
+  rule: 'unused_index'
+  state: 'unavailable' | 'too_short'
+  reason: string | null
+  detail: string | null
+}
+
 export interface SchemaAudit {
   tablesAudited: number
   truncated: boolean
   findings: SchemaFinding[]
+  checks: AuditCheck[]
 }
 
 export interface DiagramColumn {
@@ -394,10 +464,38 @@ export interface StructurePlan {
   destructive: boolean
 }
 
+/** Une session qui tient la table : un ALTER attendrait sa fin. Jamais le texte de sa requête. */
+export interface TableHolder {
+  session: string
+  user: string | null
+  /** Âge de sa transaction, quand le moteur le dit. */
+  seconds: number | null
+  sleeping: boolean
+  mode: string | null
+}
+
+/** Pré-contrôle des verrous : un avertissement, jamais un blocage ; `status` dit si la source se lit. */
+export interface StructureLockCheck {
+  status: DiagnosticStatus
+  holders: TableHolder[]
+}
+
+/** Ce que la taille estimée de la table demande avant de la modifier (seuils d’installation, 0 = désactivé). */
+export interface BigTableAssessment {
+  level: 'none' | 'warning' | 'confirm_name'
+  /** Estimation du moteur, nulle s’il n’en donne pas. */
+  estimatedRows: number | null
+  warnAt: number
+  confirmAt: number
+}
+
 export interface StructurePreview extends StructurePlan {
+  bigTable: BigTableAssessment
   fingerprint: string
   /** La table a changé depuis qu’on l’a chargée. */
   stale: boolean
+  /** Nul quand le moteur n'a pas de diagnostic. */
+  lockCheck?: StructureLockCheck | null
 }
 
 export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'
