@@ -70,14 +70,15 @@ final class RichTableRoundTripTest extends TestCase
     public function testEditingSomethingElseLosesNothing(string $env, string $edit): void
     {
         $this->open($env);
-        \assert(null !== $this->target);
+        $target = $this->target;
+        \assert(null !== $target);
         $this->create();
         $before = $this->marks();
-        $current = $this->target->introspector()->describeTable($this->table);
+        $current = $target->introspector()->describeTable($this->table);
         $service = new SchemaChangeService();
 
         if ('nothing' === $edit) {
-            $preview = $service->preview($this->target, $this->table, self::draftOf($current), SchemaChangePlanner::fingerprint($current));
+            $preview = $service->preview($target, $this->table, self::draftOf($current), SchemaChangePlanner::fingerprint($current));
             self::assertSame([], array_map(static fn (DdlStatement $s): string => $s->sql, $preview->plan->statements), 'an identical draft must produce no SQL');
             self::assertSame($before, $this->marks());
 
@@ -85,7 +86,7 @@ final class RichTableRoundTripTest extends TestCase
         }
 
         try {
-            $service->apply($this->target, $this->table, $this->edited(self::draftOf($current), $edit), SchemaChangePlanner::fingerprint($current), true);
+            $service->apply($target, $this->table, $this->edited(self::draftOf($current), $edit), SchemaChangePlanner::fingerprint($current), true);
         } catch (InvalidSchemaChangeException|UnsupportedSchemaChangeException|SchemaChangeFailedException) {
             // Refus (de TerrilDB ou du moteur) : rien n'a été dégradé.
         }
@@ -99,7 +100,7 @@ final class RichTableRoundTripTest extends TestCase
     private function edited(TableDraft $draft, string $edit): TableDraft
     {
         $columns = $draft->columns;
-        $replace = static fn (string $name, \Closure $change): array => array_map(static fn (ColumnDraft $c): ColumnDraft => $c->name === $name ? $change($c) : $c, $columns);
+        $replace = static fn (string $name, \Closure $change): array => self::replacing($columns, $name, $change);
 
         return match ($edit) {
             'rename_plain' => new TableDraft(
@@ -125,6 +126,17 @@ final class RichTableRoundTripTest extends TestCase
     }
 
     /**
+     * @param list<ColumnDraft>                  $columns
+     * @param \Closure(ColumnDraft): ColumnDraft $change
+     *
+     * @return list<ColumnDraft>
+     */
+    private static function replacing(array $columns, string $name, \Closure $change): array
+    {
+        return array_map(static fn (ColumnDraft $c): ColumnDraft => $c->name === $name ? $change($c) : $c, $columns);
+    }
+
+    /**
      * Ce que le moteur dit de la table (SHOW CREATE TABLE), compté particularité par particularité.
      *
      * @return array<string, int>
@@ -142,8 +154,8 @@ final class RichTableRoundTripTest extends TestCase
             'on update' => substr_count(strtoupper($create), 'ON UPDATE CURRENT_TIMESTAMP'),
             'fulltext' => substr_count($create, 'FULLTEXT KEY'),
             'hidden index' => substr_count($create, $maria ? 'IGNORED' : 'INVISIBLE'),
-            'enum values' => preg_match("/enum\\('x','y','z'\\)/", $create),
-            'set values' => preg_match("/set\\('p','q','r'\\)/", $create),
+            'enum values' => (int) preg_match("/enum\\('x','y','z'\\)/", $create),
+            'set values' => (int) preg_match("/set\\('p','q','r'\\)/", $create),
             'data' => (int) ($this->rows(\sprintf("SELECT count(*) FROM `%s` WHERE kind = 'z' AND tags = 'q,r'", $this->table))[0][0] ?? 0),
         ];
     }

@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Driver;
 
-use App\Core\Driver\Exception\TargetConnectionFailedException;
-use App\Core\Driver\TargetConnection;
 use App\Core\Data\DataChangeService;
 use App\Core\Data\DataDraft;
 use App\Core\Data\Exception\InvalidDataChangeException;
 use App\Core\Data\RowInsert;
 use App\Core\Data\RowUpdate;
+use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Driver\TargetConnection;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\QueryOptions;
 use App\Core\Schema\Change\ColumnDraft;
@@ -22,8 +22,8 @@ use App\Core\Schema\Change\PlanLoss;
 use App\Core\Schema\Change\SchemaChangePlanner;
 use App\Core\Schema\Change\SchemaChangeService;
 use App\Core\Schema\Change\TableDraft;
-use App\Core\Schema\TableDefinition;
 use App\Core\Schema\LockReason;
+use App\Core\Schema\TableDefinition;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
 use PHPUnit\Framework\Attributes\DataProvider;
