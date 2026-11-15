@@ -16,4 +16,6 @@ enum Availability: string
     case PermissionDenied = 'permission_denied';
     /** La source existe mais est éteinte ou absente (performance_schema éteint, extension non installée…). */
     case Disabled = 'disabled';
+    /** La vérification a échoué pour une cause imprévue : on ne sait pas, et on le dit (la cause n'est jamais montrée). */
+    case Error = 'error';
 }

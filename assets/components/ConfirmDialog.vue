@@ -2,7 +2,7 @@
 import { onMounted, ref, useId } from 'vue'
 import AppButton from './AppButton.vue'
 
-withDefaults(defineProps<{ title: string; message: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean; busy?: boolean }>(), {
+withDefaults(defineProps<{ title: string; message: string; confirmLabel?: string; cancelLabel?: string; danger?: boolean; busy?: boolean; confirmDisabled?: boolean }>(), {
   confirmLabel: 'Confirmer',
   cancelLabel: 'Annuler',
 })
@@ -23,7 +23,7 @@ onMounted(() => cancelButton.value?.$el.focus())
       <slot />
       <div class="actions">
         <AppButton ref="cancelButton" class="cancel" variant="ghost" @click="emit('cancel')">{{ cancelLabel }}</AppButton>
-        <AppButton class="confirm" :class="{ danger }" :variant="danger ? 'danger' : 'primary'" :busy="busy" @click="emit('confirm')">{{ confirmLabel }}</AppButton>
+        <AppButton class="confirm" :class="{ danger }" :variant="danger ? 'danger' : 'primary'" :busy="busy" :disabled="confirmDisabled" @click="emit('confirm')">{{ confirmLabel }}</AppButton>
       </div>
     </div>
   </div>

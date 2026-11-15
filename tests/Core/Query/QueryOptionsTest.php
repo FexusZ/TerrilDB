@@ -57,4 +57,9 @@ final class QueryOptionsTest extends TestCase
 
         new QueryOptions(QueryMode::ReadOnly, $timeoutMs, $maxRows);
     }
+
+    public function testMeasuringIsOffByDefault(): void
+    {
+        self::assertFalse((new QueryOptions())->measure);
+    }
 }

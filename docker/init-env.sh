@@ -1,5 +1,5 @@
 #!/bin/sh
-# Génère les mots de passe des bases locales (interne + cibles de test) dans docker/dev/, ignoré par git.
+# Génère les mots de passe des bases locales (interne + cibles de test) et l'APP_SECRET de développement dans docker/dev/, ignoré par git.
 # Sans effet si le dossier est déjà rempli. À lancer une fois après le clonage : sh docker/init-env.sh
 set -eu
 
@@ -17,7 +17,14 @@ add_sibling() {
     echo "Ajouté à $dir/php.env : $1"
 }
 
+# Secret du framework (sessions, jetons CSRF) : 64 caractères hexadécimaux, propre à chaque poste, jamais versionné.
+app_secret() { head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+
 if [ -e "$dir/php.env" ]; then
+    if ! grep -q '^APP_SECRET=' "$dir/php.env"; then
+        printf 'APP_SECRET=%s\n' "$(app_secret)" >> "$dir/php.env"
+        echo "Ajouté à $dir/php.env : APP_SECRET"
+    fi
     add_sibling TARGET_MYSQL26_URL target-mysql-26 target-mysql.env MYSQL_ROOT_PASSWORD
     add_sibling TARGET_MARIADB13_URL target-mariadb-13 target-mariadb.env MARIADB_ROOT_PASSWORD
     echo "$dir existe déjà : mots de passe inchangés (supprimez-le, puis 'docker compose down -v', pour repartir de zéro)."
@@ -41,6 +48,7 @@ printf 'POSTGRES_PASSWORD=%s\nPOSTGRES_DB=shop\n' "$postgres" > "$dir/target-pos
 printf 'CLICKHOUSE_USER=tester\nCLICKHOUSE_PASSWORD=%s\nCLICKHOUSE_DB=shop\nCLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1\n' "$clickhouse" > "$dir/target-clickhouse.env"
 printf 'REDIS_PASSWORD=%s\n' "$redis" > "$dir/target-redis.env"
 cat > "$dir/php.env" <<ENV
+APP_SECRET=$(app_secret)
 DATABASE_URL=pdo-pgsql://terrildb:$internal@db:5432/terrildb
 TARGET_MYSQL_URL=pdo-mysql://root:$mysql@target-mysql:3306/shop
 TARGET_MYSQL26_URL=pdo-mysql://root:$mysql@target-mysql-26:3306/shop
