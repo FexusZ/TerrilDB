@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Audit\AuditAction;
 use App\Entity\AuditEvent;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\ParameterType;
@@ -68,6 +69,37 @@ final class AuditEventRepository extends ServiceEntityRepository
         if (null !== $subject) {
             $builder->andWhere('e.subjectId = :subject')->setParameter('subject', $subject, 'uuid');
         }
+        if (null !== $before) {
+            $cursor = $this->find($before);
+            if (null !== $cursor) {
+                $builder
+                    ->andWhere('(e.occurredAt < :at OR (e.occurredAt = :at AND e.id < :cursor))')
+                    ->setParameter('at', $cursor->getOccurredAt(), 'datetime_immutable')
+                    ->setParameter('cursor', $before, 'uuid');
+            }
+        }
+
+        /** @var list<AuditEvent> $events */
+        $events = $builder->getQuery()->getResult();
+
+        return $events;
+    }
+
+    /**
+     * Les actions d'administration de TOUS les comptes, du plus récent au plus ancien (pagination par curseur).
+     *
+     * @return list<AuditEvent>
+     */
+    public function findAdministration(?Uuid $before = null, int $limit = 50): array
+    {
+        $actions = array_map(
+            static fn (AuditAction $action): string => $action->value,
+            array_values(array_filter(AuditAction::cases(), static fn (AuditAction $action): bool => $action->isAdministration())),
+        );
+        $builder = $this->createQueryBuilder('e')
+            ->where('e.action IN (:actions)')->setParameter('actions', $actions)
+            ->orderBy('e.occurredAt', 'DESC')->addOrderBy('e.id', 'DESC')
+            ->setMaxResults(max(1, min($limit, self::MAX_PAGE)));
         if (null !== $before) {
             $cursor = $this->find($before);
             if (null !== $cursor) {

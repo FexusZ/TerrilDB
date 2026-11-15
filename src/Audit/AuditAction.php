@@ -12,6 +12,7 @@ enum AuditAction: string
     case AccountRegistered = 'account.registered';
     case AccountDisabled = 'account.disabled';
     case AccountEnabled = 'account.enabled';
+    case AdminTokenRevoked = 'admin.token_revoked';
     case LoginSuccess = 'login.success';
     case LoginFailure = 'login.failure';
     case LoginThrottled = 'login.throttled';
@@ -45,6 +46,17 @@ enum AuditAction: string
     case DataChanged = 'data.changed';
     case DataChangeFailed = 'data.failed';
     case DiagnosticRead = 'diagnostic.read';
+
+    /**
+     * Actions faites PAR un administrateur sur le compte ou le jeton d'un autre : le journal d'administration les rassemble.
+     */
+    public function isAdministration(): bool
+    {
+        return match ($this) {
+            self::AccountDisabled, self::AccountEnabled, self::AdminTokenRevoked => true,
+            default => false,
+        };
+    }
 
     public function category(): string
     {
