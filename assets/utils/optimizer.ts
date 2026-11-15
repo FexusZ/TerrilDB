@@ -47,6 +47,7 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
       return {
         title: `« ${finding.index ?? finding.table} » : ${finding.detail ?? 'créateur inexistant'}.`,
         help: 'Cet objet s’exécute sous l’identité de son créateur, et ce compte n’existe plus (base restaurée sur un autre serveur, compte supprimé). Son usage échoue avec l’erreur 1449 (« The user specified as a definer does not exist »), qui ne nomme pas toujours l’objet en cause. Recréez-le avec un compte qui existe : relisez sa définition d’abord, rien n’est modifié sans vous.',
+      }
     case 'text_primary_key':
       return {
         title: `La clé primaire de « ${finding.table} » (${finding.columns.join(', ')}) est un UUID rangé en texte${finding.detail === null ? '' : ` (${finding.detail})`}.`,
@@ -82,6 +83,7 @@ function describeOperationsCheck(check: AuditCheck & { rule: OperationsRule }): 
   const reason = check.reason === 'permission_denied' ? 'le compte n’a pas le droit de lire ces informations' : 'ces informations n’ont pas pu être lues'
 
   return `${OPERATIONS_RULES[check.rule]} : non vérifiable, ${reason}.`
+}
 
 const RULE_NAMES: Record<'unused_index', string> = { unused_index: 'Index jamais lus' }
 
