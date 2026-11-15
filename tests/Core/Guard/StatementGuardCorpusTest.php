@@ -612,6 +612,14 @@ final class StatementGuardCorpusTest extends TestCase
         }
         yield from self::rows('SELECT /*+ NO_INDEX(t) ; DROP TABLE t */ 1', $my, $ro, 'refuse:MultipleStatements');
 
+        // MariaDB : NEXT VALUE FOR avance le compteur d'une séquence, c'est une écriture (le moteur la refuse en lecture seule)
+        foreach (['SELECT NEXT VALUE FOR s', 'SELECT * FROM t WHERE a = NEXT VALUE FOR s', 'SELECT next  value  for s', "SELECT NEXT VALUE\nFOR s", 'SELECT /* x */ NEXT /* y */ VALUE FOR `s`'] as $sql) {
+            yield from self::rows($sql, [Engine::MariaDb], $ro, 'refuse:NotReadOnly');
+            yield from self::rows($sql, [Engine::MariaDb], $rw, 'allow:Write');
+        }
+        yield from self::rows('SELECT PREVIOUS VALUE FOR s', [Engine::MariaDb], $ro, 'allow:Read');
+        yield from self::rows('SELECT next, value FROM t', [Engine::MariaDb], $ro, 'allow:Read');
+
         // PostgreSQL : slots et origines de réplication, WAL, sauvegarde, notification, statistiques, fichiers du serveur
         foreach ([
             "pg_create_physical_replication_slot('s')", "pg_create_logical_replication_slot('s', 'test_decoding')", "pg_drop_replication_slot('s')",

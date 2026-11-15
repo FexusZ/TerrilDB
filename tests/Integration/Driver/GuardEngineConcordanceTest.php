@@ -242,4 +242,28 @@ final class GuardEngineConcordanceTest extends TestCase
             self::assertGreaterThan(2.5, microtime(true) - $started, $sql);
         }
     }
+
+    public function testMariaDbAdvancesASequenceWithNextValueForSoTheGuardMustTreatItAsAWrite(): void
+    {
+        $runner = $this->mysql('TARGET_MARIADB_URL');
+        $write = new QueryOptions(QueryMode::ReadWrite, 30_000, 10);
+        $guard = new StatementGuard();
+
+        $runner->run('drop sequence if exists guard_probe_seq', StatementKind::Write, $write);
+        $runner->run('create sequence guard_probe_seq', StatementKind::Write, $write);
+        try {
+            $sql = 'select next value for guard_probe_seq';
+            self::assertSame(StatementKind::Write, $guard->check($sql, Engine::MariaDb, QueryMode::ReadWrite)->kind);
+            self::assertSame(Decision::Refused, $guard->check($sql, Engine::MariaDb, QueryMode::ReadOnly)->decision);
+            // Le moteur refuse d'avancer une séquence en lecture seule : c'est bien une écriture pour lui aussi.
+            try {
+                $runner->run($sql, StatementKind::Read, $this->readOnly());
+                self::fail('MariaDB should refuse to advance a sequence in a read-only transaction.');
+            } catch (QueryFailedException) {
+                self::assertSame([[null]], $runner->run('select lastval(guard_probe_seq)', StatementKind::Read, $this->readOnly())->rows);
+            }
+        } finally {
+            $runner->run('drop sequence if exists guard_probe_seq', StatementKind::Write, $write);
+        }
+    }
 }

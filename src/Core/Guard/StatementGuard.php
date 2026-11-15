@@ -164,7 +164,7 @@ final class StatementGuard
         $executes = StatementKind::Read === $kind
             || (StatementKind::Inspect === $kind && ($statement->has('ANALYZE') || $statement->has('ANALYSE')));
 
-        return $executes && ($statement->calls('NEXTVAL') || $statement->calls('SETVAL'));
+        return $executes && ($statement->calls('NEXTVAL') || $statement->calls('SETVAL') || $statement->hasSequence('NEXT', 'VALUE', 'FOR'));
     }
 
     /**
