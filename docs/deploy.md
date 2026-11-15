@@ -13,7 +13,7 @@ navigateur ─► nginx (HTTPS, certbot) ─► 127.0.0.1:8090 ─► conteneur 
 ## Ce qui n'est PAS dans le dépôt
 
 Tout vit dans `$TERRILDB_DEPLOY_DIR` (défaut `~/.config/terrildb`, droits 700) : `app.env` (APP_SECRET, URL de la base),
-`db.env` (mot de passe PostgreSQL), `deploy.env` (domaine, port local) et `backups/`. Les secrets sont tirés au hasard
+`db.env` (mot de passe PostgreSQL), `deploy.env` (domaine, port local) et `backups/`. `deploy.env` n'est jamais écrasé : à chaque déploiement seul `TERRILDB_DOMAIN` est mis à jour (écriture atomique, droits inchangés), `TERRILDB_PORT`, `TERRILDB_BIND`, `TERRILDB_PROXY_TIMEOUT` et toute autre ligne `NOM=valeur` ajoutée à la main sont conservés (l'environnement ne fournit une valeur que si elle manque au fichier). Les secrets sont tirés au hasard
 au premier déploiement et jamais réécrits. Le domaine arrive par le secret GitHub `TERRILDB_DOMAIN` (masqué dans les journaux, publics sur un dépôt public ; Settings →
 Secrets and variables → Actions).
 
@@ -130,7 +130,7 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 
 - Journaux : `docker compose -f compose.prod.yaml logs app` avec `TERRILDB_DEPLOY_DIR` et `TERRILDB_DOMAIN` exportés
   (`set -a; . ~/.config/terrildb/deploy.env; set +a`).
-- Sauvegardes : `pg_dump` compressé avant chaque migration (sept conservées). Restauration :
+- Sauvegardes : `pg_dump` compressé avant chaque migration (sept conservées, créées en 600). Un `pg_dump` en échec ou vide arrête le déploiement AVANT les migrations, supprime le fichier partiel et ne purge rien. Restauration :
   `gunzip -c <fichier> | docker compose -f compose.prod.yaml exec -T db sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'`
   sur une base vide.
 - Retour arrière : le script remet l'image précédente si le démarrage échoue, mais ne défait pas les migrations déjà
