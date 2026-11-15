@@ -320,6 +320,47 @@ export interface VariableReport {
   variables: ServerVariable[]
 }
 
+/** Une constatation de l'audit de configuration : l'explication et la suggestion sont des textes fixes du serveur, la suggestion est à LIRE. */
+export interface ConfigFinding {
+  rule: string
+  severity: 'high' | 'medium' | 'low'
+  variable: string
+  value: string
+  recommended: string
+  suggestion: string | null
+  explanation: string
+}
+
+export interface ConfigAuditReport {
+  status: DiagnosticStatus
+  engine: string
+  /** Règles dont les variables étaient lisibles, sur le total du moteur. */
+  evaluated: number
+  rulesTotal: number
+  findings: ConfigFinding[]
+}
+
+/** Une variable qui n'a pas la même valeur sur deux serveurs ; jamais une variable masquée. */
+export interface VariableDifference {
+  name: string
+  presentA: boolean
+  valueA: string | null
+  changedA: boolean
+  presentB: boolean
+  valueB: string | null
+  changedB: boolean
+  unit: string | null
+}
+
+export interface VariableComparison {
+  status: DiagnosticStatus
+  unavailableSide: 'a' | 'b' | null
+  /** Variables écartées parce que leur valeur est cachée d'un côté au moins. */
+  masked: number
+  truncated: boolean
+  differences: VariableDifference[]
+}
+
 /** Un compte (ou un rôle) d'un serveur SQL. Jamais d'empreinte de mot de passe : `passwordSet` n'est qu'un booléen. */
 export interface AccountEntry {
   user: string
