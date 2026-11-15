@@ -128,7 +128,14 @@ final class MySqlDdlDialect extends AbstractDdlDialect
 
     protected function modifyColumn(string $table, ModifyColumn $operation): array
     {
-        $definition = $this->columnDefinition($operation->after);
+        $definition = $this->columnDefinition($operation->after, $operation->defaultChanged ? null : $operation->before->default, $operation->before->compressed);
+        // MODIFY COLUMN redit toute la définition : ce que le modèle ne dit pas doit être redit, sinon il disparaît.
+        if (null !== $operation->before->onUpdate) {
+            $definition .= ' ON UPDATE '.$operation->before->onUpdate;
+        }
+        if ($operation->before->invisible) {
+            $definition .= ' INVISIBLE';
+        }
         if (null !== $operation->before->comment && '' !== $operation->before->comment) {
             $definition .= ' COMMENT '.$this->stringLiteral($operation->before->comment);
         }
@@ -204,11 +211,17 @@ final class MySqlDdlDialect extends AbstractDdlDialect
         return [$this->statement(\sprintf('DROP TABLE %s', $this->quote($operation->name)), 'drop_table', $operation->name, true)];
     }
 
-    private function columnDefinition(ColumnDraft $column): string
+    /**
+     * @param ?string $unchanged le défaut tel que le moteur le rend, quand l'utilisateur n'y a pas touché : une expression entre
+     *                           parenthèses (« (1 + 1) ») est alors redite telle quelle, jamais lue comme du texte tapé
+     */
+    private function columnDefinition(ColumnDraft $column, ?string $unchanged = null, bool $compressed = false): string
     {
-        $sql = \sprintf('%s %s %s', $this->quote($column->name), $column->validatedType(), $column->nullable ? 'NULL' : 'NOT NULL');
+        $sql = \sprintf('%s %s%s %s', $this->quote($column->name), $column->validatedType(), $compressed ? ' COMPRESSED' : '', $column->nullable ? 'NULL' : 'NOT NULL');
         $default = $column->defaultValue();
-        if (null !== $default) {
+        if (null !== $unchanged && null !== $default && self::isParenthesised($unchanged)) {
+            $sql .= ' DEFAULT '.$unchanged;
+        } elseif (null !== $default) {
             $sql .= ' DEFAULT '.$this->defaultSql($default);
         }
         if ($column->autoIncrement) {
@@ -216,5 +229,37 @@ final class MySqlDdlDialect extends AbstractDdlDialect
         }
 
         return $sql;
+    }
+
+    /**
+     * Une seule paire de parenthèses qui enveloppe tout, apostrophes comprises : rien ne peut en sortir.
+     */
+    private static function isParenthesised(string $text): bool
+    {
+        if (!str_starts_with($text, '(') || !str_ends_with($text, ')') || str_contains($text, "\0") || str_contains($text, '\\')) {
+            return false;
+        }
+        $depth = 0;
+        $quoted = false;
+        $length = \strlen($text);
+        for ($i = 0; $i < $length; ++$i) {
+            $char = $text[$i];
+            if ("'" === $char) {
+                $quoted = !$quoted;
+                continue;
+            }
+            if ($quoted) {
+                continue;
+            }
+            if (str_contains('`"', $char) || (';' === $char) || ('-' === $char && '-' === ($text[$i + 1] ?? '')) || ('/' === $char && '*' === ($text[$i + 1] ?? '')) || '#' === $char) {
+                return false;
+            }
+            $depth += '(' === $char ? 1 : (')' === $char ? -1 : 0);
+            if ($depth < 0 || (0 === $depth && $i < $length - 1)) {
+                return false;
+            }
+        }
+
+        return 0 === $depth && !$quoted;
     }
 }
