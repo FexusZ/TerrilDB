@@ -289,7 +289,7 @@ la fonction ou la colonne. Règles : `function_on_column` (YEAR, DATE, LOWER… 
 `not_in_subquery`, `row_lock` (FOR UPDATE / SHARE, que le garde refuse : explique l'autocommit), `recursive_cte`. ClickHouse ne garde que
 `select_star` et `large_offset`. Sans introspection, jamais « cet index ne sert pas » : « s'il y en a un, il ne servira pas » (le croisement avec les index réels reste à faire).
 `POST /web/connections/{id}/lint` `{sql}` -> `{findings}` : aucune instruction envoyée à la base (la cible n'est ouverte que pour connaître le moteur, même
-règle d'adresses), jamais de refus, audit `query.linted` (instruction, moteur, nombre et règles). Front : bouton « Conseils » dans `QueryPane`
+règle d'adresses), jamais de refus, audit `query.linted` (moteur, nombre et règles, `length` ; le texte `sql` seulement si `QueryLinter::judges` dit que c'est UN SELECT / WITH … SELECT, coupé à 200 caractères avec `truncated` : un brouillon qui n'est pas une lecture, par exemple un `CREATE USER … IDENTIFIED BY`, ne laisse aucun texte dans le journal). Front : bouton « Conseils » dans `QueryPane`
 (`workspace.lintTab`, vue `lint`, `LintList`), les conseils s'effacent à la modification du texte. Indépendant de `PlanAnalyzer` (deux étages : le texte, puis le plan).
 Tests : `tests/Core/Optimizer/QueryLinterTest` (positifs, négatifs), `tests/Integration/Web/QueryLintWebTest`.
 

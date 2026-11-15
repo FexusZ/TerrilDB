@@ -23,6 +23,8 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class QueryLintController
 {
+    private const MAX_SQL_LENGTH = 200;
+
     public function __construct(
         private TargetAccess $targets,
         private QueryLinter $linter,
@@ -39,12 +41,19 @@ final readonly class QueryLintController
 
         [$engine, $findings] = $this->targets->withSaved($uuid, fn (TargetConnection $target): array => [$target->engine, $this->linter->lint($target->engine, $sql)]);
 
-        $this->audit->record($this->session->auditContext(), AuditAction::QueryLinted, AuditOutcome::Success, $uuid, [
-            'sql' => $sql,
+        // Un conseil n'envoie rien à la base : le texte du brouillon ne se garde que pour une lecture que le linter juge, et
+        // coupé (un CREATE USER … IDENTIFIED BY collé dans l'éditeur ne doit pas finir un an dans le journal). Le reste : le nombre.
+        $details = [
             'engine' => $engine->value,
             'findings' => \count($findings),
             'rules' => array_map(static fn (LintFinding $f): string => $f->rule->value, $findings),
-        ]);
+            'length' => mb_strlen(mb_scrub($sql, 'UTF-8')),
+        ];
+        if ($this->linter->judges($engine, $sql)) {
+            $details['sql'] = mb_substr(mb_scrub($sql, 'UTF-8'), 0, self::MAX_SQL_LENGTH);
+            $details['truncated'] = $details['length'] > self::MAX_SQL_LENGTH;
+        }
+        $this->audit->record($this->session->auditContext(), AuditAction::QueryLinted, AuditOutcome::Success, $uuid, $details);
 
         return new JsonResponse(['findings' => array_map(static fn (LintFinding $f): array => [
             'rule' => $f->rule->value,

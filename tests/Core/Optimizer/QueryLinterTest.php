@@ -173,4 +173,29 @@ final class QueryLinterTest extends TestCase
             $this->addToAssertionCount(1);
         }
     }
+
+    /**
+     * @return iterable<string, array{Engine, string, bool}>
+     */
+    public static function judgedTexts(): iterable
+    {
+        yield 'select' => [Engine::PostgreSql, 'SELECT 1', true];
+        yield 'select with comment and semicolon' => [Engine::MySql, "-- x\nselect id from t;", true];
+        yield 'with select' => [Engine::PostgreSql, 'WITH a AS (SELECT 1) SELECT * FROM a', true];
+        yield 'clickhouse select' => [Engine::ClickHouse, 'SELECT 1', true];
+        yield 'delete' => [Engine::PostgreSql, 'DELETE FROM t', false];
+        yield 'with delete' => [Engine::PostgreSql, 'WITH a AS (SELECT 1) DELETE FROM t', false];
+        yield 'create user with a password' => [Engine::MySql, "CREATE USER 'a'@'%' IDENTIFIED BY 'secret'", false];
+        yield 'two statements' => [Engine::MySql, 'SELECT 1; DROP TABLE t', false];
+        yield 'unfinished string' => [Engine::PostgreSql, "SELECT 'abc", false];
+        yield 'executable comment' => [Engine::MySql, 'SELECT /*!50000 1 */', false];
+        yield 'redis' => [Engine::Redis, 'GET key', false];
+        yield 'empty' => [Engine::PostgreSql, '  ', false];
+    }
+
+    #[DataProvider('judgedTexts')]
+    public function testSaysWhetherTheTextIsASingleReadItJudges(Engine $engine, string $sql, bool $expected): void
+    {
+        self::assertSame($expected, (new QueryLinter())->judges($engine, $sql));
+    }
 }

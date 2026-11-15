@@ -72,6 +72,48 @@ final class QueryLintWebTest extends WebApiTestCase
         self::assertSame(AuditAction::QueryLinted, $this->auditEvents($this->user, 'query')[0]->getAction());
     }
 
+    public function testALongSelectIsAuditedTruncatedWithItsLength(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL');
+        $sql = 'select '.str_repeat('id, ', 120).'id from orders';
+
+        $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
+
+        $details = $this->auditEvents($this->user, 'query')[0]->getDetails();
+        self::assertSame(mb_substr($sql, 0, 200), $details['sql']);
+        self::assertSame(200, mb_strlen((string) $details['sql']));
+        self::assertSame(mb_strlen($sql), $details['length']);
+        self::assertTrue($details['truncated']);
+    }
+
+    public function testAShortSelectIsAuditedWhole(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL');
+
+        $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => 'select id from orders']);
+
+        $details = $this->auditEvents($this->user, 'query')[0]->getDetails();
+        self::assertSame('select id from orders', $details['sql']);
+        self::assertFalse($details['truncated']);
+    }
+
+    public function testWhatIsNotASelectLeavesNoTextInTheAudit(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL');
+        $sql = "CREATE USER 'app'@'%' IDENTIFIED BY 'a-very-secret-phrase'";
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
+
+        self::assertSame([], $body['findings']);
+        $events = $this->auditEvents($this->user, 'query');
+        self::assertCount(1, $events);
+        $details = $events[0]->getDetails();
+        self::assertArrayNotHasKey('sql', $details);
+        self::assertStringNotContainsString('a-very-secret-phrase', json_encode($details, \JSON_THROW_ON_ERROR));
+        self::assertSame(0, $details['findings']);
+        self::assertSame(mb_strlen($sql), $details['length']);
+    }
+
     public function testNeedsASessionAndTheRequestHeader(): void
     {
         $this->prepare('TARGET_POSTGRES_URL');
