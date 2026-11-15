@@ -91,14 +91,14 @@ final class ConfigAuditor
             $days = $p->get('expire_logs_days');
             // MySQL 8.4 n'a plus expire_logs_days ; MariaDB l'a toujours et l'une OU l'autre purge : sans lui, on ne sait pas.
             if (null !== $seconds && (null !== $days || !$maria)) {
-                $p->evaluated++;
+                ++$p->evaluated;
                 if ($on && ctype_digit($seconds) && 0 === (int) $seconds && (null === $days || (is_numeric($days) && 0.0 === (float) $days))) {
                     $p->add(ConfigRule::BinlogNeverExpires, Severity::Medium, 'binlog_expire_logs_seconds', $seconds, 'une durée non nulle (par exemple 604800)', '604800');
                 }
             }
             $sync = $p->get('sync_binlog');
             if (null !== $sync) {
-                $p->evaluated++;
+                ++$p->evaluated;
                 if ($on && ctype_digit($sync) && 1 !== (int) $sync) {
                     $p->add(ConfigRule::SyncBinlogRelaxed, Severity::Low, 'sync_binlog', $sync, '1', '1');
                 }
@@ -109,7 +109,7 @@ final class ConfigAuditor
             $tmp = $p->get('tmp_table_size');
             $heap = $p->get('max_heap_table_size');
             if (null !== $tmp && null !== $heap) {
-                $p->evaluated++;
+                ++$p->evaluated;
                 if (ctype_digit($tmp) && ctype_digit($heap) && (int) $tmp > (int) $heap) {
                     $p->add(ConfigRule::TmpTableAboveHeapTable, Severity::Low, 'tmp_table_size', $tmp, 'tmp_table_size <= max_heap_table_size ('.$heap.')', $heap);
                 }
@@ -133,7 +133,7 @@ final class ConfigAuditor
         $ssl = $p->get('ssl');
         $floor = $p->get('ssl_min_protocol_version');
         if (null !== $ssl && null !== $floor) {
-            $p->evaluated++;
+            ++$p->evaluated;
             if (ConfigProbe::isOn($ssl) && \in_array(strtolower($floor), ['tlsv1', 'tlsv1.0', 'tlsv1.1'], true)) {
                 $p->add(ConfigRule::SslMinProtocolOld, Severity::Medium, 'ssl_min_protocol_version', $floor, 'TLSv1.2', 'TLSv1.2');
             }

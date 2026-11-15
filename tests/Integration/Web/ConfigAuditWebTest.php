@@ -182,7 +182,9 @@ final class ConfigAuditWebTest extends WebApiTestCase
         $a = $this->saveTarget('TARGET_MYSQL_URL', 'Lts');
         $b = $this->saveTarget('TARGET_MYSQL26_URL', 'Latest');
         $admin = (new DbalConnector())->connect(TargetDatabase::engine('TARGET_MYSQL_URL'), TargetDatabase::parameters('TARGET_MYSQL_URL'));
-        $original = (int) $admin->fetchOne('SELECT @@GLOBAL.net_write_timeout');
+        $raw = $admin->fetchOne('SELECT @@GLOBAL.net_write_timeout');
+        self::assertIsNumeric($raw);
+        $original = (int) $raw;
         try {
             $admin->executeStatement('SET GLOBAL net_write_timeout = 77');
 

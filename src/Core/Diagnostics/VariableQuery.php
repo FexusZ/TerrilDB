@@ -19,9 +19,16 @@ final readonly class VariableQuery
     public const MAX_NAME_LENGTH = 128;
 
     public ?string $search;
-    /** Noms exacts demandés (sans casse, en minuscules ici) ; vide = pas de filtre par nom. @var list<string> */
+    /**
+     * Noms exacts demandés (sans casse, en minuscules ici) ; vide = pas de filtre par nom.
+     *
+     * @var list<string>
+     */
     public array $names;
 
+    /**
+     * @param list<string> $names
+     */
     public function __construct(
         ?string $search = null,
         public bool $changedOnly = false,
