@@ -31,6 +31,9 @@ trait MySqlFamilyTarget
     private Engine $engine;
     private string $env;
 
+    /** @var list<TargetConnection> */
+    private array $others = [];
+
     /** @var list<string> */
     private array $drops = [];
 
@@ -44,6 +47,10 @@ trait MySqlFamilyTarget
         }
         $this->target?->close();
         $this->reader?->close();
+        foreach ($this->others as $other) {
+            $other->close();
+        }
+        $this->others = [];
         $this->target = $this->reader = null;
     }
 
@@ -69,6 +76,14 @@ trait MySqlFamilyTarget
         }
     }
 
+    /** Une connexion NEUVE sur une base du serveur (ou celle de la cible), comme une requête web qui rouvre la connexion. */
+    private function openOn(?string $database = null): TargetConnection
+    {
+        $parameters = TargetDatabase::parameters($this->env);
+
+        return $this->others[] = (new MySqlDriver(new DbalConnector()))->connect($this->engine, null === $database ? $parameters : $parameters->withDatabase($database));
+    }
+
     /**
      * @return list<list<bool|float|int|string|null>>
      */
@@ -92,6 +107,11 @@ trait MySqlFamilyTarget
         $this->raw('CREATE TABLE `'.$name.'` ('.$columns.') '.$options);
 
         return $name;
+    }
+
+    private static function q(string $name): string
+    {
+        return '`'.str_replace('`', '``', $name).'`';
     }
 
     private function describe(string $name): TableDefinition
