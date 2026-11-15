@@ -59,6 +59,9 @@ describe('error messages', () => {
   it('explains the refusals of the structure editor', () => {
     expect(messageFor(new ApiError(422, 'invalid_schema_change', { detail: 'A column needs a type.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_changed'))).toContain('modifiée')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'generated', subject: 'total' }))).toBe('« total » : cette colonne est générée, sa modification n’est pas prise en charge.')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'index_invisible', subject: 'idx_a' }))).toContain('invisible')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', {}))).toContain('pas prise en charge')
     expect(messageFor(new ApiError(409, 'schema_change_failed', { message: 'column "x" does not exist' }))).toBe('column "x" does not exist')
     expect(messageFor(new ApiError(409, 'data_changed', { statement: 0, matched: 0 }))).toContain('modifiée')
     expect(messageFor(new ApiError(409, 'data_change_failed', { message: 'duplicate key' }))).toBe('duplicate key')
@@ -66,6 +69,7 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(422, 'invalid_data_change', { detail: 'The column "x" does not exist.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
+    expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'big_table_name' }))).toContain('nom de la table')
   })
 
   it('gives advice for lock conflicts without echoing anything from the engine', () => {
@@ -88,5 +92,22 @@ describe('error messages', () => {
     expect(message).toContain('déjà appliquées')
     expect(message).not.toContain('Relancez')
     expect(messageFor(new ApiError(409, 'deadlock', { retryable: false, applied: [{ sql: 'x' }] }))).toContain('déjà appliquées')
+  })
+
+  it('names the refused statement of a script and says nothing ran', () => {
+    const message = messageFor(new ApiError(403, 'script_refused', { reason: 'forbidden_construct', statement: 2 }))
+
+    expect(message).toContain('instruction 3')
+    expect(message).toContain('Rien n’a été exécuté')
+    expect(message).toContain('interdite')
+  })
+
+  it('explains a malformed, oversized or untestable script', () => {
+    expect(messageFor(new ApiError(422, 'invalid_script'))).toContain('chaîne')
+    expect(messageFor(new ApiError(422, 'script_too_large'))).toContain('500')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'implicit_commit' }))).toContain('valide')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'no_transaction' }))).toContain('transaction')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'non_transactional_tables' }))).toContain('sans transaction')
+    expect(reasonText('destructive_script')).toContain('confirm')
   })
 })

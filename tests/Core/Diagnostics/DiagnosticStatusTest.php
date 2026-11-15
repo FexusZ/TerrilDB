@@ -41,6 +41,16 @@ final class DiagnosticStatusTest extends TestCase
         self::assertSame('engine_has_no_sessions', $unsupported->reason);
     }
 
+    public function testAFailedCheckIsAnErrorStateWithAStableReasonAndNothingFromTheEngine(): void
+    {
+        $status = DiagnosticStatus::failed();
+
+        self::assertSame(Availability::Error, $status->availability);
+        self::assertSame('check_failed', $status->reason);
+        self::assertNull($status->privilege);
+        self::assertFalse($status->isAvailable());
+    }
+
     public function testAReasonIsAStableCodeNotFreeText(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -57,6 +67,6 @@ final class DiagnosticStatusTest extends TestCase
 
     public function testValuesAreTheNamesOfTheContract(): void
     {
-        self::assertSame(['available', 'unsupported', 'permission_denied', 'disabled'], array_map(static fn (Availability $a): string => $a->value, Availability::cases()));
+        self::assertSame(['available', 'unsupported', 'permission_denied', 'disabled', 'error'], array_map(static fn (Availability $a): string => $a->value, Availability::cases()));
     }
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './client'
-import { fetchAccounts, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions } from './diagnostics'
+import { fetchAccounts, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTopQueries, fetchVariables } from './diagnostics'
 
 vi.mock('./client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./client')>()), api: vi.fn() }))
 
@@ -42,6 +42,39 @@ describe('diagnostics API', () => {
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/locks?database=shop&schema=public')
     expect(report.blocking).toEqual([])
+  })
+
+  it('reads the costliest queries with the order, the limit and the explored database', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, order: 'calls', windowHours: null, digests: [] })
+
+    const report = await fetchTopQueries('abc', { database: 'shop', schema: null }, 'calls', 50)
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/queries?order=calls&limit=50&database=shop')
+    expect(report.order).toBe('calls')
+  })
+
+  it('reads the variables with the filters and the explored database', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, variables: [] })
+
+    await fetchVariables('abc', { database: 'shop', schema: null }, { search: 'max_conn', changedOnly: true, limit: 50 })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/variables?q=max_conn&changed=1&limit=50&database=shop')
+  })
+
+  it('sends no filter when none is asked', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, variables: [] })
+
+    await fetchVariables('abc', { database: null, schema: null }, { search: '', changedOnly: false, limit: 100 })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/variables?limit=100')
+  })
+
+  it('encodes the search', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, variables: [] })
+
+    await fetchVariables('abc', { database: null, schema: null }, { search: 'a&b%', changedOnly: false, limit: 10 })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/variables?q=a%26b%25&limit=10')
   })
 
   it('reads the accounts and the encryption of the explored database', async () => {

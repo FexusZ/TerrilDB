@@ -16,7 +16,7 @@ final readonly class DefaultValue
 {
     private const int MAX_LENGTH = 500;
 
-    private const string EXPRESSION = '/^(?:now\(\)|now64\(\d?\)|today\(\)|generateuuidv4\(\)|uuid\(\)|gen_random_uuid\(\)|uuid_generate_v4\(\)|current_(?:timestamp|time)(?:\(\d\))?|current_date|localtimestamp(?:\(\d\))?|true|false|nextval\(\'[A-Za-z0-9_.]+\'::regclass\))$/i';
+    private const string EXPRESSION = '/^(?:now\(\)|now64\(\d?\)|today\(\)|generateuuidv4\(\)|uuid\(\)|gen_random_uuid\(\)|uuid_generate_v4\(\)|current_(?:timestamp|time)(?:\(\d?\))?|current_date(?:\(\))?|curdate\(\)|curtime\(\)|localtimestamp(?:\(\d\))?|true|false|nextval\(\'[A-Za-z0-9_.]+\'::regclass\))$/i';
 
     private function __construct(
         public DefaultKind $kind,
@@ -46,11 +46,24 @@ final readonly class DefaultValue
             return new self(DefaultKind::Number, $text);
         }
         if (1 === preg_match(self::EXPRESSION, $text)) {
-            return new self(DefaultKind::Expression, 'nextval(' === strtolower(substr($text, 0, 8)) ? $text : strtolower($text));
+            return new self(DefaultKind::Expression, 'nextval(' === strtolower(substr($text, 0, 8)) ? $text : self::canonical(strtolower($text)));
         }
         $quoted = self::unquoted($text);
 
         return new self(DefaultKind::Literal, $quoted ?? $text);
+    }
+
+    /**
+     * Les deux familles écrivent la même chose autrement : MariaDB rend « current_timestamp() » et « curdate() », MySQL
+     * « CURRENT_TIMESTAMP » et « curdate() ». On garde la forme sans parenthèses vides (précision comprise : « (6) » reste).
+     */
+    private static function canonical(string $expression): string
+    {
+        return match ($expression) {
+            'curdate()', 'current_date()' => 'current_date',
+            'curtime()' => 'current_time',
+            default => str_ends_with($expression, '()') && str_starts_with($expression, 'current_') ? substr($expression, 0, -2) : $expression,
+        };
     }
 
     /**

@@ -9,6 +9,12 @@ services:
       context: .
       dockerfile: docker/prod/Dockerfile
     restart: unless-stopped
+    # Système de fichiers en lecture seule : l'application n'écrit que dans les tmpfs et le volume des sessions ci-dessous.
+    read_only: true
+    tmpfs:
+      - /app/var/cache:uid=33,gid=33,mode=0700,size=128m
+      - /app/var/log:uid=33,gid=33,mode=0700,size=16m
+      - /tmp:uid=33,gid=33,mode=1777,size=64m
     env_file: ${TERRILDB_DEPLOY_DIR:?}/app.env
     environment:
       APP_ENV: prod
@@ -17,6 +23,9 @@ services:
       # Le reverse proxy de l'hôte arrive depuis le réseau Docker : sans lui, toutes les adresses clientes seraient
       # la sienne (et les plafonds de tentatives, partagés).
       SYMFONY_TRUSTED_PROXIES: private_ranges
+      # Le délai (secondes) du reverse proxy de l'hôte, qui règle aussi nginx (docker/prod/proxy-timeout.sh) : l'application en tire
+      # la limite de durée d'une requête ou d'un script.
+      TERRILDB_PROXY_TIMEOUT: ${TERRILDB_PROXY_TIMEOUT:-120}
     ports:
       # Local par défaut ; TERRILDB_BIND ouvre temporairement une adresse du réseau privé (création du premier compte).
       - "${TERRILDB_BIND:-127.0.0.1}:${TERRILDB_PORT:-8090}:8080"
