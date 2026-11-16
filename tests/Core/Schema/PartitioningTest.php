@@ -28,7 +28,7 @@ final class PartitioningTest extends TestCase
             $rows,
             null,
             null,
-            $partitioning,
+            partitioning: $partitioning,
         );
     }
 

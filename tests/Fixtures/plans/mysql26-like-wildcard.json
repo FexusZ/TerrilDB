@@ -1,0 +1,33 @@
+{
+  "query": "/* select#1 */ select `shop`.`customers`.`id` AS `id`,`shop`.`customers`.`email` AS `email`,`shop`.`customers`.`first_name` AS `first_name`,`shop`.`customers`.`last_name` AS `last_name`,`shop`.`customers`.`country` AS `country`,`shop`.`customers`.`created_at` AS `created_at` from `shop`.`customers` where (`shop`.`customers`.`email` like '%a%')",
+  "query_plan": {
+    "inputs": [
+      {
+        "operation": "Table scan on customers",
+        "table_name": "customers",
+        "access_type": "table",
+        "schema_name": "shop",
+        "used_columns": [
+          "id",
+          "email",
+          "first_name",
+          "last_name",
+          "country",
+          "created_at"
+        ],
+        "estimated_rows": 1000.0,
+        "estimated_total_cost": 101.5
+      }
+    ],
+    "condition": "(customers.email like '%a%')",
+    "operation": "Filter: (customers.email like '%a%')",
+    "access_type": "filter",
+    "estimated_rows": 111.10000312328339,
+    "filter_columns": [
+      "shop.customers.email"
+    ],
+    "estimated_total_cost": 101.5
+  },
+  "query_type": "select",
+  "json_schema_version": "2.1"
+}

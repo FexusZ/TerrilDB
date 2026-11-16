@@ -35,7 +35,7 @@ final class PartitionAuditTest extends TestCase
             null,
             null,
             null,
-            new PartitioningInfo($method, $expression, null, null, $partitions),
+            partitioning: new PartitioningInfo($method, $expression, null, null, $partitions),
         );
     }
 
@@ -50,7 +50,7 @@ final class PartitionAuditTest extends TestCase
     private function audit(Engine $engine, TableDefinition $table): array
     {
         return array_values(array_filter(
-            (new SchemaAuditor())->audit($engine, [$table], new \DateTimeImmutable(self::NOW)),
+            (new SchemaAuditor())->audit($engine, [$table], now: new \DateTimeImmutable(self::NOW)),
             static fn ($f): bool => \in_array($f->rule, [FindingRule::PartitionRangeExhausted, FindingRule::TooManyPartitions], true),
         ));
     }

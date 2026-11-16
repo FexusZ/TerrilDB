@@ -17,7 +17,7 @@ final class SchemaPresenterTest extends TestCase
 {
     private function table(?PartitioningInfo $partitioning): TableDefinition
     {
-        return new TableDefinition('events', TableKind::Table, [new ColumnDefinition('id', 'int', false, null, false, null)], [], [], null, null, null, null, $partitioning);
+        return new TableDefinition('events', TableKind::Table, [new ColumnDefinition('id', 'int', false, null, false, null)], [], [], null, null, null, null, partitioning: $partitioning);
     }
 
     public function testATableWithoutPartitionsSaysNull(): void

@@ -38,7 +38,7 @@ final class PartitionedTableGuardTest extends TestCase
             null,
             null,
             null,
-            $partitioned ? $partitioning : null,
+            partitioning: $partitioned ? $partitioning : null,
         );
     }
 

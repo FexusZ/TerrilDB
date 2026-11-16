@@ -15,4 +15,8 @@ enum FindingRule: string
     case ForeignKeyTypeMismatch = 'foreign_key_type_mismatch';
     case PartitionRangeExhausted = 'partition_range_exhausted';
     case TooManyPartitions = 'too_many_partitions';
+    case TextPrimaryKey = 'text_primary_key';
+    case FloatAmount = 'float_amount';
+    case UnusedIndex = 'unused_index';
+    case CounterNearLimit = 'counter_near_limit';
 }
