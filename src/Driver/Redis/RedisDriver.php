@@ -52,7 +52,7 @@ final readonly class RedisDriver implements Driver
                 $client->disconnect();
             },
             new RedisKeyValueStore($client),
-            diagnostics: new ServerDiagnostics($engine),
+            diagnostics: new ServerDiagnostics($engine, replication: new RedisReplicationDiagnostics($client)),
         );
     }
 }

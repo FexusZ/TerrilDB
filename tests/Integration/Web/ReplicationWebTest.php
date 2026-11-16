@@ -78,6 +78,19 @@ final class ReplicationWebTest extends WebApiTestCase
         self::assertSame([], $body['alerts']);
     }
 
+    public function testRedisWithoutReplicasHasNoReplication(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_REDIS_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/replication');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('none', $body['role']);
+        self::assertSame(0, $body['replicaCount']);
+        self::assertSame([], $body['alerts']);
+    }
+
     public function testAnotherAccountsConnectionIsNotFound(): void
     {
         $this->seedUser('alice');
