@@ -6,7 +6,8 @@ namespace App\Core\Query;
 
 /**
  * Le résultat d'une exécution : des lignes (SELECT, SHOW, EXPLAIN, RETURNING…) ou un nombre de lignes touchées.
- * `truncated` signale que d'autres lignes existaient au-delà de la limite demandée.
+ * `truncated` signale que d'autres lignes existaient au-delà de la limite demandée ; `totalRows` n'est connu que
+ * d'une mesure (`QueryOptions::$measure`), qui a parcouru toutes les lignes.
  */
 final readonly class QueryResult
 {
@@ -20,6 +21,7 @@ final readonly class QueryResult
         public bool $truncated,
         public ?int $affectedRows,
         public int $durationMs,
+        public ?int $totalRows = null,
     ) {
     }
 
@@ -27,9 +29,9 @@ final readonly class QueryResult
      * @param list<string>                           $columns
      * @param list<list<bool|float|int|string|null>> $rows
      */
-    public static function rows(array $columns, array $rows, bool $truncated, int $durationMs): self
+    public static function rows(array $columns, array $rows, bool $truncated, int $durationMs, ?int $totalRows = null): self
     {
-        return new self($columns, $rows, $truncated, null, $durationMs);
+        return new self($columns, $rows, $truncated, null, $durationMs, $totalRows);
     }
 
     public static function affected(int $affectedRows, int $durationMs): self

@@ -52,6 +52,13 @@ final readonly class DbalConnector
         try {
             $connection = DriverManager::getConnection($options);
             $connection->executeQuery('SELECT 1');
+            if (Engine::PostgreSql !== $engine) {
+                $this->readTextLikeTheGuard($connection);
+            }
+            if (Engine::PostgreSql === $engine) {
+                // Le garde lit '…' sans échappement par antislash et en UTF-8 : la session aussi, quel que soit le réglage du rôle ou de la base.
+                $connection->executeQuery("SELECT set_config('standard_conforming_strings', 'on', false), set_config('client_encoding', 'UTF8', false)");
+            }
             if (Engine::PostgreSql === $engine && null !== $parameters->schema) {
                 // quote_ident : le nom est une donnée, jamais du SQL.
                 $connection->executeQuery("SELECT set_config('search_path', quote_ident(?), false)", [$parameters->schema]);
@@ -60,6 +67,22 @@ final readonly class DbalConnector
             return $connection;
         } catch (DbalException $e) {
             throw TargetConnectionFailedException::create($e, EngineFaultReader::ofConnection($engine, $e));
+        }
+    }
+
+    /**
+     * Le garde lit les chaînes et identifiants comme MySQL par défaut (antislash = échappement, guillemet double = chaîne). Un
+     * serveur réglé sur NO_BACKSLASH_ESCAPES ou ANSI_QUOTES lirait autrement le même texte et pourrait cacher au garde une
+     * construction refusée : ces deux modes sont retirés de LA SESSION (les autres sont gardés).
+     *
+     * @throws DbalException
+     */
+    private function readTextLikeTheGuard(Connection $connection): void
+    {
+        $modes = explode(',', \is_string($mode = $connection->fetchOne('SELECT @@SESSION.sql_mode')) ? $mode : '');
+        $kept = array_values(array_filter($modes, static fn (string $mode): bool => !\in_array(strtoupper(trim($mode)), ['NO_BACKSLASH_ESCAPES', 'ANSI_QUOTES'], true)));
+        if (\count($kept) !== \count($modes)) {
+            $connection->executeStatement(\sprintf('SET SESSION sql_mode = %s', $connection->quote(implode(',', $kept))));
         }
     }
 }

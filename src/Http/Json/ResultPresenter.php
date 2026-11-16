@@ -13,7 +13,7 @@ final class ResultPresenter
      */
     public static function present(QueryResult $result): array
     {
-        return [
+        return (null === $result->totalRows ? [] : ['totalRows' => $result->totalRows]) + [
             'columns' => $result->columns,
             'rows' => $result->rows,
             'rowCount' => $result->rowCount(),

@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\Core\Diagnostics\Account;
+use App\Core\Diagnostics\AccountReport;
 use App\Core\Diagnostics\BlockingNode;
+use App\Core\Diagnostics\ConnectionEncryption;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\DigestReport;
+use App\Core\Diagnostics\Health\HealthIndicator;
+use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\SecurityFinding;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\ServerVariable;
 use App\Core\Diagnostics\SessionReport;
@@ -126,6 +132,54 @@ final class DiagnosticsPresenter
     }
 
     /**
+     * Les comptes d'un serveur et ce que l'audit en dit. Aucune empreinte de mot de passe : `passwordSet` n'est qu'un booléen.
+     *
+     * @return array<string, mixed>
+     */
+    public static function accounts(AccountReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'truncated' => $report->truncated,
+            'privilegesIncomplete' => $report->privilegesIncomplete,
+            'activatesAllRoles' => $report->activatesAllRoles,
+            'accounts' => array_map(static fn (Account $a): array => [
+                'user' => $a->user,
+                'host' => $a->host,
+                'name' => $a->name(),
+                'plugin' => $a->plugin,
+                'passwordSet' => $a->passwordSet,
+                'passwordExpired' => $a->passwordExpired,
+                'locked' => $a->locked,
+                'tls' => $a->tls->value,
+                'isRole' => $a->isRole,
+                'current' => $a->current,
+                'roles' => $a->roles,
+                'defaultRoles' => $a->defaultRoles,
+                'globalPrivileges' => $a->globalPrivileges,
+                'databasePrivileges' => (object) $a->databasePrivileges,
+                'grantOptionOn' => $a->grantOptionOn,
+                'limits' => (object) $a->limits,
+            ], $report->accounts),
+            'findings' => array_map(static fn (SecurityFinding $f): array => [
+                'rule' => $f->rule->value,
+                'severity' => $f->severity->value,
+                'account' => $f->account,
+                'detail' => $f->detail,
+                'currentAccount' => $f->currentAccount,
+            ], $report->findings()),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function encryption(ConnectionEncryption $encryption): array
+    {
+        return ['status' => self::status(DiagnosticStatus::available()), 'encrypted' => $encryption->encrypted, 'protocol' => $encryption->protocol, 'cipher' => $encryption->cipher];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private static function node(BlockingNode $node): array
@@ -173,5 +227,28 @@ final class DiagnosticsPresenter
                 'lastSeen' => $d->lastSeen,
             ], $report->digests),
         ];
+    }
+
+    /**
+     * Santé sur l'intervalle mesuré : des taux et des repères, jamais des compteurs cumulés. Vide (avec l'état ou `discarded`)
+     * quand la source est illisible ou que le serveur a redémarré entre les deux relevés.
+     *
+     * @return array<string, mixed>
+     */
+    public static function health(HealthReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'seconds' => null === $report->seconds ? null : round($report->seconds, 3),
+            'startedAt' => self::instant($report->firstSampleAt),
+            'endedAt' => self::instant($report->secondSampleAt),
+            'discarded' => $report->discarded,
+            'indicators' => array_map(static fn (HealthIndicator $i): array => ['key' => $i->key, 'value' => $i->value, 'unit' => $i->unit, 'level' => $i->level->value, 'threshold' => $i->threshold], $report->indicators),
+        ];
+    }
+
+    private static function instant(?float $at): ?string
+    {
+        return null === $at ? null : \sprintf('%s.%03dZ', gmdate('Y-m-d\TH:i:s', (int) floor($at)), (int) (($at - floor($at)) * 1000));
     }
 }

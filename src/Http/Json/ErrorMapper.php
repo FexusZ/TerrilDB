@@ -21,6 +21,7 @@ use App\Core\Data\Exception\InvalidDataChangeException;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\Exception\InvalidDigestQueryException;
 use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
+use App\Core\Diagnostics\Health\HealthBusyException;
 use App\Core\Driver\EngineFault;
 use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
@@ -42,10 +43,12 @@ use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
 use App\Core\Query\Script\Exception\ScriptRefusedException;
+use App\Core\Schema\Change\Exception\BigTableNeedsConfirmationException;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
 use App\Core\Schema\Change\Exception\StaleSchemaException;
+use App\Core\Schema\Change\Exception\UnsupportedSchemaChangeException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\CryptoException;
 use App\Entity\Exception\InvalidApiTokenDefinitionException;
@@ -57,6 +60,8 @@ use App\Invitation\Exception\InvitationNotFoundException;
 use App\Invitation\Exception\MailDisabledException;
 use App\Invitation\Exception\NotAnAdministratorException;
 use App\Security\Exception\AccountAlreadyExistsException;
+use App\Security\Exception\AccountNotFoundException;
+use App\Security\Exception\CannotDisableAccountException;
 use App\Security\Exception\InvalidCredentialsException;
 use App\Security\Exception\InvalidRecoveryException;
 use App\Security\Exception\InvalidSecondFactorException;
@@ -80,6 +85,7 @@ final class ErrorMapper
             $error instanceof InvalidSecondFactorException => new ErrorResponse(401, 'invalid_second_factor'),
             $error instanceof LockedException, $error instanceof CryptoException => new ErrorResponse(401, 'locked'),
             $error instanceof TooManyAttemptsException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
+            $error instanceof HealthBusyException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),
             $error instanceof InvalidApiTokenException => new ErrorResponse(401, 'invalid_token'),
@@ -99,11 +105,12 @@ final class ErrorMapper
             $error instanceof InvalidQueryOptionsException => new ErrorResponse(422, 'invalid_input', ['message' => $error->getMessage()]),
             $error instanceof InvalidRecoveryException => new ErrorResponse(403, 'invalid_recovery'),
             $error instanceof MailDisabledException => new ErrorResponse(409, 'mail_disabled'),
+            $error instanceof CannotDisableAccountException => new ErrorResponse(409, $error->reason),
             $error instanceof AccountAlreadyExistsException => new ErrorResponse(409, 'account_exists'),
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
-            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException => new ErrorResponse(404, 'not_found'),
+            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException, $error instanceof AccountNotFoundException => new ErrorResponse(404, 'not_found'),
             $error instanceof TargetConnectionFailedException => null !== $error->fault ? self::fault($error->fault) : new ErrorResponse(502, 'target_unreachable'),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
@@ -130,7 +137,9 @@ final class ErrorMapper
                     'failed' => DataPlanPresenter::statement($error->failed, null),
                 ]),
             $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
+            $error instanceof UnsupportedSchemaChangeException => new ErrorResponse(422, 'unsupported_schema_change', ['reason' => $error->reason->value, 'subject' => $error->subject]),
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
+            $error instanceof BigTableNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'big_table_name', 'bigTable' => ChangePlanPresenter::bigTable($error->assessment)]),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
             $error instanceof SchemaChangeFailedException && null !== $error->fault => self::fault($error->fault, [
                 'retryable' => $error->fault->retryable() && [] === $error->applied,

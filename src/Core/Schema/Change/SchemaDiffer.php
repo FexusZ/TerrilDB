@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Schema\Change;
 
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
+use App\Core\Schema\Change\Exception\UnsupportedSchemaChangeException;
 use App\Core\Schema\Change\Operation\AddColumn;
 use App\Core\Schema\Change\Operation\AddForeignKey;
 use App\Core\Schema\Change\Operation\AddIndex;
@@ -84,6 +85,10 @@ final class SchemaDiffer
         if (!$type && !$nullability && !$default && !$auto) {
             return null;
         }
+        // Redéfinir une colonne qu'on ne sait pas redire entière (générée…) la dégraderait : refus net.
+        if (null !== $before->lock) {
+            throw new UnsupportedSchemaChangeException($before->lock, $before->name);
+        }
 
         return new ModifyColumn($before, $after, $type, $nullability, $default, $auto);
     }
@@ -122,6 +127,10 @@ final class SchemaDiffer
             }
             $wanted = $drafts[$index->name] ?? null;
             if (null === $wanted || self::mapped($index->columns, $renames) !== $wanted->columns || $index->unique !== $wanted->unique) {
+                // Supprimer est un geste explicite ; recréer un index qu'on ne sait pas redire le dégraderait.
+                if (null !== $wanted && null !== $index->lock) {
+                    throw new UnsupportedSchemaChangeException($index->lock, $index->name);
+                }
                 $operations[] = new DropIndex($index->name, $index);
                 continue;
             }
