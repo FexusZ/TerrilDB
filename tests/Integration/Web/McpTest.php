@@ -343,6 +343,7 @@ final class McpTest extends WebApiTestCase
         self::assertNotContains('connection_encryption', $this->toolNames());
         self::assertNotContains('top_queries', $this->toolNames());
         self::assertNotContains('list_variables', $this->toolNames());
+        self::assertNotContains('audit_config', $this->toolNames());
         $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
         self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
         self::assertArrayNotHasKey('structuredContent', $refused);
@@ -430,6 +431,24 @@ final class McpTest extends WebApiTestCase
 
         $bad = $this->callTool('list_variables', ['connection' => $this->connectionId, 'limit' => 0]);
         self::assertTrue(isset($bad['error']) || true === ($bad['isError'] ?? false), 'A limit out of bounds is refused.');
+    }
+
+    public function testAuditsTheConfigurationThroughMcpWithoutSettingAnything(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('audit_config', $this->toolNames());
+        $report = self::textOf($this->callTool('audit_config', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        $rules = array_map(static fn (mixed $f): mixed => self::obj($f)['rule'], self::list($report['findings']));
+        sort($rules);
+        self::assertSame(['slow_statement_log_off', 'ssl_off'], $rules);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('audit_config', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
     }
 
     public function testAReadOnlyTokenDoesNotSeePrepareStatement(): void

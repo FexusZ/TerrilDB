@@ -570,6 +570,33 @@ final class ApiV1Test extends WebApiTestCase
         $variables = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables');
         self::assertSame(403, $this->statusCode());
         self::assertSame(['error' => 'permission_denied'], $variables);
+
+        $audit = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/config-audit');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $audit);
+    }
+
+    public function testATokenWithTheDiagnosticRightReadsTheConfigAudit(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/config-audit');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'engine', 'evaluated', 'rulesTotal', 'findings'], array_keys($body));
+        $rules = array_map(static fn ($f): mixed => self::arrayOf($f)['rule'], self::arrayOf($body['findings']));
+        sort($rules);
+        self::assertSame(['slow_statement_log_off', 'ssl_off'], $rules);
+        self::assertStringNotContainsString('hunter', json_encode($body, \JSON_THROW_ON_ERROR));
+    }
+
+    public function testTheConfigAuditOfAConnectionOutsideTheListIsNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/config-audit');
+
+        self::assertSame(404, $this->statusCode());
     }
 
     #[DataProvider('targets')]

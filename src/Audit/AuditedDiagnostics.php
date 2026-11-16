@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace App\Audit;
 
 use App\Core\Diagnostics\AccountReport;
+use App\Core\Diagnostics\ConfigAuditor;
+use App\Core\Diagnostics\ConfigAuditReport;
 use App\Core\Diagnostics\ConnectionEncryption;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\DigestQuery;
 use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
 use App\Core\Diagnostics\Health\HealthBusyException;
 use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\Health\HealthSampler;
@@ -17,6 +20,8 @@ use App\Core\Diagnostics\Health\HealthSlots;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\Replication\ReplicationReport;
 use App\Core\Diagnostics\SessionReport;
+use App\Core\Diagnostics\VariableComparer;
+use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableQuery;
 use App\Core\Diagnostics\VariableReport;
 use App\Core\Driver\TargetConnection;
@@ -152,6 +157,59 @@ final readonly class AuditedDiagnostics
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->variables)]);
 
         return $report;
+    }
+
+    /**
+     * Audit de configuration : les variables que les règles regardent sont lues par nom, jugées sans rien exécuter. Le journal garde
+     * l'état et des nombres, ni nom de variable ni valeur.
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function configAudit(AuditContext $context, Uuid $connectionId, TargetConnection $target): ConfigAuditReport
+    {
+        $base = ['topic' => 'config_audit', 'engine' => $target->engine->value];
+
+        try {
+            $variables = $target->diagnostics()->variables();
+            $names = ConfigAuditor::namesFor($target->engine);
+            $read = [] === $names ? new VariableReport($variables->status(), [], false) : $variables->variables(new VariableQuery(limit: VariableQuery::MAX_LIMIT, names: $names));
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+        $report = (new ConfigAuditor())->audit($target->engine, $read);
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => $report->evaluated, 'findings' => \count($report->findings)]);
+
+        return $report;
+    }
+
+    /**
+     * Écart de variables entre deux serveurs du même moteur. Le journal garde les deux connexions, l'état et des nombres : jamais
+     * un nom de variable ni une valeur.
+     *
+     * @throws DiagnosticsFailedException
+     * @throws InvalidVariableQueryException deux moteurs différents
+     */
+    public function compareVariables(AuditContext $context, Uuid $idA, TargetConnection $a, Uuid $idB, TargetConnection $b): VariableComparison
+    {
+        if ($a->engine !== $b->engine) {
+            throw new InvalidVariableQueryException('Only two connections of the same engine can be compared.');
+        }
+        $base = ['topic' => 'compare_variables', 'engine' => $a->engine->value, 'with' => $idB->toRfc4122()];
+
+        try {
+            $comparison = (new VariableComparer())->compare($a->diagnostics()->variables(), $b->diagnostics()->variables());
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $idA, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $idA, $base + ['status' => $comparison->status->availability->value, 'differences' => \count($comparison->differences), 'masked' => $comparison->masked, 'truncated' => $comparison->truncated]);
+
+        return $comparison;
     }
 
     /**
