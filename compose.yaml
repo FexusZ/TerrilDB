@@ -130,6 +130,82 @@ services:
       interval: 5s
       retries: 60
 
+  # VRAI cluster Vitess (profil "vitess-cluster", à part de "vitess" et de "targets") : etcd, vtctld, keyspace "shop" non partagé,
+  # DEUX tablets (PRIMARY + REPLICA) ayant chacun SON mysqld (mysqlctl) réellement répliqué, un vtgate (protocole MySQL).
+  # ~3 Go de mémoire, premier démarrage de quelques minutes. Scripts dans docker/vitess-cluster/, notes dans docs/vitess-tests.md.
+  vitess-etcd:
+    profiles: [vitess-cluster]
+    image: quay.io/coreos/etcd:v3.5.21
+    command:
+      - etcd
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://vitess-etcd:2379
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 3s
+      retries: 30
+
+  vitess-vtctld:
+    profiles: [vitess-cluster]
+    image: &vitess-image vitess/lite:v23.0.0
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/vtctld.sh"]
+    volumes: [./docker/vitess-cluster:/scripts:ro]
+    depends_on:
+      vitess-etcd: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "test", "-e", "/tmp/vtctld-ready"]
+      interval: 3s
+      retries: 40
+
+  vitess-tablet-primary:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/tablet.sh"]
+    environment: {TABLET_UID: "100"}
+    volumes: [./docker/vitess-cluster:/scripts:ro, vitess-primary-data:/vt/vtdataroot]
+    depends_on:
+      vitess-vtctld: {condition: service_healthy}
+
+  vitess-tablet-replica:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/tablet.sh"]
+    environment: {TABLET_UID: "101"}
+    volumes: [./docker/vitess-cluster:/scripts:ro, vitess-replica-data:/vt/vtdataroot]
+    depends_on:
+      vitess-vtctld: {condition: service_healthy}
+
+  vitess-vtgate:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/vtgate.sh"]
+    ports: ["127.0.0.1:33578:15306"]
+    volumes: [./docker/vitess-cluster:/scripts:ro]
+    depends_on:
+      vitess-vtctld: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/scripts/check.sh"]
+      interval: 5s
+      retries: 120
+
+  # Une seule fois : élit le primaire, charge le schéma et les données. Rejouable sans dégât.
+  vitess-init:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/init.sh"]
+    volumes: [./docker/vitess-cluster:/scripts:ro, ./docker/targets/mysql:/schema:ro]
+    depends_on:
+      - vitess-tablet-primary
+      - vitess-tablet-replica
+      - vitess-vtgate
+    restart: "no"
+
   target-postgres:
     profiles: [targets]
     image: postgres:18-alpine
@@ -171,3 +247,5 @@ services:
 volumes:
   composer-cache:
   db-data:
+  vitess-primary-data:
+  vitess-replica-data:

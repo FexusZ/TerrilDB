@@ -31,6 +31,10 @@ if [ -e "$dir/php.env" ]; then
         echo 'TARGET_VITESS_URL=pdo-mysql://root@target-vitess:33577/shop' >> "$dir/php.env"
         echo "Ajouté à $dir/php.env : TARGET_VITESS_URL"
     fi
+    if ! grep -q '^TARGET_VITESS_CLUSTER_URL=' "$dir/php.env"; then
+        echo 'TARGET_VITESS_CLUSTER_URL=pdo-mysql://root@vitess-vtgate:15306/shop' >> "$dir/php.env"
+        echo "Ajouté à $dir/php.env : TARGET_VITESS_CLUSTER_URL"
+    fi
     echo "$dir existe déjà : mots de passe inchangés (supprimez-le, puis 'docker compose down -v', pour repartir de zéro)."
     exit 0
 fi
@@ -59,6 +63,7 @@ TARGET_MYSQL26_URL=pdo-mysql://root:$mysql@target-mysql-26:3306/shop
 TARGET_MARIADB_URL=pdo-mysql://root:$mariadb@target-mariadb:3306/shop
 TARGET_MARIADB13_URL=pdo-mysql://root:$mariadb@target-mariadb-13:3306/shop
 TARGET_VITESS_URL=pdo-mysql://root@target-vitess:33577/shop
+TARGET_VITESS_CLUSTER_URL=pdo-mysql://root@vitess-vtgate:15306/shop
 TARGET_POSTGRES_URL=pdo-pgsql://postgres:$postgres@target-postgres:5432/shop
 TARGET_CLICKHOUSE_URL=clickhouse://tester:$clickhouse@target-clickhouse:8123/shop
 TARGET_REDIS_URL=redis://default:$redis@target-redis:6379/15
