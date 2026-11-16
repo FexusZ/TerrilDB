@@ -1,3 +1,4 @@
+import { lockSentence } from '../utils/lock'
 import { ApiError } from './client'
 
 const REASONS: Record<string, string> = {
@@ -11,6 +12,7 @@ const REASONS: Record<string, string> = {
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
   destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
+  big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -51,6 +53,10 @@ export function messageFor(error: unknown): string {
       return 'Les inscriptions sont fermées : il faut une invitation.'
     case 'invalid_invitation':
       return 'Cette invitation n’est pas valable : elle a peut-être déjà servi, expiré ou été révoquée.'
+    case 'cannot_disable_self':
+      return 'Vous ne pouvez pas désactiver votre propre compte.'
+    case 'last_administrator':
+      return 'Impossible : ce compte est le dernier administrateur actif.'
     case 'invalid_recovery':
       return 'La phrase de récupération n’est pas valable, ou ce compte n’en a pas.'
     case 'mail_disabled':
@@ -102,6 +108,12 @@ export function messageFor(error: unknown): string {
       return typeof error.details.message === 'string' ? error.details.message : GENERIC
     case 'invalid_schema_change':
       return 'Cette modification de la structure est invalide.'
+    case 'unsupported_schema_change': {
+      const why = lockSentence(error.details.reason)
+      const subject = typeof error.details.subject === 'string' ? `« ${error.details.subject} » : ` : ''
+
+      return why === null ? 'Cette modification n’est pas prise en charge pour une colonne ou un index à la définition particulière.' : `${subject}${why}, sa modification n’est pas prise en charge.`
+    }
     case 'schema_changed':
       return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
     case 'schema_change_failed':

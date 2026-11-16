@@ -11,6 +11,7 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'token', label: 'Jetons' },
   { value: 'target', label: 'Adresses refusées' },
   { value: 'invitation', label: 'Invitations' },
+  { value: 'account', label: 'Comptes' },
   { value: 'query', label: 'Requêtes' },
   { value: 'schema', label: 'Structure des tables' },
   { value: 'diagnostic', label: 'Supervision du serveur' },
@@ -25,6 +26,10 @@ export function describeEvent(entry: AuditEntry): string {
   switch (entry.action) {
     case 'account.registered':
       return 'Compte créé'
+    case 'account.disabled':
+      return 'Compte désactivé'
+    case 'account.enabled':
+      return 'Compte réactivé'
     case 'login.success':
       return 'Connexion'
     case 'login.failure':
@@ -79,6 +84,11 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Requête refusée'
     case 'query.failed':
       return details.reason === 'timeout' ? 'Requête arrêtée : délai dépassé' : 'Requête en erreur'
+    case 'query.linted': {
+      const count = typeof details.findings === 'number' ? details.findings : 0
+
+      return `Conseils de requête demandés (${count === 0 ? 'aucun' : String(count)})`
+    }
     case 'schema.changed': {
       const count = typeof details.statements === 'number' ? details.statements : 0
 

@@ -21,7 +21,7 @@ const detail: TableDetail = {
   indexes: [{ name: 'orders_pkey', columns: ['id'], unique: true, primary: true }],
   foreignKeys: [],
 }
-const plan = { statements: [{ sql: "UPDATE \"orders\" SET \"status\" = 'ok' WHERE \"id\" = 1", operation: 'update', subject: 'orders', destructive: false, matched: 1 }], transactional: true, asynchronous: false, destructive: false, ok: true }
+const plan = { statements: [{ sql: "UPDATE \"orders\" SET \"status\" = 'ok' WHERE \"id\" = 1", operation: 'update', subject: 'orders', destructive: false, matched: 1 }], transactional: true, asynchronous: false, destructive: false, ok: true, warnings: [] }
 
 const EditorStub = {
   props: ['modelValue', 'dialect', 'tables'],
@@ -261,6 +261,33 @@ describe('TableDataPane', () => {
       await flushPromises()
 
       expect(wrapper.get('.async').text()).toContain('arrière-plan')
+    })
+
+    it('warns that the storage engine cannot roll back, without promising all or nothing, and still lets apply', async () => {
+      const { pinia } = await setup({ preview: { ...plan, warnings: [{ code: 'not_transactional', value: 'MyISAM' }] } })
+      const wrapper = await mountPane(pinia)
+      await wrapper.get('input[aria-label="status, ligne 1"]').setValue('ok')
+
+      await wrapper.get('button.review').trigger('click')
+      await flushPromises()
+
+      const warning = wrapper.get('.warnings')
+      expect(warning.text()).toContain('MyISAM')
+      expect(warning.text()).toContain('n’annule pas')
+      expect(wrapper.get('.mode').text()).not.toContain('tout ou rien')
+      expect(wrapper.get('button.apply').attributes('disabled')).toBeUndefined()
+    })
+
+    it('warns about the triggers of the table', async () => {
+      const { pinia } = await setup({ preview: { ...plan, warnings: [{ code: 'triggers', value: 3 }] } })
+      const wrapper = await mountPane(pinia)
+      await wrapper.get('input[aria-label="status, ligne 1"]').setValue('ok')
+
+      await wrapper.get('button.review').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.warnings').text()).toContain('3 déclencheurs')
+      expect(wrapper.get('.mode').text()).toContain('tout ou rien')
     })
 
     it('shows the engine refusal and keeps the draft', async () => {

@@ -51,6 +51,7 @@ final readonly class TableStructureController
         return new JsonResponse(ChangePlanPresenter::plan($preview->plan) + [
             'fingerprint' => $preview->fingerprint,
             'stale' => $preview->stale,
+            'bigTable' => ChangePlanPresenter::bigTable($preview->bigTable),
             'lockCheck' => null === $preview->holders ? null : DiagnosticsPresenter::tableHolders($preview->holders),
         ]);
     }
@@ -62,13 +63,14 @@ final readonly class TableStructureController
         $draft = $input->bool('drop', false) ? null : TableDraftInput::from($input->object('draft'));
         $fingerprint = $input->string('fingerprint');
         $confirmed = $input->bool('confirmed', false);
+        $confirmedTableName = $input->optionalString('confirmedTableName');
         $uuid = Uuid::fromString($id);
 
         /** @var array{ChangePlan, ?string, ?\App\Core\Schema\TableDefinition} $result */
         $result = $this->targets->withSaved(
             $uuid,
-            function (TargetConnection $target) use ($uuid, $name, $draft, $fingerprint, $confirmed): array {
-                [$plan, $after] = $this->changes->apply($this->session->auditContext(), $uuid, $target, $name, $draft, $fingerprint, $confirmed);
+            function (TargetConnection $target) use ($uuid, $name, $draft, $fingerprint, $confirmed, $confirmedTableName): array {
+                [$plan, $after] = $this->changes->apply($this->session->auditContext(), $uuid, $target, $name, $draft, $fingerprint, $confirmed, $confirmedTableName);
 
                 return [$plan, $after, null === $draft || null === $after ? null : $target->introspector()->describeTable($draft->name)];
             },

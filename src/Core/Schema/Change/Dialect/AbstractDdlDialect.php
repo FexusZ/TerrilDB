@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Core\Schema\Change\Dialect;
 
+use App\Core\Connection\Engine;
 use App\Core\Schema\Change\DdlStatement;
 use App\Core\Schema\Change\DefaultKind;
 use App\Core\Schema\Change\DefaultValue;
+use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\ForeignKeyDraft;
 use App\Core\Schema\Change\IndexDraft;
 use App\Core\Schema\Change\Operation\AddColumn;
@@ -25,6 +27,8 @@ use App\Core\Schema\Change\TableDraft;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\TableDefinition;
+use App\Core\Sql\SqlText;
+use App\Core\Sql\UnsafeSqlNameException;
 
 /**
  * Ce qui est commun aux dialectes : l'ordre des instructions et leur description. Chaque moteur écrit ses propres phrases.
@@ -88,6 +92,18 @@ abstract class AbstractDdlDialect implements DdlDialect
     }
 
     abstract protected function quote(string $name): string;
+
+    /**
+     * Cite un nom par la fonction commune ({@see SqlText}) : un nom avec contrôle ou séparateur de ligne est refusé, jamais écrit.
+     */
+    protected function quoteName(Engine $engine, string $name): string
+    {
+        try {
+            return SqlText::quoteIdentifier($engine, $name);
+        } catch (UnsafeSqlNameException) {
+            throw new InvalidSchemaChangeException('A name contains a control character, a line separator or invalid text.');
+        }
+    }
 
     abstract protected function stringLiteral(string $value): string;
 

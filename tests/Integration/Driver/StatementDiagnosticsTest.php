@@ -76,7 +76,7 @@ final class StatementDiagnosticsTest extends TestCase
             return;
         }
 
-        $alias = 'tdb75_'.bin2hex(random_bytes(6));
+        $alias = 'tdb75_'.strtr(bin2hex(random_bytes(6)), '0123456789', 'ghijklmnop');
         $client = (new DbalConnector())->connect(TargetDatabase::engine($envVar), TargetDatabase::parameters($envVar));
         for ($i = 0; $i < 3; ++$i) {
             $client->fetchAllAssociative(\sprintf('SELECT COUNT(*), SLEEP(0.1) AS %s FROM order_items WHERE quantity > 1000', $alias));
@@ -198,7 +198,7 @@ final class StatementDiagnosticsTest extends TestCase
             self::markTestSkipped('pg_stat_statements is not installed on this PostgreSQL target.');
         }
 
-        $alias = 'tdb75_'.bin2hex(random_bytes(6));
+        $alias = 'tdb75_'.strtr(bin2hex(random_bytes(6)), '0123456789', 'ghijklmnop');
         $client = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'));
         for ($i = 0; $i < 3; ++$i) {
             $client->fetchAllAssociative(\sprintf('SELECT COUNT(*) AS %s FROM order_items WHERE quantity > 1000', $alias));

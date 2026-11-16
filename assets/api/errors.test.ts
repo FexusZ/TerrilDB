@@ -15,6 +15,11 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(401, 'locked'))).toContain('reconnect')
   })
 
+  it('explains why an account cannot be disabled', () => {
+    expect(messageFor(new ApiError(409, 'cannot_disable_self'))).toContain('votre propre compte')
+    expect(messageFor(new ApiError(409, 'last_administrator'))).toContain('dernier administrateur')
+  })
+
   it('explains a refused invitation and a forbidden action', () => {
     expect(messageFor(new ApiError(403, 'invalid_invitation'))).toContain('invitation')
     expect(messageFor(new ApiError(403, 'forbidden'))).toContain('administrateur')
@@ -59,6 +64,9 @@ describe('error messages', () => {
   it('explains the refusals of the structure editor', () => {
     expect(messageFor(new ApiError(422, 'invalid_schema_change', { detail: 'A column needs a type.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_changed'))).toContain('modifiée')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'generated', subject: 'total' }))).toBe('« total » : cette colonne est générée, sa modification n’est pas prise en charge.')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'index_invisible', subject: 'idx_a' }))).toContain('invisible')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', {}))).toContain('pas prise en charge')
     expect(messageFor(new ApiError(409, 'schema_change_failed', { message: 'column "x" does not exist' }))).toBe('column "x" does not exist')
     expect(messageFor(new ApiError(409, 'data_changed', { statement: 0, matched: 0 }))).toContain('modifiée')
     expect(messageFor(new ApiError(409, 'data_change_failed', { message: 'duplicate key' }))).toBe('duplicate key')
@@ -66,6 +74,7 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(422, 'invalid_data_change', { detail: 'The column "x" does not exist.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
+    expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'big_table_name' }))).toContain('nom de la table')
   })
 
   it('gives advice for lock conflicts without echoing anything from the engine', () => {

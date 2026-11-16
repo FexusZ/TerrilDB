@@ -33,6 +33,7 @@ const preview = (over: Partial<StructurePreview> = {}): StructurePreview => ({
   destructive: false,
   fingerprint: 'f'.repeat(64),
   stale: false,
+  bigTable: { level: 'none', estimatedRows: 10, warnAt: 100000, confirmAt: 1000000 },
   ...over,
 })
 
@@ -337,6 +338,84 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  describe('big tables', () => {
+    const level = (level: 'warning' | 'confirm_name', estimatedRows: number | null = 2_500_000) => ({ level, estimatedRows, warnAt: 100000, confirmAt: 1000000 })
+
+    async function edit(wrapper: VueWrapper): Promise<void> {
+      await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+      await settle()
+    }
+
+    const validateButton = (wrapper: VueWrapper) => wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')
+
+    it('warns above the first threshold and still applies without typing the name', async () => {
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ bigTable: level('warning', 150_000) }) : { ...preview(), table: detail() }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+
+      expect(wrapper.get('[data-test="big-table"]').text()).toContain('volumineuse')
+      expect(wrapper.find('input[aria-label="Retapez le nom de la table pour confirmer"]').exists()).toBe(false)
+      await validateButton(wrapper)?.trigger('click')
+      await flushPromises()
+
+      expect(structureCalls('apply')[0]?.[2]).not.toHaveProperty('confirmedTableName')
+      wrapper.unmount()
+    })
+
+    it('asks for the table name above the second threshold, and sends it', async () => {
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ bigTable: level('confirm_name') }) : { ...preview(), table: detail() }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+      const input = wrapper.get('input[aria-label="Retapez le nom de la table pour confirmer"]')
+
+      expect(validateButton(wrapper)?.attributes('disabled')).toBeDefined()
+      await input.setValue('order')
+      expect(validateButton(wrapper)?.attributes('disabled')).toBeDefined()
+      await input.setValue('orders')
+      expect(validateButton(wrapper)?.attributes('disabled')).toBeUndefined()
+      await validateButton(wrapper)?.trigger('click')
+      await flushPromises()
+
+      expect(structureCalls('apply')[0]?.[2]).toMatchObject({ confirmedTableName: 'orders' })
+      wrapper.unmount()
+    })
+
+    it('says so when the engine gives no estimate, instead of staying silent', async () => {
+      mocked.mockResolvedValue(preview({ bigTable: { level: 'none', estimatedRows: null, warnAt: 100000, confirmAt: 1000000 } }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+
+      expect(wrapper.get('[data-test="big-table"]').text()).toContain('inconnue')
+      wrapper.unmount()
+    })
+
+    it('says nothing when both thresholds are disabled or the table is small', async () => {
+      mocked.mockResolvedValue(preview({ bigTable: { level: 'none', estimatedRows: null, warnAt: 0, confirmAt: 0 } }))
+      const wrapper = mountEditor()
+      await edit(wrapper)
+
+      expect(wrapper.find('[data-test="big-table"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('asks for the name before dropping a big table', async () => {
+      const dropStatement = { sql: 'DROP TABLE "orders"', operation: 'drop_table', subject: 'orders', destructive: true }
+      mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ statements: [dropStatement], destructive: true, bigTable: level('confirm_name') }) : { statements: [dropStatement], transactional: true, destructive: true, table: null }))
+      const wrapper = mountEditor()
+      await wrapper.findAll('button').find((button) => button.text().startsWith('Supprimer la table'))?.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.confirm').attributes('disabled')).toBeDefined()
+      await wrapper.get('[role="dialog"] input[aria-label="Retapez le nom de la table pour confirmer"]').setValue('orders')
+      expect(wrapper.get('.confirm').attributes('disabled')).toBeUndefined()
+      await wrapper.get('.confirm').trigger('click')
+      await flushPromises()
+
+      expect(structureCalls('apply')[0]?.[2]).toMatchObject({ drop: true, confirmed: true, confirmedTableName: 'orders' })
+      wrapper.unmount()
+    })
+  })
+
   it('highlights a renamed table', async () => {
     mocked.mockResolvedValue(preview())
     const wrapper = mountEditor()
@@ -536,6 +615,62 @@ describe('TableEditor', () => {
     expect(wrapper.get('.index-table tbody').text()).toContain('lecture seule')
     expect(wrapper.find('.index-table tbody input').exists()).toBe(false)
     expect(wrapper.find('.index-table tbody[data-kind="primary"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows a generated column read-only and an invisible index as locked, with the reason', async () => {
+    const rich: TableDetail = {
+      ...detail(),
+      columns: [
+        { name: 'id', type: 'integer', nullable: false, default: null, autoIncrement: true, comment: null },
+        { name: 'total', type: 'integer', nullable: true, default: null, autoIncrement: false, comment: null, lock: 'generated' },
+      ],
+      indexes: [
+        { name: 'orders_pkey', columns: ['id'], unique: true, primary: true },
+        { name: 'idx_total', columns: ['total'], unique: false, primary: false, lock: 'index_invisible' },
+      ],
+      foreignKeys: [],
+    }
+    const wrapper = mountEditor('mysql', rich)
+
+    const rows = wrapper.findAll('.columns tbody tr')
+    expect(rows[1]?.text()).toContain('générée')
+    expect(rows[1]?.get('input[aria-label="Type de la colonne"]').attributes('disabled')).toBeDefined()
+    expect(rows[1]?.get('input[aria-label="Accepte NULL"]').attributes('disabled')).toBeDefined()
+    expect(rows[1]?.get('input[aria-label="Valeur par défaut"]').attributes('disabled')).toBeDefined()
+    expect(rows[1]?.get('input[aria-label="Nom de la colonne"]').attributes('disabled')).toBeUndefined()
+    expect(rows[0]?.get('input[aria-label="Type de la colonne"]').attributes('disabled')).toBeUndefined()
+    const locked = wrapper.get('.index-table tbody[data-kind="locked"]')
+    expect(locked.text()).toContain('invisible')
+    expect(locked.find('input').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('locks a PostgreSQL index with a particularity and says which one', async () => {
+    const rich: TableDetail = {
+      ...detail(),
+      columns: [
+        { name: 'id', type: 'integer', nullable: false, default: null, autoIncrement: true, comment: null },
+        { name: 'total', type: 'integer', nullable: true, default: null, autoIncrement: false, comment: null },
+      ],
+      indexes: [
+        { name: 'orders_pkey', columns: ['id'], unique: true, primary: true },
+        { name: 'idx_partial', columns: ['total'], unique: false, primary: false, lock: 'partial' },
+        { name: 'idx_hash', columns: ['total'], unique: false, primary: false, lock: 'access_method' },
+        { name: 'idx_include', columns: ['total'], unique: false, primary: false, lock: 'include' },
+        { name: 'idx_ops', columns: ['total'], unique: false, primary: false, lock: 'operator_class' },
+      ],
+      foreignKeys: [],
+    }
+    const wrapper = mountEditor('postgresql', rich)
+
+    const text = wrapper.findAll('.index-table tbody[data-kind="locked"]').map((part) => part.text())
+    expect(text).toHaveLength(4)
+    expect(text[0]).toContain('partiel')
+    expect(text[1]).toContain('type d’index')
+    expect(text[2]).toContain('INCLUDE')
+    expect(text[3]).toContain('classe d’opérateurs')
+    expect(text.join(' ')).not.toContain('non prise en charge')
     wrapper.unmount()
   })
 

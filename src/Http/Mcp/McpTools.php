@@ -19,6 +19,7 @@ use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Diagnostics\DigestQuery;
 use App\Core\Driver\TargetConnection;
 use App\Core\Export\ExportFormat;
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\Script\ScriptOptions;
@@ -27,6 +28,7 @@ use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\BadRequestException;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
+use App\Http\Json\HealthInterval;
 use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
@@ -35,6 +37,7 @@ use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
 use App\Http\Json\VariableQueryParser;
 use Mcp\Exception\ToolCallException;
+use Mcp\Schema\Result\CallToolResult;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -45,6 +48,7 @@ use Symfony\Component\Uid\Uuid;
 final readonly class McpTools
 {
     private const EXPORT_ROWS = 10_000;
+    private const PREVIEW_ROWS = 100;
 
     public function __construct(
         private ApiRequestAccess $request,
@@ -101,15 +105,18 @@ final readonly class McpTools
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed>|CallToolResult
      */
-    public function runQuery(string $connection, string $sql, ?int $maxRows = null, ?int $timeoutMs = null): array
+    public function runQuery(string $connection, string $sql, ?int $maxRows = null, ?int $timeoutMs = null, ?string $format = null, ?bool $measure = null): array|CallToolResult
     {
-        return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs): array {
+        return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs, $format, $measure): array|CallToolResult {
             $defaults = new QueryOptions();
-            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $maxRows ?? $defaults->maxRows);
+            $measuring = $measure ?? false;
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $measuring ? self::PREVIEW_ROWS : ($maxRows ?? $defaults->maxRows), measure: $measuring);
 
-            return ResultPresenter::present($this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options)));
+            $result = $this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options));
+
+            return null === $format ? ResultPresenter::present($result) : CompactResult::render($result, ResultFormat::tryFrom($format) ?? throw new InvalidQueryOptionsException('The format is not supported.'));
         });
     }
 
@@ -177,6 +184,19 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function serverHealth(string $connection, ?int $seconds = null): array
+    {
+        return $this->guard(function () use ($connection, $seconds): array {
+            $this->request->get()->requireDiagnostic();
+            $interval = HealthInterval::parse($seconds);
+
+            return DiagnosticsPresenter::health($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $interval)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null): array
     {
         return $this->guard(function () use ($connection, $order, $limit, $hours): array {
@@ -184,6 +204,30 @@ final readonly class McpTools
             $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
 
             return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listAccounts(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::accounts($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function connectionEncryption(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::encryption($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
         });
     }
 

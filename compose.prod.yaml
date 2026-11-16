@@ -9,6 +9,12 @@ services:
       context: .
       dockerfile: docker/prod/Dockerfile
     restart: unless-stopped
+    # Système de fichiers en lecture seule : l'application n'écrit que dans les tmpfs et le volume des sessions ci-dessous.
+    read_only: true
+    tmpfs:
+      - /app/var/cache:uid=33,gid=33,mode=0700,size=128m
+      - /app/var/log:uid=33,gid=33,mode=0700,size=16m
+      - /tmp:uid=33,gid=33,mode=1777,size=64m
     env_file: ${TERRILDB_DEPLOY_DIR:?}/app.env
     environment:
       APP_ENV: prod

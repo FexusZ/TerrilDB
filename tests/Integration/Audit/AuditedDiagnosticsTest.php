@@ -9,6 +9,9 @@ use App\Audit\AuditLog;
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\Health\HealthSampler;
+use App\Core\Diagnostics\Health\HealthSlots;
+use App\Core\Diagnostics\Health\UsleepPause;
 use App\Core\Diagnostics\LockDiagnostics;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\ServerDiagnostics;
@@ -77,7 +80,7 @@ final class AuditedDiagnosticsTest extends DatabaseTestCase
         };
         $target = new TargetConnection(Engine::PostgreSql, null, $runner, static function (): void {}, diagnostics: new ServerDiagnostics(Engine::PostgreSql, $sessions, $locks));
 
-        $capabilities = (new AuditedDiagnostics(new AuditLog($events, new MockClock('2026-11-01 10:00:00 UTC')), $logger))->capabilities($target);
+        $capabilities = (new AuditedDiagnostics(new AuditLog($events, new MockClock('2026-11-01 10:00:00 UTC')), new HealthSampler(new UsleepPause()), new HealthSlots(sys_get_temp_dir().'/terrildb-test-health-slots'), $logger))->capabilities($target);
 
         self::assertSame('error', $capabilities['sessions']->availability->value);
         self::assertSame('available', $capabilities['locks']->availability->value);

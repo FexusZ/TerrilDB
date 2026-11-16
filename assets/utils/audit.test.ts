@@ -31,6 +31,8 @@ describe('audit labels', () => {
     expect(describeEvent(entry('phrase.failed'))).toBe('Phrase de récupération refusée')
     expect(describeEvent(entry('invitation.created'))).toBe('Invitation créée')
     expect(describeEvent(entry('invitation.revoked'))).toBe('Invitation révoquée')
+    expect(describeEvent(entry('account.disabled'))).toBe('Compte désactivé')
+    expect(describeEvent(entry('account.enabled'))).toBe('Compte réactivé')
   })
 
   it('tells a query that ran from one that was refused or failed', () => {
@@ -39,6 +41,11 @@ describe('audit labels', () => {
     expect(describeEvent(entry('query.prepared', { decision: 'needs_confirmation' }))).toContain('préparée')
     expect(describeEvent(entry('query.failed', { reason: 'timeout' }, { outcome: 'failed' }))).toContain('délai')
     expect(describeEvent(entry('query.failed', { reason: 'engine_error' }, { outcome: 'failed' }))).toContain('erreur')
+  })
+
+  it('describes a lint request', () => {
+    expect(describeEvent(entry('query.linted', { findings: 2 }))).toBe('Conseils de requête demandés (2)')
+    expect(describeEvent(entry('query.linted', { findings: 0 }))).toBe('Conseils de requête demandés (aucun)')
   })
 
   it('describes a change of structure, and what went wrong', () => {
@@ -72,6 +79,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'query', 'schema', 'diagnostic'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'account', 'query', 'schema', 'diagnostic'])
   })
 })

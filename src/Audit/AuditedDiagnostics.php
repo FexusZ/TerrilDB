@@ -4,10 +4,16 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Diagnostics\AccountReport;
+use App\Core\Diagnostics\ConnectionEncryption;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\DigestQuery;
 use App\Core\Diagnostics\DigestReport;
 use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
+use App\Core\Diagnostics\Health\HealthBusyException;
+use App\Core\Diagnostics\Health\HealthReport;
+use App\Core\Diagnostics\Health\HealthSampler;
+use App\Core\Diagnostics\Health\HealthSlots;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Diagnostics\VariableQuery;
@@ -24,7 +30,7 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class AuditedDiagnostics
 {
-    public function __construct(private AuditLog $audit, private LoggerInterface $logger = new NullLogger())
+    public function __construct(private AuditLog $audit, private HealthSampler $sampler, private HealthSlots $slots, private LoggerInterface $logger = new NullLogger())
     {
     }
 
@@ -104,6 +110,28 @@ final readonly class AuditedDiagnostics
     }
 
     /**
+     * Comptes et privilèges du serveur : le journal garde l'état et les nombres, jamais un nom de compte ni un droit.
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function accounts(AuditContext $context, Uuid $connectionId, TargetConnection $target): AccountReport
+    {
+        $base = ['topic' => 'accounts', 'engine' => $target->engine->value];
+
+        try {
+            $report = $target->diagnostics()->accounts()->accounts();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->accounts), 'findings' => \count($report->findings())]);
+
+        return $report;
+    }
+
+    /**
      * Ni les valeurs lues ni le texte cherché ne sont journalisés : seulement l'état, le nombre de lignes et le filtre « modifiées ».
      *
      * @throws DiagnosticsFailedException
@@ -121,6 +149,51 @@ final readonly class AuditedDiagnostics
         }
 
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->variables)]);
+
+        return $report;
+    }
+
+    /**
+     * Chiffrement de la connexion : le journal ne garde que l'état et le fait d'être chiffrée.
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function encryption(AuditContext $context, Uuid $connectionId, TargetConnection $target): ConnectionEncryption
+    {
+        $base = ['topic' => 'encryption', 'engine' => $target->engine->value];
+
+        try {
+            $encryption = $target->diagnostics()->encryption()->encryption();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => 'available', 'encrypted' => $encryption->encrypted]);
+
+        return $encryption;
+    }
+
+    /**
+     * Santé par deux relevés : le journal garde l'état, l'intervalle demandé et si la mesure a été écartée, jamais un compteur.
+     *
+     * @throws DiagnosticsFailedException
+     * @throws HealthBusyException        si le compte a déjà ses mesures en cours
+     */
+    public function health(AuditContext $context, Uuid $connectionId, TargetConnection $target, int $seconds): HealthReport
+    {
+        $base = ['topic' => 'health', 'engine' => $target->engine->value];
+
+        try {
+            $report = $this->slots->run($context->userId?->toRfc4122() ?? 'anonymous', fn (): HealthReport => $this->sampler->measure($target->diagnostics()->health(), $seconds));
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'seconds' => $seconds, 'discarded' => null !== $report->discarded]);
 
         return $report;
     }
