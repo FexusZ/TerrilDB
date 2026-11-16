@@ -27,6 +27,10 @@ use Doctrine\DBAL\Connection;
  *
  * Délais : MAX_EXECUTION_TIME (MySQL, SELECT seulement) ou max_statement_time (MariaDB, toute instruction).
  * Limite connue : sur MySQL, une écriture n'a pas de délai côté moteur.
+ *
+ * La transaction est AUSSI ouverte `READ ONLY`, sans condition : derrière Vitess, vtgate accepte le SET de session sans le
+ * transmettre et seule la transaction protège les écritures de données (#39) ; détecter Vitess par `@@version` laissait
+ * passer une version renommée ou illisible. Le SET reste, c'est lui qui fait refuser le DDL ailleurs.
  */
 final readonly class MySqlQueryRunner implements QueryRunner
 {
@@ -48,7 +52,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
         try {
             $pdo->exec('SET SESSION TRANSACTION '.($readOnly ? 'READ ONLY' : 'READ WRITE'));
             $pdo->exec($this->timeoutStatement($options->timeoutMs));
-            $pdo->exec('START TRANSACTION');
+            $pdo->exec($readOnly ? 'START TRANSACTION READ ONLY' : 'START TRANSACTION');
 
             $statement = $pdo->query($sql);
             \assert($statement instanceof \PDOStatement);
