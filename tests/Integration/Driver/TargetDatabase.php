@@ -30,6 +30,7 @@ final class TargetDatabase
         'TARGET_REPLICATED_POSTGRES_URL' => Engine::PostgreSql,
         'TARGET_SEMISYNC_MYSQL_URL' => Engine::MySql,
         'TARGET_BINLOG_MARIADB_URL' => Engine::MariaDb,
+        'TARGET_REPLICATED_CLICKHOUSE_URL' => Engine::ClickHouse,
         'TARGET_REPLICATED_REDIS_URL' => Engine::Redis,
         'TARGET_REPLICA_REDIS_URL' => Engine::Redis,
     ];
