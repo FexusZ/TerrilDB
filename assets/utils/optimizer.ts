@@ -1,5 +1,5 @@
 import type { PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
-import { formatEstimate } from './format'
+import { formatCount, formatEstimate } from './format'
 
 export interface Wording {
   title: string
@@ -31,11 +31,39 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
   }
 }
 
+function lines(count: number): string {
+  return count === 1 ? 'ligne' : 'lignes'
+}
+
 export function describePlanFinding(finding: PlanFindingInfo): string {
+  if (finding.rule === 'stale_estimate') {
+    const estimated = finding.rows === null ? 'très peu de lignes' : `${formatEstimate(finding.rows)} ${lines(finding.rows)}`
+    const actual = finding.actualRows === undefined || finding.actualRows === null ? 'un autre nombre' : `${formatCount(finding.actualRows)} ${lines(finding.actualRows)}`
+
+    return `Les statistiques de « ${finding.relation ?? 'la table'} » semblent périmées : le moteur estimait ${estimated}, il y en a eu ${actual}.`
+  }
+  if (finding.rule === 'sort_on_disk') {
+    const size = finding.actualRows === undefined || finding.actualRows === null ? '' : ` de ${formatCount(finding.actualRows)} ${lines(finding.actualRows)}`
+
+    return `Un tri${size} a débordé de la mémoire et s’est fait sur disque.`
+  }
+
   const rows = finding.rows === null ? '' : ` (${formatEstimate(finding.rows)} lignes)`
   const condition = finding.condition === null ? '' : `, filtré par ${finding.condition}`
 
   return `Parcours complet de « ${finding.relation ?? 'la table'} »${rows}${condition}. Un index sur les colonnes filtrées peut l’éviter.`
+}
+
+/** Ce qui explique un constat de plan mesuré ; rien pour les autres. */
+export function planFindingHelp(finding: PlanFindingInfo): string | null {
+  if (finding.rule === 'stale_estimate') {
+    return 'Le moteur choisit son plan d’après ses statistiques : les remettre à jour peut le changer. La commande ci-dessous est à relire ; elle n’est jamais exécutée par TerrilDB.'
+  }
+  if (finding.rule === 'sort_on_disk') {
+    return 'Un index sur la colonne de tri évite le tri ; sinon une mémoire de tri plus grande le garde en mémoire (work_mem sur PostgreSQL, sort_buffer_size sur MySQL et MariaDB).'
+  }
+
+  return null
 }
 
 const KINDS: Record<Exclude<PlanKind, 'other'>, string> = {

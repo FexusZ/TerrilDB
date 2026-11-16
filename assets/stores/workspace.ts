@@ -21,6 +21,8 @@ export interface QueryTab {
   view: 'result' | 'plan'
   plan: PlanResult | null
   planning: boolean
+  /** Une mesure réelle (EXPLAIN ANALYZE) est en cours : la requête est jouée. */
+  measuring: boolean
   /** Précision à montrer après un export (fichier coupé à la limite de lignes). */
   exportNotice: string | null
   /** Table dont cet onglet montre les données (vue « Données »), nul pour un onglet de console. */
@@ -91,7 +93,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, table: null, tableKey: null, lastSql: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, measuring: false, table: null, tableKey: null, lastSql: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -541,6 +543,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   /** Demande le plan estimé de l'instruction de l'onglet : le moteur l'explique, il ne l'exécute pas. */
   async function planTab(id: number): Promise<void> {
+    await requestPlan(id, false)
+  }
+
+  /** Demande le plan MESURÉ : la requête est jouée pour de bon (lecture seule, délai court), à la demande explicite de l'utilisateur. */
+  async function measureTab(id: number): Promise<void> {
+    await requestPlan(id, true)
+  }
+
+  async function requestPlan(id: number, measure: boolean): Promise<void> {
     const target = tab(id)
     if (!target || connectionId.value === null) {
       return
@@ -550,16 +561,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       return
     }
 
-    target.planning = true
+    if (measure) {
+      target.measuring = true
+    } else {
+      target.planning = true
+    }
     target.error = null
     try {
-      target.plan = await api<PlanResult>('POST', `/web/connections/${connectionId.value}/plan`, { sql: target.sql })
+      target.plan = await api<PlanResult>('POST', `/web/connections/${connectionId.value}/plan`, measure ? { sql: target.sql, measure: true } : { sql: target.sql })
       target.view = 'plan'
     } catch (error) {
       target.plan = null
       target.error = messageFor(error)
     } finally {
       target.planning = false
+      target.measuring = false
     }
   }
 
@@ -650,5 +666,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, measureTab, exportTab, confirmPending, cancelPending, describe }
 })

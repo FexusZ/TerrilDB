@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanFindingInfo, SchemaFinding } from '../api/types'
-import { describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
+import { describePlanFinding, describeSchemaFinding, planFindingHelp, planKindLabel } from './optimizer'
 
 const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
 
@@ -28,6 +28,27 @@ describe('optimizer wording', () => {
     expect(describePlanFinding(base)).toMatch(/Parcours complet de « orders » \(~\s?11\s?420 lignes\)/)
     expect(describePlanFinding(base)).toContain('(status = 1)')
     expect(describePlanFinding({ ...base, condition: null })).not.toContain('condition')
+  })
+
+  it('words an estimate far from the real number of rows by interpolation', () => {
+    const stale: PlanFindingInfo = { rule: 'stale_estimate', relation: 'orders', rows: 1, condition: null, actualRows: 3000, suggestion: 'ANALYZE "orders";' }
+
+    const text = describePlanFinding(stale)
+
+    expect(text).toContain('« orders »')
+    expect(text).toMatch(/estimait ~\s?1 ligne/)
+    expect(text).toMatch(/3\s?000 lignes/)
+    expect(text).toContain('statistiques')
+    expect(planFindingHelp(stale)).toContain('à relire')
+    expect(describePlanFinding({ ...stale, rows: 20000, actualRows: 1000 })).toContain('estimait ~')
+  })
+
+  it('words a sort that spilled to disk', () => {
+    const disk: PlanFindingInfo = { rule: 'sort_on_disk', relation: null, rows: 7000, condition: null, actualRows: 7000 }
+
+    expect(describePlanFinding(disk)).toMatch(/Un tri de 7\s?000 lignes a débordé de la mémoire/)
+    expect(planFindingHelp(disk)).toContain('index')
+    expect(describePlanFinding({ ...disk, actualRows: null })).toContain('Un tri a débordé')
   })
 
   it('names the kinds of operation', () => {

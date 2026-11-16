@@ -16,6 +16,18 @@ export function formatEstimate(rows: number | null): string {
   return rows === null ? '' : `~ ${NUMBER.format(rows)}`
 }
 
+/** Un nombre de lignes réel, sans le tilde des estimations. */
+export function formatCount(rows: number): string {
+  return NUMBER.format(rows)
+}
+
+const MILLISECONDS = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 3 })
+
+/** Un temps mesuré par le moteur, en millisecondes (souvent bien en dessous de la milliseconde). */
+export function formatMilliseconds(milliseconds: number): string {
+  return `${MILLISECONDS.format(milliseconds)} ms`
+}
+
 export function formatDuration(milliseconds: number): string {
   return milliseconds < 1000 ? `${String(milliseconds)} ms` : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(milliseconds / 1000)} s`
 }
