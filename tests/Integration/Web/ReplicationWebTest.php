@@ -49,7 +49,8 @@ final class ReplicationWebTest extends WebApiTestCase
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/replication');
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['status', 'role', 'replicaCount', 'settings', 'channels', 'alerts', 'thresholds'], array_keys($body));
+        // Les clés historiques restent en tête et dans le même ordre : les sections du moteur ne font que s'y ajouter.
+        self::assertSame(['status', 'role', 'replicaCount', 'settings', 'channels', 'alerts', 'thresholds'], \array_slice(array_keys($body), 0, 7));
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertSame('none', $body['role']);
         self::assertSame([], $body['channels']);
@@ -75,6 +76,7 @@ final class ReplicationWebTest extends WebApiTestCase
 
         self::assertSame(200, $this->statusCode());
         self::assertSame('none', $body['role']);
+        self::assertSame([], self::arrayOf($body['replicatedTables'])['tables']);
         self::assertSame([], $body['alerts']);
     }
 
@@ -88,6 +90,9 @@ final class ReplicationWebTest extends WebApiTestCase
         self::assertSame(200, $this->statusCode());
         self::assertSame('none', $body['role']);
         self::assertSame(0, $body['replicaCount']);
+        self::assertSame([], self::arrayOf($body['replicas'])['replicas']);
+        self::assertArrayHasKey('backlogSize', self::arrayOf($body['keyValue']));
+        self::assertArrayNotHasKey('masterHost', $body);
         self::assertSame([], $body['alerts']);
     }
 
