@@ -31,6 +31,8 @@ async function mountView(path = '/connections/abc') {
         children: [
           { path: '', name: 'workspace', component: { template: '<p class="child">éditeur</p>' } },
           { path: 'activity', name: 'server-activity', component: { template: '<p class="child">activité</p>' } },
+          { path: 'variables', name: 'server-variables', component: { template: '<p class="child">variables</p>' } },
+          { path: 'health', name: 'server-health', component: { template: '<p class="child">santé</p>' } },
           { path: 'replication', name: 'replication', component: { template: '<p class="child">réplication</p>' } },
           { path: 'audit', name: 'audit', component: { template: '<p class="child">audit</p>' } },
           { path: 'key', name: 'key', component: { template: '<p class="child">clé</p>' } },
@@ -182,21 +184,21 @@ describe('WorkspaceView', () => {
     expect(wrapper.find('.child').exists()).toBe(true)
   })
 
-  it('links to the console, the diagram, the schema audit and the server activity of a SQL connection', async () => {
+  it('links to the console, the diagram, the schema audit, the server activity and the variables of a SQL connection', async () => {
     mocked.mockImplementation(answer())
 
     const { wrapper } = await mountView()
 
     const links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Réplication'])
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit', '/connections/abc/activity', '/connections/abc/replication'])
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Variables', 'Santé', 'Réplication'])
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit', '/connections/abc/activity', '/connections/abc/variables', '/connections/abc/health', '/connections/abc/replication'])
   })
 
   it('puts the connection views on one line and the open tables, like browser tabs, on the next', async () => {
     mocked.mockImplementation(answer())
     const { wrapper } = await mountView('/connections/abc/tables/orders?database=shop')
 
-    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Réplication'])
+    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Variables', 'Santé', 'Réplication'])
     const tabs = wrapper.findAll('[role="tablist"][aria-label="Tables ouvertes"] .tab')
     expect(tabs.map((tab) => tab.get('a.label').text())).toEqual(['orders'])
     expect(tabs[0]?.classes()).toContain('on')

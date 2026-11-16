@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Diagnostics;
 
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 
 /**
@@ -17,6 +18,11 @@ final readonly class ServerDiagnostics
         private Engine $engine,
         private ?SessionDiagnostics $sessions = null,
         private ?LockDiagnostics $locks = null,
+        private ?StatementDiagnostics $statements = null,
+        private ?VariableDiagnostics $variables = null,
+        private ?HealthDiagnostics $health = null,
+        private ?AccountDiagnostics $accounts = null,
+        private ?EncryptionDiagnostics $encryption = null,
         private ?ReplicationDiagnostics $replication = null,
     ) {
     }
@@ -40,22 +46,77 @@ final readonly class ServerDiagnostics
     /**
      * @throws UnsupportedOperationException
      */
+    public function statements(): StatementDiagnostics
+    {
+        return $this->statements ?? throw UnsupportedOperationException::for($this->engine, 'statements');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function accounts(): AccountDiagnostics
+    {
+        return $this->accounts ?? throw UnsupportedOperationException::for($this->engine, 'accounts');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function variables(): VariableDiagnostics
+    {
+        return $this->variables ?? throw UnsupportedOperationException::for($this->engine, 'variables');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function encryption(): EncryptionDiagnostics
+    {
+        return $this->encryption ?? throw UnsupportedOperationException::for($this->engine, 'encryption');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
     public function replication(): ReplicationDiagnostics
     {
         return $this->replication ?? throw UnsupportedOperationException::for($this->engine, 'replication');
     }
 
     /**
-     * Ce que chaque thème peut lire, sans lire les données.
+     * @throws UnsupportedOperationException
+     */
+    public function health(): HealthDiagnostics
+    {
+        return $this->health ?? throw UnsupportedOperationException::for($this->engine, 'health');
+    }
+
+    /**
+     * Ce que chaque thème peut lire, sans lire les données. Un thème dont la vérification échoue pour une cause imprévue rend
+     * l'état « erreur » sans masquer les autres ; `$onFailure` reçoit son nom et l'exception (pour la consigner, jamais la montrer).
+     *
+     * @param \Closure(string, DiagnosticsFailedException): void|null $onFailure
      *
      * @return array<string, DiagnosticStatus>
      */
-    public function capabilities(): array
+    public function capabilities(?\Closure $onFailure = null): array
     {
-        return [
-            'sessions' => $this->sessions?->status() ?? DiagnosticStatus::unsupported(),
-            'locks' => $this->locks?->status() ?? DiagnosticStatus::unsupported(),
-            'replication' => $this->replication?->status() ?? DiagnosticStatus::unsupported(),
-        ];
+        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption, 'health' => $this->health, 'replication' => $this->replication];
+        $capabilities = [];
+        foreach ($themes as $name => $theme) {
+            if (null === $theme) {
+                $capabilities[$name] = DiagnosticStatus::unsupported();
+
+                continue;
+            }
+            try {
+                $capabilities[$name] = $theme->status();
+            } catch (DiagnosticsFailedException $e) {
+                null === $onFailure || $onFailure($name, $e);
+                $capabilities[$name] = DiagnosticStatus::failed();
+            }
+        }
+
+        return $capabilities;
     }
 }

@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace App\Core\Schema\Change;
 
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
+use App\Core\Sql\SqlText;
 
 /**
- * Ce qu'on accepte comme nom de table, de colonne, d'index ou de contrainte : non vide, 128 caractères au plus, sans NUL ni
- * saut de ligne. Le reste (espaces, accents, guillemets) est permis : le dialecte met le nom entre guillemets et double ceux
+ * Ce qu'on accepte comme nom de table, de colonne, d'index ou de contrainte : non vide, 128 caractères au plus, sans contrôle (NUL compris), séparateur
+ * de ligne (LF, CR, NEL, U+2028, U+2029) ni contrôle bidirectionnel, en UTF-8 valide. Le reste (espaces, accents, guillemets) est permis : le dialecte met le nom entre guillemets et double ceux
  * qu'il contient.
  */
 final class NameRule
@@ -26,8 +27,8 @@ final class NameRule
         if (mb_strlen($name) > self::MAX_LENGTH) {
             throw new InvalidSchemaChangeException(\sprintf('The %s name is too long.', $what));
         }
-        if (1 === preg_match('/[\x00-\x1F\x7F]/', $name)) {
-            throw new InvalidSchemaChangeException(\sprintf('The %s name contains a control character.', $what));
+        if (!SqlText::isSafeName($name)) {
+            throw new InvalidSchemaChangeException(\sprintf('The %s name contains a control character, a line separator or invalid text.', $what));
         }
 
         return $name;

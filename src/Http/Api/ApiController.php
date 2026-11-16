@@ -8,19 +8,28 @@ use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
+use App\Audit\AuditedScripts;
+use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\DiagnosticsPresenter;
+use App\Http\Json\DigestQueryParam;
+use App\Http\Json\HealthInterval;
 use App\Http\Json\JsonInput;
+use App\Http\Json\PreparedWritePresenter;
+use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
 use App\Http\Json\SchemaPresenter;
+use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
+use App\Http\Json\VariableQueryParser;
 use App\Http\Web\TokenPresenter;
 use App\Http\Web\UserPresenter;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -44,6 +53,9 @@ final readonly class ApiController
         private AuditedQueries $queries,
         private TokenConnections $created,
         private AuditedDiagnostics $diagnostics,
+        private RequestTimeLimit $limit,
+        private WriteApproval $approval,
+        private AuditedScripts $scripts,
     ) {
     }
 
@@ -107,7 +119,7 @@ final readonly class ApiController
         $defaults = new QueryOptions();
         $options = new QueryOptions(
             QueryMode::ReadOnly,
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
@@ -124,11 +136,18 @@ final readonly class ApiController
         $confirmed = $input->bool('confirmed', false);
         $defaults = new QueryOptions();
         $options = $this->request->get()->writeOptions(
-            $input->optionalInt('timeoutMs', $defaults->timeoutMs) ?? $defaults->timeoutMs,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
         );
 
-        $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options, $confirmed));
+        $confirmation = $input->optionalString('confirmationToken');
+
+        $result = $this->open($id, function (TargetConnection $target) use ($id, $sql, $options, $confirmed, $confirmation) {
+            $context = $this->request->auditContext(AuditActor::Api);
+            $this->approval->authorize($this->request->get(), $context, Uuid::fromString($id), $target, $sql, $confirmation, $confirmed);
+
+            return $this->queries->execute($context, Uuid::fromString($id), $target, $sql, $options, $confirmed);
+        });
 
         return new JsonResponse(ResultPresenter::present($result));
     }
@@ -140,7 +159,7 @@ final readonly class ApiController
     public function diagnostics(string $id): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $capabilities = $this->open($id, static fn (TargetConnection $target): array => $target->diagnostics()->capabilities());
+        $capabilities = $this->open($id, fn (TargetConnection $target): array => $this->diagnostics->capabilities($target));
 
         return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
     }
@@ -170,16 +189,119 @@ final readonly class ApiController
     }
 
     /**
-     * L'état de la réplication du serveur de la connexion (rôle, fils, retard, dernière erreur, alertes), en lecture seule : aucune
-     * instruction de réplication (START, STOP, CHANGE) n'est jamais envoyée.
+     * Comptes, rôles et privilèges du serveur, avec l'audit de sécurité : lecture seule, jamais une empreinte de mot de passe.
      */
-    #[Route('/api/v1/connections/{id}/diagnostics/replication', requirements: self::ID, methods: ['GET'])]
-    public function replication(string $id): JsonResponse
+    #[Route('/api/v1/connections/{id}/diagnostics/accounts', requirements: self::ID, methods: ['GET'])]
+    public function accounts(string $id): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
 
-        return new JsonResponse(DiagnosticsPresenter::replication($report));
+        return new JsonResponse(DiagnosticsPresenter::accounts($report));
+    }
+
+    /**
+     * Si la connexion de TerrilDB vers la cible est chiffrée (protocole, suite) : une observation, rien ne change.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/encryption', requirements: self::ID, methods: ['GET'])]
+    public function encryption(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $encryption = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
+    }
+
+    /**
+     * Santé du serveur sur un intervalle (`?seconds=`, 1 à 30, 5 par défaut) : deux relevés de compteurs, des taux par seconde et des
+     * repères. Aucun historique ; la requête dure l'intervalle.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/health', requirements: self::ID, methods: ['GET'])]
+    public function health(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $seconds = HealthInterval::parse($request->query->get('seconds'));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $seconds));
+
+        return new JsonResponse(DiagnosticsPresenter::health($report));
+    }
+
+    /**
+     * Les requêtes les plus coûteuses du serveur de la connexion, par empreinte : texte normalisé, jamais les valeurs.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/queries', requirements: self::ID, methods: ['GET'])]
+    public function queries(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $query = DigestQueryParam::fromQuery($request);
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+
+        return new JsonResponse(DiagnosticsPresenter::statements($report));
+    }
+
+    /**
+     * Les variables de configuration du serveur de la connexion, en lecture seule : aucun SET, la valeur d'un secret jamais servie.
+     * Paramètres `q` (morceau de nom), `changed` (1 = seulement celles qui diffèrent du défaut), `limit` (1 à 500).
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/variables', requirements: self::ID, methods: ['GET'])]
+    public function variables(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $query = VariableQueryParser::fromRequest($request);
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+
+        return new JsonResponse(DiagnosticsPresenter::variables($report));
+    }
+
+    /**
+     * Première étape d'une écriture : juge l'instruction sans l'exécuter et rend un jeton de confirmation, lié à ce texte exact,
+     * à cette connexion et à ce jeton d'API, à usage unique et valable cinq minutes.
+     */
+    #[Route('/api/v1/connections/{id}/prepare', requirements: self::ID, methods: ['POST'])]
+    public function prepare(string $id, Request $request): JsonResponse
+    {
+        $sql = JsonInput::fromRequest($request)->string('sql');
+
+        $prepared = $this->open($id, fn (TargetConnection $target) => $this->approval->prepare($this->request->get(), $this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql));
+
+        return new JsonResponse(PreparedWritePresenter::present($prepared));
+    }
+
+    /**
+     * Un script entier, en deux temps TOUJOURS (même pour un jeton « une seule étape ») : `script/prepare` juge chaque instruction
+     * avec les droits du jeton et rend UN jeton de confirmation lié au texte exact ; `script/execute` l'exige.
+     */
+    #[Route('/api/v1/connections/{id}/script/prepare', requirements: self::ID, methods: ['POST'])]
+    public function prepareScript(string $id, Request $request): JsonResponse
+    {
+        $script = JsonInput::fromRequest($request)->string('script');
+
+        $prepared = $this->open($id, fn (TargetConnection $target) => $this->approval->prepareScript($this->request->get(), $this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $script));
+
+        return new JsonResponse(PreparedWritePresenter::script($prepared));
+    }
+
+    #[Route('/api/v1/connections/{id}/script/execute', requirements: self::ID, methods: ['POST'])]
+    public function executeScript(string $id, Request $request): JsonResponse
+    {
+        $input = JsonInput::fromRequest($request);
+        $script = $input->string('script');
+        $confirmed = $input->bool('confirmed', false);
+        $confirmation = $input->optionalString('confirmationToken');
+        $options = new ScriptOptions(
+            $this->request->get()->writeOptions(QueryOptions::MIN_TIMEOUT_MS, 1)->writes,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), ScriptOptions::DEFAULT_TIMEOUT_MS),
+            $input->bool('dryRun', false),
+        );
+
+        $run = $this->open($id, function (TargetConnection $target) use ($id, $script, $options, $confirmed, $confirmation) {
+            $context = $this->request->auditContext(AuditActor::Api);
+            $this->approval->authorizeScript($this->request->get(), $context, Uuid::fromString($id), $target, $script, $confirmation, $confirmed);
+
+            return $this->scripts->execute($context, Uuid::fromString($id), $target, $script, $options, $confirmed);
+        });
+
+        return new JsonResponse(ScriptPresenter::result($run->result, $run->executionId->toRfc4122()));
     }
 
     /**
@@ -198,5 +320,18 @@ final readonly class ApiController
         }
 
         return $this->targets->with($access->user, $access->key, $connectionId, $action);
+    }
+
+    /**
+     * L'état de la réplication du serveur de la connexion (rôle, fils, retard, dernière erreur, alertes), en lecture seule : aucune
+     * instruction de réplication (START, STOP, CHANGE) n'est jamais envoyée.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/replication', requirements: self::ID, methods: ['GET'])]
+    public function replication(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::replication($report));
     }
 }

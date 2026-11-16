@@ -87,9 +87,9 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertSame('table', $table['kind']);
         $columns = self::arrayOf($table['columns']);
         self::assertSame(['id', 'order_id', 'line_no', 'product_id', 'quantity', 'unit_price_cents'], array_column($columns, 'name'));
-        self::assertSame(['name', 'type', 'nullable', 'default', 'autoIncrement', 'comment'], array_keys(self::arrayOf($columns[0])));
+        self::assertSame(['name', 'type', 'nullable', 'default', 'autoIncrement', 'comment', 'lock'], array_keys(self::arrayOf($columns[0])));
         $indexes = self::arrayOf($table['indexes']);
-        self::assertSame(['name', 'columns', 'unique', 'primary', 'sizeBytes'], array_keys(self::arrayOf($indexes[0])));
+        self::assertSame(['name', 'columns', 'unique', 'primary', 'sizeBytes', 'lock'], array_keys(self::arrayOf($indexes[0])));
         self::assertGreaterThan(0, $table['dataBytes']);
         self::assertGreaterThan(0, $table['indexBytes']);
         $foreignKeys = self::arrayOf($table['foreignKeys']);
@@ -225,6 +225,19 @@ final class SchemaQueryWebTest extends WebApiTestCase
 
         $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 5]);
         self::assertSame(400, $this->statusCode());
+    }
+
+    public function testADurationAboveWhatTheProxyAllowsIsRefusedNotCutOff(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->query($id, 'select 1', ['timeoutMs' => 100_001]);
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('invalid_input', $body['error']);
+
+        $this->query($id, 'select 1', ['timeoutMs' => 100_000]);
+        self::assertSame(200, $this->statusCode());
     }
 
     public function testASlowQueryIsStopped(): void

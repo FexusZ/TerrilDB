@@ -8,6 +8,7 @@ use App\Audit\AuditedQueries;
 use App\Core\Driver\TargetConnection;
 use App\Core\Optimizer\PlanAnalyzer;
 use App\Core\Optimizer\PlanService;
+use App\Core\Optimizer\StatementLimit;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Http\Json\JsonInput;
@@ -28,6 +29,7 @@ final readonly class PlanController
         private AuditedQueries $queries,
         private PlanService $plans,
         private PlanAnalyzer $analyzer,
+        private StatementLimit $limits,
         private WebSession $session,
     ) {
     }
@@ -38,8 +40,10 @@ final readonly class PlanController
         $sql = JsonInput::fromRequest($request)->string('sql');
         $uuid = Uuid::fromString($id);
 
-        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid) {
+        $limited = false;
+        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, &$limited) {
             $statement = $this->plans->statementFor($target->engine, $sql);
+            $limited = $this->limits->has($target->engine, $sql);
             $result = $this->queries->execute(
                 $this->session->auditContext(),
                 $uuid,
@@ -53,6 +57,6 @@ final readonly class PlanController
             return $this->plans->parse($target->engine, $result);
         });
 
-        return new JsonResponse(PlanPresenter::present($plan, $this->analyzer->analyze($plan)));
+        return new JsonResponse(PlanPresenter::present($plan, $this->analyzer->analyze($plan, $limited)));
     }
 }
