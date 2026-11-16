@@ -31,8 +31,8 @@ final class MeasureSlotsTest extends TestCase
     {
         $slots = new MeasureSlots($this->directory);
 
-        $result = $slots->run('alice', function () use ($slots): string {
-            return $slots->run('alice', function () use ($slots): string {
+        $result = $slots->run('alice', static function () use ($slots): string {
+            return $slots->run('alice', static function () use ($slots): string {
                 try {
                     $slots->run('alice', static fn (): string => 'never');
                     self::fail('The third measure should be refused.');
@@ -50,10 +50,15 @@ final class MeasureSlotsTest extends TestCase
     public function testAnotherAccountKeepsItsCapacity(): void
     {
         $slots = new MeasureSlots($this->directory);
+        $bob = '';
 
-        $result = $slots->run('alice', fn (): string => $slots->run('alice', fn (): string => $slots->run('bob', static fn (): string => 'bob')));
+        $slots->run('alice', static function () use ($slots, &$bob): void {
+            $slots->run('alice', static function () use ($slots, &$bob): void {
+                $bob = $slots->run('bob', static fn (): string => 'bob');
+            });
+        });
 
-        self::assertSame('bob', $result);
+        self::assertSame('bob', $bob);
     }
 
     public function testThePlaceIsFreedAfterTheEnd(): void
@@ -67,13 +72,25 @@ final class MeasureSlotsTest extends TestCase
     public function testThePlaceIsFreedWhenTheWorkFails(): void
     {
         $slots = new MeasureSlots($this->directory);
-        for ($i = 0; $i < 4; ++$i) {
+        $failures = 0;
+        foreach ([1, 2, 3, 4] as $now) {
             try {
-                $slots->run('alice', static fn () => throw new \LogicException('timeout'));
-            } catch (\LogicException) {
+                $slots->run('alice', static fn (): string => self::explode($now));
+            } catch (\LogicException) { // @phpstan-ignore catch.neverThrown (la fermeture lève, run() ne le déclare pas)
+                ++$failures;
             }
         }
 
+        self::assertSame(4, $failures);
         self::assertSame('free', $slots->run('alice', static fn (): string => 'free'));
+    }
+
+    private static function explode(int $now): string
+    {
+        if ($now > 0) {
+            throw new \LogicException('timeout');
+        }
+
+        return 'fine';
     }
 }

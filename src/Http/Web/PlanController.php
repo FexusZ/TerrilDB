@@ -9,6 +9,7 @@ use App\Core\Diagnostics\QueryText;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\GuardReason;
 use App\Core\Guard\SqlDialect;
+use App\Core\Optimizer\MeasureSlots;
 use App\Core\Optimizer\PlanAnalyzer;
 use App\Core\Optimizer\PlanService;
 use App\Core\Optimizer\QueryPlan;
@@ -52,6 +53,7 @@ final readonly class PlanController
         private PlanService $plans,
         private PlanAnalyzer $analyzer,
         private WritePlanAdvisor $writeAdvisor,
+        private MeasureSlots $slots,
         private WebSession $session,
     ) {
     }
@@ -75,7 +77,10 @@ final readonly class PlanController
             $engine = $target->engine;
             $measured = null !== $timeout && $this->plans->canMeasure($target->engine);
             if ($measured) {
-                return $this->measured($uuid, $target, $sql, $write, (int) $timeout);
+                $context = $this->session->auditContext();
+
+                // Une mesure rejoue la requête et tient un processus jusqu'au délai : deux à la fois par compte, place rendue en toute fin.
+                return $this->slots->run((string) ($context->userId ?? $context->ip), fn (): QueryPlan => $this->measured($uuid, $target, $sql, $write, (int) $timeout));
             }
 
             $statement = $write ? $this->plans->statementForWrite($target->engine, $sql) : $this->plans->statementFor($target->engine, $sql);

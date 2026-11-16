@@ -23,6 +23,7 @@ use App\Core\Driver\Exception\UnsupportedEngineException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\Exception\InvalidKeyException;
 use App\Core\KeyValue\Exception\KeyNotFoundException;
+use App\Core\Optimizer\Exception\MeasureBusyException;
 use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
@@ -67,6 +68,7 @@ final class ErrorMapper
             $error instanceof SecondFactorRequiredException => new ErrorResponse(401, 'second_factor_required'),
             $error instanceof InvalidSecondFactorException => new ErrorResponse(401, 'invalid_second_factor'),
             $error instanceof LockedException, $error instanceof CryptoException => new ErrorResponse(401, 'locked'),
+            $error instanceof MeasureBusyException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
             $error instanceof TooManyAttemptsException => new ErrorResponse(429, 'too_many_attempts', ['retryAfter' => $error->retryAfter], ['Retry-After' => (string) $error->retryAfter]),
             $error instanceof BadRequestException => new ErrorResponse(400, 'bad_request', ['message' => $error->getMessage()]),
             $error instanceof PasswordPolicyException => new ErrorResponse(422, 'weak_password', ['message' => $error->getMessage()]),

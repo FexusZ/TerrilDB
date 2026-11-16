@@ -383,4 +383,41 @@ final class MeasuredPlanWebTest extends WebApiTestCase
 
         self::assertSame(401, $this->statusCode());
     }
+
+    public function testAThirdSimultaneousMeasureOfTheAccountGets429AndThePlaceComesBack(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL');
+        $slots = self::getContainer()->get(\App\Core\Optimizer\MeasureSlots::class);
+        self::assertInstanceOf(\App\Core\Optimizer\MeasureSlots::class, $slots);
+        $owner = (string) $this->auditUser()->getId();
+
+        // Deux mesures du compte sont « en cours » : la requête arrive pendant qu'elles tiennent leurs places.
+        $slots->run($owner, function () use ($slots, $owner): void {
+            $slots->run($owner, function () use ($slots): void {
+                $body = $this->measure('select 1');
+                self::assertSame(429, $this->statusCode());
+                self::assertSame('too_many_attempts', $body['error']);
+                self::assertNotNull($this->client->getResponse()->headers->get('Retry-After'));
+
+                // Un autre compte garde sa capacité.
+                $slots->run('someone-else', static fn (): null => null);
+            });
+        });
+
+        $this->measure('select 1');
+        self::assertSame(200, $this->statusCode(), 'the place is free again');
+    }
+
+    public function testAFailedMeasureFreesItsPlace(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL');
+
+        for ($i = 0; $i < 4; ++$i) {
+            $this->measure('select * from nonexistent_table_'.$i);
+            self::assertSame(400, $this->statusCode());
+        }
+
+        $this->measure('select 1');
+        self::assertSame(200, $this->statusCode());
+    }
 }
