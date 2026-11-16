@@ -7,6 +7,7 @@ namespace App\Core\Optimizer;
 use App\Core\Connection\Engine;
 use App\Core\Guard\SqlDialect;
 use App\Core\Guard\SqlScanner;
+use App\Core\Schema\TableDefinition;
 
 /**
  * Lit le TEXTE d'une lecture et signale des motifs connus pour ralentir une requête ou la rendre fragile : fonction ou
@@ -51,6 +52,9 @@ final class QueryLinter
         'LEFT', 'RIGHT', 'FULL', 'CROSS', 'NATURAL', 'SELECT', 'FROM', 'WITH', 'RETURNING', 'USING', 'STRAIGHT_JOIN', 'LOCK',
     ];
 
+    /** Ce qui peut suivre le nom (et l'alias) de la table d'une requête simple. */
+    private const TABLE_ENDS = ['WHERE', 'GROUP', 'ORDER', 'HAVING', 'LIMIT', 'OFFSET', 'FETCH', 'FOR', 'WINDOW', 'LOCK'];
+
     /**
      * Le texte est UNE lecture que le linter juge (SELECT, ou WITH … SELECT), sur un moteur SQL. Tout le reste (écriture,
      * plusieurs instructions, texte incomplet, commentaire exécutable) n'est pas jugé : `lint()` n'y dit rien.
@@ -88,9 +92,12 @@ final class QueryLinter
     }
 
     /**
+     * @param (\Closure(string): ?TableDefinition)|null $tables rend la structure d'une table (lue au plus une fois, et seulement pour une
+     *                                                          requête sur UNE table que la règle examinée a besoin de connaître) ; absent : texte seul
+     *
      * @return list<LintFinding>
      */
-    public function lint(Engine $engine, string $sql): array
+    public function lint(Engine $engine, string $sql, ?\Closure $tables = null): array
     {
         $spans = [];
         $dialect = $this->judgedDialect($engine, $sql, $spans);
@@ -106,8 +113,9 @@ final class QueryLinter
         $clickhouse = Engine::ClickHouse === $engine;
         $findings = [];
         if (!$clickhouse) {
+            $scope = null === $tables ? null : $this->scope($tokens, $tables);
             foreach ($this->conditions($tokens) as [$from, $to]) {
-                $finding = $this->checkCondition(\array_slice($tokens, $from, $to - $from), $dialect);
+                $finding = $this->checkCondition(\array_slice($tokens, $from, $to - $from), $dialect, $scope);
                 if (null !== $finding) {
                     $findings[] = $finding;
                 }
@@ -295,7 +303,7 @@ final class QueryLinter
     /**
      * @param list<LintToken> $slice
      */
-    private function checkCondition(array $slice, SqlDialect $dialect): ?LintFinding
+    private function checkCondition(array $slice, SqlDialect $dialect, ?LintScope $scope): ?LintFinding
     {
         while (isset($slice[0]) && ($slice[0]->isPunct('(') || $slice[0]->isWord('NOT'))) {
             array_shift($slice);
@@ -304,13 +312,13 @@ final class QueryLinter
             return null;
         }
 
-        return $this->checkFunction($slice, $dialect) ?? $this->checkArithmetic($slice, $dialect) ?? $this->checkLike($slice);
+        return $this->checkFunction($slice, $dialect, $scope) ?? $this->checkArithmetic($slice, $dialect, $scope) ?? $this->checkLike($slice, $dialect, $scope);
     }
 
     /**
      * @param list<LintToken> $slice
      */
-    private function checkFunction(array $slice, SqlDialect $dialect): ?LintFinding
+    private function checkFunction(array $slice, SqlDialect $dialect, ?LintScope $scope): ?LintFinding
     {
         if (!$slice[0]->isWord(...self::FUNCTIONS) || !($slice[1] ?? null)?->isPunct('(')) {
             return null;
@@ -336,8 +344,12 @@ final class QueryLinter
                 return null;
             }
         }
-        $column = $this->firstColumn($arguments);
+        [$column, $qualifier] = $this->firstColumn($arguments);
         if (null === $column) {
+            return null;
+        }
+        $check = $scope?->check($column, $qualifier);
+        if (null !== $check && $check->known && null === $check->index) {
             return null;
         }
         $function = strtoupper($slice[0]->text);
@@ -345,7 +357,9 @@ final class QueryLinter
         return new LintFinding(
             LintRule::FunctionOnColumn,
             Severity::Warning,
-            \sprintf('%s() appliqué à la colonne « %s » dans une condition : un index sur cette colonne ne peut pas servir à la rechercher.', $function, $column),
+            null !== $check?->index
+                ? \sprintf('%s() appliqué à la colonne « %s » : l\'index « %s » ne pourra pas servir à cette condition.', $function, $column, $check->index)
+                : \sprintf('%s() appliqué à la colonne « %s » dans une condition : un index sur cette colonne ne peut pas servir à la rechercher.', $function, $column),
             match ($dialect) {
                 SqlDialect::PostgreSql => 'Comparer la colonne seule (par exemple une plage semi-ouverte pour une date), ou créer un index sur expression. Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.',
                 default => 'Comparer la colonne seule (par exemple une plage semi-ouverte pour une date), ou créer un index fonctionnel (MySQL 8) ou une colonne générée indexée. Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.',
@@ -357,9 +371,9 @@ final class QueryLinter
     /**
      * @param list<LintToken> $slice
      */
-    private function checkArithmetic(array $slice, SqlDialect $dialect): ?LintFinding
+    private function checkArithmetic(array $slice, SqlDialect $dialect, ?LintScope $scope): ?LintFinding
     {
-        [$column, $next] = $this->columnAt($slice, 0);
+        [$column, $next, $qualifier] = $this->columnAt($slice, 0);
         if (null === $column) {
             return null;
         }
@@ -384,10 +398,17 @@ final class QueryLinter
             return null;
         }
 
+        $check = $scope?->check($column, $qualifier);
+        if (null !== $check && $check->known && null === $check->index) {
+            return null;
+        }
+
         return new LintFinding(
             LintRule::ArithmeticOnColumn,
             Severity::Warning,
-            \sprintf('Un calcul sur la colonne « %s » dans une condition : un index sur cette colonne ne peut pas servir à la rechercher.', $column),
+            null !== $check?->index
+                ? \sprintf('Un calcul sur la colonne « %s » : l\'index « %s » ne pourra pas servir à cette condition.', $column, $check->index)
+                : \sprintf('Un calcul sur la colonne « %s » dans une condition : un index sur cette colonne ne peut pas servir à la rechercher.', $column),
             'Isoler la colonne d\'un côté de la comparaison (déplacer le calcul vers la valeur comparée). Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.',
             [$column],
         );
@@ -396,9 +417,9 @@ final class QueryLinter
     /**
      * @param list<LintToken> $slice
      */
-    private function checkLike(array $slice): ?LintFinding
+    private function checkLike(array $slice, SqlDialect $dialect, ?LintScope $scope): ?LintFinding
     {
-        [$column, $next] = $this->columnAt($slice, 0);
+        [$column, $next, $qualifier] = $this->columnAt($slice, 0);
         if (null === $column) {
             return null;
         }
@@ -413,10 +434,21 @@ final class QueryLinter
             return null;
         }
 
+        $check = $scope?->check($column, $qualifier);
+        if (null !== $check && $check->known && null === $check->index) {
+            return null;
+        }
+        // PostgreSQL : un index trigramme (pg_trgm) sert un joker en tête, et le modèle ne dit pas l'opérateur d'un index btree ou non.
+        $caveat = null !== $check?->index && SqlDialect::PostgreSql === $dialect;
+
         return new LintFinding(
             LintRule::LeadingWildcard,
-            Severity::Warning,
-            \sprintf('LIKE avec un joker en tête sur « %s » : un index ordinaire ne peut pas servir, la recherche lit toute la colonne.', $column),
+            $caveat ? Severity::Info : Severity::Warning,
+            match (true) {
+                $caveat => \sprintf('LIKE avec un joker en tête sur « %s » (index « %s ») : un index btree ordinaire ne peut pas servir ; un index trigramme (pg_trgm) le pourrait, auquel cas il n\'y a rien à changer.', $column, $check->index),
+                null !== $check?->index => \sprintf('LIKE avec un joker en tête sur « %s » : l\'index « %s » ne pourra pas servir à cette recherche, elle lit toute la colonne.', $column, $check->index),
+                default => \sprintf('LIKE avec un joker en tête sur « %s » : un index ordinaire ne peut pas servir, la recherche lit toute la colonne.', $column),
+            },
             'Si la recherche porte sur un mot ou une sous-chaîne : plein texte (FULLTEXT en MySQL/MariaDB, index trigramme pg_trgm en PostgreSQL). Si la fin du texte compte : un index sur la valeur inversée. Un préfixe (\'abc%\') garde l\'index.',
             [$column],
         );
@@ -575,21 +607,23 @@ final class QueryLinter
      * Le nom de la première colonne lue dans une suite de mots (mot qui n'est ni un appel, ni un mot réservé, ni une variable).
      *
      * @param list<LintToken> $tokens
+     *
+     * @return array{?string, ?string} le nom et le qualificatif (table ou alias) de la colonne
      */
-    private function firstColumn(array $tokens): ?string
+    private function firstColumn(array $tokens): array
     {
         for ($i = 0, $count = \count($tokens); $i < $count; ++$i) {
             $before = $tokens[$i - 1] ?? null;
             if (null !== $before && (\in_array($before->text, ['@', ':', '$'], true) && LintToken::PUNCT === $before->kind)) {
                 continue;
             }
-            [$column] = $this->columnAt($tokens, $i);
+            [$column, , $qualifier] = $this->columnAt($tokens, $i);
             if (null !== $column) {
-                return $column;
+                return [$column, $qualifier];
             }
         }
 
-        return null;
+        return [null, null];
     }
 
     /**
@@ -597,29 +631,95 @@ final class QueryLinter
      *
      * @param list<LintToken> $tokens
      *
-     * @return array{?string, int}
+     * @return array{?string, int, ?string} le nom, la position qui suit et le qualificatif (l'élément juste avant le nom)
      */
     private function columnAt(array $tokens, int $at): array
     {
         $i = $at;
-        $name = null;
+        $before = null;
         while (isset($tokens[$i])) {
             $token = $tokens[$i];
             $isName = LintToken::IDENT === $token->kind || (LintToken::WORD === $token->kind && !\in_array($token->upper, self::NOT_COLUMNS, true));
             if (!$isName || ($tokens[$i + 1] ?? null)?->isPunct('(')) {
-                return [null, $at];
+                return [null, $at, null];
             }
-            $name = $token->text;
             ++$i;
             if (($tokens[$i] ?? null)?->isPunct('.')) {
                 ++$i;
+                $before = $token->text;
 
                 continue;
             }
 
-            return [$name, $i];
+            return [$token->text, $i, $before];
         }
 
-        return [null, $at];
+        return [null, $at, null];
+    }
+
+    /**
+     * La table d'une requête SIMPLE : un seul SELECT, une seule table nommée dans FROM (alias permis, sans schéma), ni jointure, ni
+     * UNION, ni CTE, ni sous-requête. Tout le reste n'a pas de portée : le texte seul est jugé, sans croiser avec la structure.
+     *
+     * @param list<LintToken>                    $tokens
+     * @param \Closure(string): ?TableDefinition $loader
+     */
+    private function scope(array $tokens, \Closure $loader): ?LintScope
+    {
+        $selects = 0;
+        foreach ($tokens as $token) {
+            if ($token->isWord('SELECT')) {
+                ++$selects;
+            } elseif ($token->isWord('WITH', 'UNION', 'INTERSECT', 'EXCEPT', 'JOIN', 'STRAIGHT_JOIN', 'LATERAL', 'APPLY')) {
+                return null;
+            }
+        }
+        if (1 !== $selects || !$tokens[0]->isWord('SELECT')) {
+            return null;
+        }
+
+        $depth = 0;
+        $from = null;
+        foreach ($tokens as $i => $token) {
+            if ($token->isPunct('(')) {
+                ++$depth;
+            } elseif ($token->isPunct(')')) {
+                $depth = max(0, $depth - 1);
+            } elseif (0 === $depth && $token->isWord('FROM')) {
+                $distinctFrom = ($tokens[$i - 1] ?? null)?->isWord('DISTINCT') && ($tokens[$i - 2] ?? null)?->isWord('IS', 'NOT');
+                if (!$distinctFrom) {
+                    $from = $i;
+
+                    break;
+                }
+            }
+        }
+        $name = null === $from ? null : ($tokens[$from + 1] ?? null);
+        if (null === $name || !(LintToken::IDENT === $name->kind || (LintToken::WORD === $name->kind && !$name->isWord(...self::NOT_COLUMNS, ...self::CLAUSE_ENDS)))) {
+            return null;
+        }
+        $names = [strtolower($name->text)];
+        $next = $from + 2;
+        $after = $tokens[$next] ?? null;
+        if (null !== $after && ($after->isPunct('.') || $after->isPunct('('))) {
+            return null;
+        }
+        if (null !== $after && $after->isWord('AS')) {
+            $alias = $tokens[$next + 1] ?? null;
+            if (null === $alias || !(LintToken::IDENT === $alias->kind || LintToken::WORD === $alias->kind)) {
+                return null;
+            }
+            $names[] = strtolower($alias->text);
+            $next += 2;
+        } elseif (null !== $after && (LintToken::IDENT === $after->kind || (LintToken::WORD === $after->kind && !$after->isWord(...self::TABLE_ENDS)))) {
+            $names[] = strtolower($after->text);
+            ++$next;
+        }
+        $end = $tokens[$next] ?? null;
+        if (null !== $end && !$end->isPunct(';') && !$end->isWord(...self::TABLE_ENDS)) {
+            return null;
+        }
+
+        return new LintScope($name->text, $names, $loader);
     }
 }
