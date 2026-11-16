@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { ApiError } from '../api/client'
 import { messageFor } from '../api/errors'
+import { algorithmDetail, algorithmPill, copyWarning } from '../utils/alterAlgorithm'
 import { describeHolder, describeStatus } from '../utils/diagnostics'
 import { formatBytes } from '../utils/format'
 import { lockShort } from '../utils/lock'
@@ -298,6 +299,7 @@ async function validate(): Promise<void> {
 
 const needsName = computed(() => preview.value?.bigTable.level === 'confirm_name')
 const nameTyped = computed(() => typedName.value === props.table.name)
+const copyNote = computed(() => (preview.value === null ? null : copyWarning(preview.value.statements, preview.value.bigTable, props.engine)))
 const bigTableNote = computed(() => {
   const big = preview.value?.bigTable
   if (preview.value === null || big === undefined || preview.value.statements.length === 0) {
@@ -398,6 +400,8 @@ const dropLosses = computed(() => (dropping.value?.losses ?? []).map(lossSentenc
         <li v-for="(statement, position) in preview.statements" :key="position" :class="{ destructive: statement.destructive }">
           <code>{{ statement.sql }};</code>
           <span v-if="statement.destructive" class="tag danger">détruit</span>
+          <span v-if="algorithmPill(statement)" class="tag algo" :class="algorithmPill(statement)?.tone" data-test="algorithm" :title="algorithmDetail(statement) ?? undefined">{{ algorithmPill(statement)?.label }}</span>
+          <small v-if="algorithmDetail(statement)" class="algo-note" data-test="algorithm-note">{{ algorithmDetail(statement) }}</small>
         </li>
       </ul>
       <p v-else-if="preview" class="hint" role="status">Ces modifications ne changent rien dans la base.</p>
@@ -411,6 +415,7 @@ const dropLosses = computed(() => (dropping.value?.losses ?? []).map(lossSentenc
         </template>
         <p v-else>Aucune transaction ouverte ne tient cette table.</p>
       </div>
+      <p v-if="copyNote" class="warn" role="status" data-test="copy-warning">{{ copyNote }}</p>
       <p v-if="bigTableNote" class="warn" :class="{ danger: needsName }" role="status" data-test="big-table">{{ bigTableNote }}</p>
       <label v-if="needsName" class="retype">
         <span>Retapez le nom de la table pour confirmer</span>
@@ -681,7 +686,7 @@ h2 { font-size: 22px; font-weight: 600; }
 .changes .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; color: var(--fg); }
 .mode, .hint { font-size: 12px; color: var(--mut); }
 .sql { list-style: none; margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--s1); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; }
-.sql li { display: flex; align-items: baseline; gap: 10px; }
+.sql li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .sql code { font: 400 12.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .sql li.destructive code { color: var(--bad); }
 .buttons { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
@@ -748,6 +753,9 @@ tr[data-status='removed'] .field, li[data-status='removed'] .field { text-decora
 .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 4px; font: 500 11px var(--font-mono); border: 1px solid var(--line); color: var(--mut); }
 .tag.pk { color: var(--sec); border-color: var(--sec-line); background: var(--sec-bg); }
 .tag.danger { color: var(--bad); border-color: var(--bad-line); background: var(--bad-bg); }
+.tag.algo.ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
+.tag.algo.warn { color: var(--sec-ink); border-color: var(--sec-line); background: var(--sec-bg); }
+.algo-note { flex-basis: 100%; color: var(--mut); font-size: 12px; line-height: 1.4; }
 .danger-zone { padding-top: 6px; border-top: 1px solid var(--line); }
 .lost { margin: 0; padding-left: 18px; color: var(--fg); font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 </style>

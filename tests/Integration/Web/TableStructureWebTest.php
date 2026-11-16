@@ -132,11 +132,31 @@ final class TableStructureWebTest extends WebApiTestCase
         $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $this->withNewColumn(self::draftOf($detail)), 'fingerprint' => $fingerprint]);
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame([['sql' => \sprintf('ALTER TABLE "%s" ADD COLUMN "qty" integer NOT NULL DEFAULT 0', $table), 'operation' => 'add_column', 'subject' => 'qty', 'destructive' => false]], $body['statements']);
+        self::assertSame([['sql' => \sprintf('ALTER TABLE "%s" ADD COLUMN "qty" integer NOT NULL DEFAULT 0', $table), 'operation' => 'add_column', 'subject' => 'qty', 'destructive' => false, 'algorithm' => 'instant', 'blocksWrites' => null, 'copiesTable' => false, 'estimatedExtraBytes' => null, 'algorithmReason' => null]], $body['statements']);
         self::assertTrue($body['transactional']);
         self::assertFalse($body['destructive']);
         self::assertFalse($body['stale']);
         self::assertSame(['id', 'name', 'note'], $this->columnsOf($table), 'a preview never writes');
+    }
+
+    public function testPreviewAnnouncesARewriteWithItsCostAndNeverExecutesIt(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratchWithRows(200);
+        [$detail, $fingerprint] = $this->load($id, $table);
+        $draft = self::draftOf($detail);
+        $draft['columns'] = array_map(static fn (mixed $c): array => 'id' === self::arrayOf($c)['name'] ? ['type' => 'bigint'] + self::arrayOf($c) : self::arrayOf($c), self::arrayOf($draft['columns']));
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/structure/preview', ['draft' => $draft, 'fingerprint' => $fingerprint]);
+
+        self::assertSame(200, $this->statusCode());
+        $statement = self::arrayOf(self::arrayOf($body['statements'])[0]);
+        self::assertSame('rewrite', $statement['algorithm']);
+        self::assertTrue($statement['copiesTable']);
+        self::assertIsInt($statement['estimatedExtraBytes']);
+        self::assertGreaterThan(0, $statement['estimatedExtraBytes']);
+        self::assertSame('integer', $this->target()->fetchOne('SELECT data_type FROM information_schema.columns WHERE table_name = ? AND column_name = ?', [$table, 'id']), 'a preview never writes');
     }
 
     public function testPreviewSaysWhenTheTableChangedSinceItWasLoaded(): void
