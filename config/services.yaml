@@ -50,6 +50,10 @@ services:
             $from: '%env(TERRILDB_MAIL_FROM)%'
             $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
 
+    App\Core\Optimizer\MeasureSlots:
+        public: true
+        arguments:
+            $directory: '%kernel.cache_dir%/measure-slots'
     App\Http\Json\RequestTimeLimit:
         arguments:
             $proxyTimeoutSeconds: '%env(int:TERRILDB_PROXY_TIMEOUT)%'

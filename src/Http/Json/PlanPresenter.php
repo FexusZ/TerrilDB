@@ -19,8 +19,8 @@ final class PlanPresenter
     public static function present(QueryPlan $plan, array $findings): array
     {
         return [
-            'plan' => ['totalCost' => $plan->totalCost, 'root' => self::node($plan->root)],
-            'findings' => array_map(static fn (PlanFinding $f): array => ['rule' => $f->rule, 'relation' => $f->relation, 'rows' => $f->rows, 'condition' => $f->condition], $findings),
+            'plan' => ['totalCost' => $plan->totalCost, 'root' => self::node($plan->root, $plan->measured)] + ($plan->measured ? ['measured' => true, 'executionTimeMs' => $plan->executionTimeMs] : []),
+            'findings' => array_map(static fn (PlanFinding $f): array => ['rule' => $f->rule, 'relation' => $f->relation, 'rows' => $f->rows, 'condition' => $f->condition] + (null === $f->actualRows ? [] : ['actualRows' => $f->actualRows]) + (null === $f->suggestion ? [] : ['suggestion' => $f->suggestion]), $findings),
         ];
     }
 
@@ -48,7 +48,7 @@ final class PlanPresenter
     /**
      * @return array<string, mixed>
      */
-    private static function node(PlanNode $node): array
+    private static function node(PlanNode $node, bool $measured): array
     {
         return [
             'kind' => $node->kind->value,
@@ -59,7 +59,13 @@ final class PlanPresenter
             'cost' => $node->cost,
             'condition' => $node->condition,
             'fullScan' => $node->fullScan,
-            'children' => array_map(self::node(...), $node->children),
-        ];
+            'children' => array_map(static fn (PlanNode $child): array => self::node($child, $measured), $node->children),
+        ] + (!$measured ? [] : [
+            'actualRows' => $node->actualRows,
+            'actualTimeMs' => $node->actualTimeMs,
+            'loops' => $node->loops,
+            'sortsOnDisk' => $node->sortsOnDisk,
+            'buffers' => null === $node->buffers ? null : ['sharedHit' => $node->buffers->sharedHit, 'sharedRead' => $node->buffers->sharedRead, 'tempRead' => $node->buffers->tempRead, 'tempWritten' => $node->buffers->tempWritten],
+        ]);
     }
 }

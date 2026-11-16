@@ -269,6 +269,13 @@ final class StatementGuardCorpusTest extends TestCase
         // ANALYZE / EXPLAIN ANALYZE exécutent vraiment l'instruction qui suit : elle est jugée comme elle.
         yield from self::rows('ANALYZE DELETE FROM t', [Engine::MariaDb], $rw, 'confirm:DestructiveWithoutWhere');
         yield from self::rows('ANALYZE DELETE FROM t WHERE a = 1', [Engine::MariaDb], $rw, 'allow:Write');
+        // ANALYZE d'une LECTURE (MariaDB, mesure réelle d'un plan) : une inspection, comme EXPLAIN ANALYZE SELECT.
+        yield from self::rows('ANALYZE FORMAT=JSON SELECT * FROM t', [Engine::MariaDb], $ro, 'allow:Inspect');
+        yield from self::rows('ANALYZE FORMAT=JSON SELECT * FROM t', [Engine::MariaDb], $rw, 'allow:Inspect');
+        yield from self::rows('ANALYZE FORMAT=JSON WITH c AS (SELECT 1 AS a) SELECT a FROM c', [Engine::MariaDb], $ro, 'allow:Inspect');
+        yield from self::rows('ANALYZE FORMAT=JSON SELECT nextval(s)', [Engine::MariaDb], $ro, 'refuse:NotReadOnly');
+        yield from self::rows('ANALYZE FORMAT=JSON SELECT get_lock(\'a\', 1)', [Engine::MariaDb], $ro, 'refuse:ForbiddenConstruct');
+        yield from self::rows('ANALYZE FORMAT=JSON WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d', [Engine::MariaDb], $ro, 'refuse:NotReadOnly');
         yield from self::rows('ANALYZE FORMAT=JSON UPDATE t SET a = 1 WHERE b = 2', [Engine::MariaDb], $rw, 'allow:Write');
         yield from self::rows('ANALYZE t', $pg, $rw, 'confirm:DestructiveStatement');
         yield from self::rows('EXPLAIN ANALYZE CREATE TABLE z AS SELECT 1', $pg, $ro, 'refuse:NotReadOnly');

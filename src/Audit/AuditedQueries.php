@@ -31,10 +31,11 @@ final readonly class AuditedQueries
     }
 
     /**
-     * @param array<string, bool|int|string> $extra       détails ajoutés à l'événement (par exemple la nature d'un export)
-     * @param string|null                    $recordedSql texte à journaliser à la place de l'instruction exécutée (le SQL de l'utilisateur, pas l'EXPLAIN construit)
+     * @param array<string, bool|int|string> $extra             détails ajoutés à l'événement (par exemple la nature d'un export)
+     * @param string|null                    $recordedSql       texte à journaliser à la place de l'instruction exécutée (le SQL de l'utilisateur, pas l'EXPLAIN construit)
+     * @param bool                           $recordEngineError faux : l'échec est journalisé sans le message du moteur (qui peut citer un extrait du texte, donc ses valeurs)
      */
-    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $sql, QueryOptions $options, bool $confirmed = false, array $extra = [], ?string $recordedSql = null): QueryResult
+    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $sql, QueryOptions $options, bool $confirmed = false, array $extra = [], ?string $recordedSql = null, bool $recordEngineError = true): QueryResult
     {
         $base = ['sql' => $recordedSql ?? $sql, 'mode' => $options->mode->value, 'engine' => $target->engine->value, 'confirmed' => $confirmed] + $extra;
 
@@ -55,7 +56,7 @@ final readonly class AuditedQueries
 
             throw $e;
         } catch (QueryFailedException $e) {
-            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => 'engine_error', 'error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH)]);
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => 'engine_error'] + ($recordEngineError ? ['error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH)] : []));
 
             throw $e;
         }

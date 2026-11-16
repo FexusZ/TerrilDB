@@ -13,6 +13,8 @@ export const ENGINE_BADGES: Record<Engine, string> = { mysql: 'My', mariadb: 'Ma
 export const DEFAULT_PORTS: Record<Engine, number> = { mysql: 3306, mariadb: 3306, postgresql: 5432, clickhouse: 8123, redis: 6379 }
 /** Les moteurs dont TerrilDB sait lire un plan d’exécution. */
 export const ENGINE_HAS_PLAN: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: true, redis: false }
+/** Les moteurs qui savent MESURER un plan (EXPLAIN ANALYZE) : la requête y est jouée pour de bon. ClickHouse ne garde que l’estimation. */
+export const ENGINE_CAN_MEASURE: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: false, redis: false }
 
 export interface User {
   id: string
@@ -447,6 +449,12 @@ export interface PlanNodeInfo {
   condition: string | null
   fullScan: boolean
   children: PlanNodeInfo[]
+  /** Plan mesuré seulement : lignes réellement rendues par exécution du nœud, temps d’une exécution, nombre d’exécutions. */
+  actualRows?: number | null
+  actualTimeMs?: number | null
+  loops?: number | null
+  sortsOnDisk?: boolean
+  buffers?: { sharedHit: number; sharedRead: number; tempRead: number; tempWritten: number } | null
 }
 
 export interface PlanFindingInfo {
@@ -454,11 +462,16 @@ export interface PlanFindingInfo {
   relation: string | null
   rows: number | null
   condition: string | null
+  actualRows?: number | null
+  /** Une instruction SQL À LIRE : TerrilDB ne l’exécute jamais. */
+  suggestion?: string | null
 }
 
 export interface PlanResult {
-  plan: { totalCost: number | null; root: PlanNodeInfo }
+  plan: { totalCost: number | null; root: PlanNodeInfo; measured?: boolean; executionTimeMs?: number | null }
   findings: PlanFindingInfo[]
+  /** Présent quand une mesure a été demandée : `measured`, ou `unsupported` (le moteur ne mesure pas, le plan est estimé). */
+  measure?: { status: 'measured' | 'unsupported'; reason?: string }
 }
 
 export interface LintFindingInfo {

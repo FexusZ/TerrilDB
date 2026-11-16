@@ -9,11 +9,34 @@ use App\Core\Optimizer\Exception\UnreadablePlanException;
 /**
  * Lit `EXPLAIN (FORMAT JSON)` de PostgreSQL : un arbre de nœuds « Plan » imbriqués par « Plans ».
  */
-final class PostgreSqlPlanParser implements PlanParser
+final class PostgreSqlPlanParser implements PlanParser, MeasuredPlanParser
 {
     private const CONDITIONS = ['Filter', 'Index Cond', 'Recheck Cond', 'Hash Cond', 'Merge Cond', 'Join Filter'];
 
     public function parse(string $json): QueryPlan
+    {
+        [, $plan] = $this->read($json);
+
+        return new QueryPlan($this->node($plan), self::number($plan['Total Cost'] ?? null));
+    }
+
+    /**
+     * `EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS)` : la même forme, avec « Actual … » sur chaque nœud et « Execution Time » en tête.
+     */
+    public function parseMeasured(string $output): QueryPlan
+    {
+        [$data, $plan] = $this->read($output);
+        if (!isset($plan['Actual Rows'])) {
+            throw UnreadablePlanException::create();
+        }
+
+        return new QueryPlan($this->node($plan), self::number($plan['Total Cost'] ?? null), true, self::number($data['Execution Time'] ?? null));
+    }
+
+    /**
+     * @return array{array<array-key, mixed>, array<array-key, mixed>}
+     */
+    private function read(string $json): array
     {
         try {
             $data = json_decode($json, true, 64, \JSON_THROW_ON_ERROR);
@@ -21,12 +44,13 @@ final class PostgreSqlPlanParser implements PlanParser
             throw UnreadablePlanException::create();
         }
 
-        $plan = \is_array($data) && isset($data[0]) && \is_array($data[0]) ? ($data[0]['Plan'] ?? null) : null;
+        $top = \is_array($data) && isset($data[0]) && \is_array($data[0]) ? $data[0] : [];
+        $plan = $top['Plan'] ?? null;
         if (!\is_array($plan) || !\is_string($plan['Node Type'] ?? null)) {
             throw UnreadablePlanException::create();
         }
 
-        return new QueryPlan($this->node($plan), self::number($plan['Total Cost'] ?? null));
+        return [$top, $plan];
     }
 
     /**
@@ -71,7 +95,36 @@ final class PostgreSqlPlanParser implements PlanParser
             'Seq Scan' === $type,
             $children,
             $writes,
+            self::count($plan['Actual Rows'] ?? null),
+            self::number($plan['Actual Total Time'] ?? null),
+            self::count($plan['Actual Loops'] ?? null),
+            self::buffers($plan),
+            \in_array($type, ['Sort', 'Incremental Sort'], true) && 'Disk' === ($plan['Sort Space Type'] ?? null),
         );
+    }
+
+    /**
+     * @param array<array-key, mixed> $plan
+     */
+    private static function buffers(array $plan): ?PlanBuffers
+    {
+        if (!isset($plan['Shared Hit Blocks']) && !isset($plan['Temp Written Blocks'])) {
+            return null;
+        }
+
+        return new PlanBuffers(
+            self::count($plan['Shared Hit Blocks'] ?? null) ?? 0,
+            self::count($plan['Shared Read Blocks'] ?? null) ?? 0,
+            self::count($plan['Temp Read Blocks'] ?? null) ?? 0,
+            self::count($plan['Temp Written Blocks'] ?? null) ?? 0,
+        );
+    }
+
+    private static function count(mixed $value): ?int
+    {
+        $number = self::number($value);
+
+        return null === $number ? null : (int) round($number);
     }
 
     private static function kind(string $type): PlanKind
