@@ -1,4 +1,4 @@
-import type { AuditCheck, DesignRule, OperationsRule, PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
+import type { AuditCheck, OperationsRule, PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
 import { describeDesignFinding } from './designWording'
 import { formatEstimate } from './format'
 
