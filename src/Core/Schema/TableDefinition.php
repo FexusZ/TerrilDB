@@ -13,6 +13,9 @@ use App\Core\Schema\Exception\InvalidSchemaException;
  * `storageEngine` (MySQL et MariaDB : InnoDB, MyISAM…) et `transactional` (ce moteur sait-il annuler ? nul si inconnu), `triggerCount`
  * (déclencheurs de la table, nul si le moteur n'en a pas ou ne le dit pas) : des informations, hors de l'empreinte elles aussi.
  * `partitioning` : le découpage en partitions (lecture seule, nul sans partition), lui aussi hors de l'empreinte.
+ * `versioned` (MariaDB, WITH SYSTEM VERSIONING) : la table garde l'historique de ses lignes ; l'éditeur ne retire jamais ce versionnement ni
+ * ses colonnes de période, et supprimer la table détruit l'historique. Hors de l'empreinte : une table qui le devient entre-temps est
+ * relue (donc refusée comme telle) à l'application.
  */
 final readonly class TableDefinition
 {
@@ -35,6 +38,7 @@ final readonly class TableDefinition
         public ?bool $transactional = null,
         public ?int $triggerCount = null,
         public ?PartitioningInfo $partitioning = null,
+        public bool $versioned = false,
     ) {
         if ('' === $name || [] === $columns) {
             throw new InvalidSchemaException('A table needs a name and at least one column.');

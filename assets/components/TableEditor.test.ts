@@ -319,6 +319,41 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('flags a versioned table and says the drop loses its history', async () => {
+    const dropStatement = { sql: 'DROP TABLE `orders`', operation: 'drop_table', subject: 'orders', destructive: true }
+    const losses = [{ code: 'system_history', subject: 'orders', values: [] }]
+    mocked.mockResolvedValue(preview({ statements: [dropStatement], destructive: true, losses }))
+    const wrapper = mountEditor('mariadb', { ...detail(), versioned: true })
+
+    expect(wrapper.get('[data-test="versioned"]').text()).toContain('versionnée')
+    await wrapper.findAll('button').find((button) => button.text().startsWith('Supprimer la table'))?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="dialog"]').text()).toContain('l’historique des lignes de « orders »')
+    wrapper.unmount()
+  })
+
+  it('does not flag an ordinary table', () => {
+    const wrapper = mountEditor()
+
+    expect(wrapper.find('[data-test="versioned"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lists the values an ENUM loses in the confirmation', async () => {
+    const statement = { sql: 'ALTER TABLE `orders` MODIFY COLUMN `note` enum(\'a\') NULL', operation: 'modify_column', subject: 'note', destructive: true }
+    mocked.mockResolvedValue(preview({ statements: [statement], destructive: true, losses: [{ code: 'values_removed', subject: 'note', values: ['b'] }] }))
+    const wrapper = mountEditor('mariadb')
+
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue("enum('a')")
+    await settle()
+    await wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="dialog"]').text()).toContain('les valeurs « b » de « note »')
+    wrapper.unmount()
+  })
+
   it('previews, confirms and runs the drop of the table', async () => {
     const dropStatement = { sql: 'DROP TABLE "orders"', operation: 'drop_table', subject: 'orders', destructive: true }
     mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ statements: [dropStatement], destructive: true }) : { statements: [dropStatement], transactional: true, destructive: true, table: null }))

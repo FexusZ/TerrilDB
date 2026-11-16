@@ -7,6 +7,7 @@ import { formatBytes } from '../utils/format'
 import { lockShort } from '../utils/lock'
 import { applyStructure, previewStructure, type StructureScope } from '../api/structure'
 import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructureLockCheck, type StructurePreview, type TableDetail, type TableHolder } from '../api/types'
+import { lossSentence } from '../utils/planLoss'
 import { useWorkspaceStore } from '../stores/workspace'
 import {
   addColumn,
@@ -379,10 +380,13 @@ async function confirmDrop(): Promise<void> {
 
 const lockUnreadable = computed(() => (preview.value?.lockCheck ? describeStatus(preview.value.lockCheck.status, 'les verrous') : null))
 const destructive = computed(() => preview.value?.statements.filter((statement) => statement.destructive) ?? [])
+const losses = computed(() => (preview.value?.losses ?? []).map(lossSentence))
+const dropLosses = computed(() => (dropping.value?.losses ?? []).map(lossSentence))
 </script>
 
 <template>
   <div class="editor">
+    <p v-if="table.versioned" class="hint" role="status" data-test="versioned">Table versionnée (WITH SYSTEM VERSIONING) : le moteur garde l’historique de ses lignes. Ses colonnes de période ne se modifient pas, et la supprimer détruit l’historique.</p>
     <aside v-if="dirty" class="changes" role="region" aria-label="Modifications en attente">
       <div class="top">
         <strong>Modifications en attente</strong>
@@ -639,7 +643,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       @confirm="apply(true)"
       @cancel="confirming = false"
     >
-      <ul class="lost"><li v-for="statement in destructive" :key="statement.sql">{{ describeStatement(statement.operation, statement.subject) }}</li></ul>
+      <ul class="lost"><li v-for="statement in destructive" :key="statement.sql">{{ describeStatement(statement.operation, statement.subject) }}</li><li v-for="sentence in losses" :key="sentence">{{ sentence }}</li></ul>
     </ConfirmDialog>
 
     <ConfirmDialog
@@ -654,6 +658,10 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       @cancel="dropping = null"
     >
       <ul class="sql"><li v-for="statement in dropping.statements" :key="statement.sql" class="destructive"><code>{{ statement.sql }};</code></li></ul>
+      <template v-if="dropLosses.length > 0">
+        <p>Seront aussi perdus :</p>
+        <ul class="lost"><li v-for="sentence in dropLosses" :key="sentence">{{ sentence }}</li></ul>
+      </template>
       <p v-if="dropping.bigTable.level !== 'none' && dropping.bigTable.estimatedRows !== null" class="warn" role="status" data-test="big-table">{{ bigTableText(dropping.bigTable.estimatedRows) }}</p>
       <label v-if="dropping.bigTable.level === 'confirm_name'" class="retype">
         <span>Retapez le nom de la table pour confirmer</span>

@@ -20,6 +20,7 @@ use App\Core\Schema\Change\Operation\SetPrimaryKey;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\TableDefinition;
 
 /**
@@ -50,6 +51,7 @@ final class SchemaDiffer
                 ?? throw new InvalidSchemaChangeException('A column refers to an original column that no longer exists: the table changed since it was loaded.');
             $kept[$before->name] = true;
             if ($before->name !== $column->name) {
+                self::assertNotPeriod($before);
                 $renames[$before->name] = $column->name;
                 $operations[] = new RenameColumn($before->name, $column->name);
             }
@@ -60,6 +62,7 @@ final class SchemaDiffer
         }
         foreach ($current->columns as $column) {
             if (!isset($kept[$column->name])) {
+                self::assertNotPeriod($column);
                 $operations[] = new DropColumn($column->name);
             }
         }
@@ -67,6 +70,7 @@ final class SchemaDiffer
         $currentPrimary = $current->primaryKey();
         $draftPrimary = $draft->primaryKey();
         if ($this->primaryChanged($currentPrimary, $draftPrimary, $renames)) {
+            $this->assertPeriodStaysInKey($current, $draftPrimary);
             $operations[] = new SetPrimaryKey($currentPrimary, $draftPrimary);
         }
 
@@ -74,6 +78,27 @@ final class SchemaDiffer
         array_push($operations, ...$this->foreignKeyOperations($current, $draft, $renames));
 
         return $operations;
+    }
+
+    /**
+     * Une colonne de période (début / fin de ligne d'une table versionnée) ne se renomme ni ne se supprime : ce serait casser
+     * l'historique, ou retirer le versionnement.
+     */
+    private static function assertNotPeriod(ColumnDefinition $column): void
+    {
+        if (LockReason::SystemPeriod === $column->lock) {
+            throw new UnsupportedSchemaChangeException(LockReason::SystemPeriod, $column->name);
+        }
+    }
+
+    /** La colonne de fin de ligne fait partie de la clé primaire d'une table versionnée : on ne l'en sort pas. */
+    private function assertPeriodStaysInKey(TableDefinition $current, ?IndexDraft $draftPrimary): void
+    {
+        foreach ($current->primaryKey()->columns ?? [] as $name) {
+            if (LockReason::SystemPeriod === $current->column($name)?->lock && !\in_array($name, $draftPrimary->columns ?? [], true)) {
+                throw new UnsupportedSchemaChangeException(LockReason::SystemPeriod, $name);
+            }
+        }
     }
 
     private function modification(ColumnDefinition $before, ColumnDraft $after): ?ModifyColumn
