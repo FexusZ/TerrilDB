@@ -86,4 +86,11 @@ final class QueryTextTest extends TestCase
         self::assertNotNull($text->text);
         self::assertTrue(mb_check_encoding($text->text, 'UTF-8'));
     }
+
+    public function testItSaysWhenTheTextWasShortened(): void
+    {
+        self::assertFalse(QueryText::of('SELECT 1', SqlDialect::MySql)->shortened);
+        self::assertTrue(QueryText::of('SELECT '.str_repeat('a, ', 200).'a', SqlDialect::MySql)->shortened);
+        self::assertFalse(QueryText::of(null, SqlDialect::MySql)->shortened);
+    }
 }
