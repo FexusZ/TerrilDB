@@ -27,6 +27,7 @@ final class TargetDatabase
         'TARGET_REPLICA_MYSQL_URL' => Engine::MySql,
         'TARGET_REPLICA_MARIADB_URL' => Engine::MariaDb,
         'TARGET_REPLICA_POSTGRES_URL' => Engine::PostgreSql,
+        'TARGET_REPLICATED_POSTGRES_URL' => Engine::PostgreSql,
     ];
 
     /**

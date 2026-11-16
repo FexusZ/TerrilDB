@@ -1,0 +1,11 @@
+[
+    {
+        "name": "replica_slot",
+        "type": "physical",
+        "active": true,
+        "temporary": false,
+        "wal_status": "reserved",
+        "safe_wal_size": null,
+        "retained_bytes": 0
+    }
+]

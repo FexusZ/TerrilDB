@@ -49,6 +49,62 @@ final class ReplicationDiagnosticsTest extends TestCase
         self::assertSame(ReplicationRole::None, $report->role);
         self::assertSame(0, $report->replicaCount);
         self::assertSame([], $report->alerts());
+        self::assertSame(Availability::Available, $report->extras->slots?->status->availability);
+        self::assertSame([], $report->extras->slots->slots);
+        self::assertSame([], $report->extras->replicas?->replicas);
+    }
+
+    /**
+     * Primaire d'une paire jetable (TARGET_REPLICATED_POSTGRES_URL, avec son réplica en streaming) : le slot du réplica est actif
+     * et ne retient rien ; un slot créé ici et jamais consommé est inactif et retient du WAL, jusqu'à son retrait.
+     */
+    public function testAPostgreSqlSlotThatNobodyReadsIsInactiveAndRetainsWal(): void
+    {
+        $target = $this->openPostgreSql('TARGET_REPLICATED_POSTGRES_URL');
+        $admin = (new DbalConnector())->connect(Engine::PostgreSql, TargetDatabase::parameters('TARGET_REPLICATED_POSTGRES_URL'));
+        $slot = 'tdb_slot_'.bin2hex(random_bytes(4));
+        $table = 'tdb_wal_'.bin2hex(random_bytes(4));
+        $admin->executeStatement(\sprintf("SELECT pg_create_physical_replication_slot('%s', true)", $slot));
+        try {
+            $admin->executeStatement(\sprintf("CREATE TABLE %s AS SELECT g, repeat('x', 1000) AS pad FROM generate_series(1, 5000) g", $table));
+            $admin->executeStatement('SELECT pg_switch_wal()');
+
+            $report = $target->diagnostics()->replication()->replication();
+
+            $slots = $report->extras->slots;
+            self::assertSame(Availability::Available, $slots?->status->availability);
+            $mine = array_values(array_filter($slots->slots, static fn ($s): bool => $s->name === $slot));
+            self::assertCount(1, $mine);
+            self::assertFalse($mine[0]->active);
+            self::assertGreaterThan(0, $mine[0]->retainedBytes);
+            self::assertContains($slot, array_map(static fn ($a): string => $a->channel, array_filter($report->alerts(), static fn ($a): bool => 'slot_inactive' === $a->code->value)));
+            $others = array_filter($slots->slots, static fn ($s): bool => $s->name !== $slot);
+            self::assertNotSame([], $others, 'The replica slot is expected.');
+            foreach ($others as $other) {
+                self::assertTrue($other->active);
+            }
+        } finally {
+            $admin->executeStatement(\sprintf("SELECT pg_drop_replication_slot('%s')", $slot));
+            $admin->executeStatement(\sprintf('DROP TABLE IF EXISTS %s', $table));
+            $admin->close();
+            $target->close();
+        }
+    }
+
+    public function testAStreamingPostgreSqlReplicaIsSeenFromItsSource(): void
+    {
+        $target = $this->openPostgreSql('TARGET_REPLICATED_POSTGRES_URL');
+
+        $report = $target->diagnostics()->replication()->replication();
+        $target->close();
+
+        self::assertSame(ReplicationRole::Source, $report->role);
+        $links = $report->extras->replicas;
+        self::assertSame(Availability::Available, $links?->status->availability);
+        self::assertCount(1, $links->replicas);
+        self::assertTrue($links->replicas[0]->connected);
+        self::assertSame('async', $links->replicas[0]->syncState);
+        self::assertSame([], $report->alerts());
     }
 
     public function testPostgreSqlAccountWithoutTheRightGetsAStateNotAnError(): void
@@ -84,6 +140,9 @@ final class ReplicationDiagnosticsTest extends TestCase
         self::assertSame(ThreadState::Running, $report->channels[0]->receiver);
         self::assertSame(ThreadState::Running, $report->channels[0]->applier);
         self::assertNotNull($report->channels[0]->received);
+        // En restauration pg_current_wal_lsn() échouerait : la position rejouée sert de référence.
+        self::assertSame(Availability::Available, $report->extras->slots?->status->availability);
+        self::assertSame([], $report->extras->replicas?->replicas);
     }
 
     /**
