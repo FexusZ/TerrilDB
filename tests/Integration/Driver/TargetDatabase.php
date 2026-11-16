@@ -76,7 +76,7 @@ final class TargetDatabase
             (int) self::part($parts, 'port'),
             self::part($parts, 'dbname'),
             self::part($parts, 'user'),
-            self::part($parts, 'password'),
+            \is_scalar($parts['password'] ?? null) ? (string) $parts['password'] : '',
         );
     }
 
