@@ -264,7 +264,7 @@ final class DiagnosticsPresenter
      *
      * @return array<string, mixed>
      */
-    public static function replication(ReplicationReport $report): array
+    public static function replication(ReplicationReport $report, bool $maskInfrastructure = true): array
     {
         return [
             'status' => self::status($report->status),
@@ -284,8 +284,8 @@ final class DiagnosticsPresenter
                 'received' => $c->received,
                 'applied' => $c->applied,
                 'pendingApply' => $c->pendingApply,
-                'receiverError' => self::replicationError($c->receiverError),
-                'applierError' => self::replicationError($c->applierError),
+                'receiverError' => self::replicationError($c->receiverError, $maskInfrastructure),
+                'applierError' => self::replicationError($c->applierError, $maskInfrastructure),
             ], $report->channels),
             'alerts' => array_map(static fn (ReplicationAlert $a): array => ['code' => $a->code->value, 'severity' => $a->severity->value, 'channel' => $a->channel], $report->alerts()),
             'thresholds' => ['warning' => ReplicationAlerts::LAG_WARNING_SECONDS, 'critical' => ReplicationAlerts::LAG_CRITICAL_SECONDS],
@@ -295,8 +295,8 @@ final class DiagnosticsPresenter
     /**
      * @return array{code: int|null, message: string}|null
      */
-    private static function replicationError(?ReplicationError $error): ?array
+    private static function replicationError(?ReplicationError $error, bool $maskInfrastructure): ?array
     {
-        return null === $error ? null : ['code' => $error->code, 'message' => $error->message];
+        return null === $error ? null : ['code' => $error->code, 'message' => $maskInfrastructure ? $error->message : $error->unmasked];
     }
 }
