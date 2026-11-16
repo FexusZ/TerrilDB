@@ -37,16 +37,18 @@ final class ReplicationPresenterTest extends TestCase
         self::assertSame(['warning' => 30, 'critical' => 300], $body['thresholds']);
     }
 
-    public function testTheInfrastructureIsShownWhenMaskingIsOff(): void
+    public function testNothingIsHiddenWhenMaskingIsOff(): void
     {
-        $channel = new ReplicationChannel('', ThreadState::Running, ThreadState::Stopped, null, null, null, false, null, ReplicationError::from(1045, "Access denied for user 'repl'@'10.0.0.5'"));
+        $channel = new ReplicationChannel('', ThreadState::Running, ThreadState::Stopped, null, null, null, false, null, ReplicationError::from(1045, "Access denied for user 'repl'@'10.0.0.5', SOURCE_PASSWORD='hunter2'"));
         $report = new ReplicationReport(DiagnosticStatus::available(), ReplicationRole::Replica, [$channel], new ReplicationSettings(null, null, null, null), 0);
 
         $masked = DiagnosticsPresenter::replication($report);
         $open = DiagnosticsPresenter::replication($report, false);
 
         self::assertStringNotContainsString('10.0.0.5', json_encode($masked, \JSON_THROW_ON_ERROR));
+        self::assertStringNotContainsString('hunter2', json_encode($masked, \JSON_THROW_ON_ERROR));
         self::assertStringContainsString('10.0.0.5', json_encode($open, \JSON_THROW_ON_ERROR));
+        self::assertStringContainsString('hunter2', json_encode($open, \JSON_THROW_ON_ERROR));
     }
 
     public function testNoReplicationIsAStateWithoutAlert(): void

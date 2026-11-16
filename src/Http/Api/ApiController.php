@@ -12,7 +12,7 @@ use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
-use App\Core\Diagnostics\Replication\InfrastructureMasking;
+use App\Core\Diagnostics\Masking;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
@@ -57,7 +57,7 @@ final readonly class ApiController
         private RequestTimeLimit $limit,
         private WriteApproval $approval,
         private AuditedScripts $scripts,
-        private InfrastructureMasking $masking,
+        private Masking $masking,
     ) {
     }
 

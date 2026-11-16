@@ -30,9 +30,9 @@ parameters:
     env(TERRILDB_BIG_TABLE_WARN_ROWS): '100000'
     env(TERRILDB_BIG_TABLE_CONFIRM_ROWS): '1000000'
 
-    # Texte d'erreur de réplication : compte, hôte et adresse de la source masqués par défaut ; mettre 0 pour les montrer.
-    # Un mot de passe ou un jeton reste toujours masqué, une valeur de ligne n'est jamais masquée.
-    env(TERRILDB_MASK_INFRASTRUCTURE): '1'
+    # Masquage des textes montrés par les diagnostics (réplication aujourd'hui) : secrets et infrastructure (compte, hôte, adresse)
+    # masqués par défaut ; mettre 0 pour tout montrer, comme un client SQL. Une valeur de ligne n'est jamais masquée.
+    env(TERRILDB_MASKING): '1'
 
 services:
     # default configuration for services in *this* file
@@ -59,9 +59,9 @@ services:
             $warnAt: '%env(int:TERRILDB_BIG_TABLE_WARN_ROWS)%'
             $confirmAt: '%env(int:TERRILDB_BIG_TABLE_CONFIRM_ROWS)%'
 
-    App\Core\Diagnostics\Replication\InfrastructureMasking:
+    App\Core\Diagnostics\Masking:
         arguments:
-            $enabled: '%env(bool:TERRILDB_MASK_INFRASTRUCTURE)%'
+            $enabled: '%env(bool:TERRILDB_MASKING)%'
 
     App\Core\Diagnostics\Health\HealthSlots:
         arguments:
