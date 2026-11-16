@@ -19,6 +19,7 @@ final class QueryTextTest extends TestCase
         yield 'pg role password' => ["ALTER ROLE x PASSWORD 'secret'", SqlDialect::PostgreSql, 'ALTER ROLE x PASSWORD ?'];
         yield 'mysql identified by' => ["CREATE USER u IDENTIFIED BY 'p''w\\'x'", SqlDialect::MySql, 'CREATE USER u IDENTIFIED BY ?'];
         yield 'mysql double quotes are strings' => ['SELECT "secret"', SqlDialect::MySql, 'SELECT ?'];
+        yield 'pg parameter marks stay' => ['SELECT a FROM t WHERE a = $1 AND b = $22 AND c = 5', SqlDialect::PostgreSql, 'SELECT a FROM t WHERE a = $1 AND b = $22 AND c = ?'];
         yield 'pg double quotes are identifiers' => ['SELECT "Name" FROM t', SqlDialect::PostgreSql, 'SELECT "Name" FROM t'];
         yield 'pg dollar quotes' => ['DO $$ BEGIN PERFORM 1; END $$', SqlDialect::PostgreSql, 'DO ?'];
         yield 'pg tagged dollar quotes' => ['DO $f$ secret $f$ LANGUAGE plpgsql', SqlDialect::PostgreSql, 'DO ? LANGUAGE plpgsql'];

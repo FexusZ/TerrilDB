@@ -5,7 +5,9 @@ import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import LintList from '../components/LintList.vue'
 import PlanTree from '../components/PlanTree.vue'
+import ScriptPanel from '../components/ScriptPanel.vue'
 import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -43,6 +45,8 @@ watch(() => [workspace.connectionId, workspace.database, workspace.schema], () =
 watch(() => tab.value.id, () => (confirmingMeasure.value = false))
 
 const showHistory = ref(false)
+const showScript = ref(false)
+const speaksSql = computed(() => dialect.value !== 'redis')
 
 async function toggleHistory(): Promise<void> {
   showHistory.value = !showHistory.value
@@ -68,6 +72,8 @@ function toggleMode(): void {
         <button type="button" role="tab" class="label" :aria-selected="item.id === tab.id" @click="workspace.select(item.id)">{{ item.title }}</button>
         <button type="button" class="close-tab" :aria-label="`Fermer ${item.title}`" @click="workspace.closeTab(item.id)">×</button>
       </div>
+      <span class="spacer" aria-hidden="true" />
+      <button v-if="speaksSql" type="button" class="script-toggle" :aria-pressed="showScript" @click="showScript = !showScript">Script</button>
       <button type="button" class="history-toggle" :aria-pressed="showHistory" @click="toggleHistory">Historique</button>
       <button type="button" class="add-tab" aria-label="Nouvel onglet" @click="workspace.addTab()">+</button>
     </div>
@@ -79,6 +85,7 @@ function toggleMode(): void {
           Exécuter
         </AppButton>
         <span class="shortcut">Ctrl + Entrée</span>
+        <AppButton v-if="hasPlan" class="lint" small :busy="tab.linting" @click="workspace.lintTab(tab.id)">Conseils</AppButton>
         <AppButton v-if="hasPlan" class="plan" small :busy="tab.planning" @click="workspace.planTab(tab.id)">Plan d’exécution</AppButton>
         <AppButton v-if="canMeasure" class="measure" small :busy="tab.measuring" @click="askMeasure">Mesurer</AppButton>
       </div>
@@ -90,6 +97,13 @@ function toggleMode(): void {
         {{ readOnly ? 'Lecture seule' : 'Écriture activée' }}
       </button>
     </div>
+
+    <ScriptPanel
+      v-if="showScript && speaksSql && workspace.connectionId"
+      :connection-id="workspace.connectionId"
+      :script="tab.sql"
+      :scope="{ database: workspace.database, schema: workspace.schema }"
+    />
 
     <HistoryPanel
       v-if="showHistory"
@@ -119,6 +133,7 @@ function toggleMode(): void {
       <p v-if="tab.running" class="state" role="status">Exécution…</p>
       <p v-else-if="tab.measuring" class="state" role="status">Mesure en cours…</p>
       <p v-else-if="tab.error" class="error" role="alert">{{ tab.error }}</p>
+      <LintList v-else-if="tab.view === 'lint' && tab.lint" :result="tab.lint" />
       <PlanTree v-else-if="tab.view === 'plan' && tab.plan" :result="tab.plan" />
       <ResultTable v-else-if="tab.result" :result="tab.result" />
       <p v-else class="state">Exécutez une requête pour voir son résultat.</p>
@@ -143,7 +158,10 @@ function toggleMode(): void {
 .tab.current { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--acc); }
 .label { height: 38px; padding: 0 6px 0 14px; background: none; border: 0; color: inherit; font: 400 13px var(--font-ui); cursor: pointer; }
 .close-tab, .add-tab { background: none; border: 0; color: var(--mut); cursor: pointer; font-size: 16px; padding: 0 10px; height: 38px; }
-.history-toggle { margin-left: auto; background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
+.spacer { flex: 1; }
+.script-toggle { background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
+.script-toggle[aria-pressed='true'] { color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
+.history-toggle { background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
 .history-toggle[aria-pressed='true'] { color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
 .add-tab { border-left: 1px solid var(--line); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }

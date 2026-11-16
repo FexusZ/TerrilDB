@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Core\Data;
 
 use App\Core\Connection\Engine;
+use App\Core\Data\Exception\InvalidDataChangeException;
+use App\Core\Sql\SqlText;
+use App\Core\Sql\UnsafeSqlNameException;
 
 /**
  * Écrit les valeurs d'une instruction : un paramètre lié (`?`, ou `{pN:Type}` pour ClickHouse) ou, pour l'affichage seulement,
- * le littéral. Sait aussi citer un identifiant à la façon du moteur.
+ * le littéral. Sait aussi citer un identifiant à la façon du moteur ({@see SqlText}, qui refuse un nom hostile).
  *
  * @internal
  */
@@ -24,11 +27,11 @@ final class Binder
 
     public function quote(string $name): string
     {
-        return match ($this->engine) {
-            Engine::PostgreSql => '"'.str_replace('"', '""', $name).'"',
-            Engine::ClickHouse => '`'.str_replace(['\\', '`'], ['\\\\', '\\`'], $name).'`',
-            default => '`'.str_replace('`', '``', $name).'`',
-        };
+        try {
+            return SqlText::quoteIdentifier($this->engine, $name);
+        } catch (UnsafeSqlNameException) {
+            throw new InvalidDataChangeException('A table or column name contains a control character, a line separator or invalid text.');
+        }
     }
 
     public function bind(bool|float|int|string $value, string $columnType): string

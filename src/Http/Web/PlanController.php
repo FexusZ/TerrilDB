@@ -13,6 +13,7 @@ use App\Core\Optimizer\MeasureSlots;
 use App\Core\Optimizer\PlanAnalyzer;
 use App\Core\Optimizer\PlanService;
 use App\Core\Optimizer\QueryPlan;
+use App\Core\Optimizer\StatementLimit;
 use App\Core\Optimizer\WritePlanAdvisor;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\Exception\QueryRefusedException;
@@ -52,6 +53,7 @@ final readonly class PlanController
         private AuditedQueries $queries,
         private PlanService $plans,
         private PlanAnalyzer $analyzer,
+        private StatementLimit $limits,
         private WritePlanAdvisor $writeAdvisor,
         private MeasureSlots $slots,
         private WebSession $session,
@@ -71,9 +73,10 @@ final readonly class PlanController
         }
         $uuid = Uuid::fromString($id);
 
+        $limited = false;
         $engine = null;
         $measured = false;
-        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, $write, $timeout, &$engine, &$measured) {
+        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, $write, $timeout, &$limited, &$engine, &$measured) {
             $engine = $target->engine;
             $measured = null !== $timeout && $this->plans->canMeasure($target->engine);
             if ($measured) {
@@ -84,6 +87,7 @@ final readonly class PlanController
             }
 
             $statement = $write ? $this->plans->statementForWrite($target->engine, $sql) : $this->plans->statementFor($target->engine, $sql);
+            $limited = $this->limits->has($target->engine, $sql);
             $result = $this->queries->execute(
                 $this->session->auditContext(),
                 $uuid,
@@ -99,7 +103,7 @@ final readonly class PlanController
             return $this->plans->parse($target->engine, $result);
         });
 
-        $findings = $this->analyzer->analyze($plan, $engine, $sql);
+        $findings = $this->analyzer->analyze($plan, $engine, $sql, $limited);
         if ($write && null !== $engine) {
             return new JsonResponse(PlanPresenter::presentWrite($plan, $findings, $this->writeAdvisor->advise($plan, $engine)));
         }

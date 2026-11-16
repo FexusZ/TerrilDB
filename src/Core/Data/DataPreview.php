@@ -11,9 +11,10 @@ namespace App\Core\Data;
 final readonly class DataPreview
 {
     /**
-     * @param list<?int> $matches
+     * @param list<?int>        $matches
+     * @param list<DataWarning> $warnings
      */
-    public function __construct(public DataPlan $plan, public array $matches)
+    public function __construct(public DataPlan $plan, public array $matches, public array $warnings = [])
     {
     }
 

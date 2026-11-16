@@ -178,6 +178,15 @@ final class StatementGuardCorpusTest extends TestCase
             yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
             yield from self::rows($sql, $pg, $rw, 'refuse:ForbiddenConstruct');
         }
+        // Identifiant à échappement Unicode (U&"…", UESCAPE) : le moteur lit l'échappement, le garde aussi.
+        foreach ([
+            'SELECT U&"pg_\\0061dvisory_lock"(1)', 'SELECT u&"pg_\\+000061dvisory_lock"(1)', 'SELECT U&"pg_!0061dvisory_lock" UESCAPE \'!\' (1)',
+            'SELECT pg_catalog.U&"pg_read_\\0066ile"(\'/etc/passwd\')',
+            'SELECT U&"pg_read_file" UESCAPE \'!\' /* x */ (\'/etc/passwd\')',
+        ] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+        }
+        yield from self::rows('SELECT U&"d\\0061ta" FROM t', $pg, $ro, 'allow:Read');
         foreach (['SELECT "nextval"(\'s\')', 'SELECT s."nextval" (\'s\')', 'SELECT "pg_catalog"."setval"(\'s\', 10)'] as $sql) {
             yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
             yield from self::rows($sql, $pg, $rw, 'allow:Write');

@@ -74,7 +74,7 @@ final class SchemaChangePlanner
     private function assertTable(TableDefinition $current): void
     {
         if (TableKind::Table !== $current->kind) {
-            throw new InvalidSchemaChangeException('Only a table can be edited, not a view.');
+            throw new InvalidSchemaChangeException('Only a table can be edited, not a view or a sequence.');
         }
     }
 }

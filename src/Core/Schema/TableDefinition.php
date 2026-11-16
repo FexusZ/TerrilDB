@@ -10,6 +10,8 @@ use App\Core\Schema\Exception\InvalidSchemaException;
  * Le détail d'une table ou d'une vue : colonnes dans l'ordre du moteur, index, clés étrangères sortantes.
  * Seule une vue porte une définition (le SELECT qui la compose). `dataBytes` et `indexBytes` : place sur disque des données et
  * de tous les index, quand le moteur la donne ; ce sont des mesures qui bougent, hors de l'empreinte de structure.
+ * `storageEngine` (MySQL et MariaDB : InnoDB, MyISAM…) et `transactional` (ce moteur sait-il annuler ? nul si inconnu), `triggerCount`
+ * (déclencheurs de la table, nul si le moteur n'en a pas ou ne le dit pas) : des informations, hors de l'empreinte elles aussi.
  */
 final readonly class TableDefinition
 {
@@ -28,6 +30,9 @@ final readonly class TableDefinition
         public ?int $estimatedRows,
         public ?int $dataBytes = null,
         public ?int $indexBytes = null,
+        public ?string $storageEngine = null,
+        public ?bool $transactional = null,
+        public ?int $triggerCount = null,
     ) {
         if ('' === $name || [] === $columns) {
             throw new InvalidSchemaException('A table needs a name and at least one column.');
