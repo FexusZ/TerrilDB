@@ -22,7 +22,7 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | POST | `/api/v1/connections/{id}/script/prepare` | (droit d'écriture) juge un SCRIPT (500 instructions / 1 Mo au plus) instruction par instruction avec les droits du jeton, sans rien exécuter : verdicts, `transactional`, `atomic`, `dryRun`, `warnings`, UN `confirmationToken` lié au texte exact ; une instruction refusée = 403 `script_refused` (`reason`, `statement`) et aucun jeton |
 | POST | `/api/v1/connections/{id}/script/execute` | exécute le script préparé : `script`, `confirmationToken` (TOUJOURS obligatoire, même pour un jeton `singleStep`), `confirmed` (si destructif), `dryRun`, `timeoutMs` (global, 100 000 ms par défaut, au plus le délai du proxy moins 20 s : au-dessus, 422 `invalid_input` AVANT toute consommation du jeton ; voir docs/deploy.md). Arrêt à la première erreur ; réponse 200 avec `status` (`committed`, `dry_run`, `rolled_back`, `partial`, `failed`), `applied`, `failed`, `notRun`, `steps` ; audit : une ligne par instruction, `executionId` commun. Le jeton de confirmation est consommé par CHAQUE exécution, `dryRun` compris : tester puis exécuter pour de vrai demande deux `prepare`. Un `dryRun` est refusé (409 `dry_run_unavailable`, `reason: non_transactional_tables`) si le script écrit dans une table sans transaction (MyISAM, MEMORY…), et chaque lecture est limitée à 1000 lignes (`truncated`) |
 | POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmationToken` (obligatoire, voir ci-dessous) et `confirmed` |
-| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions`, `.locks`, `.statements`, `.variables` et `.replication` = `{availability, reason, privilege}` |
+| GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions`, `.locks`, `.statements`, `.variables`, `.replication` et `.logs` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/accounts` | (droit `diagnostic`) comptes, rôles, privilèges et constatations de l'audit de sécurité (MySQL, MariaDB), lecture seule, jamais une empreinte de mot de passe |
 | GET | `/api/v1/connections/{id}/diagnostics/encryption` | (droit `diagnostic`) la connexion de TerrilDB vers la cible est-elle chiffrée (MySQL, MariaDB, PostgreSQL) |
@@ -31,6 +31,7 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/diagnostics/queries?order=&limit=` | (droit `diagnostic`) les requêtes les plus coûteuses par empreinte, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/variables` | (droit `diagnostic`) variables de configuration, lecture seule : `q` (morceau de nom), `changed=1`, `limit` (1 à 500, 100 par défaut) |
 | GET | `/api/v1/connections/{id}/diagnostics/config-audit` | (droit `diagnostic`) audit de la configuration : constats sur les variables lues, lecture seule, rien n'est exécuté |
+| GET | `/api/v1/connections/{id}/diagnostics/logs` | (droit `diagnostic`) journal d'erreurs (MySQL) et requêtes lentes en table (MySQL, MariaDB), 200 lignes les plus récentes, textes masqués, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/health?seconds=5` | (droit `diagnostic`) santé du serveur sur un intervalle de 1 à 30 s (5 par défaut) : la requête dure l'intervalle, lecture seule |
 | POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password` |
 
@@ -171,6 +172,27 @@ Règles MySQL / MariaDB : `sql_mode_not_strict`, `local_infile_enabled`, `skip_n
 `SELECT ON system.server_settings` = `permission_denied`. Audit `diagnostic.read` : `topic: config_audit`, `status`, `rows` (règles évaluées),
 `findings`, jamais un nom de variable ni une valeur.
 
+### Journaux du serveur (`/diagnostics/logs`, outil MCP `list_logs`)
+
+Lecture EN SQL seulement, jamais d'un fichier de l'hôte. Réponse : `errorLog` et `slowQueries`, chacun avec son `status` (`availability` : `available`,
+`unsupported`, `permission_denied`, `disabled`, plus `reason` et `privilege`) : une source non lisible n'est jamais une liste vide. `truncated` est vrai si le
+serveur a plus que les 200 lignes les plus récentes rendues.
+
+- **Journal d'erreurs** (`errorLog.entries` : `loggedAt`, `level` = `system|error|warning|note`, `subsystem`, `code`, `message`) : MySQL 8.0.22 et plus
+  (`performance_schema.error_log`, droit SELECT ; `performance_schema` éteint = `disabled` / `performance_schema_off`). MariaDB et PostgreSQL : `unsupported`
+  / `log_is_a_file` (leur journal est un fichier du serveur ; en lire un exigerait un accès aux fichiers de l'hôte, que TerrilDB ne fait pas). Le `message` est
+  masqué (chaînes entre guillemets, adresses IP, `utilisateur@hôte`, valeur d'un mot de passe ou jeton) puis raccourci à 300 caractères ; il peut malgré
+  tout nommer des objets.
+- **Requêtes lentes** (`slowQueries.queries` : `startedAt`, `user`, `database`, `durationMs`, `lockMs`, `rowsSent`, `rowsExamined`, `query`, `queryReason`,
+  plus `thresholdSeconds` = `long_query_time`) : MySQL et MariaDB, `mysql.slow_log`, seulement si `log_output` contient `TABLE` (`disabled` /
+  `log_output_without_table`) ET `slow_query_log` est allumé (`disabled` / `slow_query_log_off`) ; SELECT refusé = `permission_denied`
+  (`SELECT ON mysql.slow_log`). `query` a ses littéraux remplacés par `?` (nul + `queryReason: redacted` si illisible) ; l'hôte du client n'est jamais rendu.
+  TerrilDB n'active rien : pour allumer ce journal, lancer soi-même `SET GLOBAL log_output = 'TABLE'; SET GLOBAL slow_query_log = 'ON';` (et l'écrire dans la
+  configuration pour qu'il survive à un redémarrage).
+
+Réservé au droit de jeton `diagnostic` (refusé par défaut). ClickHouse et Redis : 501 `unsupported_operation`. L'audit (`diagnostic.read`, `topic: logs`) garde
+l'état et le nombre de lignes de chaque source, jamais une ligne ni un texte.
+
 ### Santé du serveur (`/diagnostics/health`, outil MCP `server_health`)
 
 Les compteurs de MySQL et de MariaDB (`SHOW GLOBAL STATUS`) sont **cumulés depuis le démarrage** : un compteur seul ne prouve rien. TerrilDB prend donc
@@ -190,7 +212,7 @@ de la base de la connexion) : `transactions_per_second`, `rollback_percent` (10 
 serveur sur la lecture des compteurs est rendu `permission_denied`). PostgreSQL publie les statistiques d'une session avec un léger retard (de l'ordre de la seconde, jusqu'à
 10 s pour une session inactive) : sur un intervalle très court, une activité récente peut ne pas encore y figurer. Les taux PostgreSQL sont donc des ordres de grandeur (mesuré : de 1 à 2 fois
 la charge réelle sur 3 à 5 s, un rattrapage du paquet précédent sur 2 s, rien pour une session qui ne touche aucune table) : à lire sur 10 s ou plus ; MySQL et MariaDB comptent exactement. ClickHouse et Redis : `unsupported`, route 501. À
-suivre (non livré) : longueur de l'historique d'annulation InnoDB, journaux (requêtes lentes, journal général, journal d'erreurs SQL), préparation à la reprise. L'audit
+suivre (non livré) : longueur de l'historique d'annulation InnoDB, journal général, préparation à la reprise (les journaux d'erreurs et de requêtes lentes sont livrés : voir « Journaux du serveur »). L'audit
 (`diagnostic.read`, `topic: health`) garde l'état, l'intervalle demandé et si la mesure a été écartée, jamais un compteur. Un délai maximal de requête côté serveur web inférieur
 à l'intervalle choisi (plus 2 s) interrompt la mesure : laissez la marge.
 

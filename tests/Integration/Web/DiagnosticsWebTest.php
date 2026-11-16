@@ -54,7 +54,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         $unsupported = ['availability' => 'unsupported', 'reason' => 'not_supported', 'privilege' => null];
         $availableStatus = ['availability' => 'available', 'reason' => null, 'privilege' => null];
         $capabilities = self::arrayOf($body['capabilities']);
-        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption', 'health', 'replication'], array_keys($capabilities));
+        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption', 'health', 'replication', 'logs'], array_keys($capabilities));
         self::assertSame($availableStatus, $capabilities['sessions']);
         self::assertSame($locks, $capabilities['locks']);
         // La source des empreintes dépend de la cible (performance_schema, extension, journal) : elle dit la même chose que sa page.
@@ -65,6 +65,12 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame('TARGET_CLICKHOUSE_URL' === $envVar ? $unsupported : $availableStatus, $capabilities['encryption']);
         self::assertSame(\in_array($envVar, ['TARGET_CLICKHOUSE_URL', 'TARGET_REDIS_URL'], true) ? $unsupported : $availableStatus, $capabilities['health']);
         self::assertSame($availableStatus, $capabilities['replication']);
+        self::assertSame(match ($envVar) {
+            'TARGET_MYSQL_URL', 'TARGET_MYSQL26_URL' => $availableStatus,
+            'TARGET_MARIADB_URL', 'TARGET_MARIADB13_URL' => ['availability' => 'disabled', 'reason' => 'log_output_without_table', 'privilege' => null],
+            'TARGET_POSTGRES_URL' => ['availability' => 'unsupported', 'reason' => 'log_is_a_file', 'privilege' => null],
+            default => $unsupported,
+        }, $capabilities['logs']);
     }
 
     #[DataProvider('targets')]
@@ -170,6 +176,64 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame('available', $details['status']);
         self::assertSame(1, $details['seconds']);
         self::assertArrayNotHasKey('indicators', $details);
+    }
+
+    public function testReadsTheErrorLogOfMySqlWithoutAnyTextInTheAudit(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_MYSQL_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/logs');
+
+        self::assertSame(200, $this->statusCode());
+        $error = self::arrayOf($body['errorLog']);
+        self::assertSame('available', self::arrayOf($error['status'])['availability']);
+        self::assertIsArray($error['entries']);
+        self::assertNotEmpty($error['entries']);
+        $first = self::arrayOf($error['entries'][0]);
+        self::assertSame(['loggedAt', 'level', 'subsystem', 'code', 'message'], array_keys($first));
+        self::assertSame('disabled', self::arrayOf(self::arrayOf($body['slowQueries'])['status'])['availability']);
+        self::assertSame('log_output_without_table', self::arrayOf(self::arrayOf($body['slowQueries'])['status'])['reason']);
+
+        $events = array_values(array_filter($this->auditEvents($user, 'diagnostic'), static fn ($e): bool => AuditAction::DiagnosticRead === $e->getAction()));
+        self::assertCount(1, $events);
+        $details = $events[0]->getDetails();
+        self::assertSame('logs', $details['topic']);
+        self::assertSame('available', $details['errorStatus']);
+        self::assertSame(\count($error['entries']), $details['errorRows']);
+        self::assertSame('disabled', $details['slowStatus']);
+        self::assertSame(0, $details['slowRows']);
+        self::assertStringNotContainsString(\is_string($first['message']) ? $first['message'] : '', json_encode($details, \JSON_THROW_ON_ERROR));
+    }
+
+    public function testLogsAreUnsupportedOnPostgreSqlWithTheReason(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/logs');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['availability' => 'unsupported', 'reason' => 'log_is_a_file', 'privilege' => null], self::arrayOf(self::arrayOf($body['errorLog'])['status']));
+        self::assertSame([], self::arrayOf($body['errorLog'])['entries']);
+    }
+
+    public function testLogsAre501WhereTheEngineHasNoSuchTheme(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/logs');
+
+        self::assertSame(501, $this->statusCode());
+        self::assertSame('unsupported_operation', $body['error']);
+    }
+
+    public function testLogsRequireASession(): void
+    {
+        $this->call('GET', '/web/connections/00000000-0000-7000-8000-000000000000/diagnostics/logs');
+
+        self::assertSame(401, $this->statusCode());
     }
 
     public function testRedisIsUnsupported(): void
