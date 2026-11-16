@@ -90,7 +90,7 @@ final class ProxyTimeoutDeployTest extends TestCase
     {
         $deploy = self::read('docker/prod/deploy.sh');
 
-        self::assertMatchesRegularExpression('/printf [^\n]*TERRILDB_PROXY_TIMEOUT=%s/', $deploy, 'Rewriting deploy.env must not lose the value.');
+        self::assertMatchesRegularExpression('/kept TERRILDB_PROXY_TIMEOUT[^\n]*\n[\s\S]*TERRILDB_PROXY_TIMEOUT=%s/', $deploy, 'Rewriting deploy.env must not lose the value.');
         self::assertMatchesRegularExpression('/proxy-timeout\.sh"? check/', $deploy, 'The deployment checks that nginx agrees.');
     }
 
