@@ -12,7 +12,7 @@ passe. Les noms d'hôte acceptés se règlent avec `TERRILDB_ALLOWED_HOSTS` (lis
 
 ## Outils
 
-Les quatre premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les autres n'existent que pour
+Les cinq premiers sont en lecture seule (`readOnlyHint`), sur les connexions du jeton uniquement. Les autres n'existent que pour
 les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit pas).
 
 | Outil | Arguments | Rôle |
@@ -21,6 +21,7 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
 | `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?`, `format?`, `measure?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit ; `timeoutMs` est borné par le délai du proxy moins 20 s (100 000 par défaut ; le schéma de l'outil dit la valeur du serveur) |
+| `lint_query` | `connection`, `sql` | conseils sur le TEXTE d'une requête de lecture avant de l'exécuter (fonction ou calcul sur une colonne indexée, `LIKE '%x'`, colonne texte comparée à un nombre, `OR` entre colonnes, `DISTINCT` après jointure, grand `OFFSET`, `SELECT *`, `COUNT(*)` ou `ORDER BY RAND()` sur une grande table…) : `findings` (`rule`, `severity`, `message`, `suggestion`, `columns`), 50 au plus. Visible de tout jeton, rien n'est exécuté ni écrit ; seule la structure de la table visée est lue (voir docs/api.md, route `/lint`) |
 | `list_sessions` | `connection` | (droit `diagnostic`, lecture seule) sessions en cours sur le serveur : utilisateur, base, état, durée, début de la requête (littéraux masqués par `?`, 200 caractères au plus ; nul avec `queryReason: redacted` si le texte ne peut pas être masqué sans risque) ; l'état dit si le compte de la base n'a pas le droit de les lire (voir docs/api.md, « Diagnostics ») |
 | `list_variables` | `connection`, `search?`, `changedOnly?`, `limit?` | (droit `diagnostic`, lecture seule) variables de configuration : valeur, défaut quand le moteur le donne, écart au défaut, origine, redémarrage nécessaire ; la valeur d'un nom évoquant un secret n'est jamais donnée (`masked`) ; rien n'est modifié |
 | `list_locks` | `connection` | (droit `diagnostic`, lecture seule) transactions ouvertes (les plus anciennes d'abord) et arbre de blocage : qui attend qui, depuis combien de temps, sur quel objet ; rien n'est arrêté ; l'état distingue « aucun verrou » de « non lisible » (voir docs/api.md, « Diagnostics ») |
