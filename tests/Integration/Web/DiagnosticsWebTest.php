@@ -64,7 +64,7 @@ final class DiagnosticsWebTest extends WebApiTestCase
         self::assertSame(\in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? $unsupported : $availableStatus, $capabilities['accounts']);
         self::assertSame('TARGET_CLICKHOUSE_URL' === $envVar ? $unsupported : $availableStatus, $capabilities['encryption']);
         self::assertSame(\in_array($envVar, ['TARGET_CLICKHOUSE_URL', 'TARGET_REDIS_URL'], true) ? $unsupported : $availableStatus, $capabilities['health']);
-        self::assertSame('TARGET_CLICKHOUSE_URL' === $envVar ? $unsupported : $availableStatus, $capabilities['replication']);
+        self::assertSame($availableStatus, $capabilities['replication']);
     }
 
     #[DataProvider('targets')]

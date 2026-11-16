@@ -1,0 +1,49 @@
+{
+  "meta": [
+    {
+      "name": "database",
+      "type": "String"
+    },
+    {
+      "name": "table",
+      "type": "String"
+    },
+    {
+      "name": "is_readonly",
+      "type": "UInt8"
+    },
+    {
+      "name": "is_session_expired",
+      "type": "UInt8"
+    },
+    {
+      "name": "absolute_delay",
+      "type": "UInt64"
+    },
+    {
+      "name": "queue_size",
+      "type": "UInt32"
+    },
+    {
+      "name": "inserts_in_queue",
+      "type": "UInt32"
+    },
+    {
+      "name": "lost_part_count",
+      "type": "UInt64"
+    }
+  ],
+  "data": [
+    [
+      "d",
+      "rt",
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "rows": 1
+}

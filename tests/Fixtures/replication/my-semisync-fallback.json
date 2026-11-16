@@ -1,0 +1,39 @@
+{
+    "variables": {
+        "binlog_expire_logs_auto_purge": "ON",
+        "binlog_expire_logs_seconds": "0",
+        "gtid_executed": "c40f0149-e15e-11f1-aada-02acfea6f81d:1-9",
+        "gtid_purged": "",
+        "log_bin": "ON",
+        "rpl_semi_sync_replica_enabled": "OFF",
+        "rpl_semi_sync_replica_trace_level": "32",
+        "rpl_semi_sync_source_enabled": "ON",
+        "rpl_semi_sync_source_timeout": "10",
+        "rpl_semi_sync_source_trace_level": "32",
+        "rpl_semi_sync_source_wait_for_replica_count": "1",
+        "rpl_semi_sync_source_wait_no_replica": "ON",
+        "rpl_semi_sync_source_wait_point": "AFTER_SYNC"
+    },
+    "status": {
+        "Rpl_semi_sync_replica_status": "OFF",
+        "Rpl_semi_sync_source_clients": "0",
+        "Rpl_semi_sync_source_status": "OFF"
+    },
+    "logs": [
+        {
+            "Log_name": "binlog.000001",
+            "File_size": "181",
+            "Encrypted": "No"
+        },
+        {
+            "Log_name": "binlog.000002",
+            "File_size": "2981702",
+            "Encrypted": "No"
+        },
+        {
+            "Log_name": "binlog.000003",
+            "File_size": "834",
+            "Encrypted": "No"
+        }
+    ]
+}

@@ -16,11 +16,15 @@ use App\Core\Diagnostics\Health\HealthIndicator;
 use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\Replication\ReplicaLink;
+use App\Core\Diagnostics\Replication\ReplicatedTable;
 use App\Core\Diagnostics\Replication\ReplicationAlert;
 use App\Core\Diagnostics\Replication\ReplicationAlerts;
 use App\Core\Diagnostics\Replication\ReplicationChannel;
 use App\Core\Diagnostics\Replication\ReplicationError;
+use App\Core\Diagnostics\Replication\ReplicationExtras;
 use App\Core\Diagnostics\Replication\ReplicationReport;
+use App\Core\Diagnostics\Replication\ReplicationSlot;
 use App\Core\Diagnostics\SecurityFinding;
 use App\Core\Diagnostics\ServerSession;
 use App\Core\Diagnostics\ServerVariable;
@@ -320,7 +324,7 @@ final class DiagnosticsPresenter
      */
     public static function replication(ReplicationReport $report, bool $masked = true): array
     {
-        return [
+        $body = [
             'status' => self::status($report->status),
             'role' => $report->role->value,
             'replicaCount' => $report->replicaCount,
@@ -344,6 +348,82 @@ final class DiagnosticsPresenter
             'alerts' => array_map(static fn (ReplicationAlert $a): array => ['code' => $a->code->value, 'severity' => $a->severity->value, 'channel' => $a->channel], $report->alerts()),
             'thresholds' => ['warning' => ReplicationAlerts::LAG_WARNING_SECONDS, 'critical' => ReplicationAlerts::LAG_CRITICAL_SECONDS],
         ];
+
+        return $body + self::replicationExtras($report->extras);
+    }
+
+    /**
+     * Les sections propres au moteur : une clé n'existe que si le moteur a la notion (un rapport sans section garde la forme
+     * historique), chacune avec son état. Jamais d'adresse, de chemin de coordinateur ni de texte d'erreur du moteur.
+     *
+     * @return array<string, mixed>
+     */
+    private static function replicationExtras(ReplicationExtras $extras): array
+    {
+        $body = [];
+        if (null !== $extras->slots) {
+            $body['slots'] = ['status' => self::status($extras->slots->status), 'slots' => array_map(static fn (ReplicationSlot $s): array => [
+                'name' => $s->name,
+                'type' => $s->type,
+                'active' => $s->active,
+                'temporary' => $s->temporary,
+                'retainedBytes' => $s->retainedBytes,
+                'walStatus' => $s->walStatus,
+                'safeWalSize' => $s->safeWalSize,
+            ], $extras->slots->slots)];
+        }
+        if (null !== $extras->replicas) {
+            $body['replicas'] = ['status' => self::status($extras->replicas->status), 'replicas' => array_map(static fn (ReplicaLink $l): array => [
+                'rank' => $l->rank,
+                'state' => $l->state,
+                'connected' => $l->connected,
+                'syncState' => $l->syncState,
+                'writeLagSeconds' => $l->writeLagSeconds,
+                'flushLagSeconds' => $l->flushLagSeconds,
+                'replayLagSeconds' => $l->replayLagSeconds,
+                'behindBytes' => $l->behindBytes,
+            ], $extras->replicas->replicas)];
+        }
+        if (null !== $extras->binlog) {
+            $body['binlog'] = [
+                'status' => self::status($extras->binlog->status),
+                'enabled' => $extras->binlog->enabled,
+                'fileCount' => $extras->binlog->fileCount,
+                'totalBytes' => $extras->binlog->totalBytes,
+                'expireSeconds' => $extras->binlog->expireSeconds,
+                'gtidExecuted' => $extras->binlog->gtidExecuted,
+                'gtidPurged' => $extras->binlog->gtidPurged,
+            ];
+        }
+        if (null !== $extras->semiSync) {
+            $body['semiSync'] = ['status' => self::status($extras->semiSync->status), 'source' => $extras->semiSync->source->value, 'replica' => $extras->semiSync->replica->value, 'clients' => $extras->semiSync->clients];
+        }
+        if (null !== $extras->tables) {
+            $body['replicatedTables'] = ['status' => self::status($extras->tables->status), 'tables' => array_map(static fn (ReplicatedTable $t): array => [
+                'database' => $t->database,
+                'table' => $t->table,
+                'readonly' => $t->readonly,
+                'sessionExpired' => $t->sessionExpired,
+                'absoluteDelaySeconds' => $t->absoluteDelaySeconds,
+                'queueSize' => $t->queueSize,
+                'insertsInQueue' => $t->insertsInQueue,
+                'lostParts' => $t->lostParts,
+            ], $extras->tables->tables), 'truncated' => $extras->tables->truncated];
+        }
+        if (null !== $extras->keyValue) {
+            $body['keyValue'] = [
+                'linkStatus' => $extras->keyValue->linkStatus,
+                'lastIoSecondsAgo' => $extras->keyValue->lastIoSecondsAgo,
+                'syncInProgress' => $extras->keyValue->syncInProgress,
+                'backlogSize' => $extras->keyValue->backlogSize,
+                'masterReplOffset' => $extras->keyValue->masterReplOffset,
+            ];
+        }
+        if ([] !== $body) {
+            $body['limits'] = ['slotRetainedWarningBytes' => ReplicationAlerts::SLOT_RETAINED_WARNING_BYTES, 'slotRetainedCriticalBytes' => ReplicationAlerts::SLOT_RETAINED_CRITICAL_BYTES, 'tableQueueWarning' => ReplicationAlerts::TABLE_QUEUE_WARNING];
+        }
+
+        return $body;
     }
 
     /**

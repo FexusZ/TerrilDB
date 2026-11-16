@@ -49,7 +49,8 @@ final class ReplicationWebTest extends WebApiTestCase
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/replication');
 
         self::assertSame(200, $this->statusCode());
-        self::assertSame(['status', 'role', 'replicaCount', 'settings', 'channels', 'alerts', 'thresholds'], array_keys($body));
+        // Les clés historiques restent en tête et dans le même ordre : les sections du moteur ne font que s'y ajouter.
+        self::assertSame(['status', 'role', 'replicaCount', 'settings', 'channels', 'alerts', 'thresholds'], \array_slice(array_keys($body), 0, 7));
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertSame('none', $body['role']);
         self::assertSame([], $body['channels']);
@@ -66,15 +67,33 @@ final class ReplicationWebTest extends WebApiTestCase
         self::assertSame('available', self::arrayOf(self::arrayOf($body['capabilities'])['replication'])['availability']);
     }
 
-    public function testClickHouseIsUnsupportedHere(): void
+    public function testClickHouseWithoutReplicatedTablesHasNoReplication(): void
     {
         $this->seedAndLogin();
         $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
 
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/replication');
 
-        self::assertSame(501, $this->statusCode());
-        self::assertSame('unsupported_operation', $body['error']);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('none', $body['role']);
+        self::assertSame([], self::arrayOf($body['replicatedTables'])['tables']);
+        self::assertSame([], $body['alerts']);
+    }
+
+    public function testRedisWithoutReplicasHasNoReplication(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_REDIS_URL');
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/replication');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('none', $body['role']);
+        self::assertSame(0, $body['replicaCount']);
+        self::assertSame([], self::arrayOf($body['replicas'])['replicas']);
+        self::assertArrayHasKey('backlogSize', self::arrayOf($body['keyValue']));
+        self::assertArrayNotHasKey('masterHost', $body);
+        self::assertSame([], $body['alerts']);
     }
 
     public function testAnotherAccountsConnectionIsNotFound(): void

@@ -14,4 +14,6 @@ enum ReplicationRole: string
     case None = 'none';
     case Source = 'source';
     case Replica = 'replica';
+    /** Des tables répliquées entre pairs, sans source ni réplica fixes (ClickHouse). */
+    case Peer = 'peer';
 }
