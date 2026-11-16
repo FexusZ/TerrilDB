@@ -49,6 +49,16 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `« ${finding.index ?? finding.table} » : ${finding.detail ?? 'créateur inexistant'}.`,
         help: 'Cet objet s’exécute sous l’identité de son créateur, et ce compte n’existe plus (base restaurée sur un autre serveur, compte supprimé). Son usage échoue avec l’erreur 1449 (« The user specified as a definer does not exist »), qui ne nomme pas toujours l’objet en cause. Recréez-le avec un compte qui existe : relisez sa définition d’abord, rien n’est modifié sans vous.',
       }
+    case 'partition_range_exhausted':
+      return {
+        title: `La plage de partitions de « ${finding.table} » sur ${finding.columns.join(', ')} s’arrête au ${finding.detail ?? ''}, sans partition pour la suite.`,
+        help: 'Le moteur refuse toute ligne dont la date dépasse la dernière borne tant qu’aucune partition fourre-tout (MAXVALUE ou DEFAULT) ou nouvelle partition ne la reçoit. Ajoutez-en une avant que des écritures n’échouent.',
+      }
+    case 'too_many_partitions':
+      return {
+        title: `La table « ${finding.table} » a ${finding.detail ?? ''} partitions.`,
+        help: 'Au-delà d’environ 1000 partitions, le moteur met plus de temps à planifier les requêtes et à ouvrir la table. Regroupez les partitions (par exemple par mois plutôt que par jour) ou archivez les plus anciennes.',
+      }
     case 'text_primary_key':
       return {
         title: `La clé primaire de « ${finding.table} » (${finding.columns.join(', ')}) est un UUID rangé en texte${finding.detail === null ? '' : ` (${finding.detail})`}.`,

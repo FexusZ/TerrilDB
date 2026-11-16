@@ -244,6 +244,7 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
             TableKind::View === $kind ? null : $header->nullableString('storage_engine'),
             TableKind::View === $kind ? null : self::transactional($header->nullableString('engine_transactions')),
             TableKind::View === $kind ? null : $this->triggerCount($name),
+            TableKind::View === $kind ? null : (new MySqlPartitionReader($this->connection))->read($name),
         );
     }
 

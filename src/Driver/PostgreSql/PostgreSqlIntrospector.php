@@ -247,6 +247,7 @@ final readonly class PostgreSqlIntrospector implements SchemaIntrospector, Opera
             null,
             null,
             TableKind::Table === $kind ? $this->triggerCount($oid) : null,
+            TableKind::Table === $kind ? (new PostgreSqlPartitionReader($this->connection))->read($oid) : null,
         );
     }
 

@@ -12,6 +12,7 @@ use App\Core\Schema\Exception\InvalidSchemaException;
  * de tous les index, quand le moteur la donne ; ce sont des mesures qui bougent, hors de l'empreinte de structure.
  * `storageEngine` (MySQL et MariaDB : InnoDB, MyISAM…) et `transactional` (ce moteur sait-il annuler ? nul si inconnu), `triggerCount`
  * (déclencheurs de la table, nul si le moteur n'en a pas ou ne le dit pas) : des informations, hors de l'empreinte elles aussi.
+ * `partitioning` : le découpage en partitions (lecture seule, nul sans partition), lui aussi hors de l'empreinte.
  */
 final readonly class TableDefinition
 {
@@ -33,6 +34,7 @@ final readonly class TableDefinition
         public ?string $storageEngine = null,
         public ?bool $transactional = null,
         public ?int $triggerCount = null,
+        public ?PartitioningInfo $partitioning = null,
     ) {
         if ('' === $name || [] === $columns) {
             throw new InvalidSchemaException('A table needs a name and at least one column.');

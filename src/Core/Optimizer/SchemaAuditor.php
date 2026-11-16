@@ -30,6 +30,9 @@ final class SchemaAuditor
 {
     private const NAME_LIMIT = 63;
 
+    /** Au-delà, une table partitionnée alourdit la planification et l'ouverture de la table (voir `PartitionAuditor`). */
+    public const PARTITION_COUNT_ADVISED = PartitionAuditor::COUNT_ADVISED;
+
     private readonly DesignRules $design;
 
     public function __construct(?DesignRules $design = null)
@@ -41,10 +44,11 @@ final class SchemaAuditor
      * @param list<TableDefinition> $tables
      * @param ?IndexUsageReport     $usage    l'usage des index lu au catalogue (sans lui, la règle des index jamais lus se tait)
      * @param list<AutoCounter>     $counters les compteurs automatiques lus au catalogue (sans eux, la règle de saturation se tait)
+     * @param ?\DateTimeImmutable   $now      l'instant de référence des règles de partitions
      *
      * @return list<Finding>
      */
-    public function audit(Engine $engine, array $tables, ?IndexUsageReport $usage = null, array $counters = []): array
+    public function audit(Engine $engine, array $tables, ?IndexUsageReport $usage = null, array $counters = [], ?\DateTimeImmutable $now = null): array
     {
         if (Engine::ClickHouse === $engine) {
             // Ni clé primaire, ni clé étrangère, ni unicité : les règles relationnelles ne s'appliquent pas.
@@ -56,7 +60,7 @@ final class SchemaAuditor
             if (TableKind::Table !== $table->kind) {
                 continue;
             }
-            array_push($findings, ...$this->auditTable($engine, $table, $tables), ...$this->unusedIndexes($engine, $table, $usage), ...$this->saturation($engine, $table, $counters));
+            array_push($findings, ...$this->auditTable($engine, $table, $tables), ...$this->unusedIndexes($engine, $table, $usage), ...$this->saturation($engine, $table, $counters), ...(new PartitionAuditor())->audit($engine, $table, $now ?? new \DateTimeImmutable()));
         }
 
         // Par table, puis les constats graves d'abord.

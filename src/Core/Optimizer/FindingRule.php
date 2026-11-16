@@ -28,6 +28,9 @@ enum FindingRule: string
     case CopyWithoutIndexes = 'copy_without_indexes';
     case TimestampDeadline = 'timestamp_deadline';
     case DateAsText = 'date_as_text';
+
+    case PartitionRangeExhausted = 'partition_range_exhausted';
+    case TooManyPartitions = 'too_many_partitions';
     case TextPrimaryKey = 'text_primary_key';
     case FloatAmount = 'float_amount';
     case UnusedIndex = 'unused_index';
