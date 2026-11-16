@@ -7,6 +7,7 @@ namespace App\Http\Web;
 use App\Audit\AuditedSchemaChanges;
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\Change\ChangePlan;
+use App\Http\Json\AlgorithmPresenter;
 use App\Http\Json\ChangePlanPresenter;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\JsonInput;
@@ -48,7 +49,7 @@ final readonly class TableStructureController
             $input->optionalString('schema'),
         );
 
-        return new JsonResponse(ChangePlanPresenter::plan($preview->plan) + [
+        return new JsonResponse(['statements' => AlgorithmPresenter::statements($preview->plan, $preview->algorithms)] + ChangePlanPresenter::plan($preview->plan) + [
             'fingerprint' => $preview->fingerprint,
             'stale' => $preview->stale,
             'bigTable' => ChangePlanPresenter::bigTable($preview->bigTable),
