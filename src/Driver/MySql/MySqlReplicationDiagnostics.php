@@ -6,7 +6,9 @@ namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\DiagnosticStatus;
+use App\Core\Diagnostics\Replication\BinlogState;
 use App\Core\Diagnostics\Replication\ReplicationError;
+use App\Core\Diagnostics\Replication\ReplicationExtras;
 use App\Core\Diagnostics\Replication\ReplicationReport;
 use App\Core\Diagnostics\ReplicationDiagnostics;
 use App\Driver\DbalCatalogReader;
@@ -26,6 +28,8 @@ final readonly class MySqlReplicationDiagnostics implements ReplicationDiagnosti
 {
     private const ER_SPECIFIC_ACCESS_DENIED = 1227;
     private const ER_TABLEACCESS_DENIED = 1142;
+    private const BINLOG_VARIABLES = ['log_bin', 'binlog_expire_logs_seconds', 'expire_logs_days', 'binlog_expire_logs_auto_purge', 'gtid_executed', 'gtid_purged', 'gtid_binlog_pos'];
+    private const SEMI_SYNC_STATUS = ['Rpl_semi_sync_source_status', 'Rpl_semi_sync_source_clients', 'Rpl_semi_sync_replica_status', 'Rpl_semi_sync_master_status', 'Rpl_semi_sync_master_clients', 'Rpl_semi_sync_slave_status'];
     private const VARIABLES = ['read_only', 'super_read_only', 'binlog_format', 'gtid_mode', 'gtid_slave_pos'];
 
     private DbalCatalogReader $catalog;
@@ -86,8 +90,46 @@ final readonly class MySqlReplicationDiagnostics implements ReplicationDiagnosti
                 $workerErrors = $this->workerErrors($c);
             }
 
-            return MySqlReplicationReport::build($this->engine, $rows, $this->variables($c), $this->replicaCount($c), $unapplied, $workerErrors);
+            return MySqlReplicationReport::build($this->engine, $rows, $this->variables($c), $this->replicaCount($c), $unapplied, $workerErrors, $this->extras($c));
         });
+    }
+
+    /**
+     * Journaux binaires (variables, GTID, `SHOW BINARY LOGS` seulement quand ils sont allumés : sinon MySQL répond une erreur) et
+     * greffon semi-synchrone (absent = « non chargé »). Aucune syntaxe SLAVE / MASTER ; `SHOW BINARY LOGS` existe partout.
+     */
+    private function extras(Connection $c): ReplicationExtras
+    {
+        $names = implode(', ', array_map(static fn (string $n): string => "'".$n."'", self::BINLOG_VARIABLES));
+        $variables = $this->pairs($c, 'SHOW GLOBAL VARIABLES WHERE Variable_name IN ('.$names.") OR Variable_name LIKE 'rpl_semi_sync_%'");
+        $status = $this->pairs($c, 'SHOW GLOBAL STATUS WHERE Variable_name IN ('.implode(', ', array_map(static fn (string $n): string => "'".$n."'", self::SEMI_SYNC_STATUS)).')');
+
+        $logsOn = \in_array(strtoupper($variables['log_bin'] ?? ''), ['ON', '1'], true);
+        try {
+            $logs = $logsOn ? $c->fetchAllAssociative('SHOW BINARY LOGS') : null;
+            $binlog = MySqlReplicationSections::binlog($this->engine, $variables, $logs);
+        } catch (DriverException $e) {
+            if (!\in_array($e->getCode(), [self::ER_SPECIFIC_ACCESS_DENIED, self::ER_TABLEACCESS_DENIED], true)) {
+                throw $e;
+            }
+            $binlog = new BinlogState(DiagnosticStatus::denied($this->privilege()), null, null, null, null, null, null);
+        }
+
+        return new ReplicationExtras(binlog: $binlog, semiSync: MySqlReplicationSections::semiSync($variables, $status));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function pairs(Connection $c, string $sql): array
+    {
+        $pairs = [];
+        foreach ($c->fetchAllAssociative($sql) as $row) {
+            $row = new RowReader($row);
+            $pairs[$row->string('Variable_name')] = $row->string('Value');
+        }
+
+        return $pairs;
     }
 
     /**
