@@ -83,6 +83,63 @@ final class ApiV1Test extends WebApiTestCase
         return $this->call($method, $uri, $body, csrf: false, extraServer: '' === $token ? [] : ['HTTP_AUTHORIZATION' => 'Bearer '.$token]);
     }
 
+    #[DataProvider('relationalTargets')]
+    public function testLintAdvisesFromTheStructureAndAuditsWithoutTheRawText(string $envVar): void
+    {
+        $user = $this->prepare($envVar);
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "select id from orders where lower(status) = 'jean.dupont@example.org'"]);
+
+        self::assertSame(200, $this->statusCode());
+        $findings = self::listOf($body['findings']);
+        self::assertCount(1, $findings);
+        $finding = self::arrayOf($findings[0]);
+        self::assertSame('function_on_column', $finding['rule']);
+        self::assertStringContainsString('idx_orders_status', self::stringOf($finding['message']));
+        self::assertSame(['status'], $finding['columns']);
+
+        $events = array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value));
+        self::assertCount(1, $events);
+        self::assertSame('api', $events[0]->getActor()->value);
+        self::assertSame($this->tokenId, $events[0]->getTokenId()?->toRfc4122());
+        self::assertSame('select id from orders where lower(status) = ?', $events[0]->getDetails()['sql']);
+        self::assertStringNotContainsString('jean.dupont', json_encode($events[0]->getDetails(), \JSON_THROW_ON_ERROR));
+    }
+
+    public function testLintNeedsNoWriteRightAndJudgesNoWrite(): void
+    {
+        $user = $this->prepare();
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "delete from categories where lower(name) = 'x'"]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame([], $body['findings']);
+        $details = array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value))[0]->getDetails();
+        self::assertArrayNotHasKey('sql', $details);
+    }
+
+    public function testLintRefusesAConnectionOutsideTheGrantAndABadBody(): void
+    {
+        $this->prepare();
+
+        $this->api('POST', '/api/v1/connections/'.$this->otherConnectionId.'/lint', ['sql' => 'select 1']);
+        self::assertSame(404, $this->statusCode());
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['nope' => 'select 1']);
+        self::assertSame(400, $this->statusCode());
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => 'select 1'], token: 'tdb_bad');
+        self::assertSame(401, $this->statusCode());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
     public function testNoTokenIsRefusedWithAChallenge(): void
     {
         $body = $this->api('GET', '/api/v1/connections', token: '');
