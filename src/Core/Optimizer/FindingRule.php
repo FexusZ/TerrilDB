@@ -13,6 +13,12 @@ enum FindingRule: string
     case ForeignKeyWithoutIndex = 'foreign_key_without_index';
     case RedundantIndex = 'redundant_index';
     case ForeignKeyTypeMismatch = 'foreign_key_type_mismatch';
+
+    // Audit d'exploitation (#80, suite) : lu dans les compteurs et le catalogue du moteur.
+    case StaleStatistics = 'stale_statistics';
+    case DeadTuples = 'dead_tuples';
+    case ReclaimableSpace = 'reclaimable_space';
+    case OrphanDefiner = 'orphan_definer';
     case TextPrimaryKey = 'text_primary_key';
     case FloatAmount = 'float_amount';
     case UnusedIndex = 'unused_index';

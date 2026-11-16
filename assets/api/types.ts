@@ -474,7 +474,7 @@ export interface LintResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit' | OperationsRule
   severity: 'critical' | 'warning' | 'info'
   table: string
   columns: string[]
@@ -484,9 +484,12 @@ export interface SchemaFinding {
   detail: string | null
 }
 
+/** Les règles d'exploitation : lues dans les compteurs et le catalogue du moteur. */
+export type OperationsRule = 'stale_statistics' | 'dead_tuples' | 'reclaimable_space' | 'orphan_definer'
+
 /** Une règle d'exploitation qui n'a pas pu juger : une raison, jamais un constat. */
 export interface AuditCheck {
-  rule: 'unused_index'
+  rule: 'unused_index' | OperationsRule
   state: 'unavailable' | 'too_short'
   reason: string | null
   detail: string | null

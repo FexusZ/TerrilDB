@@ -7,6 +7,7 @@ namespace App\Driver\PostgreSql;
 use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
+use App\Core\Schema\DefinerReport;
 use App\Core\Schema\Exception\InvalidSchemaException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
@@ -14,6 +15,7 @@ use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\IndexUsage;
 use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\LockReason;
+use App\Core\Schema\OperationsSource;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\SchemaSummary;
@@ -22,6 +24,7 @@ use App\Core\Schema\TableKind;
 use App\Core\Schema\TablePage;
 use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
+use App\Core\Schema\UpkeepReport;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
@@ -33,12 +36,22 @@ use Doctrine\DBAL\Exception\DriverException;
  * Le type d'une colonne est celui que PostgreSQL écrit lui-même (format_type). Une colonne d'identité ou
  * adossée à une séquence compte comme auto-incrémentée.
  */
-final readonly class PostgreSqlIntrospector implements SchemaIntrospector
+final readonly class PostgreSqlIntrospector implements SchemaIntrospector, OperationsSource
 {
     private const RELATIONS = "c.relkind IN ('r', 'p', 'v', 'm') AND n.nspname = current_schema()";
 
     public function __construct(private Connection $connection)
     {
+    }
+
+    public function upkeep(): UpkeepReport
+    {
+        return (new PostgreSqlOperations($this->connection))->upkeep();
+    }
+
+    public function orphanDefiners(): DefinerReport
+    {
+        return (new PostgreSqlOperations($this->connection))->orphanDefiners();
     }
 
     public function listDatabases(): array
