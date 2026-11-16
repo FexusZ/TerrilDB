@@ -186,8 +186,11 @@ sauvegarde du jour, hors déploiement, avec le même format :
 
 ```bash
 cd <dossier-du-depot>; set -a; . ~/.config/terrildb/deploy.env; set +a; export TERRILDB_DEPLOY_DIR=~/.config/terrildb
-docker compose -f compose.prod.yaml exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > ~/.config/terrildb/backups/manuelle-$(date +%Y%m%d-%H%M%S).sql.gz
+B=~/.config/terrildb/backups/manuelle-$(date +%Y%m%d-%H%M%S).sql
+umask 077
+docker compose -f compose.prod.yaml exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$B" && [ -s "$B" ] && gzip "$B" || { rm -f "$B" "$B.gz"; echo "sauvegarde en échec" >&2; }
 ```
+(Le vidage va dans un fichier, puis `gzip` : dans un tube `pg_dump | gzip`, un `pg_dump` en échec laisserait un fichier presque vide, compté parmi les sept.)
 (`deploy.sh` ne supprime que les fichiers `*.sql.gz` au-delà de sept : une copie manuelle placée dans `backups/` entre dans la rotation ;
 la ranger ailleurs pour la garder.)
 
@@ -206,7 +209,8 @@ $C sh -c 'dropdb -U "$POSTGRES_USER" terrildb_essai'
 
 1. Arrêter l'application : `docker compose -f compose.prod.yaml stop app`.
 2. Au besoin, garder l'état actuel : un `pg_dump` comme ci-dessus.
-3. `docker compose -f compose.prod.yaml exec -T db sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'`
+3. Vérifier d'abord que la sauvegarde est lisible (`gunzip -t <fichier> && echo ok`) et, de préférence, l'avoir essayée sur une base jetable (ci-dessus) : la
+   commande suivante détruit la base actuelle, et rien ne la remplace si le fichier est inutilisable. `docker compose -f compose.prod.yaml exec -T db sh -c 'dropdb -U "$POSTGRES_USER" "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'`
 4. `gunzip -c <fichier> | docker compose -f compose.prod.yaml exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -q -U "$POSTGRES_USER" "$POSTGRES_DB"'`
 5. Redémarrer : `docker compose -f compose.prod.yaml up -d app` (avec l'étiquette `TERRILDB_TAG` voulue : celle de `current-tag`). Si la sauvegarde
    précède des migrations, un déploiement (ou `php bin/console doctrine:migrations:migrate --no-interaction` dans le conteneur) les rejoue.
