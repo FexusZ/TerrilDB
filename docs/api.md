@@ -86,13 +86,32 @@ DDL), `mode` et `object` tels que le moteur les nomme. Aucune instruction d'arr�
 vide) se distingue de « non lisible » (`permission_denied`, `disabled` avec `reason: performance_schema_off`). MariaDB ne rapporte que les verrous de
 lignes (ses verrous de métadonnées demandent `performance_schema`, éteint par défaut) ; ClickHouse et Redis : `unsupported`, route 501.
 
-**Réplication** (`/diagnostics/replication`) : `role` (`none` = « pas de réplication configurée », `source`, `replica`), `replicaCount` (null = le compte ne peut pas
+**Réplication** (`/diagnostics/replication`) : `role` (`none` = « pas de réplication configurée », `source`, `replica`, `peer` = tables répliquées entre pairs, ClickHouse), `replicaCount` (null = le compte ne peut pas
 les lister), `channels` (une entrée par canal : `receiver` et `applier` = `running`, `connecting` ou `stopped`, `lagSeconds` annoncé par le moteur, `received` et `applied`
 = jeux de GTID ou positions WAL, `pendingApply`, `receiverError` et `applierError` = `{code, message}` au texte neutralisé : ni hôte, ni compte, ni mot de passe), `settings`
 (`readOnly`, `superReadOnly`, `binlogFormat`, `gtid`), `alerts` (`code`, `severity` = `warning` ou `critical`, `channel`) et `thresholds` (30 s et 300 s, non réglables).
 Le retard annoncé est trompeur : 0 peut cacher un receveur en retard, d'où `received` / `applied` / `pendingApply`. MySQL et MariaDB (syntaxe `REPLICA`, MySQL >= 8.0.22,
-MariaDB >= 10.5.1, sinon `unsupported` / `version_not_supported`) et PostgreSQL ; ClickHouse et Redis : `unsupported`, route 501. Aucune instruction de réplication n'est envoyée.
-Droit à donner à la connexion : MySQL `REPLICATION CLIENT` (et `REPLICATION SLAVE` pour compter les réplicas), MariaDB `SLAVE MONITOR` (et `REPLICATION MASTER ADMIN`), PostgreSQL `pg_read_all_stats`.
+MariaDB >= 10.5.1, sinon `unsupported` / `version_not_supported`), PostgreSQL, ClickHouse et Redis. Aucune instruction de réplication n'est envoyée.
+Droit à donner à la connexion : MySQL `REPLICATION CLIENT` (et `REPLICATION SLAVE` pour compter les réplicas), MariaDB `SLAVE MONITOR` (et `REPLICATION MASTER ADMIN`), PostgreSQL `pg_read_all_stats`,
+ClickHouse `SELECT ON system.replicas`, Redis la commande `INFO`.
+Sections propres au moteur, ajoutées à la réponse (une clé n'existe que si le moteur a la notion ; chacune porte son `status` : `available`, `permission_denied`, `disabled`
+ou `unsupported`, et une liste vide avec `available` veut dire « rien », pas « illisible ») :
+- `slots` (PostgreSQL, `pg_replication_slots`) : `{name, type, active, temporary, retainedBytes, walStatus, safeWalSize}`. `retainedBytes` = `pg_wal_lsn_diff(position courante, restart_lsn)`
+  (position rejouée sur un réplica) ; un slot inactif qui retient du WAL remplit le disque du primaire.
+- `replicas` (PostgreSQL `pg_stat_replication`, Redis lignes `slaveN`) : `{rank, state, connected, syncState, writeLagSeconds, flushLagSeconds, replayLagSeconds, behindBytes}` ;
+  un rang, jamais d'adresse, de nom de machine ni de compte.
+- `binlog` (MySQL / MariaDB) : `{enabled, fileCount, totalBytes, expireSeconds (0 = jamais), gtidExecuted, gtidPurged}` ; journal éteint = `disabled` / `binary_log_off`. `SHOW BINARY LOGS` n'est lu que
+  journal allumé ; les GTID sont bornés à 500 caractères.
+- `semiSync` (MySQL / MariaDB) : `{source, replica, clients}` avec `not_loaded` (greffon absent : `disabled` / `semi_sync_not_loaded`), `off`, `active`, `fallen_back` (activé mais repassé
+  en asynchrone, côté source seulement).
+- `replicatedTables` (ClickHouse, `system.replicas`, 200 au plus, les plus en retard d'abord) : `{database, table, readonly, sessionExpired, absoluteDelaySeconds, queueSize, insertsInQueue, lostParts}`
+  et `truncated` ; aucun chemin Keeper ni message d'exception.
+- `keyValue` (Redis, `INFO replication`) : `{linkStatus (up|down), lastIoSecondsAgo, syncInProgress, backlogSize, masterReplOffset}` ; `master_host`, `master_port` et le mot de passe de la source ne sont jamais renvoyés.
+- `limits` : seuils des alertes d'octets et de file (voir plus bas), présent avec au moins une section.
+Alertes ajoutées (seuils fixes, documentés) : `slot_inactive` (hors slot temporaire, même sans réplica), `slot_retains_wal` (>= 1 Gio avertit, >= 10 Gio critique), `slot_wal_unreserved` (avertit),
+`slot_wal_lost` (critique), `replica_not_streaming`, `replica_lag_high` / `replica_lag_critical` (30 s / 300 s sur le pire des trois retards), `binlog_no_expiry` (journal allumé et expiration nulle),
+`semisync_fallback`, `table_readonly`, `table_session_expired`, `table_lag_high` / `table_lag_critical` (30 s / 300 s), `table_queue_high` (file >= 100), `table_lost_parts`, `link_idle` (Redis, source silencieuse
+depuis >= 30 s, critique >= 300 s) ; `channel` désigne le slot, le rang du réplica ou la table `base.table`. Une section illisible ne produit aucune alerte.
 
 Compte de supervision minimal à donner à la connexion (documenté, pas imposé : sans le droit, l'état le dit) :
 
