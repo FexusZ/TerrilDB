@@ -161,6 +161,13 @@ final readonly class McpServerFactory
 
         if ($this->access->get()->token->getPermissions()->diagnostic) {
             $builder->addTool(
+                [$this->tools, 'getReplication'],
+                name: 'get_replication',
+                description: 'Donne l’état de la réplication du serveur de la connexion : rôle (source, réplica, aucun), fils de réception et d’application, retard annoncé, jeux de transactions reçus et appliqués, dernières erreurs (texte neutralisé) et alertes (fil arrêté, erreur, retard au-dessus de 30 s, réplica inscriptible, binlog_format différent de ROW, GTID absents). Lecture seule : aucune instruction de réplication n’est envoyée. Le retard annoncé peut être trompeur (0 alors que le receveur est en retard) : comparez les jeux reçus et appliqués. « Pas de réplication configurée » est le rôle « none », pas une erreur ; l’état dit si le compte n’a pas le droit de lire.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
+            );
+            $builder->addTool(
                 [$this->tools, 'serverHealth'],
                 name: 'server_health',
                 description: 'Mesure la santé du serveur de la connexion sur un intervalle : deux relevés de compteurs à `seconds` secondes d’écart (1 à 30, 5 par défaut ; l’appel dure autant), puis des taux par seconde et des repères (requêtes, connexions contre le plafond, échecs de connexion, lectures disque du cache, tables temporaires sur disque, attentes de verrous…). Les seuils sont des repères à valider, pas des verdicts ; une valeur nulle veut dire « inconnue » (compteur absent ou remis à zéro), pas zéro ; `discarded` signale un serveur redémarré entre les deux relevés. Lecture seule, rien n’est conservé.',

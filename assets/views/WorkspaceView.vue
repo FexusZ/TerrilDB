@@ -125,6 +125,7 @@ watch(() => [route.query.database, route.query.schema], () => {
       <RouterLink v-if="hasAccounts" :to="{ name: 'accounts', params: { id }, query: scope }" active-class="on">Comptes</RouterLink>
       <RouterLink :to="{ name: 'server-variables', params: { id }, query: scope }" active-class="on">Variables</RouterLink>
       <RouterLink :to="{ name: 'server-health', params: { id }, query: scope }" active-class="on">Santé</RouterLink>
+      <RouterLink :to="{ name: 'replication', params: { id }, query: scope }" active-class="on">Réplication</RouterLink>
     </nav>
 
     <div v-if="hasSchemaViews && !error && tableTabs.length > 0" class="tabs" :data-color="connection?.color ?? undefined" role="tablist" aria-label="Tables ouvertes">

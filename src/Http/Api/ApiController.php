@@ -321,4 +321,17 @@ final readonly class ApiController
 
         return $this->targets->with($access->user, $access->key, $connectionId, $action);
     }
+
+    /**
+     * L'état de la réplication du serveur de la connexion (rôle, fils, retard, dernière erreur, alertes), en lecture seule : aucune
+     * instruction de réplication (START, STOP, CHANGE) n'est jamais envoyée.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/replication', requirements: self::ID, methods: ['GET'])]
+    public function replication(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::replication($report));
+    }
 }

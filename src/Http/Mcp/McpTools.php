@@ -319,4 +319,16 @@ final readonly class McpTools
             throw new ToolCallException(json_encode(['error' => $mapped->code] + $mapped->extra, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE), previous: $error);
         }
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getReplication(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::replication($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
 }

@@ -15,6 +15,7 @@ use App\Core\Diagnostics\Health\HealthReport;
 use App\Core\Diagnostics\Health\HealthSampler;
 use App\Core\Diagnostics\Health\HealthSlots;
 use App\Core\Diagnostics\LockReport;
+use App\Core\Diagnostics\Replication\ReplicationReport;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Diagnostics\VariableQuery;
 use App\Core\Diagnostics\VariableReport;
@@ -194,6 +195,28 @@ final readonly class AuditedDiagnostics
         }
 
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'seconds' => $seconds, 'discarded' => null !== $report->discarded]);
+
+        return $report;
+    }
+
+    /**
+     * Seuls l'état, le rôle et des nombres sont journalisés : jamais un texte d'erreur de réplication, qui peut citer une valeur de donnée.
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function replication(AuditContext $context, Uuid $connectionId, TargetConnection $target): ReplicationReport
+    {
+        $base = ['topic' => 'replication', 'engine' => $target->engine->value];
+
+        try {
+            $report = $target->diagnostics()->replication()->replication();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'role' => $report->role->value, 'channels' => \count($report->channels), 'alerts' => \count($report->alerts())]);
 
         return $report;
     }

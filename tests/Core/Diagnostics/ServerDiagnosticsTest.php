@@ -60,7 +60,7 @@ final class ServerDiagnosticsTest extends TestCase
     {
         $diagnostics = new ServerDiagnostics(Engine::Redis);
 
-        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'statements' => 'unsupported', 'variables' => 'unsupported', 'accounts' => 'unsupported', 'encryption' => 'unsupported', 'health' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
+        self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'statements' => 'unsupported', 'variables' => 'unsupported', 'accounts' => 'unsupported', 'encryption' => 'unsupported', 'health' => 'unsupported', 'replication' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
     }
 
     public function testCapabilitiesAskTheThemeForItsStatus(): void

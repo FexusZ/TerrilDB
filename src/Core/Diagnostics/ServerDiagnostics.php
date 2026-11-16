@@ -23,6 +23,7 @@ final readonly class ServerDiagnostics
         private ?HealthDiagnostics $health = null,
         private ?AccountDiagnostics $accounts = null,
         private ?EncryptionDiagnostics $encryption = null,
+        private ?ReplicationDiagnostics $replication = null,
     ) {
     }
 
@@ -77,6 +78,14 @@ final readonly class ServerDiagnostics
     /**
      * @throws UnsupportedOperationException
      */
+    public function replication(): ReplicationDiagnostics
+    {
+        return $this->replication ?? throw UnsupportedOperationException::for($this->engine, 'replication');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
     public function health(): HealthDiagnostics
     {
         return $this->health ?? throw UnsupportedOperationException::for($this->engine, 'health');
@@ -92,7 +101,7 @@ final readonly class ServerDiagnostics
      */
     public function capabilities(?\Closure $onFailure = null): array
     {
-        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption, 'health' => $this->health];
+        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption, 'health' => $this->health, 'replication' => $this->replication];
         $capabilities = [];
         foreach ($themes as $name => $theme) {
             if (null === $theme) {
