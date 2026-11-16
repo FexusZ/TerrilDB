@@ -12,12 +12,15 @@ use App\Core\Diagnostics\Replication\SemiSyncMode;
 use App\Core\Diagnostics\Replication\ThreadState;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
+use App\Driver\ClickHouse\ClickHouseDriver;
+use App\Driver\ClickHouse\ClickHouseHttp;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
 use App\Driver\PostgreSql\PostgreSqlDriver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\HttpClient;
 
 /**
  * La réplication lue sur les vrais moteurs. Les cibles habituelles n'ont PAS de réplica : on y vérifie « pas de réplication
@@ -336,6 +339,70 @@ final class ReplicationDiagnosticsTest extends TestCase
         self::assertSame(ThreadState::Running, $report->channels[0]->applier);
         self::assertNotNull($report->channels[0]->lagSeconds);
         self::assertSame(0, $report->replicaCount);
+    }
+
+    private function openClickHouse(string $envVar, ?ConnectionParameters $parameters = null): TargetConnection
+    {
+        try {
+            return (new ClickHouseDriver(HttpClient::create()))->connect(Engine::ClickHouse, $parameters ?? TargetDatabase::parameters($envVar));
+        } catch (TargetConnectionFailedException) {
+            self::markTestSkipped(\sprintf('%s is unreachable.', $envVar));
+        }
+    }
+
+    public function testClickHouseWithoutReplicatedTablesHasNoReplication(): void
+    {
+        $target = $this->openClickHouse('TARGET_CLICKHOUSE_URL');
+
+        $report = $target->diagnostics()->replication()->replication();
+        $status = $target->diagnostics()->capabilities()['replication'];
+        $target->close();
+
+        self::assertSame(Availability::Available, $report->status->availability);
+        self::assertSame(ReplicationRole::None, $report->role);
+        self::assertSame([], $report->extras->tables?->tables);
+        self::assertSame([], $report->alerts());
+        self::assertSame(Availability::Available, $status->availability);
+    }
+
+    /**
+     * ClickHouse jetable avec Keeper embarqué et une table ReplicatedMergeTree d.rt (TARGET_REPLICATED_CLICKHOUSE_URL).
+     */
+    public function testClickHouseReplicatedTableIsReadAndHealthy(): void
+    {
+        $target = $this->openClickHouse('TARGET_REPLICATED_CLICKHOUSE_URL');
+
+        $report = $target->diagnostics()->replication()->replication();
+        $target->close();
+
+        self::assertSame(ReplicationRole::Peer, $report->role);
+        $names = array_map(static fn ($t): string => $t->name(), $report->extras->tables->tables ?? []);
+        self::assertContains('d.rt', $names);
+        self::assertSame([], $report->alerts());
+    }
+
+    public function testClickHouseWithoutTheGrantOnReplicasGetsAState(): void
+    {
+        $parameters = TargetDatabase::parameters('TARGET_CLICKHOUSE_URL');
+        $admin = $this->openClickHouse('TARGET_CLICKHOUSE_URL');
+        $user = 'tdb_repl_'.bin2hex(random_bytes(4));
+        $password = bin2hex(random_bytes(12));
+        $http = new ClickHouseHttp(HttpClient::create(), $parameters);
+        $http->query(\sprintf("CREATE USER %s IDENTIFIED WITH sha256_password BY '%s'", $user, $password));
+        $http->query(\sprintf('GRANT SELECT ON shop.* TO %s', $user));
+        try {
+            $reduced = $this->openClickHouse('TARGET_CLICKHOUSE_URL', new ConnectionParameters($parameters->host, $parameters->port, $parameters->database, $user, $password));
+            $report = $reduced->diagnostics()->replication()->replication();
+            $status = $reduced->diagnostics()->replication()->status();
+            $reduced->close();
+
+            self::assertSame(Availability::PermissionDenied, $report->status->availability);
+            self::assertSame('SELECT ON system.replicas', $status->privilege);
+            self::assertSame([], $report->alerts());
+        } finally {
+            $http->query(\sprintf('DROP USER IF EXISTS %s', $user));
+            $admin->close();
+        }
     }
 
     /**

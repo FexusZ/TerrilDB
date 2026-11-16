@@ -66,15 +66,16 @@ final class ReplicationWebTest extends WebApiTestCase
         self::assertSame('available', self::arrayOf(self::arrayOf($body['capabilities'])['replication'])['availability']);
     }
 
-    public function testClickHouseIsUnsupportedHere(): void
+    public function testClickHouseWithoutReplicatedTablesHasNoReplication(): void
     {
         $this->seedAndLogin();
         $id = $this->saveTarget('TARGET_CLICKHOUSE_URL');
 
         $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/replication');
 
-        self::assertSame(501, $this->statusCode());
-        self::assertSame('unsupported_operation', $body['error']);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('none', $body['role']);
+        self::assertSame([], $body['alerts']);
     }
 
     public function testAnotherAccountsConnectionIsNotFound(): void
