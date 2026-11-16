@@ -82,7 +82,7 @@ final class PostgreSqlAlgorithmAdvisorTest extends TestCase
 
     public function testAVolatileDefaultRewritesTheTable(): void
     {
-        $advice = self::advice(add: [new ColumnDraft(null, 'x', 'uuid', true, 'uuid()', false)])[0];
+        $advice = self::advice(add: [new ColumnDraft(null, 'x', 'uuid', true, 'gen_random_uuid()', false)])[0];
 
         self::assertSame(AlterAlgorithm::Rewrite, $advice->algorithm);
         self::assertTrue($advice->copiesTable);

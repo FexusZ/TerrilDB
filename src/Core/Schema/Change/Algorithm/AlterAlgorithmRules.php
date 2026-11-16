@@ -10,7 +10,7 @@ namespace App\Core\Schema\Change\Algorithm;
  * puis COPY (MySQL, MariaDB) ou compare le fichier de la table avant et après (PostgreSQL). Ce qui n'y figure pas est « unknown » :
  * jamais une certitude sans vérification.
  *
- * Écarts entre moteurs, vus par les essais : MariaDB renomme un index, retire une clé étrangère et renomme une colonne indexée sans
+ * Écarts entre moteurs, vus par les essais : MariaDB ne bloque pas forcément les écritures pendant une copie (MySQL, si) ; MariaDB renomme un index, retire une clé étrangère et renomme une colonne indexée sans
  * toucher aux données (instantané), MySQL le fait en place ; MySQL n'accepte « NULL vers NOT NULL » en place que sous un sql_mode
  * strict, MariaDB toujours.
  */
@@ -28,8 +28,11 @@ final class AlterAlgorithmRules
     {
         $instant = RuleVerdict::of(AlterAlgorithm::Instant, false, false);
         $inplace = RuleVerdict::of(AlterAlgorithm::Inplace, false, null);
-        $copy = RuleVerdict::of(AlterAlgorithm::Copy, true, true);
         $mariaDb = RuleFamily::MariaDb === $family;
+        // MySQL refuse LOCK=NONE avec COPY et bloque une écriture concurrente (mesuré) ; MariaDB 11.8 et 13 acceptent LOCK=NONE avec
+        // COPY et laissent passer une écriture pendant la copie quand le journal binaire est éteint : elles dépendent de la
+        // configuration, on n'affirme donc pas que l'écriture est bloquée.
+        $copy = RuleVerdict::of(AlterAlgorithm::Copy, $mariaDb ? null : true, true);
 
         return match ($change) {
             AlterChange::AddColumn, AlterChange::DropColumn, AlterChange::RenameColumn, AlterChange::ChangeDefault, AlterChange::AppendEnumMembers, AlterChange::RenameTable => $instant,

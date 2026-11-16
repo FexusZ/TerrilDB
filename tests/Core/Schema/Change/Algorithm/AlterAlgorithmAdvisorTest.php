@@ -242,7 +242,7 @@ final class AlterAlgorithmAdvisorTest extends TestCase
         foreach ([['n', 'bigint'], ['n', 'varchar(20)'], ['n', 'int unsigned'], ['c', 'text'], ['a', 'varchar(10)']] as [$column, $type]) {
             $advice = self::advise($target, static fn (TableDraft $d) => self::replaceColumn($d, $column, $type))[0];
             self::assertSame(AlterAlgorithm::Copy, $advice->algorithm, $column.' '.$type);
-            self::assertTrue($advice->blocksWrites);
+            self::assertSame(Engine::MySql === $target[0] ? true : null, $advice->blocksWrites, 'MariaDB can copy online: nothing is claimed');
             self::assertTrue($advice->copiesTable);
             self::assertSame(5_000_000, $advice->estimatedExtraBytes, 'data + indexes');
         }
@@ -363,7 +363,7 @@ final class AlterAlgorithmAdvisorTest extends TestCase
         $advice = self::advise($target, static fn (TableDraft $d) => self::with($d, foreignKeys: [...$d->foreignKeys, new ForeignKeyDraft(null, 'fk_n', ['n'], 'parent', ['id'], ReferentialAction::Restrict, ReferentialAction::Restrict)]))[0];
 
         self::assertSame(AlterAlgorithm::Copy, $advice->algorithm);
-        self::assertTrue($advice->blocksWrites);
+        self::assertSame(Engine::MySql === $target[0] ? true : null, $advice->blocksWrites);
         self::assertSame(5_000_000, $advice->estimatedExtraBytes);
     }
 
@@ -381,7 +381,7 @@ final class AlterAlgorithmAdvisorTest extends TestCase
         $keyed = new TableDefinition('orders', TableKind::Table, [new ColumnDefinition('id', 'int', false, null, false, null), new ColumnDefinition('x', 'int', false, null, false, null)], [new IndexDefinition('PRIMARY', ['id'], true, true)], [], null, 10, 100, 0, 'InnoDB', true);
         $drop = self::advise($target, static fn (TableDraft $d) => self::with($d, indexes: []), $keyed)[0];
         self::assertSame(AlterAlgorithm::Copy, $drop->algorithm);
-        self::assertTrue($drop->blocksWrites);
+        self::assertSame(Engine::MySql === $target[0] ? true : null, $drop->blocksWrites);
     }
 
     /**
