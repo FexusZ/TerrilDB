@@ -132,6 +132,113 @@ final class PlanServiceTest extends TestCase
         $this->service()->statementFor(Engine::MySql, 'delete from orders');
     }
 
+    public function testBuildsTheMeasuredStatementOfEachEngine(): void
+    {
+        self::assertSame('EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS) select * from orders', $this->service()->measuredStatementFor(Engine::PostgreSql, 'select * from orders;'));
+        self::assertSame('EXPLAIN ANALYZE select * from orders', $this->service()->measuredStatementFor(Engine::MySql, ' select * from orders '));
+        self::assertSame('ANALYZE FORMAT=JSON select * from orders', $this->service()->measuredStatementFor(Engine::MariaDb, 'select * from orders'));
+        self::assertSame('EXPLAIN (ANALYZE, FORMAT JSON, BUFFERS) with c as (select 1 as a) select a from c', $this->service()->measuredStatementFor(Engine::PostgreSql, 'with c as (select 1 as a) select a from c'));
+    }
+
+    public function testOnlyTheEnginesThatCanMeasureAreOffered(): void
+    {
+        self::assertTrue($this->service()->canMeasure(Engine::PostgreSql));
+        self::assertTrue($this->service()->canMeasure(Engine::MySql));
+        self::assertTrue($this->service()->canMeasure(Engine::MariaDb));
+        self::assertFalse($this->service()->canMeasure(Engine::ClickHouse));
+        self::assertFalse($this->service()->canMeasure(Engine::Redis));
+
+        foreach ([Engine::ClickHouse, Engine::Redis] as $engine) {
+            try {
+                $this->service()->measuredStatementFor($engine, 'select 1');
+                self::fail('Expected no measure.');
+            } catch (PlanNotAvailableException) {
+            }
+        }
+    }
+
+    /**
+     * @return iterable<string, array{Engine, string, GuardReason}>
+     */
+    public static function neverMeasured(): iterable
+    {
+        foreach ([Engine::PostgreSql, Engine::MySql, Engine::MariaDb] as $engine) {
+            $name = $engine->value.' ';
+            yield $name.'delete' => [$engine, 'delete from orders where id = 1', GuardReason::NotReadOnly];
+            yield $name.'delete without where' => [$engine, 'delete from orders', GuardReason::NotReadOnly];
+            yield $name.'update' => [$engine, 'update orders set a = 1 where id = 2', GuardReason::NotReadOnly];
+            yield $name.'insert' => [$engine, 'insert into t (a) select a from u', GuardReason::NotReadOnly];
+            yield $name.'replace' => [$engine, 'replace into t (a) values (1)', GuardReason::NotReadOnly];
+            yield $name.'ddl' => [$engine, 'create table z (a int)', GuardReason::NotReadOnly];
+            yield $name.'drop' => [$engine, 'drop table orders', GuardReason::NotReadOnly];
+            yield $name.'call' => [$engine, 'call purge()', GuardReason::NotReadOnly];
+            yield $name.'a write behind a with' => [$engine, 'with d as (select 1) delete from orders', GuardReason::NotReadOnly];
+            yield $name.'an explain' => [$engine, 'explain select 1', GuardReason::NotReadOnly];
+            yield $name.'an explain analyze of a write' => [$engine, 'explain analyze delete from orders', GuardReason::NotReadOnly];
+            yield $name.'an analyze of a write' => [$engine, 'analyze delete from orders', GuardReason::NotReadOnly];
+            yield $name.'an analyze of a read' => [$engine, 'analyze select 1', GuardReason::NotReadOnly];
+            yield $name.'two statements' => [$engine, 'select 1; delete from orders', GuardReason::MultipleStatements];
+            yield $name.'two reads' => [$engine, 'select 1; select 2', GuardReason::MultipleStatements];
+            yield $name.'nothing' => [$engine, '  ', GuardReason::EmptyStatement];
+            yield $name.'a lock' => [$engine, 'select * from t for update', GuardReason::ForbiddenConstruct];
+            yield $name.'a durable lock' => [$engine, "select get_lock('a', 1)", GuardReason::ForbiddenConstruct];
+            yield $name.'a file' => [$engine, "select * from t into outfile '/tmp/x'", GuardReason::ForbiddenConstruct];
+        }
+        yield 'postgresql a sequence' => [Engine::PostgreSql, "select nextval('s')", GuardReason::NotReadOnly];
+        yield 'postgresql a sequence behind a with' => [Engine::PostgreSql, "with n as (select nextval('s')) select * from n", GuardReason::NotReadOnly];
+        yield 'postgresql a hidden write' => [Engine::PostgreSql, 'with d as (delete from t returning *) select * from d', GuardReason::NotReadOnly];
+        yield 'postgresql a select into' => [Engine::PostgreSql, 'select * into z from t', GuardReason::ForbiddenConstruct];
+        yield 'postgresql an advisory lock' => [Engine::PostgreSql, 'select pg_advisory_lock(1)', GuardReason::ForbiddenConstruct];
+    }
+
+    /**
+     * L'EXPLAIN ANALYZE JOUE l'instruction : il n'est construit que pour une lecture simple, que le garde a classée telle ;
+     * tout le reste est un refus net, jamais une mesure.
+     */
+    #[DataProvider('neverMeasured')]
+    public function testAnythingButAPlainReadIsRefusedNotMeasured(Engine $engine, string $sql, GuardReason $reason): void
+    {
+        try {
+            $this->service()->measuredStatementFor($engine, $sql);
+            self::fail('Expected a refusal.');
+        } catch (QueryRefusedException $e) {
+            self::assertSame($reason, $e->reason);
+        }
+    }
+
+    public function testTheMeasuredStatementIsNeverBuiltFromAWriteMethod(): void
+    {
+        // La mesure ne passe que par measuredStatementFor : les deux autres chemins ne construisent toujours aucun ANALYZE.
+        foreach ([Engine::PostgreSql, Engine::MySql, Engine::MariaDb] as $engine) {
+            self::assertStringNotContainsStringIgnoringCase('analy', substr($this->service()->statementFor($engine, 'select 1'), 0, 20));
+            self::assertStringNotContainsStringIgnoringCase('analy', substr($this->service()->statementForWrite($engine, 'delete from t where a = 1'), 0, 20));
+        }
+    }
+
+    public function testParsesTheMeasuredResultOfEachEngine(): void
+    {
+        $pg = $this->service()->parseMeasured(Engine::PostgreSql, QueryResult::rows(['QUERY PLAN'], [[$this->fixture('postgres-measured-join')]], false, 1));
+        $my = $this->service()->parseMeasured(Engine::MySql, QueryResult::rows(['EXPLAIN'], [[(string) file_get_contents(__DIR__.'/../../Fixtures/plans/mysql-measured-join.txt')]], false, 1));
+        $maria = $this->service()->parseMeasured(Engine::MariaDb, QueryResult::rows(['ANALYZE'], [[$this->fixture('mariadb-measured-join')]], false, 1));
+
+        foreach ([$pg, $my, $maria] as $plan) {
+            self::assertTrue($plan->measured);
+            self::assertNotNull($plan->executionTimeMs);
+        }
+    }
+
+    public function testAMeasuredResultThatIsNotMeasuredIsUnreadable(): void
+    {
+        foreach ([QueryResult::rows(['x'], [], false, 1), QueryResult::rows(['x'], [[null]], false, 1), QueryResult::rows(['x'], [[$this->fixture('postgres-scan')]], false, 1)] as $result) {
+            try {
+                $this->service()->parseMeasured(Engine::PostgreSql, $result);
+                self::fail('Expected an unreadable plan.');
+            } catch (UnreadablePlanException) {
+            }
+        }
+        $this->addToAssertionCount(1);
+    }
+
     public function testNoPlanIsOfferedForAnEngineWithoutOne(): void
     {
         $this->expectException(PlanNotAvailableException::class);
