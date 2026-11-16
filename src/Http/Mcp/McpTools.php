@@ -25,6 +25,7 @@ use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
+use App\Http\Json\HealthInterval;
 use App\Http\Json\PreparedWritePresenter;
 use App\Http\Json\RequestTimeLimit;
 use App\Http\Json\ResultPresenter;
@@ -178,6 +179,19 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function serverHealth(string $connection, ?int $seconds = null): array
+    {
+        return $this->guard(function () use ($connection, $seconds): array {
+            $this->request->get()->requireDiagnostic();
+            $interval = HealthInterval::parse($seconds);
+
+            return DiagnosticsPresenter::health($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $interval)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null): array
     {
         return $this->guard(function () use ($connection, $order, $limit, $hours): array {
@@ -185,6 +199,30 @@ final readonly class McpTools
             $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
 
             return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listAccounts(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::accounts($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function connectionEncryption(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::encryption($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
         });
     }
 

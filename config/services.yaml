@@ -55,6 +55,10 @@ services:
             $warnAt: '%env(int:TERRILDB_BIG_TABLE_WARN_ROWS)%'
             $confirmAt: '%env(int:TERRILDB_BIG_TABLE_CONFIRM_ROWS)%'
 
+    App\Core\Diagnostics\Health\HealthSlots:
+        arguments:
+            $directory: '%kernel.cache_dir%/health-slots'
+
     App\Http\Web\RegistrationPolicy:
         arguments:
             $mode: '%env(APP_REGISTRATION)%'
