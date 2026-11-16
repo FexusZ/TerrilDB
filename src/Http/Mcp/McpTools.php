@@ -16,7 +16,7 @@ use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Diagnostics\DigestQuery;
-use App\Core\Diagnostics\Replication\InfrastructureMasking;
+use App\Core\Diagnostics\Masking;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
@@ -58,7 +58,7 @@ final readonly class McpTools
         private RequestTimeLimit $limit,
         private WriteApproval $approval,
         private AuditedScripts $scripts,
-        private InfrastructureMasking $masking,
+        private Masking $masking,
     ) {
     }
 

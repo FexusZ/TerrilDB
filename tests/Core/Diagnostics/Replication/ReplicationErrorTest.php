@@ -38,17 +38,24 @@ final class ReplicationErrorTest extends TestCase
         self::assertStringContainsString('…', $error->message);
     }
 
-    public function testTheInfrastructureCanBeKeptButASecretNever(): void
+    public function testTheDefaultTextHidesTheInfrastructureAndTheSecrets(): void
     {
         $error = ReplicationError::from(2003, "Access denied for user 'repl'@'10.20.30.40' on replica-1.internal.example.net, SOURCE_PASSWORD='hunter2' and IDENTIFIED BY \"pw9\" refused");
 
         self::assertNotNull($error);
-        self::assertStringNotContainsString('10.20.30.40', $error->message);
-        self::assertStringNotContainsString('repl', $error->message);
-        self::assertStringContainsString('10.20.30.40', $error->unmasked);
-        self::assertStringContainsString('replica-1.internal.example.net', $error->unmasked);
-        self::assertStringNotContainsString('hunter2', $error->unmasked);
-        self::assertStringNotContainsString('pw9', $error->unmasked);
+        foreach (['10.20.30.40', 'repl', 'replica-1.internal', 'hunter2', 'pw9'] as $hidden) {
+            self::assertStringNotContainsString($hidden, $error->message);
+        }
+    }
+
+    public function testWithoutMaskingNothingIsHidden(): void
+    {
+        $error = ReplicationError::from(2003, "Access denied for user 'repl'@'10.20.30.40' on replica-1.internal.example.net, SOURCE_PASSWORD='hunter2' and IDENTIFIED BY \"pw9\" refused");
+
+        self::assertNotNull($error);
+        foreach (['10.20.30.40', 'repl', 'replica-1.internal.example.net', 'hunter2', 'pw9'] as $shown) {
+            self::assertStringContainsString($shown, $error->unmasked);
+        }
     }
 
     public function testRowValuesAreNeverMaskedEitherWay(): void

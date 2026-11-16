@@ -149,9 +149,10 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
   COUNT) atteint `TERRILDB_BIG_TABLE_WARN_ROWS` (100000 par défaut) affiche un avertissement ; à partir de
   `TERRILDB_BIG_TABLE_CONFIRM_ROWS` (1000000 par défaut) il faut en plus retaper le nom de la table. À régler dans `app.env`,
   par installation ; `0` désactive le seuil. Si le moteur ne donne aucune estimation, l'interface le dit sans avertir.
-- Texte d'erreur de réplication : le compte, l'hôte et l'adresse de la source y sont masqués par défaut. `TERRILDB_MASK_INFRASTRUCTURE=0`
-  (dans `app.env`, par installation) les montre. Un mot de passe ou un jeton reste toujours masqué ; une valeur de ligne
-  (`Duplicate entry '…'`) n'est jamais masquée : donner à la connexion un compte aux droits adaptés relève de la base cible.
+- Masquage des textes montrés par les diagnostics (erreur de réplication aujourd'hui) : par défaut les secrets (mot de passe, jeton)
+  et l'infrastructure (compte, hôte, adresse de la source) y sont masqués. `TERRILDB_MASKING=0` (dans `app.env`, par installation)
+  coupe tout masquage : le texte est rendu tel que le moteur le dit. Une valeur de ligne (`Duplicate entry '…'`) n'est jamais
+  masquée ; donner à la connexion un compte aux droits adaptés relève de la base cible.
 - Bannissement d'adresse après des échecs de connexion répétés : `php bin/console app:ban:lift <adresse>` dans le conteneur
   le lève (par exemple pour un réseau partagé). L'état des blocages vit dans le cache de l'application : un vidage du cache
   ou un déploiement qui le vide lève aussi les blocages en cours.

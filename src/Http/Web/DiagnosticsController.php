@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\Audit\AuditedDiagnostics;
-use App\Core\Diagnostics\Replication\InfrastructureMasking;
+use App\Core\Diagnostics\Masking;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
@@ -28,7 +28,7 @@ final readonly class DiagnosticsController
         private TargetAccess $targets,
         private AuditedDiagnostics $diagnostics,
         private WebSession $session,
-        private InfrastructureMasking $masking,
+        private Masking $masking,
     ) {
     }
 

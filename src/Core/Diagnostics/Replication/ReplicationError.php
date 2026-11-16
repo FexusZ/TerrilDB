@@ -16,7 +16,7 @@ final readonly class ReplicationError
 
     /**
      * @param string $message  texte sans secret NI infrastructure (compte, hôte, adresse) : le défaut
-     * @param string $unmasked texte sans secret, infrastructure gardée (réglage `TERRILDB_MASK_INFRASTRUCTURE` coupé)
+     * @param string $unmasked texte tel que le moteur le dit (réglage `TERRILDB_MASKING=0`) ; seuls les caractères de contrôle et la longueur sont traités
      */
     private function __construct(
         public ?int $code,
@@ -35,13 +35,10 @@ final readonly class ReplicationError
             return null;
         }
 
-        $secretFree = self::mask(self::cleaned($text), self::secretPatterns());
+        $cleaned = self::cleaned($text);
+        $masked = self::mask(self::mask($cleaned, self::secretPatterns()), self::infrastructurePatterns());
 
-        return new self(
-            0 === $code ? null : $code,
-            self::bounded(self::mask($secretFree, self::infrastructurePatterns())),
-            self::bounded($secretFree),
-        );
+        return new self(0 === $code ? null : $code, self::bounded($masked), self::bounded($cleaned));
     }
 
     private static function cleaned(string $text): string
@@ -50,7 +47,7 @@ final readonly class ReplicationError
     }
 
     /**
-     * Toujours masqué : mot de passe, jeton, adresse avec identifiants.
+     * Masqué par défaut : mot de passe, jeton, adresse avec identifiants.
      *
      * @return list<string>
      */

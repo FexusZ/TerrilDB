@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Config;
 
-use App\Core\Diagnostics\Replication\InfrastructureMasking;
+use App\Core\Diagnostics\Masking;
 use App\Http\Web\DiagnosticsController;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 #[Group('integration')]
-final class InfrastructureMaskingConfigTest extends KernelTestCase
+final class MaskingConfigTest extends KernelTestCase
 {
     protected function tearDown(): void
     {
-        putenv('TERRILDB_MASK_INFRASTRUCTURE');
-        unset($_ENV['TERRILDB_MASK_INFRASTRUCTURE'], $_SERVER['TERRILDB_MASK_INFRASTRUCTURE']);
+        putenv('TERRILDB_MASKING');
+        unset($_ENV['TERRILDB_MASKING'], $_SERVER['TERRILDB_MASKING']);
         parent::tearDown();
     }
 
@@ -26,12 +26,12 @@ final class InfrastructureMaskingConfigTest extends KernelTestCase
 
     public function testItCanBeSwitchedOffByTheEnvironment(): void
     {
-        $_ENV['TERRILDB_MASK_INFRASTRUCTURE'] = $_SERVER['TERRILDB_MASK_INFRASTRUCTURE'] = '0';
+        $_ENV['TERRILDB_MASKING'] = $_SERVER['TERRILDB_MASKING'] = '0';
 
         self::assertFalse($this->masking()->enabled);
     }
 
-    private function masking(): InfrastructureMasking
+    private function masking(): Masking
     {
         self::bootKernel();
         $controller = self::getContainer()->get(DiagnosticsController::class);
@@ -39,7 +39,7 @@ final class InfrastructureMaskingConfigTest extends KernelTestCase
 
         $property = new \ReflectionProperty($controller, 'masking');
         $masking = $property->getValue($controller);
-        self::assertInstanceOf(InfrastructureMasking::class, $masking);
+        self::assertInstanceOf(Masking::class, $masking);
 
         return $masking;
     }
