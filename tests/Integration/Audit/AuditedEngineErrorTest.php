@@ -58,7 +58,8 @@ final class AuditedEngineErrorTest extends DatabaseTestCase
         $details = $this->failWith(true);
 
         self::assertSame('engine_error', $details['reason']);
-        self::assertStringContainsString('syntax error', (string) $details['error']);
+        self::assertIsString($details['error']);
+        self::assertStringContainsString('syntax error', $details['error']);
     }
 
     public function testTheEngineMessageCanBeKeptOutOfTheJournal(): void
