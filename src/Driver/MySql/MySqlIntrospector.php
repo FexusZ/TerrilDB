@@ -84,6 +84,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         return $tables;
     }
 
+    private static function hasFourByteCharacter(string $text): bool
+    {
+        return 1 === preg_match('/[\x{10000}-\x{10FFFF}]/u', $text);
+    }
+
     private static function count(mixed $value): int
     {
         return is_numeric($value) ? (int) $value : 0;
@@ -91,6 +96,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 
     public function listTablesPage(TablePageRequest $request): TablePage
     {
+        // Aucun nom ne contient un caractère sur 4 octets (voir describeTable) : la comparaison avec TABLE_NAME échouerait, la réponse est vide.
+        if (null !== $request->search && self::hasFourByteCharacter($request->search)) {
+            return new TablePage([], null, null === $request->after ? 0 : null);
+        }
+
         $where = 'TABLE_SCHEMA = DATABASE()';
         $params = [];
         if (null !== $request->search) {
@@ -201,6 +211,12 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 
     public function describeTable(string $name): TableDefinition
     {
+        // Les noms d'objets sont stockés en utf8mb3 : MariaDB refuse un caractère sur 4 octets, MySQL le range en « ? ». Un tel
+        // nom ne désigne aucune table, et le comparer à une colonne utf8mb3 ferait échouer la requête (collations incompatibles).
+        if (self::hasFourByteCharacter($name)) {
+            throw TableNotFoundException::named($name);
+        }
+
         $header = $this->connection->fetchAssociative(
             'SELECT t.TABLE_NAME AS name, t.TABLE_TYPE AS kind, t.TABLE_ROWS AS estimate, t.DATA_LENGTH AS data_bytes, t.INDEX_LENGTH AS index_bytes,
                     t.ENGINE AS storage_engine, e.TRANSACTIONS AS engine_transactions
