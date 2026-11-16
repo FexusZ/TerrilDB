@@ -8,6 +8,7 @@ use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\Availability;
 use App\Core\Diagnostics\Replication\ReplicationRole;
+use App\Core\Diagnostics\Replication\SemiSyncMode;
 use App\Core\Diagnostics\Replication\ThreadState;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
@@ -194,6 +195,88 @@ final class ReplicationDiagnosticsTest extends TestCase
         self::assertSame(ReplicationRole::None, $report->role);
         self::assertSame([], $report->channels);
         self::assertSame([], $report->alerts());
+    }
+
+    #[DataProvider('sqlTargetNames')]
+    public function testBinaryLogsAndSemiSyncAreReadOnEveryServer(string $envVar): void
+    {
+        $target = $this->open($envVar);
+
+        $report = $target->diagnostics()->replication()->replication();
+        $target->close();
+
+        $binlog = $report->extras->binlog;
+        self::assertNotNull($binlog);
+        if (true === $binlog->enabled) {
+            self::assertSame(Availability::Available, $binlog->status->availability);
+            self::assertGreaterThanOrEqual(1, $binlog->fileCount);
+            self::assertGreaterThan(0, $binlog->totalBytes);
+            self::assertGreaterThan(0, $binlog->expireSeconds);
+        } else {
+            self::assertSame(Availability::Disabled, $binlog->status->availability);
+            self::assertSame('binary_log_off', $binlog->status->reason);
+            self::assertNull($binlog->fileCount);
+        }
+        $semi = $report->extras->semiSync;
+        self::assertNotNull($semi);
+        if (Engine::MySql === TargetDatabase::engine($envVar)) {
+            self::assertSame(SemiSyncMode::NotLoaded, $semi->source, 'The MySQL targets do not load the semi-synchronous plugin.');
+            self::assertSame('semi_sync_not_loaded', $semi->status->reason);
+        } else {
+            self::assertSame(SemiSyncMode::Off, $semi->source);
+        }
+        self::assertSame([], $report->alerts());
+    }
+
+    /**
+     * MySQL jetable avec le greffon semi-synchrone chargé (TARGET_SEMISYNC_MYSQL_URL, journal binaire et GTID allumés) : sans
+     * réplica semi-synchrone, une validation dépassant le délai repasse la source en asynchrone, ce que le rapport signale.
+     */
+    public function testASemiSyncSourceThatFellBackToAsyncRaisesAnAlert(): void
+    {
+        $target = $this->open('TARGET_SEMISYNC_MYSQL_URL');
+        $admin = (new DbalConnector())->connect(Engine::MySql, TargetDatabase::parameters('TARGET_SEMISYNC_MYSQL_URL'));
+        $table = 'tdb_semi_'.bin2hex(random_bytes(4));
+        $admin->executeStatement('SET GLOBAL rpl_semi_sync_source_enabled = 1');
+        $admin->executeStatement('SET GLOBAL rpl_semi_sync_source_timeout = 10');
+        try {
+            $admin->executeStatement(\sprintf('CREATE TABLE %s (a INT)', $table));
+            $admin->executeStatement(\sprintf('INSERT INTO %s VALUES (1)', $table));
+
+            $report = $target->diagnostics()->replication()->replication();
+
+            $semi = $report->extras->semiSync;
+            self::assertSame(Availability::Available, $semi?->status->availability);
+            self::assertSame(SemiSyncMode::FallenBack, $semi->source);
+            self::assertSame(0, $semi->clients);
+            self::assertContains('semisync_fallback', array_map(static fn ($a): string => $a->code->value, $report->alerts()));
+            self::assertTrue($report->extras->binlog?->enabled);
+            self::assertNotNull($report->extras->binlog->gtidExecuted);
+        } finally {
+            $admin->executeStatement(\sprintf('DROP TABLE IF EXISTS %s', $table));
+            $admin->close();
+            $target->close();
+        }
+    }
+
+    /**
+     * MariaDB jetable avec journal binaire et sans expiration (TARGET_BINLOG_MARIADB_URL) : les journaux s'accumulent, ce que le
+     * rapport signale ; MariaDB donne sa position GTID de journal et ne connaît pas les GTID purgés.
+     */
+    public function testMariaDbBinaryLogsThatNeverExpireRaiseAnAlert(): void
+    {
+        $target = $this->open('TARGET_BINLOG_MARIADB_URL');
+
+        $report = $target->diagnostics()->replication()->replication();
+        $target->close();
+
+        $binlog = $report->extras->binlog;
+        self::assertSame(Availability::Available, $binlog?->status->availability);
+        self::assertTrue($binlog->enabled);
+        self::assertGreaterThanOrEqual(1, $binlog->fileCount);
+        self::assertSame(0, $binlog->expireSeconds);
+        self::assertNull($binlog->gtidPurged);
+        self::assertSame(['binlog_no_expiry'], array_map(static fn ($a): string => $a->code->value, $report->alerts()));
     }
 
     #[DataProvider('sqlTargets')]
