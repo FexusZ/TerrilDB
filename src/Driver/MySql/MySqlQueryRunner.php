@@ -56,7 +56,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
                 ? ($options->measure && StatementKind::Read === $kind ? PdoRows::measure($statement, $options->maxRows, $started, $options->timeoutMs) : PdoRows::read($statement, $options->maxRows, $started))
                 : QueryResult::affected($statement->rowCount(), PdoRows::elapsed($started));
 
-            $pdo->exec($readOnly ? 'ROLLBACK' : 'COMMIT');
+            $pdo->exec($readOnly || $options->discard ? 'ROLLBACK' : 'COMMIT');
 
             return $result;
         } catch (\PDOException $e) {

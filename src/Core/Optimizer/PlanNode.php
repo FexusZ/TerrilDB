@@ -11,6 +11,8 @@ final readonly class PlanNode
 {
     /**
      * @param list<PlanNode> $children
+     * @param ?string        $writes   `insert`, `update` ou `delete` quand le nœud est l'écriture d'un EXPLAIN d'écriture
+     *                                 (la table écrite est alors `relation`), sinon null
      */
     public function __construct(
         public PlanKind $kind,
@@ -22,6 +24,7 @@ final readonly class PlanNode
         public ?string $condition = null,
         public bool $fullScan = false,
         public array $children = [],
+        public ?string $writes = null,
     ) {
     }
 }

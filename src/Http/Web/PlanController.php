@@ -9,6 +9,7 @@ use App\Core\Driver\TargetConnection;
 use App\Core\Optimizer\PlanAnalyzer;
 use App\Core\Optimizer\PlanService;
 use App\Core\Optimizer\StatementLimit;
+use App\Core\Optimizer\WritePlanAdvisor;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Http\Json\JsonInput;
@@ -21,6 +22,10 @@ use Symfony\Component\Uid\Uuid;
 /**
  * Le plan d'exécution estimé d'une lecture. L'EXPLAIN ne lance pas la requête ; il passe par l'exécution ordinaire
  * (limites, audit), le journal gardant l'instruction de l'utilisateur et non l'EXPLAIN construit.
+ *
+ * `write: true` demande le plan d'une écriture simple (INSERT, UPDATE, DELETE). L'EXPLAIN reste seul (jamais ANALYZE) et
+ * passe en lecture-écriture annulée d'office (`discard`) : MySQL et MariaDB refusent d'expliquer une écriture en lecture
+ * seule, et le garde de QueryService ne laisse passer que l'EXPLAIN. L'instruction n'est jamais jouée, rien n'est validé.
  */
 final readonly class PlanController
 {
@@ -30,6 +35,7 @@ final readonly class PlanController
         private PlanService $plans,
         private PlanAnalyzer $analyzer,
         private StatementLimit $limits,
+        private WritePlanAdvisor $writeAdvisor,
         private WebSession $session,
     ) {
     }
@@ -37,19 +43,25 @@ final readonly class PlanController
     #[Route('/web/connections/{id}/plan', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['POST'])]
     public function plan(string $id, Request $request): JsonResponse
     {
-        $sql = JsonInput::fromRequest($request)->string('sql');
+        $input = JsonInput::fromRequest($request);
+        $sql = $input->string('sql');
+        $write = $input->bool('write', false);
         $uuid = Uuid::fromString($id);
 
         $limited = false;
-        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, &$limited) {
-            $statement = $this->plans->statementFor($target->engine, $sql);
+        $engine = null;
+        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, $write, &$limited, &$engine) {
+            $engine = $target->engine;
+            $statement = $write ? $this->plans->statementForWrite($target->engine, $sql) : $this->plans->statementFor($target->engine, $sql);
             $limited = $this->limits->has($target->engine, $sql);
             $result = $this->queries->execute(
                 $this->session->auditContext(),
                 $uuid,
                 $target,
                 $statement,
-                new QueryOptions(QueryMode::ReadOnly, (new QueryOptions())->timeoutMs, 10),
+                $write
+                    ? new QueryOptions(QueryMode::ReadWrite, (new QueryOptions())->timeoutMs, 10, discard: true)
+                    : new QueryOptions(QueryMode::ReadOnly, (new QueryOptions())->timeoutMs, 10),
                 extra: ['purpose' => 'plan'],
                 recordedSql: $sql,
             );
@@ -57,6 +69,11 @@ final readonly class PlanController
             return $this->plans->parse($target->engine, $result);
         });
 
-        return new JsonResponse(PlanPresenter::present($plan, $this->analyzer->analyze($plan, $limited)));
+        $findings = $this->analyzer->analyze($plan, $limited);
+        if ($write && null !== $engine) {
+            return new JsonResponse(PlanPresenter::presentWrite($plan, $findings, $this->writeAdvisor->advise($plan, $engine)));
+        }
+
+        return new JsonResponse(PlanPresenter::present($plan, $findings));
     }
 }

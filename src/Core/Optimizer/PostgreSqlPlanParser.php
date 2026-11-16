@@ -54,6 +54,11 @@ final class PostgreSqlPlanParser implements PlanParser
         }
 
         $rows = self::number($plan['Plan Rows'] ?? null);
+        $writes = 'ModifyTable' === $type && \is_string($plan['Operation'] ?? null) && \in_array(strtolower($plan['Operation']), ['insert', 'update', 'delete'], true) ? strtolower($plan['Operation']) : null;
+        if ('ModifyTable' === $type) {
+            // « Plan Rows » d'une écriture vaut 0 : les lignes touchées sont celles de son accès, en dessous.
+            $rows = null;
+        }
 
         return new PlanNode(
             self::kind($type),
@@ -65,6 +70,7 @@ final class PostgreSqlPlanParser implements PlanParser
             $condition,
             'Seq Scan' === $type,
             $children,
+            $writes,
         );
     }
 

@@ -39,6 +39,99 @@ final class PlanServiceTest extends TestCase
         self::assertSame('EXPLAIN json=1, indexes=1 select * from orders', $this->service()->statementFor(Engine::ClickHouse, 'select * from orders'));
     }
 
+    public function testBuildsTheExplainOfAWriteWithoutExecutingIt(): void
+    {
+        self::assertSame("EXPLAIN (FORMAT JSON) delete from orders where status = 'x'", $this->service()->statementForWrite(Engine::PostgreSql, "delete from orders where status = 'x';"));
+        self::assertSame('EXPLAIN FORMAT=JSON update orders set a = 1 where id = 2', $this->service()->statementForWrite(Engine::MySql, 'update orders set a = 1 where id = 2'));
+        self::assertSame('EXPLAIN FORMAT=JSON insert into t (a) select a from u', $this->service()->statementForWrite(Engine::MariaDb, 'insert into t (a) select a from u'));
+        self::assertSame('EXPLAIN (FORMAT JSON) replace into t (a) values (1)', $this->service()->statementForWrite(Engine::PostgreSql, 'replace into t (a) values (1)'));
+    }
+
+    /**
+     * @return iterable<string, array{Engine, non-empty-string}>
+     */
+    public static function neverAnalyzed(): iterable
+    {
+        foreach ([Engine::PostgreSql, Engine::MySql, Engine::MariaDb, Engine::ClickHouse] as $engine) {
+            yield $engine->value.' read' => [$engine, 'select * from analyze_log where analyze = 1'];
+        }
+        foreach ([Engine::PostgreSql, Engine::MySql, Engine::MariaDb] as $engine) {
+            yield $engine->value.' delete' => [$engine, 'delete from analyze_log where analyze = 1'];
+            yield $engine->value.' update' => [$engine, 'update analyze_log set analyze = 2'];
+            yield $engine->value.' insert' => [$engine, 'insert into analyze_log (analyze) select 1'];
+        }
+    }
+
+    /**
+     * L'EXPLAIN ANALYZE exécute l'instruction : le préfixe construit ne le contient jamais (le texte de l'utilisateur,
+     * lui, peut citer le mot dans un nom).
+     */
+    #[DataProvider('neverAnalyzed')]
+    public function testTheBuiltPrefixNeverAsksForAnAnalyze(Engine $engine, string $sql): void
+    {
+        \assert('' !== $sql);
+        $built = str_starts_with(strtolower($sql), 'select')
+            ? $this->service()->statementFor($engine, $sql)
+            : $this->service()->statementForWrite($engine, $sql);
+
+        self::assertStringEndsWith($sql, $built);
+        $prefix = substr($built, 0, -\strlen($sql));
+        self::assertStringStartsWith('EXPLAIN', $prefix);
+        self::assertStringNotContainsStringIgnoringCase('analy', $prefix);
+    }
+
+    /**
+     * @return iterable<string, array{string, GuardReason}>
+     */
+    public static function writeRefused(): iterable
+    {
+        yield 'a read' => ['select * from orders', GuardReason::NotReadOnly];
+        yield 'an analyze of a write' => ['explain analyze delete from orders', GuardReason::NotReadOnly];
+        yield 'an explain' => ['explain delete from orders', GuardReason::NotReadOnly];
+        yield 'a schema change' => ['drop table orders', GuardReason::NotReadOnly];
+        yield 'a truncate' => ['truncate orders', GuardReason::NotReadOnly];
+        yield 'a call' => ['call purge()', GuardReason::NotReadOnly];
+        yield 'a write behind a with' => ['with d as (select 1) delete from orders', GuardReason::NotReadOnly];
+        yield 'two statements' => ['delete from a; delete from b', GuardReason::MultipleStatements];
+        yield 'nothing' => ['  ', GuardReason::EmptyStatement];
+        yield 'a forbidden construct' => ["select * from t into outfile '/tmp/x'", GuardReason::ForbiddenConstruct];
+    }
+
+    #[DataProvider('writeRefused')]
+    public function testOnlyAPlainWriteCanBeExplainedAsAWrite(string $sql, GuardReason $reason): void
+    {
+        try {
+            $this->service()->statementForWrite(Engine::PostgreSql, $sql);
+            self::fail('Expected a refusal.');
+        } catch (QueryRefusedException $e) {
+            self::assertSame($reason, $e->reason);
+        }
+    }
+
+    public function testAWriteWithoutWhereIsStillExplainedBecauseNothingRuns(): void
+    {
+        self::assertSame('EXPLAIN FORMAT=JSON delete from orders', $this->service()->statementForWrite(Engine::MySql, 'delete from orders'));
+    }
+
+    public function testNoWritePlanForClickHouseOrRedis(): void
+    {
+        foreach ([Engine::ClickHouse, Engine::Redis] as $engine) {
+            try {
+                $this->service()->statementForWrite($engine, 'delete from orders');
+                self::fail('Expected no plan.');
+            } catch (PlanNotAvailableException) {
+            }
+        }
+        $this->addToAssertionCount(1);
+    }
+
+    public function testTheReadPathStillRefusesAWrite(): void
+    {
+        $this->expectException(QueryRefusedException::class);
+
+        $this->service()->statementFor(Engine::MySql, 'delete from orders');
+    }
+
     public function testNoPlanIsOfferedForAnEngineWithoutOne(): void
     {
         $this->expectException(PlanNotAvailableException::class);
