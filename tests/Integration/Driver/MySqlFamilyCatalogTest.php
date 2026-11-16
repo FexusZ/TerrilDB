@@ -59,9 +59,10 @@ final class MySqlFamilyCatalogTest extends TestCase
         $this->open($env);
         $found = [];
         // MySqlAccountDiagnostics est écarté : « SHOW VIEW » y est le nom d'un DROIT, pas une instruction.
+        // MySqlReplicationDiagnostics aussi : il choisit selon le moteur (SHOW REPLICAS / SHOW REPLICA HOSTS), voir le test dédié.
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator(__DIR__.'/../../../src', \FilesystemIterator::SKIP_DOTS)) as $file) {
             \assert($file instanceof \SplFileInfo);
-            if ('php' !== $file->getExtension() || str_contains($file->getPathname(), '/src/Core/Guard/') || str_ends_with($file->getPathname(), 'MySqlAccountDiagnostics.php') || str_contains($file->getPathname(), '/PostgreSql/') || str_contains($file->getPathname(), '/ClickHouse/')) {
+            if ('php' !== $file->getExtension() || str_contains($file->getPathname(), '/src/Core/Guard/') || str_ends_with($file->getPathname(), 'MySqlAccountDiagnostics.php') || str_ends_with($file->getPathname(), 'MySqlReplicationDiagnostics.php') || str_contains($file->getPathname(), '/PostgreSql/') || str_contains($file->getPathname(), '/ClickHouse/')) {
                 continue;
             }
             $code = (string) file_get_contents($file->getPathname());
@@ -80,6 +81,18 @@ final class MySqlFamilyCatalogTest extends TestCase
             // Aucune erreur de syntaxe : une ligne ou aucune, jamais d'exception.
             $this->query($statement);
         }
+    }
+
+    /**
+     * Le code choisit le nom de la liste des réplicas selon le moteur : chacun n'est envoyé qu'à sa famille.
+     */
+    #[DataProvider('targets')]
+    public function testTheReplicaListStatementOfEachFamilyRunsOnItsOwnTarget(string $env): void
+    {
+        $this->open($env);
+
+        $this->query($this->mariaDb() ? 'SHOW REPLICA HOSTS' : 'SHOW REPLICAS');
+        $this->addToAssertionCount(1);
     }
 
     /**
