@@ -25,7 +25,7 @@ docker compose --profile vitess down                        # arrêt (les donné
 
 - #38 : `SET SESSION MAX_EXECUTION_TIME` est accepté mais pas transmis (`@@session.max_execution_time` reste 0, `SELECT SLEEP(2)` n'est
   pas coupé) ; `/*vt+ QUERY_TIMEOUT_MS=1000 */` coupe bien (erreur 3024).
-- #39 : NON vérifiable ici (un seul `mysqld`, voir la limite ci-dessus) ; le `@@read_only` = 0 vu « sur le réplica » ne prouve rien.
+- #39 : NON vérifiable ici (un seul `mysqld`, voir la limite ci-dessus) ; le `@@read_only` = 0 vu « sur le réplica » ne prouve rien. Voir le vrai cluster plus bas.
 
 # Vrai cluster Vitess (profil `vitess-cluster`)
 
@@ -81,3 +81,71 @@ Mesuré (machine de 16 cœurs, images déjà tirées) : cluster prêt (healthche
   Pas de basculement automatique, pas de sauvegarde, pas de retard de réplication simulé.
 - Les noms d'hôte des tablets sont les identifiants de conteneur (régénérés à chaque création).
 - Hors CI, hors profil `targets` ; `down -v` détruit les deux disques de données.
+
+## #39 : lecture seule, constats mesurés (via le runner de TerrilDB, `VitessReadOnlyTest`)
+
+Énoncé initial rectifié : « la lecture seule n'est pas imposée par le moteur » est VRAI pour le primaire seulement ; un réplica
+la fait respecter (voir plus haut). Mesuré par `MySqlQueryRunner` en mode lecture seule, AVANT correctif :
+
+| Cible | INSERT / UPDATE / DELETE | CREATE / DROP / ALTER / TRUNCATE |
+|---|---|---|
+| `shop` et `shop@primary` | PASSENT (le moteur n'imposait rien) | PASSENT |
+| `shop@replica` | refusés par vtgate (1105 « supported only for primary tablet type ») | refusés par le mysqld (1290, `--read-only`) |
+
+Cause : vtgate accepte `SET SESSION TRANSACTION READ ONLY` (et `SET SESSION transaction_read_only=1`) mais ne le transmet pas
+(`@@session.transaction_read_only` reste 0). Autres mesures, sur `shop` et `shop@primary` :
+
+- `START TRANSACTION READ ONLY` : INSERT, UPDATE, DELETE refusés (SQLSTATE 25006, erreur 1792 du tablet), lectures permises ;
+  MAIS CREATE, ALTER, TRUNCATE et DROP s'exécutent quand même (vtgate les joue hors de la transaction).
+- `SET GLOBAL read_only=1` : accepté, sans effet (`@@global.read_only` reste 0) ; `SET read_only=1` : refusé (VT05006).
+- `SET SESSION max_execution_time` : accepté, non appliqué (#38) ; `sql_mode` : appliqué ; `SET @a` : conservé.
+- `SELECT GET_LOCK(...)` mêlé à d'autres colonnes : refusé par vtgate (« allowed only with dual ») ; `SELECT … INTO OUTFILE` : refusé
+  par le mysqld ; `LOAD_FILE` rend NULL ; `CALL` inconnu : erreur 1305 ; `ALTER VITESS_MIGRATION` : refusé sur un réplica.
+
+Correctif : en lecture seule sur Vitess (détecté par `@@version` en `-Vitess`), le runner ouvre `START TRANSACTION READ ONLY` : les
+écritures de données sont refusées PAR LE TABLET. Le DDL reste borné par le garde seul sur le primaire (aucune barrière du moteur) :
+limite connue, verrouillée par `testTheEngineAloneDoesNotStopDdlOnThePrimary`. Coût : transaction coupée à 30 s
+(`--queryserver-config-transaction-timeout`). Barrière complète possible : lire sur `@replica` (voir #40).
+
+```bash
+docker compose run --rm --no-deps php vendor/bin/phpunit --group integration tests/Integration/Driver/VitessReadOnlyTest.php
+```
+
+## #40 : ce qui justifierait `Engine::Vitess` (analyse, rien de codé)
+
+Aujourd'hui Vitess est « MySQL » avec une détection ponctuelle de `@@version` en `-Vitess` dans le runner. Mesuré sur le cluster
+(Vitess 23, `@@version` = `8.4.6-Vitess`) :
+
+1. Détection : `@@version` finit par `-Vitess` ; MariaDB n'est jamais derrière vtgate. Un `Engine` distinct la ferait une fois pour tout
+   le driver (introspecteur, DDL, données, scripts), pas seulement le runner.
+2. Cible de tablet : la base de la connexion porte le suffixe (`shop@replica`, `@rdonly`, `@primary`). Une connexion « lecture » sur
+   `@replica` donne une lecture seule imposée par le moteur et allège le primaire ; contrepartie : retard de réplication, repli ou
+   échec sans réplica servant à décider.
+3. Délais : `SET SESSION MAX_EXECUTION_TIME` non transmis, remplacé par `/*vt+ QUERY_TIMEOUT_MS=n */` (#38, PR #111) ; la transaction de
+   lecture seule est coupée à 30 s : la durée utile est le plus petit des deux.
+4. Lecture seule : voir ci-dessus ; un `Engine::Vitess` porterait la règle « primaire = `START TRANSACTION READ ONLY` + garde pour le
+   DDL, réplica = moteur ».
+5. Bases : `information_schema.SCHEMATA` rend les bases PHYSIQUES (`vt_shop`, `_vt`, `mysql`, `sys`), pas les keyspaces ; `SHOW DATABASES`
+   rend `shop` + les bases système. `listDatabases` devrait lire les keyspaces et masquer `_vt` / `vt_*`.
+6. Diagnostics : `information_schema.PROCESSLIST` et `performance_schema.processlist` répondent mais décrivent le mysqld DU TABLET
+   interrogé (comptes internes `vt_app`, `vt_repl`, `vt_allprivs`, jamais les sessions des clients de vtgate, qui les multiplexe) ;
+   `INNODB_TRX` vide. Les thèmes Sessions / Transactions / Verrous / Empreintes / Variables seraient trompeurs : à marquer `unsupported`
+   ou à lire par tablet (`SHOW VITESS_TABLETS`, `SHOW VITESS_REPLICATION_STATUS`).
+7. Plan : `EXPLAIN` et `EXPLAIN FORMAT=JSON` sont transmis au tablet (plan du mysqld, pas du routage) ; `EXPLAIN FORMAT=vtexplain` n'existe
+   pas ; le plan de routage de vtgate est `EXPLAIN FORMAT=vitess` / `VEXPLAIN` (à mesurer). Les tables visibles dépendent du VSchema
+   (`SHOW VSCHEMA TABLES`).
+8. DDL en ligne : `ALTER VITESS_MIGRATION '<uuid>' CANCEL|RETRY|COMPLETE…`, `SHOW VITESS_MIGRATIONS`, `@@ddl_strategy` (`online`, `vitess`) : un
+   `ALTER` direct bloque ; le garde voit `ALTER VITESS_MIGRATION` comme un ALTER ordinaire. Avertissement utile : un `ALTER` sur la source
+   d'un `Materialize` n'est pas propagé (information par `/debug/vschema` de vtgate ou vtadmin, pas en SQL).
+9. Verbes propres : `SHOW VITESS_TABLETS`, `SHOW VITESS_SHARDS`, `SHOW VITESS_REPLICATION_STATUS`, `SHOW VITESS_MIGRATIONS`,
+   `SHOW VSCHEMA TABLES`, `VEXPLAIN` : le garde lexical les voit comme inconnus.
+
+Découpage proposé en PR (chacune : tests d'abord, sur le vrai cluster) :
+
+1. `Engine::Vitess` + détection à l'ouverture (`@@version`), servi par `MySqlDriver` ; le runner lit le moteur au lieu de redétecter
+   (absorbe #111 et ce correctif).
+2. Lecture sur `@replica` en option de connexion, avec test du retard et du repli ; le primaire reste inchangé.
+3. Bases = keyspaces (`listDatabases`), masquage des bases internes.
+4. Diagnostics : thèmes `unsupported` (ou lus par tablet) pour Vitess, testés sur le cluster.
+5. Garde et DDL : verbes `VITESS_MIGRATION` / `SHOW VITESS_*` (liste blanche en lecture), stratégie en ligne dans l'éditeur de structure.
+6. Plan : `EXPLAIN FORMAT=vitess` en complément (mesure préalable), avertissement `Materialize`.
