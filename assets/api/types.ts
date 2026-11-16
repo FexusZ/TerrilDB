@@ -461,6 +461,9 @@ export interface PlanResult {
   findings: PlanFindingInfo[]
 }
 
+/** Les règles de conception de l'audit (voir `designWording.ts`). */
+export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key' | 'collation_mismatch' | 'twin_table' | 'copy_without_indexes' | 'timestamp_deadline' | 'date_as_text'
+
 export interface LintFindingInfo {
   rule: string
   severity: 'warning' | 'info'
@@ -474,7 +477,7 @@ export interface LintResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit' | OperationsRule
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit' | OperationsRule | DesignRule
   severity: 'critical' | 'warning' | 'info'
   table: string
   columns: string[]

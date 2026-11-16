@@ -1,4 +1,5 @@
-import type { AuditCheck, OperationsRule, PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
+import type { AuditCheck, DesignRule, OperationsRule, PlanFindingInfo, PlanKind, SchemaFinding } from '../api/types'
+import { describeDesignFinding } from './designWording'
 import { formatEstimate } from './format'
 
 export interface Wording {
@@ -68,6 +69,9 @@ export function describeSchemaFinding(finding: SchemaFinding): Wording {
         title: `Le compteur de « ${finding.table} » sur ${finding.columns.join(', ')} approche de la limite de son type${finding.detail === null ? '' : ` (${finding.detail})`}.`,
         help: 'Quand il atteint la limite, chaque insertion échoue d’un coup avec une erreur de doublon. Passer à un type plus large règle le problème, mais la modification réécrit toute la table (et les colonnes qui la référencent doivent suivre) : à planifier avant la saturation. La valeur lue est celle du moment, sans compter les lignes.',
       }
+    // Règles de conception (suite de #78) : leurs mots sont dans designWording.ts.
+    default:
+      return describeDesignFinding({ ...finding, rule: finding.rule })
   }
 }
 

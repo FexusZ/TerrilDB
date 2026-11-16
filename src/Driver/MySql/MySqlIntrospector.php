@@ -276,7 +276,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
     {
         $rows = $this->connection->fetchAllAssociative(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
-                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation
+                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation,
+                    CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation
                FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION',
@@ -304,6 +305,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
                 1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
                 $compressed,
                 1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : (isset($checked[$row->string('name')]) ? LockReason::ColumnCheck : null),
+                $row->nullableString('charset'),
+                $row->nullableString('collation'),
             );
         }
 

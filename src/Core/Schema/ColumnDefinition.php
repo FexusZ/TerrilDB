@@ -12,6 +12,8 @@ use App\Core\Schema\Exception\InvalidSchemaException;
  * `onUpdate` (MySQL, MariaDB) : l'expression de « ON UPDATE CURRENT_TIMESTAMP(n) », lue dans EXTRA, redite aussi.
  * `compressed` (MariaDB) : le type est rendu SANS le commentaire exécutable COMPRESSED du moteur, la compression est un drapeau.
  * `lock` : une particularité que le modèle ne sait pas redire (colonne générée…) ; la colonne ne se redéfinit pas, voir `LockReason`.
+ * `characterSet` et `collation` : seulement pour une colonne de texte, quand le moteur les donne (MySQL, MariaDB) ; hors de
+ * l'empreinte de structure, ils ne servent qu'à l'audit.
  */
 final readonly class ColumnDefinition
 {
@@ -26,6 +28,8 @@ final readonly class ColumnDefinition
         public ?string $onUpdate = null,
         public bool $compressed = false,
         public ?LockReason $lock = null,
+        public ?string $characterSet = null,
+        public ?string $collation = null,
     ) {
         if ('' === $name || '' === $type) {
             throw new InvalidSchemaException('A column needs a name and a type.');
