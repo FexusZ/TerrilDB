@@ -49,7 +49,7 @@ final class QueryLintWebTest extends WebApiTestCase
     public function testReportsPatternsWithoutRunningAnything(string $envVar): void
     {
         $this->prepare($envVar);
-        $sql = 'select * from orders where year(ordered_at) = 2026';
+        $sql = "select * from orders where lower(status) = 'x'";
 
         $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
 
@@ -59,6 +59,9 @@ final class QueryLintWebTest extends WebApiTestCase
         $rules = array_map(static fn (mixed $f): mixed => self::arrayOf($f)['rule'], $findings);
         self::assertEqualsCanonicalizing(['function_on_column', 'select_star'], $rules);
         $first = self::arrayOf($findings[0]);
+        $function = self::arrayOf($findings[array_search('function_on_column', $rules, true)]);
+        self::assertIsString($function['message']);
+        self::assertStringContainsString('idx_orders_status', $function['message']);
         self::assertContains($first['severity'], ['warning', 'info']);
         self::assertIsString($first['message']);
         self::assertArrayHasKey('suggestion', $first);
@@ -67,8 +70,54 @@ final class QueryLintWebTest extends WebApiTestCase
         self::assertCount(1, $events);
         self::assertSame(AuditAction::QueryLinted, $events[0]->getAction());
         self::assertSame(AuditOutcome::Success, $events[0]->getOutcome());
-        self::assertSame('select * from orders where year(ordered_at) = ?', $events[0]->getDetails()['sql']);
+        self::assertSame('select * from orders where lower(status) = ?', $events[0]->getDetails()['sql']);
         self::assertSame(2, $events[0]->getDetails()['findings']);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function rulesFor(string $sql): array
+    {
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => $sql]);
+        self::assertSame(200, $this->statusCode());
+
+        return array_map(static fn (mixed $f): string => self::stringOf(self::arrayOf($f)['rule']), self::listOf($body['findings']));
+    }
+
+    #[DataProvider('targets')]
+    public function testAColumnWithoutALeadingIndexGetsNoSargabilityAdvice(string $envVar): void
+    {
+        $this->prepare($envVar);
+
+        // ordered_at n'est que le second champ de idx_orders_customer_date : l'index ne servirait de toute façon pas.
+        self::assertSame([], $this->rulesFor('select id from orders where year(ordered_at) = 2026'));
+        self::assertSame(['function_on_column'], $this->rulesFor("select id from orders where lower(status) = 'x'"));
+        self::assertSame([], $this->rulesFor("select id from orders where lower(nope) = 'x'"));
+    }
+
+    #[DataProvider('targets')]
+    public function testTheTypeOfAColumnIsReadFromTheTarget(string $envVar): void
+    {
+        $this->prepare($envVar);
+
+        self::assertSame(['type_mismatch'], $this->rulesFor('select id from orders where status = 5'));
+        self::assertSame([], $this->rulesFor('select id from orders where customer_id = 5'));
+        self::assertSame(['or_on_columns'], $this->rulesFor("select id from orders where status = 'new' or ordered_at < '2020-01-01'"));
+        self::assertSame([], $this->rulesFor("select id from orders where status = 'new' or customer_id = 3"));
+        self::assertSame(['distinct_join'], $this->rulesFor('select distinct o.id from orders o join order_items i on i.order_id = o.id'));
+    }
+
+    public function testAnUnknownTableKeepsTheConditionalText(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL');
+
+        $body = $this->call('POST', '/web/connections/'.$this->connectionId.'/lint', ['sql' => 'select id from no_such_table where year(d) = 2026']);
+
+        self::assertSame(200, $this->statusCode());
+        $finding = self::arrayOf(self::listOf($body['findings'])[0]);
+        self::assertSame('function_on_column', $finding['rule']);
+        self::assertStringContainsString('un index sur cette colonne ne peut pas servir', self::stringOf($finding['message']));
     }
 
     public function testAWriteIsNeverLintedNorExecuted(): void
