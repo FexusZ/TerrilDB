@@ -91,6 +91,24 @@ final class LintScope
         return null;
     }
 
+    /**
+     * Un index à méthode d'accès particulière (hachage, GIN…) en tête sur la colonne : il peut servir une égalité, donc une branche d'OR.
+     */
+    public function hasAccessMethodIndex(string $column, ?string $qualifier): bool
+    {
+        $table = $this->table();
+        if (null === $table || (null !== $qualifier && !\in_array(strtolower($qualifier), $this->names, true))) {
+            return false;
+        }
+        foreach ($table->indexes as $index) {
+            if (LockReason::AccessMethod === $index->lock && strtolower($index->columns[0]) === strtolower($column)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static function isOrdinary(?LockReason $lock): bool
     {
         return !\in_array($lock, [LockReason::Expression, LockReason::Fulltext, LockReason::Spatial, LockReason::AccessMethod, LockReason::IndexInvisible, LockReason::IndexIgnored], true);

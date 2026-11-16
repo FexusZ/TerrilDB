@@ -9,6 +9,7 @@ use App\Core\Optimizer\LintFinding;
 use App\Core\Optimizer\QueryLinter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -115,6 +116,22 @@ final class QueryLinterSchemaTest extends TestCase
         $finding = self::find($this->lint(Engine::PostgreSql, "SELECT id FROM orders WHERE LOWER(email) = 'a@b.c'", $this->orders(self::indexes())), 'function_on_column');
 
         self::assertNull($finding);
+    }
+
+    public function testTheStrongTextAdmitsAnExpressionIndexTheModelDoesNotList(): void
+    {
+        // Les introspecteurs omettent un index qui ne porte que sur une expression : sa présence ne se voit pas, le conseil ne l'écarte donc pas.
+        $finding = self::find($this->lint(Engine::PostgreSql, "SELECT id FROM orders WHERE LOWER(status) = 'x'", $this->orders(self::indexes())), 'function_on_column');
+
+        self::assertNotNull($finding);
+        self::assertStringContainsString('index sur cette expression existe déjà', (string) $finding->suggestion);
+    }
+
+    public function testAnOrBranchServedByAnAccessMethodIndexSaysNothing(): void
+    {
+        $indexes = [new IndexDefinition('idx_qty', ['qty'], false, false), new IndexDefinition('idx_status_hash', ['status'], false, false, null, LockReason::AccessMethod)];
+
+        self::assertNull(self::find($this->lint(Engine::PostgreSql, "SELECT id FROM orders WHERE qty = 1 OR status = 'x'", $this->orders($indexes)), 'or_on_columns'));
     }
 
     public function testAnUnknownColumnSaysNothing(): void

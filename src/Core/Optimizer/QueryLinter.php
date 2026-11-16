@@ -29,6 +29,9 @@ final class QueryLinter
     private const COUNT_STAR_ROWS = 1_000_000;
     private const RANDOM_ORDER_ROWS = 50_000;
 
+    /** Les introspecteurs omettent un index qui ne porte que sur une expression : s'il existe, la condition en profite et le conseil ne s'applique pas. */
+    private const HIDDEN_EXPRESSION_INDEX = ' Si un index sur cette expression existe déjà (la structure lue ne liste pas les index sur expression), rien à changer.';
+
     /** Types texte : une colonne de ce genre comparée à un nombre est convertie ligne par ligne (MySQL) ou refusée (PostgreSQL). */
     private const TEXT_TYPE = '/^(character varying|character|varchar|char|bpchar|nchar|nvarchar|tinytext|mediumtext|longtext|text|citext)\b(?!.*(\[|array))/i';
 
@@ -381,7 +384,7 @@ final class QueryLinter
             match ($dialect) {
                 SqlDialect::PostgreSql => 'Comparer la colonne seule (par exemple une plage semi-ouverte pour une date), ou créer un index sur expression. Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.',
                 default => 'Comparer la colonne seule (par exemple une plage semi-ouverte pour une date), ou créer un index fonctionnel (MySQL 8) ou une colonne générée indexée. Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.',
-            },
+            }.(null !== $check?->index ? self::HIDDEN_EXPRESSION_INDEX : ''),
             [$column],
         );
     }
@@ -427,7 +430,7 @@ final class QueryLinter
             null !== $check?->index
                 ? \sprintf('Un calcul sur la colonne « %s » : l\'index « %s » ne pourra pas servir à cette condition.', $column, $check->index)
                 : \sprintf('Un calcul sur la colonne « %s » dans une condition : un index sur cette colonne ne peut pas servir à la rechercher.', $column),
-            'Isoler la colonne d\'un côté de la comparaison (déplacer le calcul vers la valeur comparée). Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.',
+            'Isoler la colonne d\'un côté de la comparaison (déplacer le calcul vers la valeur comparée). Au-delà d\'une part importante des lignes, le parcours complet reste de toute façon choisi.'.(null !== $check?->index ? self::HIDDEN_EXPRESSION_INDEX : ''),
             [$column],
         );
     }
@@ -704,6 +707,9 @@ final class QueryLinter
                 return [];
             }
             $check = $scope->check($column, $qualifier);
+            if (null === $check->index && $scope->hasAccessMethodIndex($column, $qualifier)) {
+                return [];
+            }
             if (null === $check->index) {
                 $unserved[strtolower($column)] = $column;
             } else {
