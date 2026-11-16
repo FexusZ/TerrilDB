@@ -9,6 +9,7 @@ use App\Core\Connection\Engine;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Driver;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
+use App\Core\Driver\ServerVersion;
 use App\Core\Driver\TargetConnection;
 use Predis\Client;
 use Predis\PredisException;
@@ -43,6 +44,7 @@ final readonly class RedisDriver implements Driver
         }
 
         $connector = $this->connector;
+        $version = self::version($client);
 
         return new TargetConnection(
             $engine,
@@ -53,6 +55,23 @@ final readonly class RedisDriver implements Driver
             },
             new RedisKeyValueStore($client),
             diagnostics: new ServerDiagnostics($engine),
+            version: $version,
         );
+    }
+
+    /**
+     * `INFO server` : selon la version de Predis la réponse est à plat ou rangée par section.
+     */
+    private static function version(Client $client): ?ServerVersion
+    {
+        try {
+            $info = $client->info('server');
+        } catch (PredisException) {
+            return null;
+        }
+        $server = \is_array($info['Server'] ?? null) ? $info['Server'] : $info;
+        $text = $server['redis_version'] ?? null;
+
+        return \is_string($text) ? ServerVersion::parse($text) : null;
     }
 }

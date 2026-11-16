@@ -11,6 +11,8 @@ use App\Core\Diagnostics\LockParty;
 use App\Core\Diagnostics\LockReport;
 use App\Core\Diagnostics\LockWait;
 use App\Core\Diagnostics\OpenTransaction;
+use App\Core\Diagnostics\TableHolder;
+use App\Core\Diagnostics\TableHolders;
 use App\Core\Guard\SqlDialect;
 use App\Driver\DbalCatalogReader;
 use App\Driver\RowReader;
@@ -96,6 +98,41 @@ final readonly class PostgreSqlLockDiagnostics implements LockDiagnostics
             }
 
             return new LockReport(DiagnosticStatus::available(), $transactions, $waits, \count($rows) > self::LIMIT || \count($waitRows) > self::LIMIT);
+        });
+    }
+
+    /**
+     * Les verrous de relation accordés sur la table (une simple lecture dans une transaction ouverte en tient un, qui fait
+     * attendre un ALTER). La table est cherchée dans le `search_path` de la connexion, donc dans son schéma.
+     */
+    public function tableHolders(string $table): TableHolders
+    {
+        return $this->catalog->read(function (Connection $c) use ($table): TableHolders {
+            if (!$this->canSeeAll($c)) {
+                return TableHolders::unreadable(DiagnosticStatus::denied(self::PRIVILEGE));
+            }
+
+            $rows = $c->fetchAllAssociative(
+                "SELECT a.pid::text AS id, a.usename AS usr, a.state,
+                        EXTRACT(EPOCH FROM (now() - a.xact_start))::bigint AS seconds,
+                        (a.state IN ('idle in transaction', 'idle in transaction (aborted)')) AS sleeping,
+                        (array_agg(l.mode ORDER BY l.mode))[1] AS mode
+                   FROM pg_locks l
+                   JOIN pg_stat_activity a ON a.pid = l.pid
+                  WHERE l.locktype = 'relation' AND l.granted AND l.relation = to_regclass(quote_ident(?))
+                    AND a.backend_type = 'client backend' AND a.pid <> pg_backend_pid()
+                  GROUP BY a.pid, a.usename, a.state, a.xact_start
+                  ORDER BY a.xact_start NULLS LAST, a.pid
+                  LIMIT ".self::LIMIT,
+                [$table],
+            );
+            $holders = [];
+            foreach ($rows as $row) {
+                $row = new RowReader($row);
+                $holders[] = new TableHolder($row->string('id'), $row->nullableString('usr'), null === $row->nullableInt('seconds') ? null : max(0, $row->int('seconds')), $row->bool('sleeping'), $row->nullableString('mode'));
+            }
+
+            return new TableHolders(DiagnosticStatus::available(), $holders);
         });
     }
 

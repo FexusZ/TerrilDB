@@ -8,6 +8,7 @@ use App\Audit\AuditedQueries;
 use App\Core\Driver\TargetConnection;
 use App\Core\Optimizer\PlanAnalyzer;
 use App\Core\Optimizer\PlanService;
+use App\Core\Optimizer\StatementLimit;
 use App\Core\Optimizer\WritePlanAdvisor;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
@@ -33,6 +34,7 @@ final readonly class PlanController
         private AuditedQueries $queries,
         private PlanService $plans,
         private PlanAnalyzer $analyzer,
+        private StatementLimit $limits,
         private WritePlanAdvisor $writeAdvisor,
         private WebSession $session,
     ) {
@@ -46,10 +48,12 @@ final readonly class PlanController
         $write = $input->bool('write', false);
         $uuid = Uuid::fromString($id);
 
+        $limited = false;
         $engine = null;
-        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, $write, &$engine) {
+        $plan = $this->targets->withSaved($uuid, function (TargetConnection $target) use ($sql, $uuid, $write, &$limited, &$engine) {
             $engine = $target->engine;
             $statement = $write ? $this->plans->statementForWrite($target->engine, $sql) : $this->plans->statementFor($target->engine, $sql);
+            $limited = $this->limits->has($target->engine, $sql);
             $result = $this->queries->execute(
                 $this->session->auditContext(),
                 $uuid,
@@ -65,7 +69,7 @@ final readonly class PlanController
             return $this->plans->parse($target->engine, $result);
         });
 
-        $findings = $this->analyzer->analyze($plan);
+        $findings = $this->analyzer->analyze($plan, $limited);
         if ($write && null !== $engine) {
             return new JsonResponse(PlanPresenter::presentWrite($plan, $findings, $this->writeAdvisor->advise($plan, $engine)));
         }
