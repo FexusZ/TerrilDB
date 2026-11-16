@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\Audit\AuditedDiagnostics;
+use App\Core\Diagnostics\Replication\InfrastructureMasking;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
@@ -27,6 +28,7 @@ final readonly class DiagnosticsController
         private TargetAccess $targets,
         private AuditedDiagnostics $diagnostics,
         private WebSession $session,
+        private InfrastructureMasking $masking,
     ) {
     }
 
@@ -110,6 +112,6 @@ final readonly class DiagnosticsController
         $uuid = Uuid::fromString($id);
         $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->replication($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
-        return new JsonResponse(DiagnosticsPresenter::replication($report));
+        return new JsonResponse(DiagnosticsPresenter::replication($report, $this->masking->enabled));
     }
 }

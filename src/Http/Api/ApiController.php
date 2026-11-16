@@ -12,6 +12,7 @@ use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
+use App\Core\Diagnostics\Replication\InfrastructureMasking;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
@@ -56,6 +57,7 @@ final readonly class ApiController
         private RequestTimeLimit $limit,
         private WriteApproval $approval,
         private AuditedScripts $scripts,
+        private InfrastructureMasking $masking,
     ) {
     }
 
@@ -332,6 +334,6 @@ final readonly class ApiController
         $this->request->get()->requireDiagnostic();
         $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
 
-        return new JsonResponse(DiagnosticsPresenter::replication($report));
+        return new JsonResponse(DiagnosticsPresenter::replication($report, $this->masking->enabled));
     }
 }

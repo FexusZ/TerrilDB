@@ -38,6 +38,27 @@ final class ReplicationErrorTest extends TestCase
         self::assertStringContainsString('…', $error->message);
     }
 
+    public function testTheInfrastructureCanBeKeptButASecretNever(): void
+    {
+        $error = ReplicationError::from(2003, "Access denied for user 'repl'@'10.20.30.40' on replica-1.internal.example.net, SOURCE_PASSWORD='hunter2' and IDENTIFIED BY \"pw9\" refused");
+
+        self::assertNotNull($error);
+        self::assertStringNotContainsString('10.20.30.40', $error->message);
+        self::assertStringNotContainsString('repl', $error->message);
+        self::assertStringContainsString('10.20.30.40', $error->unmasked);
+        self::assertStringContainsString('replica-1.internal.example.net', $error->unmasked);
+        self::assertStringNotContainsString('hunter2', $error->unmasked);
+        self::assertStringNotContainsString('pw9', $error->unmasked);
+    }
+
+    public function testRowValuesAreNeverMaskedEitherWay(): void
+    {
+        $error = ReplicationError::from(1062, "Duplicate entry 'jean@exemple' for key 'users.email'");
+
+        self::assertNotNull($error);
+        self::assertStringContainsString("'users.email'", $error->unmasked);
+    }
+
     /**
      * @return iterable<string, array{string, string}>
      */
