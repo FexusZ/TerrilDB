@@ -20,12 +20,41 @@ les jetons qui ont reçu le droit correspondant (un jeton ordinaire ne les voit 
 | `list_connections` | – | `id`, `name`, `engine` des connexions permises |
 | `list_tables` | `connection` | tables et vues, nombre de lignes estimé |
 | `describe_table` | `connection`, `table` | colonnes (types natifs), index, clés étrangères, définition d'une vue |
-| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit |
+| `run_query` | `connection`, `sql`, `maxRows?`, `timeoutMs?`, `format?`, `measure?` | UNE instruction de lecture ; toute écriture est refusée, même pour un jeton qui écrit ; `timeoutMs` est borné par le délai du proxy moins 20 s (100 000 par défaut ; le schéma de l'outil dit la valeur du serveur) |
 | `list_sessions` | `connection` | (droit `diagnostic`, lecture seule) sessions en cours sur le serveur : utilisateur, base, état, durée, début de la requête (littéraux masqués par `?`, 200 caractères au plus ; nul avec `queryReason: redacted` si le texte ne peut pas être masqué sans risque) ; l'état dit si le compte de la base n'a pas le droit de les lire (voir docs/api.md, « Diagnostics ») |
+| `list_variables` | `connection`, `search?`, `changedOnly?`, `limit?` | (droit `diagnostic`, lecture seule) variables de configuration : valeur, défaut quand le moteur le donne, écart au défaut, origine, redémarrage nécessaire ; la valeur d'un nom évoquant un secret n'est jamais donnée (`masked`) ; rien n'est modifié |
 | `list_locks` | `connection` | (droit `diagnostic`, lecture seule) transactions ouvertes (les plus anciennes d'abord) et arbre de blocage : qui attend qui, depuis combien de temps, sur quel objet ; rien n'est arrêté ; l'état distingue « aucun verrou » de « non lisible » (voir docs/api.md, « Diagnostics ») |
 | `get_replication` | `connection` | (droit `diagnostic`, lecture seule) état de la réplication : rôle, fils de réception et d'application, retard annoncé (trompeur), jeux reçu / appliqué, dernières erreurs neutralisées, alertes ; aucune instruction de réplication n'est envoyée |
-| `execute_statement` | `connection`, `sql`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
+| `list_accounts` | `connection` | (droit `diagnostic`, lecture seule) comptes, rôles et privilèges du serveur (MySQL, MariaDB) et constatations de l'audit de sécurité ; jamais une empreinte de mot de passe ; l'état dit si le compte de la base ne lit pas le catalogue (voir docs/api.md, « Diagnostics ») |
+| `connection_encryption` | `connection` | (droit `diagnostic`, lecture seule) la connexion de TerrilDB vers la cible est-elle chiffrée (protocole, suite) ; informatif |
+| `server_health` | `connection`, `seconds` (1 à 30, 5 par défaut) | (droit `diagnostic`, lecture seule) santé du serveur sur un intervalle : deux relevés de compteurs, taux par seconde et repères ; l'appel dure `seconds` ; une valeur nulle = inconnue, `discarded` = serveur redémarré entre les relevés (voir docs/api.md, « Santé du serveur ») |
+| `top_queries` | `connection`, `order` (`total_time`, `mean_time`, `calls`), `limit` (1 à 100), `hours` (1 à 168, 24 par défaut, ClickHouse seulement) | (droit `diagnostic`, lecture seule) requêtes les plus coûteuses par empreinte : texte normalisé et littéraux masqués par `?` (aussi pour les instructions utilitaires de PostgreSQL, que `pg_stat_statements` ne normalise pas ; nul avec `textReason: redacted` si illisible), appels, temps total / moyen / maximal en millisecondes, lignes examinées et renvoyées quand le moteur les donne ; rien n'est remis à zéro ; l'état distingue « source éteinte » (performance_schema, pg_stat_statements, query_log) et « droits insuffisants » de « aucune requête » (voir docs/api.md, « Diagnostics ») |
+| `prepare_statement` | `connection`, `sql` | (droit d'écriture) juge une écriture SANS l'exécuter, rend un `confirmationToken` à usage unique lié au texte exact (300 s) |
+| `execute_statement` | `connection`, `sql`, `confirmationToken?`, `confirmed?`, `maxRows?`, `timeoutMs?` | (droit `writeData`/`writeSchema`) UNE instruction d'écriture dans les droits du jeton, avec le `confirmationToken` de `prepare_statement` (sauf jeton « une seule étape ») ; un destructif répond `confirmation_required` tant que `confirmed` n'est pas vrai |
+| `prepare_script` | `connection`, `script` | (droit d'écriture) juge un script entier sans l'exécuter, rend un `confirmationToken` unique pour l'ensemble |
+| `execute_script` | `connection`, `script`, `confirmationToken`, `confirmed?`, `dryRun?`, `timeoutMs?` | exécute le script préparé (jeton TOUJOURS exigé), arrêt à la première erreur, compte rendu `applied` / `failed` / `notRun` ; le jeton est consommé par un `dryRun` aussi (deux `prepare` pour tester puis exécuter) ; `timeoutMs` est borné comme celui de `run_query` (le schéma de l'outil dit la valeur du serveur), un dépassement est refusé sans brûler le jeton |
 | `create_connection` | `name`, `engine`, `host`, `port?`, `database`, `username`, `password` | (droit `createConnections`) enregistre une connexion, qui rejoint aussitôt le jeton ; le mot de passe n'est jamais rendu |
+
+### Réponses compactes (`format` de `run_query`)
+
+Sans `format`, `run_query` rend le résultat en JSON indenté dans `content[0].text` ET dans `structuredContent` (comportement
+d'origine, inchangé). Avec `format`, le résultat n'est que du texte, sans doublon `structuredContent` :
+
+- `csv` : un premier bloc CSV (en-tête puis une ligne par enregistrement, RFC 4180), un second bloc JSON compact
+  `{rowCount, truncated, durationMs}`. Comme pour l'export, une cellule qu'un tableur lirait comme une formule est
+  précédée d'une apostrophe ;
+- `json` : un seul bloc, le même objet que par défaut mais sans indentation.
+
+Une valeur inconnue est refusée par la validation des arguments.
+
+### Mesurer une requête complète (`measure` de `run_query`)
+
+`measure: true` exécute la requête EN ENTIER (le `LIMIT` écrit dans le SQL reste respecté), parcourt toutes les lignes sans
+les renvoyer et rend `durationMs`, `totalRows` (nombre réel de lignes) et un aperçu des 100 premières (`maxRows` est alors
+ignoré ; `truncated` vaut vrai si `totalRows` dépasse l'aperçu). Rien n'est levé : même garde, même transaction en lecture
+seule, même délai maximal `timeoutMs` (vérifié aussi pendant le parcours), même audit. Combinable avec `format`. Les lignes
+sont lues au fil de l'eau (jamais tout en mémoire), mais une requête qui rend des millions de lignes les parcourt bel et
+bien : c'est le but. Non disponible pour ClickHouse ni Redis (`unsupported_operation`).
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
 comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `deadlock` / `serialization_failure` / `lock_timeout` (`retryable: true`, voir docs/api.md), `invalid_input`,

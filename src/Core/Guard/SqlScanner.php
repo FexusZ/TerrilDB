@@ -116,7 +116,11 @@ final class SqlScanner
                 }
                 // Un identifiant entre guillemets suivi d'une parenthèse est un appel de fonction (le dernier élément d'un nom qualifié
                 // aussi) : son nom, déquoté, rejoint les appels sans devenir un mot (une colonne « select » n'est pas le verbe).
-                if ('(' === $this->nextNonSpace($sql, $i, $mysql, $backslash)) {
+                if (SqlDialect::PostgreSql === $dialect && $start >= 2 && '&' === $sql[$start - 1] && 'U' === strtoupper($sql[$start - 2])) {
+                    // U&"…" : PostgreSQL lit les échappements Unicode du nom (\0061, \+000061, UESCAPE) AVANT de chercher la fonction.
+                    // Le nom décodé est compté comme un appel, parenthèse ou non : le garde reste plus strict que le moteur.
+                    $called[] = $this->unicodeEscapedName($sql, $start, $i);
+                } elseif ('(' === $this->nextNonSpace($sql, $i, $mysql, $backslash)) {
                     $called[] = $this->quotedName($sql, $start, $i, $clickhouse);
                 }
             } elseif ($dollarQuotes && '$' === $char && 1 === preg_match('/\G\$([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)?\$/', $sql, $tag, 0, $i)) {
@@ -157,7 +161,10 @@ final class SqlScanner
                 while ($i < $length && (ctype_alnum($sql[$i]) || '_' === $sql[$i] || '.' === $sql[$i])) {
                     ++$i;
                 }
-                $spans[] = [$numberStart, $i, 'literal'];
+                // « $1 » est une marque de paramètre (texte normalisé de PostgreSQL), pas une valeur.
+                if ($numberStart < 1 || '$' !== $sql[$numberStart - 1]) {
+                    $spans[] = [$numberStart, $i, 'literal'];
+                }
             } else {
                 ++$i;
             }
@@ -232,6 +239,34 @@ final class SqlScanner
         }
 
         return strtoupper($name);
+    }
+
+    /**
+     * Le nom d'un identifiant `U&"…"` de PostgreSQL une fois ses échappements Unicode lus (le caractère d'échappement est
+     * l'antislash, ou celui de `UESCAPE 'c'` qui suit), en majuscules. Un échappement mal formé est laissé tel quel.
+     */
+    private function unicodeEscapedName(string $sql, int $start, int $end): string
+    {
+        $name = str_replace('""', '"', substr($sql, $start + 1, $end - $start - 2));
+        $escape = '\\';
+        if (1 === preg_match('/\G\s*UESCAPE\s*\'([^\'\s]?)\'/i', $sql, $found, 0, $end) && '' !== $found[1]) {
+            $escape = $found[1];
+        }
+        $quoted = preg_quote($escape, '/');
+        $decoded = preg_replace_callback(
+            '/'.$quoted.'(?:'.$quoted.'|\+([0-9A-Fa-f]{6})|([0-9A-Fa-f]{4}))/',
+            static function (array $m) use ($escape): string {
+                $hex = ($m[1] ?? '') !== '' ? $m[1] : ($m[2] ?? '');
+                if ('' === $hex) {
+                    return $escape;
+                }
+
+                return (string) mb_chr(\intval($hex, 16), 'UTF-8');
+            },
+            $name,
+        );
+
+        return strtoupper($decoded ?? $name);
     }
 
     private function endsOrSpaces(string $sql, int $position): bool
