@@ -17,6 +17,8 @@ use App\Driver\ClickHouse\ClickHouseHttp;
 use App\Driver\DbalConnector;
 use App\Driver\MySql\MySqlDriver;
 use App\Driver\PostgreSql\PostgreSqlDriver;
+use App\Driver\Redis\RedisConnector;
+use App\Driver\Redis\RedisDriver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -401,6 +403,84 @@ final class ReplicationDiagnosticsTest extends TestCase
             self::assertSame([], $report->alerts());
         } finally {
             $http->query(\sprintf('DROP USER IF EXISTS %s', $user));
+            $admin->close();
+        }
+    }
+
+    private function openRedis(string $envVar, ?ConnectionParameters $parameters = null): TargetConnection
+    {
+        try {
+            return (new RedisDriver(new RedisConnector()))->connect(Engine::Redis, $parameters ?? TargetDatabase::parameters($envVar));
+        } catch (TargetConnectionFailedException) {
+            self::markTestSkipped(\sprintf('%s is unreachable.', $envVar));
+        }
+    }
+
+    public function testRedisWithoutReplicasHasNoReplicationAndTheCapabilityIsReadable(): void
+    {
+        $target = $this->openRedis('TARGET_REDIS_URL');
+
+        $report = $target->diagnostics()->replication()->replication();
+        $capability = $target->diagnostics()->capabilities()['replication'];
+        $target->close();
+
+        self::assertSame(Availability::Available, $report->status->availability);
+        self::assertSame(ReplicationRole::None, $report->role);
+        self::assertSame(0, $report->replicaCount);
+        self::assertSame([], $report->extras->replicas?->replicas);
+        self::assertNotNull($report->extras->keyValue?->backlogSize);
+        self::assertSame([], $report->alerts());
+        self::assertSame(Availability::Available, $capability->availability);
+    }
+
+    /**
+     * Paire Redis jetable (TARGET_REPLICATED_REDIS_URL, sa source, et TARGET_REPLICA_REDIS_URL, son réplica) : ni l'hôte, ni le port,
+     * ni l'adresse du réplica ne se retrouvent dans le rapport.
+     */
+    public function testARedisPairIsReadFromBothSidesWithoutAddresses(): void
+    {
+        $source = $this->openRedis('TARGET_REPLICATED_REDIS_URL');
+        $replica = $this->openRedis('TARGET_REPLICA_REDIS_URL');
+
+        $fromSource = $source->diagnostics()->replication()->replication();
+        $fromReplica = $replica->diagnostics()->replication()->replication();
+        $source->close();
+        $replica->close();
+
+        self::assertSame(ReplicationRole::Source, $fromSource->role);
+        self::assertSame(1, $fromSource->replicaCount);
+        self::assertTrue($fromSource->extras->replicas?->replicas[0]->connected);
+        self::assertSame(ReplicationRole::Replica, $fromReplica->role);
+        self::assertSame(ThreadState::Running, $fromReplica->channels[0]->receiver);
+        self::assertSame('up', $fromReplica->extras->keyValue?->linkStatus);
+        $serialized = serialize([$fromSource, $fromReplica]);
+        self::assertStringNotContainsString('redis-primary', $serialized);
+        self::assertStringNotContainsString('redis-replica', $serialized);
+        self::assertStringNotContainsString('6379', $serialized);
+        self::assertSame([], $fromReplica->alerts());
+    }
+
+    public function testRedisAccountWithoutInfoGetsAStateNotAnError(): void
+    {
+        $parameters = TargetDatabase::parameters('TARGET_REPLICATED_REDIS_URL');
+        $admin = $this->openRedis('TARGET_REPLICATED_REDIS_URL');
+        $user = 'tdb_repl_'.bin2hex(random_bytes(4));
+        $password = bin2hex(random_bytes(12));
+        $client = new \Predis\Client(['scheme' => 'tcp', 'host' => $parameters->host, 'port' => $parameters->port, 'password' => $parameters->password()]);
+        $client->executeRaw(['ACL', 'SETUSER', $user, 'on', '>'.$password, '+ping', '+select', '~*']);
+        try {
+            $reduced = $this->openRedis('TARGET_REPLICATED_REDIS_URL', new ConnectionParameters($parameters->host, $parameters->port, $parameters->database, $user, $password));
+            $report = $reduced->diagnostics()->replication()->replication();
+            $status = $reduced->diagnostics()->replication()->status();
+            $reduced->close();
+
+            self::assertSame(Availability::PermissionDenied, $report->status->availability);
+            self::assertSame(Availability::PermissionDenied, $status->availability);
+            self::assertSame('INFO', $status->privilege);
+            self::assertSame([], $report->alerts());
+        } finally {
+            $client->executeRaw(['ACL', 'DELUSER', $user]);
+            $client->disconnect();
             $admin->close();
         }
     }
