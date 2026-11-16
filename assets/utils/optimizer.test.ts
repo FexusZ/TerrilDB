@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AuditCheck, PlanFindingInfo, SchemaFinding } from '../api/types'
-import { describeCheck, describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
+import { LINT_RULES, describeCheck, describePlanFinding, describeSchemaFinding, lintRuleLabel, planKindLabel } from './optimizer'
 
 const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
 
@@ -93,5 +93,23 @@ describe('optimizer wording', () => {
 
   it('shows the engine label for what it has no word for', () => {
     expect(planKindLabel('other', 'Memoize')).toBe('Memoize')
+  })
+})
+
+describe('query linter wording', () => {
+  it('has a French label for every rule the server can send', () => {
+    const rules = ['function_on_column', 'arithmetic_on_column', 'leading_wildcard_like', 'select_star', 'large_offset', 'not_in_subquery', 'row_lock', 'recursive_cte', 'type_mismatch', 'or_on_columns', 'distinct_join', 'count_star_large', 'random_order']
+
+    expect([...LINT_RULES].sort()).toEqual([...rules].sort())
+    for (const rule of rules) {
+      expect(lintRuleLabel(rule)).toMatch(/^[A-ZÉ]/)
+    }
+    expect(lintRuleLabel('function_on_column')).toBe('Fonction sur une colonne')
+    expect(lintRuleLabel('type_mismatch')).toBe('Types comparés différents')
+    expect(lintRuleLabel('random_order')).toBe('Tri aléatoire de toute la table')
+  })
+
+  it('shows an unknown rule as is rather than hiding it', () => {
+    expect(lintRuleLabel('future_rule')).toBe('future_rule')
   })
 })

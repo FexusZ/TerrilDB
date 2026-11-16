@@ -110,3 +110,27 @@ const KINDS: Record<Exclude<PlanKind, 'other'>, string> = {
 export function planKindLabel(kind: PlanKind, label: string): string {
   return kind === 'other' ? label : KINDS[kind]
 }
+
+const LINT_RULE_LABELS: Record<string, string> = {
+  function_on_column: 'Fonction sur une colonne',
+  arithmetic_on_column: 'Calcul sur une colonne',
+  leading_wildcard_like: 'LIKE avec joker en tête',
+  select_star: 'SELECT *',
+  large_offset: 'Grand OFFSET',
+  not_in_subquery: 'NOT IN (sous-requête)',
+  row_lock: 'Verrou de lignes',
+  recursive_cte: 'Requête récursive',
+  type_mismatch: 'Types comparés différents',
+  or_on_columns: 'OR entre colonnes différentes',
+  distinct_join: 'DISTINCT après jointure',
+  count_star_large: 'COUNT(*) sur une grande table',
+  random_order: 'Tri aléatoire de toute la table',
+}
+
+/** Les règles du linter de requête que le serveur envoie. */
+export const LINT_RULES = Object.keys(LINT_RULE_LABELS)
+
+/** Le nom français d'une règle du linter ; le code lui-même pour une règle que cette version ne connaît pas. */
+export function lintRuleLabel(rule: string): string {
+  return LINT_RULE_LABELS[rule] ?? rule
+}
