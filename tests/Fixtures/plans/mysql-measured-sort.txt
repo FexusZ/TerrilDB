@@ -1,0 +1,2 @@
+-> Sort: order_items.unit_price_cents DESC  (cost=705 rows=7000) (actual time=1.55..1.78 rows=7000 loops=1)
+    -> Table scan on order_items  (cost=705 rows=7000) (actual time=0.0683..0.913 rows=7000 loops=1)
