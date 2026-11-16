@@ -42,6 +42,9 @@ final readonly class ReplicationError
             // Réglages et chaînes de connexion (SOURCE_PASSWORD='…', host=…, user=…, token=…), valeur entre guillemets ou non.
             '/\b(?:[a-z]+_)*(?:host|hostaddr|user|username|password|passwd|pwd|token|secret|apikey|api_key)\b\s*[=:]\s*(?:\'[^\']*\'|"[^"]*"|\S+)/i' => $mask,
             '/\bbearer\s+\S+/i' => $mask,
+            // Mot de passe d'une instruction citée (CREATE/ALTER USER … IDENTIFIED [WITH plugin] BY '…', ALTER ROLE … PASSWORD '…') : secret, jamais montré.
+            '/\bidentified\s+(?:with\s+\S+\s+)?by\s+(?:[\\\\]?\'.*?[\\\\]?\'|"[^"]*"|\S+)/i' => $mask,
+            '/\bpassword\s+(?:[\\\\]?\'.*?[\\\\]?\'|"[^"]*")/i' => $mask,
             // Un nom entre guillemets introduit par « user », « host », « on », « at »… (compte, serveur : MySQL et PostgreSQL).
             '/\b(?:user|role|host|server|source|master|primary|replica|on|at|to|from)\s+(?:name\s+)?(?:\'[^\']*\'|"[^"]*")/i' => $mask,
             // compte@hôte, nu ou entre apostrophes.

@@ -63,6 +63,10 @@ final class ReplicationErrorTest extends TestCase
         yield 'conninfo user' => ['host=db.corp user=repl dbname=x', 'repl'];
         yield 'token' => ['token=abcd1234efgh used for source', 'abcd1234efgh'];
         yield 'bearer' => ['Authorization: Bearer abcd1234efgh.zz refused', 'abcd1234efgh'];
+        yield 'identified by, double quotes' => ["Query: 'ALTER USER bob IDENTIFIED BY \"hunter2\"'", 'hunter2'];
+        yield 'identified by, single quotes' => ["Query: 'CREATE USER app IDENTIFIED BY \\'pw 9\\''", 'pw 9'];
+        yield 'identified with plugin by' => ["Query: 'CREATE USER x IDENTIFIED WITH mysql_native_password BY \"pw9\"'", 'pw9'];
+        yield 'postgres role password' => ["Query: 'ALTER ROLE app WITH PASSWORD \\'s3cr3t\\''", 's3cr3t'];
         yield 'password setting' => ['CHANGE REPLICATION SOURCE failed: SOURCE_PASSWORD=hunter2 rejected', 'hunter2'];
     }
 
