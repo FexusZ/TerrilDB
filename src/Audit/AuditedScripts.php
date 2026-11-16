@@ -56,8 +56,8 @@ final readonly class AuditedScripts
             // Refusés AVANT toute exécution : rien n'est parti, rien à consigner de plus.
             throw $e;
         } catch (\Throwable $e) {
-            // Ce que le moteur a pu valider avant l'accident est inconnu : la trace dit seulement que l'exécution a échoué, sans le texte de l'erreur.
-            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['sql' => $script, 'reason' => 'executor_error']);
+            // Ce que le moteur a pu valider avant l'accident est inconnu : la trace dit seulement que l'exécution a échoué, sans le texte de l'erreur ni celui du script (on ne sait pas lesquelles de ses instructions sont parties : sa longueur seule).
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['length' => mb_strlen(mb_scrub($script, 'UTF-8')), 'reason' => 'executor_error']);
 
             throw $e;
         }
