@@ -338,6 +338,64 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  describe('algorithm of the ALTER', () => {
+    const copying = { sql: 'ALTER TABLE `orders` MODIFY COLUMN `note` varchar(80) NULL', operation: 'modify_column', subject: 'note', destructive: false, algorithm: 'copy' as const, blocksWrites: true, copiesTable: true, estimatedExtraBytes: 300 * 1024 * 1024, algorithmReason: null }
+
+    async function withStatements(statements: StructurePreview['statements'], bigTable: StructurePreview['bigTable'], engine: Engine = 'mysql'): Promise<VueWrapper> {
+      mocked.mockImplementation(() => Promise.resolve(preview({ statements, bigTable })))
+      const wrapper = mountEditor(engine)
+      await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+      await settle()
+
+      return wrapper
+    }
+
+    it('shows a pill and a sentence for each statement the server judged', async () => {
+      const wrapper = await withStatements([{ ...copying, algorithm: 'instant', blocksWrites: false, copiesTable: false, estimatedExtraBytes: null }], { level: 'none', estimatedRows: 10, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('instantané')
+      expect(wrapper.get('[data-test="algorithm-note"]').text()).toContain('métadonnées')
+      expect(wrapper.find('[data-test="copy-warning"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('warns before validating a copy of a table of more than 100 000 rows', async () => {
+      const wrapper = await withStatements([copying], { level: 'none', estimatedRows: 250_000, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('recopie')
+      const warning = wrapper.get('[data-test="copy-warning"]')
+      expect(warning.text()).toContain('250')
+      expect(warning.text()).toContain('gh-ost')
+      expect(wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.attributes('disabled')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('stays quiet about a copy of a small table', async () => {
+      const wrapper = await withStatements([{ ...copying, estimatedExtraBytes: 1024 }], { level: 'none', estimatedRows: 500, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('recopie')
+      expect(wrapper.find('[data-test="copy-warning"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('does not rassure when the algorithm is unknown', async () => {
+      const wrapper = await withStatements([{ ...copying, algorithm: 'unknown', blocksWrites: null, copiesTable: null, estimatedExtraBytes: null, algorithmReason: 'unverified_version' }], { level: 'none', estimatedRows: 900_000, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('algorithme inconnu')
+      expect(wrapper.get('[data-test="algorithm-note"]').text()).toContain('version du serveur')
+      expect(wrapper.find('[data-test="copy-warning"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('shows nothing for a server that gives no advice', async () => {
+      const wrapper = await withStatements([{ sql: 'ALTER TABLE x', operation: 'modify_column', subject: 'note', destructive: false }], { level: 'none', estimatedRows: 10, warnAt: 0, confirmAt: 0 }, 'clickhouse')
+
+      expect(wrapper.find('[data-test="algorithm"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="algorithm-note"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+  })
+
   describe('big tables', () => {
     const level = (level: 'warning' | 'confirm_name', estimatedRows: number | null = 2_500_000) => ({ level, estimatedRows, warnAt: 100000, confirmAt: 1000000 })
 

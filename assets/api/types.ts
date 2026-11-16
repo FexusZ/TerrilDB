@@ -513,7 +513,19 @@ export interface StructureStatement {
   operation: string
   subject: string
   destructive: boolean
+  /** Seulement dans l’aperçu : l’algorithme probable du moteur d’après une table de règles vérifiée (rien n’est essayé). */
+  algorithm?: AlterAlgorithmName
+  /** Bloque les écritures pendant l’instruction ; nul : non vérifié. */
+  blocksWrites?: boolean | null
+  /** Recopie toute la table ; nul : non vérifié. */
+  copiesTable?: boolean | null
+  /** Place disque en plus pour une copie ou une réécriture (données + index). */
+  estimatedExtraBytes?: number | null
+  /** Pourquoi l’algorithme est inconnu (code stable), nul sinon. */
+  algorithmReason?: string | null
 }
+
+export type AlterAlgorithmName = 'instant' | 'inplace' | 'copy' | 'rewrite' | 'unknown'
 
 export interface StructurePlan {
   statements: StructureStatement[]
