@@ -236,3 +236,88 @@ describe('ScriptPanel', () => {
     wrapper.unmount()
   })
 })
+
+describe('ScriptPanel report', () => {
+  beforeEach(() => mocked.mockReset())
+
+  it('shows rows touched or returned and the duration of every executed statement', async () => {
+    const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
+    mocked.mockResolvedValueOnce(run({
+      steps: [
+        { index: 0, sql: 'INSERT INTO t VALUES (1)', status: 'applied', affectedRows: 1, returnedRows: null, truncated: false, error: null, durationMs: 12 },
+        { index: 1, sql: 'SELECT * FROM t', status: 'applied', affectedRows: null, returnedRows: 1000, truncated: true, error: null, durationMs: 3 },
+        { index: 2, sql: 'SELECT 1', status: 'not_run', affectedRows: null, returnedRows: null, truncated: false, error: null, durationMs: 0 },
+      ],
+    }))
+    await wrapper.get('button.execute').trigger('click')
+    await flushPromises()
+
+    const steps = wrapper.findAll('ol.result li.step')
+    expect(steps[0]!.get('.metrics').text()).toContain('1 ligne affectée')
+    expect(steps[0]!.get('.metrics').text()).toContain('12 ms')
+    expect(steps[1]!.get('.metrics').text()).toContain('1000 lignes lues')
+    expect(steps[1]!.get('.metrics').text()).toContain('tronquée')
+    expect(steps[2]!.find('.metrics').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('ScriptPanel file import', () => {
+  beforeEach(() => mocked.mockReset())
+
+  async function pickFile(wrapper: ReturnType<typeof mountPanel>, file: File): Promise<void> {
+    const input = wrapper.get('input.file')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    await flushPromises()
+  }
+
+  it('hands a valid file to the editor and sends nothing to the server', async () => {
+    const wrapper = mountPanel('')
+
+    await pickFile(wrapper, new File(['SELECT 1; SELECT 2;'], 'a.sql'))
+
+    expect(wrapper.emitted('import')).toEqual([['SELECT 1; SELECT 2;']])
+    expect(mocked).not.toHaveBeenCalled()
+    expect(wrapper.find('.file-error').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('asks before replacing what the editor already holds', async () => {
+    const wrapper = mountPanel('SELECT 0')
+
+    await pickFile(wrapper, new File(['SELECT 1;'], 'a.sql'))
+    expect(wrapper.emitted('import')).toBeUndefined()
+    expect(wrapper.text()).toContain('Remplacer')
+
+    await wrapper.get('button.confirm').trigger('click')
+    expect(wrapper.emitted('import')).toEqual([['SELECT 1;']])
+    wrapper.unmount()
+  })
+
+  it('keeps the editor when the replacement is cancelled', async () => {
+    const wrapper = mountPanel('SELECT 0')
+
+    await pickFile(wrapper, new File(['SELECT 1;'], 'a.sql'))
+    await wrapper.get('button.cancel').trigger('click')
+
+    expect(wrapper.emitted('import')).toBeUndefined()
+    expect(wrapper.find('button.confirm').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['too large', () => { const f = new File(['x'], 'a.sql'); Object.defineProperty(f, 'size', { value: 1_000_001 }); return f }, '1 Mo'],
+    ['binary', () => new File([new Uint8Array([1, 0, 2])], 'a.bin'), 'binaires'],
+    ['empty', () => new File([''], 'a.sql'), 'vide'],
+    ['not UTF-8', () => new File([new Uint8Array([0x53, 0xe9])], 'a.sql'), 'UTF-8'],
+  ])('refuses a %s file with a clear message and leaves the editor alone', async (_name, make, message) => {
+    const wrapper = mountPanel('')
+
+    await pickFile(wrapper, make())
+
+    expect(wrapper.get('.file-error').text()).toContain(message)
+    expect(wrapper.emitted('import')).toBeUndefined()
+    wrapper.unmount()
+  })
+})
