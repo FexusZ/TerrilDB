@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './client'
-import { fetchAccounts, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTopQueries, fetchVariables } from './diagnostics'
+import { fetchAccounts, fetchConfigAudit, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTopQueries, fetchVariableComparison, fetchVariables } from './diagnostics'
 
 vi.mock('./client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./client')>()), api: vi.fn() }))
 
@@ -87,5 +87,22 @@ describe('diagnostics API', () => {
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/accounts?database=shop')
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/encryption')
     expect(encryption.protocol).toBe('TLSv1.3')
+  })
+
+  it('reads the configuration audit of the explored database', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, engine: 'postgresql', evaluated: 11, rulesTotal: 11, findings: [] })
+
+    const report = await fetchConfigAudit('abc', { database: 'shop', schema: 'public' })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/config-audit?database=shop&schema=public')
+    expect(report.evaluated).toBe(11)
+  })
+
+  it('compares two connections by their identifiers', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, unavailableSide: null, masked: 0, truncated: false, differences: [] })
+
+    await fetchVariableComparison('a b', 'c&d')
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/diagnostics/compare?a=a%20b&b=c%26d')
   })
 })

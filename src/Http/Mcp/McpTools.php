@@ -181,6 +181,19 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function listLogs(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+            [$error, $slow] = $this->open($connection, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target));
+
+            return DiagnosticsPresenter::logs($error, $slow);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function serverHealth(string $connection, ?int $seconds = null): array
     {
         return $this->guard(function () use ($connection, $seconds): array {
@@ -238,6 +251,18 @@ final readonly class McpTools
             $query = VariableQueryParser::build($search, $changedOnly ? '1' : null, null === $limit ? null : (string) $limit);
 
             return DiagnosticsPresenter::variables($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function auditConfig(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::configAudit($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
         });
     }
 

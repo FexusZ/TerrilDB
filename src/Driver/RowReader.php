@@ -34,6 +34,15 @@ final readonly class RowReader
         return null === $value || '' === $value ? null : $this->string($key);
     }
 
+    /**
+     * Comme `nullableString`, mais une chaîne vide reste une chaîne vide : seul NULL est nul (une variable dont la valeur est « vide »
+     * n'est pas une variable sans valeur).
+     */
+    public function nullableText(string $key): ?string
+    {
+        return null === ($this->row[$key] ?? null) ? null : $this->string($key);
+    }
+
     public function int(string $key): int
     {
         $value = $this->row[$key] ?? null;

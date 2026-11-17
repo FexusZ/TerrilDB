@@ -267,7 +267,7 @@ export interface LockReport {
   blockingTruncated: boolean
 }
 
-export type ReplicationRole = 'none' | 'source' | 'replica'
+export type ReplicationRole = 'none' | 'source' | 'replica' | 'peer'
 export type ThreadState = 'running' | 'connecting' | 'stopped'
 
 /** Dernière erreur d'un fil de réplication : texte neutralisé par le serveur (ni hôte, ni compte, ni mot de passe). */
@@ -296,6 +296,43 @@ export interface ReplicationAlert {
   channel: string
 }
 
+/** PostgreSQL : un slot de réplication ; inactif ou en retard, il retient du WAL sur le disque du primaire. */
+export interface ReplicationSlot {
+  name: string
+  type: string
+  active: boolean
+  temporary: boolean
+  retainedBytes: number | null
+  walStatus: string | null
+  safeWalSize: number | null
+}
+
+/** Un réplica vu depuis sa source : un rang, jamais d'adresse. Retards en secondes. */
+export interface ReplicaLink {
+  rank: number
+  state: string | null
+  connected: boolean
+  syncState: string | null
+  writeLagSeconds: number | null
+  flushLagSeconds: number | null
+  replayLagSeconds: number | null
+  behindBytes: number | null
+}
+
+export type SemiSyncMode = 'not_loaded' | 'off' | 'active' | 'fallen_back'
+
+export interface ReplicatedTable {
+  database: string
+  table: string
+  readonly: boolean
+  sessionExpired: boolean
+  absoluteDelaySeconds: number
+  queueSize: number
+  insertsInQueue: number
+  lostParts: number
+}
+
+/** Les sections propres au moteur sont absentes quand le moteur n'a pas la notion ; chacune a son état. */
 export interface ReplicationReport {
   status: DiagnosticStatus
   role: ReplicationRole
@@ -304,6 +341,22 @@ export interface ReplicationReport {
   channels: ReplicationChannel[]
   alerts: ReplicationAlert[]
   thresholds: { warning: number; critical: number }
+  slots?: { status: DiagnosticStatus; slots: ReplicationSlot[] }
+  replicas?: { status: DiagnosticStatus; replicas: ReplicaLink[] }
+  binlog?: {
+    status: DiagnosticStatus
+    enabled: boolean | null
+    fileCount: number | null
+    totalBytes: number | null
+    /** 0 : rien n'expire jamais. */
+    expireSeconds: number | null
+    gtidExecuted: string | null
+    gtidPurged: string | null
+  }
+  semiSync?: { status: DiagnosticStatus; source: SemiSyncMode; replica: SemiSyncMode; clients: number | null }
+  replicatedTables?: { status: DiagnosticStatus; tables: ReplicatedTable[]; truncated: boolean }
+  keyValue?: { linkStatus: string | null; lastIoSecondsAgo: number | null; syncInProgress: boolean | null; backlogSize: number | null; masterReplOffset: number | null }
+  limits?: { slotRetainedWarningBytes: number; slotRetainedCriticalBytes: number; tableQueueWarning: number }
 }
 
 export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
@@ -357,6 +410,47 @@ export interface VariableReport {
   status: DiagnosticStatus
   truncated: boolean
   variables: ServerVariable[]
+}
+
+/** Une constatation de l'audit de configuration : l'explication et la suggestion sont des textes fixes du serveur, la suggestion est à LIRE. */
+export interface ConfigFinding {
+  rule: string
+  severity: 'high' | 'medium' | 'low'
+  variable: string
+  value: string
+  recommended: string
+  suggestion: string | null
+  explanation: string
+}
+
+export interface ConfigAuditReport {
+  status: DiagnosticStatus
+  engine: string
+  /** Règles dont les variables étaient lisibles, sur le total du moteur. */
+  evaluated: number
+  rulesTotal: number
+  findings: ConfigFinding[]
+}
+
+/** Une variable qui n'a pas la même valeur sur deux serveurs ; jamais une variable masquée. */
+export interface VariableDifference {
+  name: string
+  presentA: boolean
+  valueA: string | null
+  changedA: boolean
+  presentB: boolean
+  valueB: string | null
+  changedB: boolean
+  unit: string | null
+}
+
+export interface VariableComparison {
+  status: DiagnosticStatus
+  unavailableSide: 'a' | 'b' | null
+  /** Variables écartées parce que leur valeur est cachée d'un côté au moins. */
+  masked: number
+  truncated: boolean
+  differences: VariableDifference[]
 }
 
 /** Un compte (ou un rôle) d'un serveur SQL. Jamais d'empreinte de mot de passe : `passwordSet` n'est qu'un booléen. */

@@ -215,6 +215,19 @@ final readonly class ApiController
     }
 
     /**
+     * Journal d'erreurs (MySQL) et requêtes lentes en table (MySQL, MariaDB) du serveur de la connexion, en lecture seule, les 200
+     * lignes les plus récentes, textes masqués puis raccourcis. L'état de chaque source dit si elle est éteinte, refusée ou sans objet.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/logs', requirements: self::ID, methods: ['GET'])]
+    public function logs(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        [$error, $slow] = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::logs($error, $slow));
+    }
+
+    /**
      * Santé du serveur sur un intervalle (`?seconds=`, 1 à 30, 5 par défaut) : deux relevés de compteurs, des taux par seconde et des
      * repères. Aucun historique ; la requête dure l'intervalle.
      */
@@ -253,6 +266,19 @@ final readonly class ApiController
         $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
 
         return new JsonResponse(DiagnosticsPresenter::variables($report));
+    }
+
+    /**
+     * Audit de la configuration du serveur de la connexion : des règles sur les variables lues, chacune avec sa gravité, son
+     * explication, la valeur recommandée et une suggestion à lire (jamais exécutée). Aucun SET.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/config-audit', requirements: self::ID, methods: ['GET'])]
+    public function configAudit(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::configAudit($report));
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\Audit\AuditedDiagnostics;
+use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
 use App\Core\Diagnostics\Masking;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
@@ -78,6 +79,36 @@ final readonly class DiagnosticsController
         return new JsonResponse(DiagnosticsPresenter::variables($report));
     }
 
+    #[Route('/web/connections/{id}/diagnostics/config-audit', requirements: self::ID, methods: ['GET'])]
+    public function configAudit(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::configAudit($report));
+    }
+
+    /**
+     * Écart de variables entre deux connexions du demandeur, de même moteur : `a` et `b` sont deux identifiants de connexion.
+     */
+    #[Route('/web/diagnostics/compare', methods: ['GET'])]
+    public function compare(Request $request): JsonResponse
+    {
+        $a = $request->query->get('a');
+        $b = $request->query->get('b');
+        if (!\is_string($a) || !\is_string($b) || !Uuid::isValid($a) || !Uuid::isValid($b)) {
+            throw new InvalidVariableQueryException('Two connection identifiers are needed (a and b).');
+        }
+        $idA = Uuid::fromString($a);
+        $idB = Uuid::fromString($b);
+        if ($idA->equals($idB)) {
+            throw new InvalidVariableQueryException('Two different connections are needed.');
+        }
+        $comparison = $this->targets->withSaved($idA, fn (TargetConnection $targetA) => $this->targets->withSaved($idB, fn (TargetConnection $targetB) => $this->diagnostics->compareVariables($this->session->auditContext(), $idA, $targetA, $idB, $targetB)));
+
+        return new JsonResponse(DiagnosticsPresenter::comparison($comparison));
+    }
+
     #[Route('/web/connections/{id}/diagnostics/accounts', requirements: self::ID, methods: ['GET'])]
     public function accounts(string $id, Request $request): JsonResponse
     {
@@ -113,5 +144,14 @@ final readonly class DiagnosticsController
         $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->replication($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::replication($report, $this->masking->enabled));
+    }
+
+    #[Route('/web/connections/{id}/diagnostics/logs', requirements: self::ID, methods: ['GET'])]
+    public function logs(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        [$error, $slow] = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->logs($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::logs($error, $slow));
     }
 }
