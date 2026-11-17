@@ -5,9 +5,12 @@ Une connexion peut passer par un bastion SSH (issue #13). Ce document décrit le
 
 ## État
 
-Livré : le contrat, le conteneur, le bastion de test et la preuve de bout en bout. **Pas encore branché** :
-`TargetOpener` refuse toujours une connexion à rebond (`unsupported_operation`), pour ne jamais joindre la base en direct
-à la place du rebond voulu.
+Livré : le contrat, le conteneur, le bastion de test, la preuve de bout en bout, et le branchement : `TargetOpener::connect`
+ouvre une connexion à rebond (MySQL, MariaDB, PostgreSQL) par le tunnel, essai de paramètres compris, avec la règle
+d'adresses sur le bastion ET sur la cible, la liste de bastions dès l'enregistrement, la lecture de l'empreinte à confirmer
+(`POST /web/connections/host-key`), le formulaire et le corps de l'API à jetons. **Pas dans `compose.prod.yaml`** : en production,
+rien ne démarre le conteneur `tunnel`, donc une connexion à rebond y échoue (`tunnel_failed`, `unavailable`) tant que le service
+n'y est pas (voir « Ce qui reste »).
 
 ## Les pièces
 
@@ -57,9 +60,24 @@ Livré : le contrat, le conteneur, le bastion de test et la preuve de bout en bo
 - **Liste de bastions** : comparaison exacte, point final ignoré, une adresse IPv6 s'écrit `[2001:db8::1]:22` ; le relais
   est plus strict que PHP sur les noms (échec fermé). N'y mettre que de vrais bastions SSH : y inscrire un service interne
   offrirait un `ssh-keyscan` vers lui.
-- **Cible derrière le bastion** : `TargetHostPolicy` juge le premier saut (le bastion), PAS la cible, qui est résolue côté
-  bastion (sa « boucle locale » est la sienne). Le risque de détournement repose sur la liste de bastions et sur le compte SSH.
-  Appliquer la règle d'adresses à la cible n'est pas simple (la résolution locale n'est pas celle du bastion) : à trancher.
+- **Cible derrière le bastion** : `TargetHostPolicy` juge le bastion (résolu et épinglé ici) ET la cible, mais la cible est
+  résolue côté bastion (sa « boucle locale » est la sienne) : un membre ne peut pas la nommer comme le serveur de TerrilDB
+  (`localhost`, adresse littérale de boucle locale, de lien local ou 0.0.0.0, base interne, nom qui se résout ICI vers
+  l'une d'elles), mais un nom que seul le bastion résout n'est pas jugé. Refus par prudence, jamais d'exemption silencieuse.
+  Le risque résiduel repose sur la liste de bastions et sur le compte SSH. Un administrateur n'est pas borné.
+- **Adresse du bastion** : le relais résout lui-même le nom du bastion (la règle d'adresses d'ici est une vérification, pas
+  l'adresse épinglée) ; la liste de bastions est le rempart contre un DNS qui changerait.
+- **Plafond par compte** : les plafonds du relais (50 tunnels, 10 par bastion) sont globaux ; l'application ajoute un plafond de
+  `TunnelQuota::MAX_PER_ACCOUNT` (5) tunnels simultanés PAR COMPTE (429 `too_many_tunnels`), tenu en cache avec la même échéance que
+  le relais (5 min, renouvelée à chaque usage ; un tunnel déjà compté ne compte pas deux fois). Comptabilité approchée, sans verrou
+  (un dépassement d'une unité en cas de requêtes simultanées est possible). Un tunnel ouvert pour rien (plafond atteint) est refermé.
+- **Essai de connexion** : `TargetOpener::probe` referme le tunnel ouvert POUR l'essai dès qu'il est fini (réussi ou non) et libère sa
+  place ; la réponse du relais porte `reused` : s'il existait déjà (celui d'une connexion enregistrée), il n'est pas refermé. Un relais
+  qui ne dit rien est traité comme `reused` (on ne referme que ce qu'on est sûr d'avoir ouvert). Deux comptes qui partagent une clé et
+  une cible partagent le tunnel : celui qui l'a ouvert pour un essai le referme, l'autre le rouvre à l'usage suivant.
+- **Lecture de l'empreinte** : chaque lecture lance un `ssh-keyscan` depuis le conteneur (au plus 32 demandes en parallèle) ;
+  plafonnées à 20 par 10 minutes et par compte, refusées comprises (limiteur `host_key_read`). Un sshd récent pénalise les connexions sans authentification d'une même source
+  (`PerSourcePenalties`) : le relais ne tente qu'un type de clé par connexion et s'arrête au premier.
 - **Pare-feu de sortie** : le réseau du tunnel (`bastion-net`) sort librement ; les règles de `docs/deploy.md` doivent viser
   aussi le conteneur `tunnel`, et n'autoriser que les bastions déclarés.
 - Le service `UnixSocketTunnelOpener` ne doit pas être injecté seul : passer par l'alias `TunnelOpener` (liste) et par
@@ -90,7 +108,7 @@ préparé autrement) ; il n'est volontairement pas encore dans `compose.prod.yam
 
 ```bash
 docker compose --profile targets up -d --build --wait tunnel target-bastion target-behind-bastion
-docker compose run --rm --no-deps php vendor/bin/phpunit --group integration tests/Integration/Tunnel
+docker compose run --rm --no-deps php vendor/bin/phpunit --group integration tests/Integration/Tunnel tests/Integration/Web/JumpConnectionsWebTest.php
 docker compose run --rm --no-deps --entrypoint python3 -w /opt tunnel -m unittest   # tests du relais
 ```
 
@@ -98,11 +116,13 @@ Les clés du bastion de test sont générées à chaque démarrage (volume `bast
 
 ## Ce qui reste
 
-1. Brancher `TargetOpener` : demander le tunnel (`AuditedTunnels`), remplacer hôte/port par le socket Unix, fermer à la
-   fin ; un driver par moteur (PostgreSQL : dossier ; MySQL : `unix_socket`) ; repli loopback si un pilote ne sait pas.
-2. Empreinte de l'hôte : opération « lire l'empreinte » du relais, confirmation explicite côté web (jamais silencieuse),
-   enregistrement dans la connexion chiffrée.
-3. Formulaire et API de la connexion (transport SSH, clé ed25519 à coller ; génération de clé côté navigateur à étudier).
-4. `compose.prod.yaml`, pare-feu de sortie, et étape CI pour le service `tunnel` et les tests du relais.
-5. Clé protégée par phrase : non prise en charge (`BatchMode`) ; décision à prendre.
-6. SOCKS5 : avec le compagnon VPN (#14/#15).
+1. `compose.prod.yaml` : service `tunnel` (modèle : `compose.yaml`), pare-feu de sortie, `TERRILDB_SSH_ALLOWED_BASTIONS` dans
+   `deploy.env`, volume des sockets partagé avec l'application sous le même uid.
+2. Étape CI pour le service `tunnel` : tests du relais (`python3 -m unittest`) et `--group integration tests/Integration/Tunnel`
+   + `JumpConnectionsWebTest` (profil `targets`, hôte de CI à nommer).
+3. ClickHouse et Redis : repli sur un port local (loopback) pour les pilotes qui ne savent pas se connecter par un socket Unix.
+4. Outil MCP `create_connection` : pas de rebond (l'API à jetons l'accepte) ; lecture de l'empreinte par l'API à jetons.
+5. Changement d'empreinte : parcours dédié (aujourd'hui, l'utilisateur relit et
+   enregistre la nouvelle dans le formulaire, après avoir vérifié auprès de l'administrateur du bastion).
+6. Clé protégée par phrase : non prise en charge (`BatchMode`) ; décision à prendre. Génération de clé côté navigateur à étudier.
+7. SOCKS5 : avec le compagnon VPN (#14/#15).

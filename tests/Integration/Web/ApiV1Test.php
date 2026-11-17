@@ -371,6 +371,45 @@ final class ApiV1Test extends WebApiTestCase
         self::assertNotEmpty($query['rows']);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function jumpBody(string $bastion = 'target-bastion'): array
+    {
+        $key = @file_get_contents('/run/bastion-keys/client_key');
+        $fingerprint = @file_get_contents('/run/bastion-keys/host_fingerprint');
+        if (false === $key || false === $fingerprint || !file_exists('/run/tunnels/control.sock')) {
+            self::markTestSkipped('Le conteneur tunnel et le bastion de test ne tournent pas (profil targets).');
+        }
+
+        return ['host' => 'target-behind-bastion', 'transport' => ['type' => 'ssh', 'host' => $bastion, 'port' => 22, 'username' => 'jump', 'privateKey' => $key, 'hostKeyFingerprint' => trim($fingerprint)]] + $this->targetBody('Through a jump');
+    }
+
+    public function testATokenCreatesAConnectionThroughABastionAndQueriesItThroughTheTunnel(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+
+        $created = $this->api('POST', '/api/v1/connections', $this->jumpBody());
+
+        self::assertSame(201, $this->statusCode());
+        $id = self::arrayOf($created['connection'])['id'];
+        self::assertIsString($id);
+        $query = $this->api('POST', '/api/v1/connections/'.$id.'/query', ['sql' => 'select 1 as one']);
+        self::assertSame(200, $this->statusCode());
+        self::assertNotEmpty($query['rows']);
+        self::assertStringNotContainsString('PRIVATE KEY', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testATokenCannotUseABastionTheAdministratorDidNotList(): void
+    {
+        $this->prepare(rights: ['createConnections' => true]);
+
+        $refused = $this->api('POST', '/api/v1/connections', $this->jumpBody('other.example'));
+
+        self::assertSame(403, $this->statusCode());
+        self::assertSame('forbidden_bastion', $refused['error']);
+    }
+
     public function testAnAllConnectionsTokenAlsoSeesWhatItCreates(): void
     {
         $this->seedAndLogin();

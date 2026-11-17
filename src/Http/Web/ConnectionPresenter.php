@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Web;
 
 use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\SshJump;
 use App\Entity\DatabaseConnection;
 
 final class ConnectionPresenter
@@ -29,16 +30,29 @@ final class ConnectionPresenter
     /**
      * Les paramètres pour pré-remplir le formulaire de modification : le mot de passe n'est jamais renvoyé.
      *
-     * @return array<string, bool|int|string>
+     * @return array<string, mixed>
      */
     public static function parameters(ConnectionParameters $parameters): array
     {
-        return [
+        $shown = [
             'host' => $parameters->host,
             'port' => $parameters->port,
             'database' => $parameters->database,
             'username' => $parameters->username,
             'hasPassword' => '' !== $parameters->password(),
         ];
+        if ($parameters->transport instanceof SshJump) {
+            // Jamais la clé privée : seulement qu'il y en a une. L'empreinte est publique.
+            $shown['transport'] = [
+                'type' => 'ssh',
+                'host' => $parameters->transport->host,
+                'port' => $parameters->transport->port,
+                'username' => $parameters->transport->username,
+                'hasPrivateKey' => true,
+                'hostKeyFingerprint' => $parameters->transport->hostKeyFingerprint,
+            ];
+        }
+
+        return $shown;
     }
 }

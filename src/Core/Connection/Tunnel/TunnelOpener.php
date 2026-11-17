@@ -18,5 +18,13 @@ interface TunnelOpener
      */
     public function open(TunnelRequest $request): TunnelEndpoint;
 
+    /**
+     * L'empreinte de la clé d'hôte que publie un bastion autorisé, à faire confirmer par l'utilisateur.
+     *
+     * @throws ForbiddenBastionException
+     * @throws TunnelFailedException
+     */
+    public function hostKey(string $host, int $port): HostKey;
+
     public function close(TunnelEndpoint $endpoint): void;
 }

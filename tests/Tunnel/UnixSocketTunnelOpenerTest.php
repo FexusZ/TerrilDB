@@ -72,7 +72,7 @@ final class UnixSocketTunnelOpenerTest extends TestCase
 
         $endpoint = $this->opener()->open($this->request());
 
-        self::assertEquals(new TunnelEndpoint('0123456789abcdef0123456789abcdef', $this->dir.'/0123456789abcdef0123456789abcdef/.s.PGSQL.5432'), $endpoint);
+        self::assertEquals(new TunnelEndpoint('0123456789abcdef0123456789abcdef', $this->dir.'/0123456789abcdef0123456789abcdef/.s.PGSQL.5432', true), $endpoint);
         $this->waitRelay();
         $sent = json_decode((string) file_get_contents($this->dir.'/received.json'), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame([
@@ -165,5 +165,71 @@ final class UnixSocketTunnelOpenerTest extends TestCase
         } finally {
             ini_set('zend.exception_ignore_args', false === $previous ? '0' : $previous);
         }
+    }
+
+    public function testItAsksTheRelayForTheHostKeyOfABastion(): void
+    {
+        $this->startRelay(json_encode(['ok' => true, 'fingerprint' => self::FINGERPRINT, 'key_type' => 'ed25519'], \JSON_THROW_ON_ERROR));
+
+        $key = $this->opener()->hostKey('bastion.example', 2222);
+
+        self::assertSame(self::FINGERPRINT, $key->fingerprint);
+        self::assertSame('ed25519', $key->type);
+        $this->waitRelay();
+        $sent = json_decode((string) file_get_contents($this->dir.'/received.json'), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertSame(['op' => 'scan', 'host' => 'bastion.example', 'port' => 2222], $sent);
+    }
+
+    public function testAForbiddenBastionIsReportedWhenReadingItsHostKey(): void
+    {
+        $this->startRelay('{"ok":false,"error":"forbidden_bastion"}');
+
+        $this->expectException(ForbiddenBastionException::class);
+
+        $this->opener()->hostKey('bastion.example', 2222);
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function badHostKeyReplies(): iterable
+    {
+        yield 'unavailable' => ['{"ok":false,"error":"unavailable"}'];
+        yield 'detail from the engine' => ['{"ok":false,"error":"Connection refused to 10.0.0.1"}'];
+        yield 'no fingerprint' => ['{"ok":true}'];
+        yield 'malformed fingerprint' => ['{"ok":true,"fingerprint":"MD5:aa:bb","key_type":"rsa"}'];
+        yield 'unknown key type' => ['{"ok":true,"fingerprint":"SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8","key_type":"<script>"}'];
+    }
+
+    #[DataProvider('badHostKeyReplies')]
+    public function testAnyOtherHostKeyReplyIsAGenericFailure(string $reply): void
+    {
+        $this->startRelay($reply);
+
+        try {
+            $this->opener()->hostKey('bastion.example', 22);
+            self::fail('failure expected');
+        } catch (TunnelFailedException $failure) {
+            self::assertSame(TunnelFailedException::UNAVAILABLE, $failure->reason);
+            self::assertStringNotContainsString('10.0.0.1', $failure->getMessage());
+        }
+    }
+
+    public function testTheEndpointSaysWhetherTheTunnelWasAlreadyOpen(): void
+    {
+        $socket = $this->dir.'/0123456789abcdef0123456789abcdef/tunnel.sock';
+        $this->startRelay(json_encode(['ok' => true, 'id' => '0123456789abcdef0123456789abcdef', 'socket' => $socket, 'reused' => true], \JSON_THROW_ON_ERROR));
+
+        self::assertTrue($this->opener()->open($this->request())->reused);
+        $this->waitRelay();
+    }
+
+    public function testAnOldRelayWithoutTheFlagIsTreatedAsReused(): void
+    {
+        $socket = $this->dir.'/0123456789abcdef0123456789abcdef/tunnel.sock';
+        $this->startRelay(json_encode(['ok' => true, 'id' => '0123456789abcdef0123456789abcdef', 'socket' => $socket], \JSON_THROW_ON_ERROR));
+
+        self::assertTrue($this->opener()->open($this->request())->reused);
+        $this->waitRelay();
     }
 }

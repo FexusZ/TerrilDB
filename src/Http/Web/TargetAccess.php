@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Connection\TargetOpener;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
-use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\TargetSession;
 use Symfony\Component\Uid\Uuid;
@@ -18,7 +18,7 @@ final readonly class TargetAccess
 {
     public function __construct(
         private TargetSession $targets,
-        private DriverRegistry $drivers,
+        private TargetOpener $opener,
         private WebSession $session,
     ) {
     }
@@ -41,12 +41,12 @@ final readonly class TargetAccess
     }
 
     /**
-     * Essaie des paramètres sans rien enregistrer. Rend la durée de connexion en millisecondes.
+     * Essaie des paramètres sans rien enregistrer, par la même voie qu'une ouverture (règle d'adresses, tunnel d'un rebond). Rend la durée de connexion en millisecondes.
      */
     public function probe(Engine $engine, ConnectionParameters $parameters): int
     {
         $started = hrtime(true);
-        $this->drivers->for($engine)->connect($engine, $parameters)->close();
+        $this->opener->probe($this->session->user(), $engine, $parameters);
 
         return intdiv(hrtime(true) - $started, 1_000_000);
     }

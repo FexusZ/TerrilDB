@@ -112,7 +112,7 @@ def parse_request(message):
 class Relay:
     """Registre des tunnels. Le verrou ne protège que les structures : jamais tenu pendant un appel réseau."""
 
-    def __init__(self, root, allowed, factory, clock=time.monotonic, max_tunnels=50, max_per_bastion=10, wait_seconds=60):
+    def __init__(self, root, allowed, factory, clock=time.monotonic, max_tunnels=50, max_per_bastion=10, wait_seconds=60, scanner=None):
         self.root = root
         self.allowed = allowed
         self.factory = factory
@@ -120,6 +120,7 @@ class Relay:
         self.max_tunnels = max_tunnels
         self.max_per_bastion = max_per_bastion
         self.wait_seconds = wait_seconds
+        self.scanner = scanner
         self.lock = threading.RLock()
         self.by_identity = {}
         self.by_id = {}
@@ -133,6 +134,8 @@ class Relay:
                 return self._open(parse_request(message))
             if message.get("op") == "close":
                 return self._close(message.get("id"))
+            if message.get("op") == "scan":
+                return self._scan(message.get("host"), message.get("port"))
             raise RelayError("invalid_request")
         except RelayError as error:
             return {"ok": False, "error": error.code}
@@ -155,7 +158,7 @@ class Relay:
                 entry = self.by_identity.get(identity)
                 if entry is not None and entry["tunnel"].alive():
                     entry["last_used"] = self.clock()
-                    return self._reply(entry)
+                    return self._reply(entry, True)
                 if entry is not None:
                     self._drop(entry)
                 waiting = self.pending.get(identity)
@@ -188,8 +191,24 @@ class Relay:
                          "last_used": self.clock(), "bastion": bastion}
                 self.by_identity[identity] = entry
                 self.by_id[tunnel_id] = entry
-                return self._reply(entry)
+                return self._reply(entry, False)
         raise RelayError("unavailable")
+
+    def _scan(self, host, port):
+        """L'empreinte de la clé d'hôte d'un bastion autorisé : à faire confirmer par l'utilisateur, jamais à faire confiance."""
+        if not (isinstance(host, str) and HOST_RE.fullmatch(host) and _is_port(port)):
+            raise RelayError("invalid_request")
+        if (normalize_host(host), port) not in self.allowed:
+            raise RelayError("forbidden_bastion")
+        if self.scanner is None:
+            raise RelayError("unavailable")
+        try:
+            found = self.scanner(host, port)
+        except RelayError:
+            raise
+        except Exception:
+            raise RelayError("unavailable")
+        return {"ok": True, "fingerprint": found["fingerprint"], "key_type": found["key_type"]}
 
     def _assert_room(self, bastion):
         """Appelé verrou tenu : tunnels ouverts + ouvertures en cours."""
@@ -198,8 +217,9 @@ class Relay:
             raise RelayError("too_many_tunnels")
 
     @staticmethod
-    def _reply(entry):
-        return {"ok": True, "id": entry["id"], "socket": entry["socket"]}
+    def _reply(entry, reused):
+        """`reused` : le tunnel existait déjà (celui d'un autre usage) ; qui l'a créé peut le refermer, pas les autres."""
+        return {"ok": True, "id": entry["id"], "socket": entry["socket"], "reused": reused}
 
     def _close(self, tunnel_id):
         if not isinstance(tunnel_id, str) or not ID_RE.fullmatch(tunnel_id):
@@ -261,6 +281,35 @@ def _fingerprint(line):
     done = subprocess.run(["ssh-keygen", "-l", "-f", "-"], input=line, capture_output=True, text=True, timeout=5)
     parts = done.stdout.split()
     return parts[1] if done.returncode == 0 and len(parts) > 1 else None
+
+
+KEY_TYPES = ("ed25519", "ecdsa", "rsa")
+
+
+def scan_host_key(host, port, timeout=10):
+    """Rend l'empreinte de la clé d'hôte la plus moderne que le bastion publie (ed25519, puis ecdsa, puis rsa).
+
+    Un seul type par connexion, et on s'arrête au premier trouvé : chaque connexion sans authentification compte contre
+    l'adresse du relais chez un sshd récent (PerSourcePenalties).
+    """
+    deadline = time.monotonic() + timeout
+    for key_type in KEY_TYPES:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            scan = subprocess.run(
+                ["ssh-keyscan", "-T", "5", "-t", key_type, "-p", str(port), host],
+                capture_output=True, text=True, timeout=max(1, remaining),
+            )
+        except subprocess.TimeoutExpired:
+            break
+        for line in scan.stdout.splitlines():
+            if line and not line.startswith("#"):
+                fingerprint = _fingerprint(line + "\n")
+                if fingerprint is not None and FINGERPRINT_RE.fullmatch(fingerprint):
+                    return {"fingerprint": fingerprint, "key_type": key_type}
+    raise RelayError("unavailable")
 
 
 def verified_known_hosts(request, deadline):
@@ -361,7 +410,7 @@ def make_server(control, relay, max_connections=32):
 
 
 def serve(root, key_dir, allowed, limits, idle_sweep=5):
-    relay = Relay(root, allowed, ssh_factory(key_dir, limits["open_timeout"]), max_tunnels=limits["max_tunnels"], max_per_bastion=limits["max_per_bastion"])
+    relay = Relay(root, allowed, ssh_factory(key_dir, limits["open_timeout"]), max_tunnels=limits["max_tunnels"], max_per_bastion=limits["max_per_bastion"], scanner=scan_host_key)
     relay.purge_stale()
     server = make_server(os.path.join(root, "control.sock"), relay, limits["max_connections"])
 

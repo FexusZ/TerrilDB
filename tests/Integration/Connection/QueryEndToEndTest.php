@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Connection;
 
 use App\Audit\AuditedTargetHosts;
+use App\Audit\AuditedTunnels;
+use App\Audit\RequestAuditContext;
 use App\Connection\ConnectionManager;
 use App\Connection\TargetOpener;
 use App\Core\Connection\Engine;
@@ -32,6 +34,7 @@ use App\Tests\Integration\Persistence\DatabaseTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Du compte de l'utilisateur à l'instruction exécutée sur la vraie cible, en passant par la connexion chiffrée.
@@ -74,7 +77,9 @@ final class QueryEndToEndTest extends DatabaseTestCase
         try {
             $policy = self::getContainer()->get(AuditedTargetHosts::class);
             self::assertInstanceOf(AuditedTargetHosts::class, $policy);
-            $this->target = (new TargetOpener($manager, $drivers, $policy))->open($user, $key, $saved->getId());
+            $tunnels = self::getContainer()->get(AuditedTunnels::class);
+            self::assertInstanceOf(AuditedTunnels::class, $tunnels);
+            $this->target = (new TargetOpener($manager, $drivers, $policy, $tunnels, new RequestAuditContext(new RequestStack()), new \App\Connection\TunnelQuota(new \Symfony\Component\Cache\Adapter\ArrayAdapter(), new MockClock('2026-11-14 10:00:00 UTC'))))->open($user, $key, $saved->getId());
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }

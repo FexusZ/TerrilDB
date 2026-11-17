@@ -56,6 +56,54 @@ class Clock:
         return self.now
 
 
+class ScanTest(unittest.TestCase):
+    """Opération « scan » : lire l'empreinte de la clé d'hôte d'un bastion AUTORISÉ, pour que l'utilisateur la confirme."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.scanned = []
+
+    def scanner(self, host, port):
+        self.scanned.append((host, port))
+        return {"fingerprint": FP, "key_type": "ed25519"}
+
+    def relay(self, allowed="bastion.example", scanner="default"):
+        scanner = self.scanner if scanner == "default" else scanner
+        return relay.Relay(self.tmp.name, relay.parse_allowed(allowed), lambda d, r: None, scanner=scanner)
+
+    def test_returns_the_fingerprint_of_an_allowed_bastion(self):
+        reply = self.relay().handle({"op": "scan", "host": "bastion.example", "port": 22})
+        self.assertEqual({"ok": True, "fingerprint": FP, "key_type": "ed25519"}, reply)
+        self.assertEqual([("bastion.example", 22)], self.scanned)
+
+    def test_a_bastion_that_is_not_allowed_is_never_scanned(self):
+        for configured in ("", "other.example", "bastion.example:2222"):
+            reply = self.relay(configured).handle({"op": "scan", "host": "bastion.example", "port": 22})
+            self.assertEqual({"ok": False, "error": "forbidden_bastion"}, reply)
+        self.assertEqual([], self.scanned)
+
+    def test_refuses_malformed_requests(self):
+        for bad in ({"op": "scan", "host": "-oProxyCommand=x", "port": 22}, {"op": "scan", "host": "bastion.example", "port": 0},
+                    {"op": "scan", "host": "bastion.example", "port": "22"}, {"op": "scan", "port": 22}):
+            self.assertEqual({"ok": False, "error": "invalid_request"}, self.relay().handle(bad))
+        self.assertEqual([], self.scanned)
+
+    def test_a_scan_failure_gives_only_a_stable_code(self):
+        def failing(host, port):
+            raise relay.RelayError("unavailable")
+
+        self.assertEqual({"ok": False, "error": "unavailable"}, self.relay(scanner=failing).handle({"op": "scan", "host": "bastion.example", "port": 22}))
+
+        def crashing(host, port):
+            raise OSError("secret detail")
+
+        self.assertEqual({"ok": False, "error": "unavailable"}, self.relay(scanner=crashing).handle({"op": "scan", "host": "bastion.example", "port": 22}))
+
+    def test_without_a_scanner_the_operation_is_unavailable(self):
+        self.assertEqual({"ok": False, "error": "unavailable"}, self.relay(scanner=None).handle({"op": "scan", "host": "bastion.example", "port": 22}))
+
+
 class RelayTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -91,8 +139,13 @@ class RelayTest(unittest.TestCase):
         first = r.handle(message())
         second = r.handle(message())
 
-        self.assertEqual(first, second)
+        self.assertEqual((first["id"], first["socket"]), (second["id"], second["socket"]))
         self.assertEqual(1, len(self.factory.created))
+
+    def test_the_reply_says_whether_the_tunnel_already_existed(self):
+        r = self.relay()
+        self.assertIs(False, r.handle(message())["reused"])
+        self.assertIs(True, r.handle(message())["reused"])
 
     def test_another_key_or_target_is_another_tunnel(self):
         r = self.relay()
@@ -218,7 +271,8 @@ class RelayTest(unittest.TestCase):
         for thread in threads:
             thread.join(5)
         self.assertEqual(1, len(base.created))
-        self.assertEqual(results[0], results[1])
+        self.assertEqual(results[0]["id"], results[1]["id"])
+        self.assertEqual([False, True], sorted(result["reused"] for result in results))
 
     def test_the_total_number_of_tunnels_is_capped(self):
         r = self.relay(max_tunnels=2)
