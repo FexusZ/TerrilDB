@@ -236,6 +236,29 @@ final class WriteApprovalApiTest extends WebApiTestCase
         self::assertSame('query_failed', $body['error']);
     }
 
+    public function testExecuteCapsTheRowsOfATokenWithoutTheExportRightAndLeavesWritesAlone(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+        self::assertSame(200, $this->statusCode());
+        self::assertCount(500, self::listOf($body['rows']));
+        self::assertTrue($body['truncated']);
+
+        $this->api('execute', ['sql' => $this->update()]);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('b', $this->value());
+    }
+
+    public function testExecuteKeepsTheServerCeilingWithTheExportRight(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true, 'export' => true]);
+
+        $body = $this->api('execute', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+        self::assertCount(700, self::listOf($body['rows']));
+        self::assertFalse($body['truncated']);
+    }
+
     public function testASingleStepTokenKeepsTheDirectBehaviourButStillChecksAGivenTicket(): void
     {
         $this->setUpToken(['writeData' => true, 'singleStep' => true]);

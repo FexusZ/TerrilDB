@@ -77,6 +77,13 @@ final class ApiTokenAccessTest extends TestCase
         self::assertSame(1_000, $exporter->readRowLimit(1_000));
     }
 
+    public function testWriteOptionsCapTheRowsOfATokenWithoutTheExportRight(): void
+    {
+        self::assertSame(500, $this->access(new TokenPermissions(writeData: true))->writeOptions(1000, 100_000)->maxRows);
+        self::assertSame(3, $this->access(new TokenPermissions(writeData: true))->writeOptions(1000, 3)->maxRows);
+        self::assertSame(100_000, $this->access(new TokenPermissions(writeData: true, export: true))->writeOptions(1000, 100_000)->maxRows);
+    }
+
     public function testNewReadRightsDoNotCountAsWriting(): void
     {
         self::assertFalse((new TokenPermissions(readSchema: true, export: true))->canWrite());

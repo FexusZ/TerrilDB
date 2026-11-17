@@ -43,7 +43,7 @@ final readonly class ApiTokenAccess
     public const ROWS_WITHOUT_EXPORT = 500;
 
     /**
-     * Le nombre de lignes demandé à `/query` ou `run_query`, ramené à `ROWS_WITHOUT_EXPORT` pour un jeton sans le droit `export`.
+     * Le nombre de lignes demandé à `/query`, `run_query`, `/execute` ou `execute_statement`, ramené à `ROWS_WITHOUT_EXPORT` pour un jeton sans le droit `export`.
      */
     public function readRowLimit(int $requested): int
     {
@@ -87,6 +87,6 @@ final readonly class ApiTokenAccess
             throw ApiTokenPermissionException::create();
         }
 
-        return new QueryOptions(QueryMode::ReadWrite, $timeoutMs, $maxRows, $permissions->writes());
+        return new QueryOptions(QueryMode::ReadWrite, $timeoutMs, $this->readRowLimit($maxRows), $permissions->writes());
     }
 }
