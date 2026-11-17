@@ -174,6 +174,10 @@ export interface ApiTokenInfo {
   createConnections: boolean
   /** Lit la supervision du serveur (sessions…), sans rien écrire. */
   diagnostic: boolean
+  /** Lit la liste des bases et des schémas du serveur (aucune donnée de table). */
+  readSchema: boolean
+  /** Exporte un résultat en CSV / JSON. */
+  export: boolean
   /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
   singleStep: boolean
   createdAt: string
@@ -194,6 +198,8 @@ export interface ApiTokenInput {
   writeSchema?: boolean
   createConnections?: boolean
   diagnostic?: boolean
+  readSchema?: boolean
+  export?: boolean
   singleStep?: boolean
 }
 
@@ -725,4 +731,29 @@ export const COLUMN_TYPES: Record<Engine, string[]> = {
   postgresql: ['integer', 'bigint', 'smallint', 'numeric(10,2)', 'real', 'double precision', 'boolean', 'character varying(255)', 'text', 'uuid', 'jsonb', 'date', 'timestamp without time zone', 'timestamp with time zone', 'bytea'],
   clickhouse: ['UInt8', 'UInt32', 'UInt64', 'Int32', 'Int64', 'Float64', 'Decimal(18, 4)', 'String', 'UUID', 'Date', 'DateTime', 'DateTime64(3)', 'Bool', 'Array(String)', 'LowCardinality(String)'],
   redis: [],
+}
+
+/** Un jeton d’API vu par un administrateur : métadonnées seulement, jamais le texte du jeton ni sa clé. */
+export interface AdminTokenInfo {
+  id: string
+  name: string
+  owner: { id: string; username: string; disabled: boolean }
+  /** Un nom de droit par entrée (writeData, diagnostic…) ; un droit ajouté côté serveur arrive ici sans autre changement. */
+  permissions: Record<string, boolean>
+  allConnections: boolean
+  connectionCount: number
+  status: 'active' | 'expired'
+  createdAt: string
+  expiresAt: string | null
+  lastUsedAt: string | null
+}
+
+export interface AdminJournalEvent {
+  id: string
+  occurredAt: string
+  action: 'account.disabled' | 'account.enabled' | 'admin.token_revoked' | 'admin.administrator_token_revoked'
+  actor: { id: string; username: string | null } | null
+  subjectId: string | null
+  /** Propriétaire du jeton révoqué (identifiant de compte). */
+  owner: string | null
 }

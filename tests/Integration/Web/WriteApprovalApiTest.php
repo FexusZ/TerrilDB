@@ -211,6 +211,54 @@ final class WriteApprovalApiTest extends WebApiTestCase
         self::assertSame(['error' => 'permission_denied'], $body);
     }
 
+    public function testADuplicateKeyThroughTheApiHasItsStableCodeAndNoEngineMessage(): void
+    {
+        $this->detailedErrors();
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup-secret-value')", $this->table)]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('duplicate_key', $body['error']);
+        self::assertFalse($body['retryable']);
+        self::assertArrayNotHasKey('message', $body);
+        self::assertStringNotContainsString('dup-secret-value', json_encode($body, \JSON_THROW_ON_ERROR));
+        self::assertSame('a', $this->value());
+    }
+
+    public function testADuplicateKeyThroughTheApiKeepsTheGenericFailureByDefault(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup')", $this->table)]);
+
+        self::assertSame(400, $this->statusCode());
+        self::assertSame('query_failed', $body['error']);
+    }
+
+    public function testExecuteCapsTheRowsOfATokenWithoutTheExportRightAndLeavesWritesAlone(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+        self::assertSame(200, $this->statusCode());
+        self::assertCount(500, self::listOf($body['rows']));
+        self::assertTrue($body['truncated']);
+
+        $this->api('execute', ['sql' => $this->update()]);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('b', $this->value());
+    }
+
+    public function testExecuteKeepsTheServerCeilingWithTheExportRight(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true, 'export' => true]);
+
+        $body = $this->api('execute', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+        self::assertCount(700, self::listOf($body['rows']));
+        self::assertFalse($body['truncated']);
+    }
+
     public function testASingleStepTokenKeepsTheDirectBehaviourButStillChecksAGivenTicket(): void
     {
         $this->setUpToken(['writeData' => true, 'singleStep' => true]);

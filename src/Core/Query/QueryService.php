@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Query;
 
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\Decision;
@@ -31,6 +32,7 @@ final readonly class QueryService
      * @throws QueryFailedException
      * @throws QueryTimeoutException
      * @throws LockConflictException
+     * @throws EngineFaultException
      */
     public function execute(TargetConnection $target, string $sql, QueryOptions $options = new QueryOptions(), bool $confirmed = false): QueryResult
     {

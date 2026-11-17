@@ -4,12 +4,15 @@ Base : `/api/v1`. Authentification : `Authorization: Bearer <jeton>` uniquement 
 Les jetons se créent dans l'interface (Sécurité du compte) : le texte du jeton n'est montré qu'une fois.
 
 Un jeton n'ouvre que les connexions cochées à sa création, jusqu'à son expiration (365 jours au plus, ou aucune si le propriétaire choisit « Jamais » : le jeton vaut alors jusqu'à sa révocation).
+Un administrateur de l'installation peut voir les métadonnées (jamais le texte ni les connexions) des jetons de tous les comptes et les révoquer depuis la page « Administration » ; le jeton révoqué reçoit alors `401 invalid_token`, et son propriétaire n'est pas prévenu. Révoquer le jeton d'un autre administrateur exige une confirmation explicite (`DELETE /web/admin/tokens/{id}` avec `{"confirmed": true}`, sinon `409 confirmation_required` avec `reason: other_administrator_token`) et est tracé à part dans le journal d'administration.
 Un jeton « toutes mes connexions » couvre celles du compte au moment de sa création ; le bouton « Actualiser » de
 l'interface y ajoute ensuite les connexions créées depuis (et retire les supprimées) sans changer le texte du jeton,
 donc sans rien reconfigurer côté client. Il est
 supprimé quand le mot de passe du compte change. Par défaut un jeton ne fait que lire : une écriture sur `/query` est refusée par le filtre puis, en dernier recours, par le moteur
-lui-même (transaction en lecture seule). Quatre droits se cochent à la création et ne changent plus (on émet un autre jeton) :
-`writeData`, `writeSchema`, `createConnections` (voir plus bas) et `diagnostic` (supervision du serveur, lecture seule, voir « Diagnostics »).
+lui-même (transaction en lecture seule). Six droits se cochent à la création et ne changent plus (on émet un autre jeton) :
+`writeData`, `writeSchema`, `createConnections` (voir plus bas), `diagnostic` (supervision du serveur, lecture seule, voir « Diagnostics »),
+`readSchema` (liste des bases et des schémas) et `export` (voir « Lecture à cocher »). Tous sont refusés par défaut ; un jeton émis avant
+l'arrivée d'un droit ne l'a pas (aucun élargissement implicite) et un jeton ne gère jamais d'autres jetons.
 
 | Méthode | Chemin | Rôle |
 | --- | --- | --- |
@@ -17,11 +20,11 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections` | les connexions permises : `id`, `name`, `engine` |
 | GET | `/api/v1/connections/{id}/tables` | tables et vues, avec une estimation du nombre de lignes |
 | GET | `/api/v1/connections/{id}/tables/{name}` | colonnes, index, clés étrangères, définition d'une vue |
-| POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` ; `timeoutMs` ne peut pas dépasser le délai du proxy moins 20 s (100 000 ms par défaut, `TERRILDB_PROXY_TIMEOUT` : voir docs/deploy.md), sinon 422 `invalid_input` |
+| POST | `/api/v1/connections/{id}/query` | exécute UNE instruction de lecture : `{"sql": "…", "maxRows": 1000, "timeoutMs": 30000}` ; `timeoutMs` ne peut pas dépasser le délai du proxy moins 20 s (100 000 ms par défaut, `TERRILDB_PROXY_TIMEOUT` : voir docs/deploy.md), sinon 422 `invalid_input` ; un jeton SANS le droit `export` n'en reçoit que 500 lignes au plus (`truncated` si coupé, jamais une erreur), un jeton avec `export` garde le plafond du serveur |
 | POST | `/api/v1/connections/{id}/prepare` | (droit d'écriture) juge UNE instruction d'écriture SANS l'exécuter : `decision` (`allowed` / `needs_confirmation`), `kind`, `danger`, `reason` et un `confirmationToken` lié au texte exact, à la connexion et au jeton d'API, à usage unique, valable 300 s |
 | POST | `/api/v1/connections/{id}/script/prepare` | (droit d'écriture) juge un SCRIPT (500 instructions / 1 Mo au plus) instruction par instruction avec les droits du jeton, sans rien exécuter : verdicts, `transactional`, `atomic`, `dryRun`, `warnings`, UN `confirmationToken` lié au texte exact ; une instruction refusée = 403 `script_refused` (`reason`, `statement`) et aucun jeton |
 | POST | `/api/v1/connections/{id}/script/execute` | exécute le script préparé : `script`, `confirmationToken` (TOUJOURS obligatoire, même pour un jeton `singleStep`), `confirmed` (si destructif), `dryRun`, `timeoutMs` (global, 100 000 ms par défaut, au plus le délai du proxy moins 20 s : au-dessus, 422 `invalid_input` AVANT toute consommation du jeton ; voir docs/deploy.md). Arrêt à la première erreur ; réponse 200 avec `status` (`committed`, `dry_run`, `rolled_back`, `partial`, `failed`), `applied`, `failed`, `notRun`, `steps` ; audit : une ligne par instruction, `executionId` commun. Le jeton de confirmation est consommé par CHAQUE exécution, `dryRun` compris : tester puis exécuter pour de vrai demande deux `prepare`. Un `dryRun` est refusé (409 `dry_run_unavailable`, `reason: non_transactional_tables`) si le script écrit dans une table sans transaction (MyISAM, MEMORY…), et chaque lecture est limitée à 1000 lignes (`truncated`) |
-| POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query`, plus `confirmationToken` (obligatoire, voir ci-dessous) et `confirmed` |
+| POST | `/api/v1/connections/{id}/execute` | exécute UNE instruction d'écriture (droit `writeData` et/ou `writeSchema`) : mêmes champs que `/query` (sans le droit `export`, 500 lignes au plus aussi, `truncated` si coupé), plus `confirmationToken` (obligatoire, voir ci-dessous) et `confirmed` |
 | GET | `/api/v1/connections/{id}/diagnostics` | (droit `diagnostic`) ce que chaque source de supervision peut lire : `capabilities.sessions`, `.locks`, `.statements`, `.variables`, `.replication` et `.logs` = `{availability, reason, privilege}` |
 | GET | `/api/v1/connections/{id}/diagnostics/sessions` | (droit `diagnostic`) les sessions en cours sur le serveur, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/accounts` | (droit `diagnostic`) comptes, rôles, privilèges et constatations de l'audit de sécurité (MySQL, MariaDB), lecture seule, jamais une empreinte de mot de passe |
@@ -30,6 +33,9 @@ lui-même (transaction en lecture seule). Quatre droits se cochent à la créati
 | GET | `/api/v1/connections/{id}/diagnostics/replication` | (droit `diagnostic`) état de la réplication du serveur : rôle, fils, retard, jeux reçu / appliqué, dernières erreurs, alertes ; lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/queries?order=&limit=` | (droit `diagnostic`) les requêtes les plus coûteuses par empreinte, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/variables` | (droit `diagnostic`) variables de configuration, lecture seule : `q` (morceau de nom), `changed=1`, `limit` (1 à 500, 100 par défaut) |
+| GET | `/api/v1/connections/{id}/databases` | (droit `readSchema`) les bases du serveur que le compte voit : `default`, `databases[]` `{name, system}` ; bases du moteur masquées sauf `?system=1` |
+| GET | `/api/v1/connections/{id}/schemas` | (droit `readSchema`) les schémas d'une base (PostgreSQL ; 501 `unsupported_operation` ailleurs) : `?database=`, `?system=1` |
+| POST | `/api/v1/connections/{id}/export` | (droit `export`) exporte le résultat d'UNE lecture : `sql`, `format` (`csv` ou `json`), `bom?`, `maxRows` (10 000 par défaut, 100 000 au plus), `timeoutMs` ; réponse = le fichier, en-tête `X-TerrilDB-Truncated: 1` si coupé |
 | GET | `/api/v1/connections/{id}/diagnostics/config-audit` | (droit `diagnostic`) audit de la configuration : constats sur les variables lues, lecture seule, rien n'est exécuté |
 | GET | `/api/v1/connections/{id}/diagnostics/logs` | (droit `diagnostic`) journal d'erreurs (MySQL) et requêtes lentes en table (MySQL, MariaDB), 200 lignes les plus récentes, textes masqués, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/health?seconds=5` | (droit `diagnostic`) santé du serveur sur un intervalle de 1 à 30 s (5 par défaut) : la requête dure l'intervalle, lecture seule |
@@ -44,7 +50,7 @@ Toujours `{"error": "<code>", …}`. Codes : `invalid_token` (401, en-tête `WWW
 connexion hors jeton comprise), `query_refused` (403, avec `reason`), `query_failed` (400, avec `message` du moteur),
 `query_timeout` (408), `invalid_input` (422), `bad_request` (400), `too_many_attempts` (429, avec `Retry-After`),
 `target_unreachable` (502), `permission_denied` (403, le jeton n'a pas le droit), `confirmation_required` (409, avec `reason`),
-`deadlock`, `serialization_failure` et `lock_timeout` (409, `retryable`, jamais le message du moteur).
+`deadlock`, `serialization_failure` et `lock_timeout` (409, `retryable`, jamais le message du moteur), `too_many_connections` (503), `engine_permission_denied` (403), `duplicate_key` (409), `auth_failed` et `auth_requires_tls` (502) (voir « Erreurs courantes du moteur »).
 
 Motifs de refus (`reason`) : `empty_statement`, `multiple_statements`, `incomplete_sql`, `too_long`, `not_read_only`,
 `forbidden_construct`, `unsupported_statement`, `write_not_permitted` (le jeton n'a pas le droit de cette sorte d'écriture).
@@ -60,6 +66,36 @@ l'opération entière : relire la table, puis refaire ce qui manque. `retryable:
 annulée en entier). `serialization_failure` (SQLSTATE PostgreSQL 40001) : deux transactions simultanées ne pouvaient pas rester cohérentes, le moteur
 a annulé celle-ci ; même conduite que `deadlock` (on rejoue l'opération entière), mais ce n'est pas un interblocage. Un délai d'exécution reste `query_timeout`. Les autres échecs d'écriture
 (`data_change_failed`, `schema_change_failed`) portent `retryable: false`.
+
+## Lecture à cocher
+
+Sans droit, `403 permission_denied` (avant même de regarder la connexion). Chaque case est indépendante des autres et ne donne jamais d'écriture.
+`readSchema` : listes de bases et de schémas seulement, aucune donnée de table ; audit `schema.read` (sujet, `topic`, moteur, nombre de lignes, jamais la
+liste). `export` : mêmes garde-fous, lecture seule et audit que `/query` (`purpose: export`, `format`) mais jusqu'à 100 000 lignes : c'est une sortie
+en masse, d'où une case à part : un jeton sans `export` est plafonné à 500 lignes par `/query` et par `/execute` (un SELECT lancé par un jeton qui écrit ; champ `truncated`), même si `maxRows` en demande davantage. Les jetons créés avant ce droit l'ont à faux (migration) : ils sont donc plafonnés à 500 lignes dès la mise à jour ; pour retrouver l'ancien plafond, en créer un nouveau avec `export`. Le contenu exporté vient de la base : une donnée, jamais une instruction. À venir (issue #37) : diagramme, audit du schéma et
+plan d'exécution (`readSchema`), `editData`, `editStructure`, `manageConnections`, `readHistory`, validation humaine par jeton, limites de débit réglables.
+
+## Erreurs courantes du moteur
+
+**Réservé aux installations qui l'activent** : `TERRILDB_DETAILED_ERRORS=1` (faux par défaut, réglage d'installation, valable pour tous les membres). Sans lui,
+TerrilDB garde ses réponses d'origine : un échec de connexion reste `target_unreachable`, une instruction refusée reste `query_failed` (400, `message`) ou
+`data_change_failed` / `schema_change_failed`, et le journal garde `engine_error`. Raison : un serveur qui répond « identifiants refusés » ou « serveur plein »
+prouve qu'il est joignable depuis TerrilDB, ce qui cartographie le réseau interne ; le choix revient à qui installe.
+
+Avec le réglage, classées d'après le CODE du moteur, jamais son texte, et rendues sans le message du moteur (il peut citer une valeur, un hôte, un compte) ; le
+corps porte `retryable` et le journal d'audit le code seulement (`reason`).
+
+| Code | Statut | Cause | `retryable` |
+| --- | --- | --- | --- |
+| `too_many_connections` | 503 | serveur ou compte à sa limite de connexions (MySQL/MariaDB 1040, 1203, 1226 ; PostgreSQL 53300) | oui, `retryAfter` (5 s) et en-tête `Retry-After` |
+| `engine_permission_denied` | 403 | le compte de la connexion n'a pas le droit sur la base cible (1044, 1142, 1143, 1227, 1370 ; 42501) : distinct du 403 `permission_denied`, qui concerne le jeton | non |
+| `duplicate_key` | 409 | clé primaire ou index unique en doublon (1062 ; 23505) | non |
+| `auth_failed` | 502 | identifiants de la cible refusés (1045 ; 28P01) | non |
+| `auth_requires_tls` | 502 | le serveur exige une connexion chiffrée (MySQL/MariaDB 3159 ; PostgreSQL « no encryption » du `pg_hba.conf`) | non |
+
+Les deux derniers (et `too_many_connections`) apparaissent à l'ouverture de la connexion, à la place de `target_unreachable`. Sur une modification de structure jouée
+instruction par instruction, `retryable` est faux dès que `applied` n'est pas vide (ne pas rejouer telle quelle). Tout le reste garde
+`query_failed` (400, avec `message`) ou `data_change_failed` / `schema_change_failed`.
 
 ## Écrire
 
