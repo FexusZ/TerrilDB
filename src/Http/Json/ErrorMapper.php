@@ -23,6 +23,7 @@ use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\Exception\InvalidDigestQueryException;
 use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
 use App\Core\Diagnostics\Health\HealthBusyException;
+use App\Core\Driver\DetailedErrors;
 use App\Core\Driver\EngineFault;
 use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
@@ -78,8 +79,16 @@ use App\Security\Exception\TotpNotEnabledException;
  */
 final class ErrorMapper
 {
+    public function __construct(private readonly DetailedErrors $detailed = new DetailedErrors())
+    {
+    }
+
     public function map(\Throwable $error): ?ErrorResponse
     {
+        if (!$this->detailed->enabled) {
+            $error = self::withoutDetail($error);
+        }
+
         return match (true) {
             $error instanceof InvalidCredentialsException => new ErrorResponse(401, 'invalid_credentials'),
             $error instanceof SecondFactorRequiredException => new ErrorResponse(401, 'second_factor_required'),
@@ -195,5 +204,20 @@ final class ErrorMapper
             $extra,
             $advise ? ['Retry-After' => (string) $seconds] : [],
         );
+    }
+
+    /**
+     * Sans `TERRILDB_DETAILED_ERRORS` : l'erreur reconnue redevient celle d'origine (même code, même corps), pour ne rien apprendre de plus
+     * sur la machine visée.
+     */
+    private static function withoutDetail(\Throwable $error): \Throwable
+    {
+        return match (true) {
+            $error instanceof EngineFaultException => new QueryFailedException($error->engineMessage, previous: $error->getPrevious()),
+            $error instanceof TargetConnectionFailedException && null !== $error->fault => TargetConnectionFailedException::create($error->getPrevious()),
+            $error instanceof DataChangeFailedException && null !== $error->fault => new DataChangeFailedException($error->getMessage(), $error->applied, $error->failed, $error->getPrevious(), $error->lock),
+            $error instanceof SchemaChangeFailedException && null !== $error->fault => new SchemaChangeFailedException($error->getMessage(), $error->applied, $error->failed, $error->getPrevious(), $error->lock, $error->holders),
+            default => $error,
+        };
     }
 }

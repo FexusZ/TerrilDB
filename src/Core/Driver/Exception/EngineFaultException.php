@@ -12,7 +12,8 @@ use App\Core\Driver\EngineFault;
  */
 final class EngineFaultException extends \RuntimeException
 {
-    public function __construct(public readonly EngineFault $fault, ?\Throwable $previous = null)
+    /** `engineMessage` : le texte du moteur, gardé POUR le mode sans détail (réponse générique d'origine), jamais montré avec le réglage. */
+    public function __construct(public readonly EngineFault $fault, ?\Throwable $previous = null, public readonly string $engineMessage = '')
     {
         parent::__construct(\sprintf('The engine reported a known error (%s).', $fault->code()), 0, $previous);
     }

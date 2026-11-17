@@ -145,13 +145,12 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
             return new LockConflictException($lock, $e);
         }
 
+        $message = trim((string) preg_replace('/^ERROR:\s+/', '', \is_string($info[2] ?? null) ? $info[2] : $e->getMessage()));
         $fault = EngineFaultReader::of(Engine::PostgreSql, $e);
         if (null !== $fault) {
-            return new EngineFaultException($fault, $e);
+            return new EngineFaultException($fault, $e, $message);
         }
 
-        $message = \is_string($info[2] ?? null) ? $info[2] : $e->getMessage();
-
-        return new QueryFailedException(trim((string) preg_replace('/^ERROR:\s+/', '', $message)), previous: $e);
+        return new QueryFailedException($message, previous: $e);
     }
 }

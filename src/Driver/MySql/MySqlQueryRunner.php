@@ -107,11 +107,12 @@ final readonly class MySqlQueryRunner implements QueryRunner
             return new LockConflictException($lock, $e);
         }
 
+        $message = trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage());
         $fault = EngineFaultReader::of($this->engine, $e);
         if (null !== $fault) {
-            return new EngineFaultException($fault, $e);
+            return new EngineFaultException($fault, $e, $message);
         }
 
-        return new QueryFailedException(trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage()), previous: $e);
+        return new QueryFailedException($message, previous: $e);
     }
 }
