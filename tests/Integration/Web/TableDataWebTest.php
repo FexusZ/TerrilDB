@@ -166,6 +166,7 @@ final class TableDataWebTest extends WebApiTestCase
 
     public function testAnEngineRefusalIsAuditedWithoutTheEngineMessage(): void
     {
+        $this->detailedErrors();
         $user = $this->seedAndLogin();
         $id = $this->saveTarget();
         $table = $this->scratch();
@@ -226,6 +227,7 @@ final class TableDataWebTest extends WebApiTestCase
 
     public function testTheEngineRefusalIsReported(): void
     {
+        $this->detailedErrors();
         $this->seedAndLogin();
         $id = $this->saveTarget();
         $table = $this->scratch();
@@ -237,6 +239,23 @@ final class TableDataWebTest extends WebApiTestCase
         self::assertFalse($body['retryable'] ?? null);
         self::assertArrayNotHasKey('message', $body);
         self::assertCount(2, $this->rows($table));
+    }
+
+    public function testTheEngineRefusalKeepsTheGenericErrorByDefault(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/apply', ['inserts' => [['values' => ['id' => 1, 'name' => 'dup']]]]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('data_change_failed', $body['error'] ?? null);
+        self::assertFalse($body['retryable'] ?? null);
+        self::assertArrayHasKey('message', $body);
+        $details = $this->auditEvents($user, 'data')[0]->getDetails();
+        self::assertSame('engine_refused', $details['error']);
+        self::assertArrayNotHasKey('reason', $details);
     }
 
     public function testAnEngineRefusalWithoutAStableCodeKeepsTheGenericError(): void

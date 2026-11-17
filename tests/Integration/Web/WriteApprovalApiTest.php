@@ -213,6 +213,7 @@ final class WriteApprovalApiTest extends WebApiTestCase
 
     public function testADuplicateKeyThroughTheApiHasItsStableCodeAndNoEngineMessage(): void
     {
+        $this->detailedErrors();
         $this->setUpToken(['writeData' => true, 'singleStep' => true]);
 
         $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup-secret-value')", $this->table)]);
@@ -223,6 +224,16 @@ final class WriteApprovalApiTest extends WebApiTestCase
         self::assertArrayNotHasKey('message', $body);
         self::assertStringNotContainsString('dup-secret-value', json_encode($body, \JSON_THROW_ON_ERROR));
         self::assertSame('a', $this->value());
+    }
+
+    public function testADuplicateKeyThroughTheApiKeepsTheGenericFailureByDefault(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup')", $this->table)]);
+
+        self::assertSame(400, $this->statusCode());
+        self::assertSame('query_failed', $body['error']);
     }
 
     public function testASingleStepTokenKeepsTheDirectBehaviourButStillChecksAGivenTicket(): void

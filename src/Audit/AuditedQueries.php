@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Driver\DetailedErrors;
 use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\TargetConnection;
@@ -28,6 +29,7 @@ final readonly class AuditedQueries
     public function __construct(
         private QueryService $queries,
         private AuditLog $audit,
+        private DetailedErrors $detailed = new DetailedErrors(),
     ) {
     }
 
@@ -56,7 +58,9 @@ final readonly class AuditedQueries
 
             throw $e;
         } catch (EngineFaultException $e) {
-            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => $e->fault->code()]);
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ($this->detailed->enabled
+                ? ['reason' => $e->fault->code()]
+                : ['reason' => 'engine_error', 'error' => mb_substr($e->engineMessage, 0, self::MAX_ERROR_LENGTH)]));
 
             throw $e;
         } catch (QueryFailedException $e) {

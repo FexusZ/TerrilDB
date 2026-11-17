@@ -211,6 +211,7 @@ final class SchemaQueryWebTest extends WebApiTestCase
 
     public function testADuplicateKeyIsReportedUnderAStableCodeWithoutTheEngineMessage(): void
     {
+        $this->detailedErrors();
         $user = $this->seedAndLogin();
         $id = $this->saveTarget('TARGET_POSTGRES_URL');
 
@@ -223,6 +224,21 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertStringNotContainsString('dup-secret-value', json_encode($body, \JSON_THROW_ON_ERROR));
         $reasons = array_map(static fn ($e): mixed => $e->getDetails()['reason'] ?? null, $this->auditEvents($user, 'query'));
         self::assertContains('duplicate_key', $reasons);
+    }
+
+    public function testADuplicateKeyKeepsTheGenericQueryFailureByDefault(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_POSTGRES_URL');
+
+        $body = $this->query($id, "insert into categories (id, name) values (1, 'dup')", ['mode' => 'read_write']);
+
+        self::assertSame(400, $this->statusCode());
+        self::assertSame('query_failed', $body['error']);
+        self::assertIsString($body['message']);
+        $reasons = array_map(static fn ($e): mixed => $e->getDetails()['reason'] ?? null, $this->auditEvents($user, 'query'));
+        self::assertContains('engine_error', $reasons);
+        self::assertNotContains('duplicate_key', $reasons);
     }
 
     public function testLimitsAndModesAreValidated(): void

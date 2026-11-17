@@ -140,6 +140,7 @@ final class ConnectionsWebTest extends WebApiTestCase
 
     public function testAnUpdateWithANewPasswordReplacesIt(): void
     {
+        $this->detailedErrors();
         $this->seedAndLogin();
         $created = $this->call('POST', '/web/connections', $this->targetBody('TARGET_POSTGRES_URL'));
         self::assertIsArray($created['connection']);
@@ -155,6 +156,23 @@ final class ConnectionsWebTest extends WebApiTestCase
         self::assertSame(502, $this->statusCode());
         self::assertSame('auth_failed', $result['error']);
         self::assertStringNotContainsString('wrong-secret-value', json_encode($result, \JSON_THROW_ON_ERROR));
+    }
+
+    public function testARefusedPasswordStaysTheGenericUnreachableTargetByDefault(): void
+    {
+        $this->seedAndLogin();
+        $created = $this->call('POST', '/web/connections', $this->targetBody('TARGET_POSTGRES_URL'));
+        self::assertIsArray($created['connection']);
+        $id = $created['connection']['id'];
+        self::assertIsString($id);
+        $body = $this->targetBody('TARGET_POSTGRES_URL');
+        $body['password'] = 'wrong-secret-value';
+        $this->call('PUT', '/web/connections/'.$id, $body);
+
+        $result = $this->call('POST', '/web/connections/'.$id.'/test');
+
+        self::assertSame(502, $this->statusCode());
+        self::assertSame(['error' => 'target_unreachable'], $result);
     }
 
     public function testDeleteRemovesTheConnection(): void
