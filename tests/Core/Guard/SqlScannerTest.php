@@ -109,9 +109,11 @@ final class SqlScannerTest extends TestCase
         self::assertSame([['SELECT']], $this->words('select 1 /*! ; drop table x */', SqlDialect::PostgreSql));
     }
 
-    public function testOptimizerHintsAreComments(): void
+    public function testMySqlOptimizerHintsAreReadAsCodeBecauseTheEngineAppliesThem(): void
     {
-        self::assertSame([['SELECT', 'A']], $this->words('select /*+ no_index(t) */ a', SqlDialect::MySql));
+        self::assertSame([['SELECT', 'NO_INDEX', 'T', 'A']], $this->words('select /*+ no_index(t) */ a', SqlDialect::MySql));
+        self::assertSame([['SELECT', 'A']], $this->words('select /*+ no_index(t) */ a', SqlDialect::PostgreSql));
+        self::assertSame([['SELECT', 'A']], $this->words('select /* no_index(t) */ a', SqlDialect::MySql));
     }
 
     public function testPostgreSqlBlockCommentsNestButMySqlOnesDoNot(): void

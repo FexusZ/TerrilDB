@@ -57,7 +57,8 @@ final class AuditedScriptsTest extends DatabaseTestCase
         self::assertCount(1, $found);
         self::assertSame('query.failed', $found[0]->getAction()->value);
         self::assertSame('executor_error', $found[0]->getDetails()['reason']);
-        self::assertSame('DELETE FROM t WHERE id = 1', $found[0]->getDetails()['sql']);
+        self::assertArrayNotHasKey('sql', $found[0]->getDetails());
+        self::assertSame(\strlen('DELETE FROM t WHERE id = 1'), $found[0]->getDetails()['length']);
         self::assertStringNotContainsString('4242', (string) json_encode($found[0]->getDetails()));
     }
 }

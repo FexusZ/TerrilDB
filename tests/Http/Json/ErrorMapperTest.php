@@ -14,6 +14,9 @@ use App\Core\Data\DataStatement;
 use App\Core\Data\Exception\DataChangeFailedException;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Driver\DetailedErrors;
+use App\Core\Driver\EngineFault;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -269,5 +272,131 @@ final class ErrorMapperTest extends TestCase
         $deadlock = (new ErrorMapper())->map(new SchemaChangeFailedException('x', [], $statement, null, LockConflict::Deadlock));
         self::assertFalse($deadlock?->extra['lockTimeout']);
         self::assertNull($deadlock->extra['lockCheck']);
+    }
+
+    /**
+     * @return iterable<string, array{EngineFault, int, string, bool}>
+     */
+    public static function faults(): iterable
+    {
+        yield 'too many connections' => [EngineFault::TooManyConnections, 503, 'too_many_connections', true];
+        yield 'permission denied by the engine' => [EngineFault::PermissionDenied, 403, 'engine_permission_denied', false];
+        yield 'duplicate key' => [EngineFault::DuplicateKey, 409, 'duplicate_key', false];
+        yield 'TLS required' => [EngineFault::AuthRequiresTls, 502, 'auth_requires_tls', false];
+        yield 'authentication failed' => [EngineFault::AuthenticationFailed, 502, 'auth_failed', false];
+    }
+
+    #[DataProvider('faults')]
+    public function testEngineFaultsHaveAStableCodeAnAdviceAndNeverTheEngineMessage(EngineFault $fault, int $status, string $code, bool $retryable): void
+    {
+        $response = (new ErrorMapper(new DetailedErrors(true)))->map(new EngineFaultException($fault, new \PDOException("Duplicate entry 'jean@example.org' for key 'email' at 10.0.0.7")));
+
+        self::assertNotNull($response);
+        self::assertSame($status, $response->status);
+        self::assertSame($code, $response->code);
+        self::assertSame($retryable, $response->extra['retryable']);
+        self::assertArrayNotHasKey('message', $response->extra);
+        self::assertStringNotContainsString('jean', json_encode($response, \JSON_THROW_ON_ERROR));
+        if ($retryable) {
+            self::assertSame(5, $response->extra['retryAfter']);
+            self::assertSame(['Retry-After' => '5'], $response->headers);
+        } else {
+            self::assertArrayNotHasKey('retryAfter', $response->extra);
+            self::assertSame([], $response->headers);
+        }
+    }
+
+    public function testADataChangeRefusedByTheEngineKeepsItsStatementButNotTheMessage(): void
+    {
+        $statement = new DataStatement('INSERT INTO t (a) VALUES (?)', ['x'], 'INSERT INTO t (a) VALUES (\'x\')', 'insert', 't', false, null, []);
+        $error = new DataChangeFailedException("Duplicate entry 'x'", 0, $statement, null, null, EngineFault::DuplicateKey);
+
+        $response = (new ErrorMapper(new DetailedErrors(true)))->map($error);
+
+        self::assertNotNull($response);
+        self::assertSame(409, $response->status);
+        self::assertSame('duplicate_key', $response->code);
+        self::assertFalse($response->extra['retryable']);
+        self::assertSame(0, $response->extra['applied']);
+        self::assertArrayNotHasKey('message', $response->extra);
+        self::assertSame('too_many_connections', (new ErrorMapper(new DetailedErrors(true)))->map(new DataChangeFailedException('x', 0, $statement, null, null, EngineFault::TooManyConnections))?->code);
+    }
+
+    public function testASchemaChangeRefusedByTheEngineKeepsWhatWasApplied(): void
+    {
+        $done = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $failed = new DdlStatement('ALTER TABLE t ADD d int', 'add_column', 't', false);
+
+        $response = (new ErrorMapper(new DetailedErrors(true)))->map(new SchemaChangeFailedException("SELECT command denied to user 'jean'", [$done], $failed, null, null, null, EngineFault::PermissionDenied));
+
+        self::assertSame(403, $response?->status);
+        self::assertSame('engine_permission_denied', $response->code);
+        self::assertFalse($response->extra['retryable']);
+        self::assertIsArray($response->extra['applied']);
+        self::assertCount(1, $response->extra['applied']);
+        self::assertArrayNotHasKey('message', $response->extra);
+
+        $full = (new ErrorMapper(new DetailedErrors(true)))->map(new SchemaChangeFailedException('x', [], $failed, null, null, null, EngineFault::TooManyConnections));
+        self::assertTrue($full?->extra['retryable'], 'rien d\'appliqué : on peut réessayer');
+        $partial = (new ErrorMapper(new DetailedErrors(true)))->map(new SchemaChangeFailedException('x', [$done], $failed, null, null, null, EngineFault::TooManyConnections));
+        self::assertFalse($partial?->extra['retryable'], 'déjà appliqué en partie : on ne rejoue pas tel quel');
+    }
+
+    public function testAnUnreachableTargetWithAKnownRefusalKeepsItsOwnCode(): void
+    {
+        $response = (new ErrorMapper(new DetailedErrors(true)))->map(TargetConnectionFailedException::create(new \PDOException('SQLSTATE[HY000] [1045] Access denied for user jean'), EngineFault::AuthenticationFailed));
+
+        self::assertSame('auth_failed', $response?->code);
+        self::assertSame(502, $response->status);
+        self::assertStringNotContainsString('jean', json_encode($response, \JSON_THROW_ON_ERROR));
+        self::assertSame('target_unreachable', (new ErrorMapper(new DetailedErrors(true)))->map(TargetConnectionFailedException::create())?->code);
+    }
+
+    public function testWithoutTheSettingAnEngineFaultKeepsTheGenericQueryFailure(): void
+    {
+        $error = new EngineFaultException(EngineFault::DuplicateKey, new \PDOException('raw'), "Duplicate entry 'x' for key 'email'");
+
+        foreach ([new ErrorMapper(), new ErrorMapper(new DetailedErrors(false))] as $mapper) {
+            $response = $mapper->map($error);
+            self::assertSame(400, $response?->status);
+            self::assertSame('query_failed', $response->code);
+            self::assertSame(['message' => "Duplicate entry 'x' for key 'email'"], $response->extra);
+            self::assertSame([], $response->headers);
+        }
+    }
+
+    #[DataProvider('faults')]
+    public function testWithoutTheSettingNoFaultCodeEverShows(EngineFault $fault, int $status = 0, string $code = '', bool $retryable = false): void
+    {
+        $statement = new DataStatement('INSERT INTO t (a) VALUES (?)', ['x'], 'INSERT INTO t (a) VALUES (\'x\')', 'insert', 't', false, null, []);
+        $done = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);
+        $failed = new DdlStatement('ALTER TABLE t ADD d int', 'add_column', 't', false);
+        $mapper = new ErrorMapper(new DetailedErrors(false));
+
+        $data = $mapper->map(new DataChangeFailedException('engine says no', 0, $statement, null, null, $fault));
+        self::assertSame(409, $data?->status);
+        self::assertSame('data_change_failed', $data->code);
+        self::assertSame('engine says no', $data->extra['message']);
+        self::assertFalse($data->extra['retryable']);
+
+        $schema = $mapper->map(new SchemaChangeFailedException('engine says no', [$done], $failed, null, null, null, $fault));
+        self::assertSame(409, $schema?->status);
+        self::assertSame('schema_change_failed', $schema->code);
+        self::assertSame('engine says no', $schema->extra['message']);
+        self::assertFalse($schema->extra['retryable']);
+
+        $connection = $mapper->map(TargetConnectionFailedException::create(new \PDOException('Access denied for user jean'), $fault));
+        self::assertSame(502, $connection?->status);
+        self::assertSame('target_unreachable', $connection->code);
+        self::assertSame([], $connection->extra);
+    }
+
+    public function testWithoutTheSettingALockConflictOnAFaultyDataChangeStillSaysLock(): void
+    {
+        $statement = new DataStatement('UPDATE t SET a = ?', ['x'], 'UPDATE t SET a = \'x\'', 'update', 't', false, null, []);
+
+        $response = (new ErrorMapper())->map(new DataChangeFailedException('x', 0, $statement, null, LockConflict::Deadlock, EngineFault::DuplicateKey));
+
+        self::assertSame('deadlock', $response?->code);
     }
 }

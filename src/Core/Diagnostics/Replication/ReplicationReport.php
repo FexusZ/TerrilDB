@@ -23,6 +23,8 @@ final readonly class ReplicationReport
         public ReplicationSettings $settings,
         /** Réplicas connectés à ce serveur (null : le moteur ou le compte ne le dit pas). */
         public ?int $replicaCount,
+        /** Sections propres au moteur (slots, journaux binaires, tables répliquées…). */
+        public ReplicationExtras $extras = new ReplicationExtras(),
     ) {
     }
 

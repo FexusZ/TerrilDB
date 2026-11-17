@@ -139,6 +139,159 @@ services:
       interval: 3s
       retries: 20
 
+  # Paires source / réplica jetables (profil "replication", à part de "targets") : ce que lit
+  # tests/Integration/Driver/ReplicationDiagnosticsTest quand TARGET_REPLICA_* / TARGET_REPLICATED_* sont définies. Aucune ne touche aux
+  # cibles partagées. Voir docs/replication-tests.md.
+  repl-pg-primary:
+    profiles: [replication]
+    image: postgres:18-alpine
+    env_file: docker/dev/replication-postgres.env
+    ports: ["127.0.0.1:54341:5432"]
+    volumes:
+      - ./docker/replication/postgres-primary:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 3s
+      retries: 40
+
+  repl-pg-replica:
+    profiles: [replication]
+    image: postgres:18-alpine
+    user: postgres
+    env_file: docker/dev/replication-postgres.env
+    ports: ["127.0.0.1:54342:5432"]
+    volumes:
+      - ./docker/replication/postgres-replica/replica.sh:/replica.sh:ro
+    entrypoint: ["sh", "/replica.sh"]
+    depends_on:
+      repl-pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U postgres -Atc 'SELECT pg_is_in_recovery()' | grep -q t"]
+      interval: 3s
+      retries: 60
+
+  repl-redis-primary:
+    profiles: [replication]
+    image: redis:8-alpine
+    env_file: docker/dev/replication-redis.env
+    ports: ["127.0.0.1:63792:6379"]
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 3s
+      retries: 20
+
+  repl-redis-replica:
+    profiles: [replication]
+    image: redis:8-alpine
+    env_file: docker/dev/replication-redis.env
+    ports: ["127.0.0.1:63793:6379"]
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\" --masterauth \"$$REDIS_PASSWORD\" --replicaof repl-redis-primary 6379"]
+    depends_on:
+      repl-redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli info replication | grep -q master_link_status:up"]
+      interval: 3s
+      retries: 40
+
+  repl-clickhouse:
+    profiles: [replication]
+    image: clickhouse/clickhouse-server:26.10
+    env_file: docker/dev/replication-clickhouse.env
+    ports: ["127.0.0.1:18124:8123"]
+    volumes:
+      - ./docker/replication/clickhouse/keeper.xml:/etc/clickhouse-server/config.d/keeper.xml:ro
+      - ./docker/replication/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host $$(hostname -i) --user $$CLICKHOUSE_USER --password $$CLICKHOUSE_PASSWORD --query 'SELECT count() FROM d.rt' | grep -q 2"]
+      interval: 3s
+      retries: 60
+
+  repl-mysql-source:
+    profiles: [replication]
+    image: mysql:8.4
+    env_file: docker/dev/replication-mysql.env
+    command: ["--server-id=1", "--log-bin=binlog", "--gtid-mode=ON", "--enforce-gtid-consistency=ON"]
+    ports: ["127.0.0.1:33071:3306"]
+    volumes:
+      - ./docker/replication/mysql-source:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      retries: 40
+
+  repl-mysql-replica:
+    profiles: [replication]
+    image: mysql:8.4
+    env_file: docker/dev/replication-mysql.env
+    # Sans journal binaire : le réplica n'écrit rien de local, aucune transaction errante.
+    command: ["--server-id=2", "--skip-log-bin", "--gtid-mode=ON", "--enforce-gtid-consistency=ON", "--read-only=ON"]
+    ports: ["127.0.0.1:33072:3306"]
+    volumes:
+      - ./docker/replication/mysql-replica:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      repl-mysql-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD -e 'SHOW REPLICA STATUS\\G' 2>/dev/null | grep -q 'Replica_SQL_Running: Yes'"]
+      interval: 3s
+      retries: 60
+
+  # MySQL seul, greffon semi-synchrone chargé, journal binaire et GTID allumés (TARGET_SEMISYNC_MYSQL_URL).
+  repl-mysql-semisync:
+    profiles: [replication]
+    image: mysql:8.4
+    env_file: docker/dev/replication-mysql.env
+    command: ["--server-id=3", "--log-bin=binlog", "--gtid-mode=ON", "--enforce-gtid-consistency=ON", "--plugin-load-add=semisync_source.so"]
+    ports: ["127.0.0.1:33073:3306"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      retries: 40
+
+  repl-mariadb-source:
+    profiles: [replication]
+    image: mariadb:11.8
+    env_file: docker/dev/replication-mariadb.env
+    command: ["--server-id=1", "--log-bin=binlog", "--binlog-format=ROW"]
+    ports: ["127.0.0.1:33074:3306"]
+    volumes:
+      - ./docker/replication/mariadb-source:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 40
+
+  repl-mariadb-replica:
+    profiles: [replication]
+    image: mariadb:11.8
+    env_file: docker/dev/replication-mariadb.env
+    command: ["--server-id=2", "--read-only=1"]
+    ports: ["127.0.0.1:33075:3306"]
+    volumes:
+      - ./docker/replication/mariadb-replica:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      repl-mariadb-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb -h 127.0.0.1 -uroot -p$$MARIADB_ROOT_PASSWORD -e 'SHOW REPLICA STATUS\\G' 2>/dev/null | grep -q 'Slave_SQL_Running: Yes'"]
+      interval: 3s
+      retries: 60
+
+  # MariaDB seul, journal binaire sans expiration (TARGET_BINLOG_MARIADB_URL) : MariaDB 11.8 expire par défaut après 10 jours, d'où le 0 explicite.
+  repl-mariadb-binlog:
+    profiles: [replication]
+    image: mariadb:11.8
+    env_file: docker/dev/replication-mariadb.env
+    command: ["--server-id=4", "--log-bin=binlog", "--binlog-format=ROW", "--binlog-expire-logs-seconds=0"]
+    ports: ["127.0.0.1:33076:3306"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 40
+
 volumes:
   composer-cache:
   db-data:

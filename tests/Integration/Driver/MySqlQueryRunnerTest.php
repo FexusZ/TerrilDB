@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Driver;
 
+use App\Core\Driver\EngineFault;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
@@ -237,7 +239,8 @@ final class MySqlQueryRunnerTest extends TestCase
         try {
             $this->write('insert into scratch values (1), (2), (2)');
             self::fail('Expected a duplicate key.');
-        } catch (QueryFailedException) {
+        } catch (EngineFaultException $e) {
+            self::assertSame(EngineFault::DuplicateKey, $e->fault);
         }
 
         self::assertSame([[0]], $this->write('select count(*) from scratch', StatementKind::Read)->rows);

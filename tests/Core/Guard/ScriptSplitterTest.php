@@ -89,4 +89,42 @@ final class ScriptSplitterTest extends TestCase
 
         self::assertCount(50, $pieces);
     }
+
+    public function testADelimiterDirectiveIsRefusedWithItsOwnReason(): void
+    {
+        $script = "DELIMITER $$\nCREATE PROCEDURE p() BEGIN SELECT 1; END$$\nDELIMITER ;\n";
+
+        try {
+            (new ScriptSplitter())->split($script, SqlDialect::MySql);
+            self::fail('DELIMITER must be refused.');
+        } catch (UnsplittableScriptException $e) {
+            self::assertSame('delimiter_directive', $e->reason);
+        }
+    }
+
+    public function testADelimiterDirectiveInTheMiddleOfAScriptIsRefused(): void
+    {
+        $this->expectException(UnsplittableScriptException::class);
+
+        (new ScriptSplitter())->split("SELECT 1;\n  delimiter //\nSELECT 2//\n", SqlDialect::MySql);
+    }
+
+    public function testADelimiterDirectiveAfterALeadingCommentIsRefused(): void
+    {
+        $this->expectException(UnsplittableScriptException::class);
+
+        (new ScriptSplitter())->split("/* base */ -- x\nDELIMITER //\nSELECT 1//", SqlDialect::MySql);
+    }
+
+    public function testTheWordDelimiterInAStringACommentOrAColumnIsNotADirective(): void
+    {
+        $script = "SELECT 'a\nDELIMITER x';\n-- DELIMITER y\nSELECT 1;\n/*\nDELIMITER z\n*/ SELECT 2;\nSELECT a,\n  delimiter\nFROM t";
+
+        self::assertCount(4, (new ScriptSplitter())->split($script, SqlDialect::MySql));
+    }
+
+    public function testDelimiterIsNotADirectiveOutsideMySql(): void
+    {
+        self::assertSame(["SELECT a,\ndelimiter x\nFROM t"], (new ScriptSplitter())->split("SELECT a,\ndelimiter x\nFROM t", SqlDialect::PostgreSql));
+    }
 }

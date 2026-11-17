@@ -176,6 +176,10 @@ export interface ApiTokenInfo {
   createConnections: boolean
   /** Lit la supervision du serveur (sessions…), sans rien écrire. */
   diagnostic: boolean
+  /** Lit la liste des bases et des schémas du serveur (aucune donnée de table). */
+  readSchema: boolean
+  /** Exporte un résultat en CSV / JSON. */
+  export: boolean
   /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
   singleStep: boolean
   createdAt: string
@@ -196,6 +200,8 @@ export interface ApiTokenInput {
   writeSchema?: boolean
   createConnections?: boolean
   diagnostic?: boolean
+  readSchema?: boolean
+  export?: boolean
   singleStep?: boolean
 }
 
@@ -269,7 +275,7 @@ export interface LockReport {
   blockingTruncated: boolean
 }
 
-export type ReplicationRole = 'none' | 'source' | 'replica'
+export type ReplicationRole = 'none' | 'source' | 'replica' | 'peer'
 export type ThreadState = 'running' | 'connecting' | 'stopped'
 
 /** Dernière erreur d'un fil de réplication : texte neutralisé par le serveur (ni hôte, ni compte, ni mot de passe). */
@@ -298,6 +304,43 @@ export interface ReplicationAlert {
   channel: string
 }
 
+/** PostgreSQL : un slot de réplication ; inactif ou en retard, il retient du WAL sur le disque du primaire. */
+export interface ReplicationSlot {
+  name: string
+  type: string
+  active: boolean
+  temporary: boolean
+  retainedBytes: number | null
+  walStatus: string | null
+  safeWalSize: number | null
+}
+
+/** Un réplica vu depuis sa source : un rang, jamais d'adresse. Retards en secondes. */
+export interface ReplicaLink {
+  rank: number
+  state: string | null
+  connected: boolean
+  syncState: string | null
+  writeLagSeconds: number | null
+  flushLagSeconds: number | null
+  replayLagSeconds: number | null
+  behindBytes: number | null
+}
+
+export type SemiSyncMode = 'not_loaded' | 'off' | 'active' | 'fallen_back'
+
+export interface ReplicatedTable {
+  database: string
+  table: string
+  readonly: boolean
+  sessionExpired: boolean
+  absoluteDelaySeconds: number
+  queueSize: number
+  insertsInQueue: number
+  lostParts: number
+}
+
+/** Les sections propres au moteur sont absentes quand le moteur n'a pas la notion ; chacune a son état. */
 export interface ReplicationReport {
   status: DiagnosticStatus
   role: ReplicationRole
@@ -306,6 +349,22 @@ export interface ReplicationReport {
   channels: ReplicationChannel[]
   alerts: ReplicationAlert[]
   thresholds: { warning: number; critical: number }
+  slots?: { status: DiagnosticStatus; slots: ReplicationSlot[] }
+  replicas?: { status: DiagnosticStatus; replicas: ReplicaLink[] }
+  binlog?: {
+    status: DiagnosticStatus
+    enabled: boolean | null
+    fileCount: number | null
+    totalBytes: number | null
+    /** 0 : rien n'expire jamais. */
+    expireSeconds: number | null
+    gtidExecuted: string | null
+    gtidPurged: string | null
+  }
+  semiSync?: { status: DiagnosticStatus; source: SemiSyncMode; replica: SemiSyncMode; clients: number | null }
+  replicatedTables?: { status: DiagnosticStatus; tables: ReplicatedTable[]; truncated: boolean }
+  keyValue?: { linkStatus: string | null; lastIoSecondsAgo: number | null; syncInProgress: boolean | null; backlogSize: number | null; masterReplOffset: number | null }
+  limits?: { slotRetainedWarningBytes: number; slotRetainedCriticalBytes: number; tableQueueWarning: number }
 }
 
 export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
@@ -359,6 +418,47 @@ export interface VariableReport {
   status: DiagnosticStatus
   truncated: boolean
   variables: ServerVariable[]
+}
+
+/** Une constatation de l'audit de configuration : l'explication et la suggestion sont des textes fixes du serveur, la suggestion est à LIRE. */
+export interface ConfigFinding {
+  rule: string
+  severity: 'high' | 'medium' | 'low'
+  variable: string
+  value: string
+  recommended: string
+  suggestion: string | null
+  explanation: string
+}
+
+export interface ConfigAuditReport {
+  status: DiagnosticStatus
+  engine: string
+  /** Règles dont les variables étaient lisibles, sur le total du moteur. */
+  evaluated: number
+  rulesTotal: number
+  findings: ConfigFinding[]
+}
+
+/** Une variable qui n'a pas la même valeur sur deux serveurs ; jamais une variable masquée. */
+export interface VariableDifference {
+  name: string
+  presentA: boolean
+  valueA: string | null
+  changedA: boolean
+  presentB: boolean
+  valueB: string | null
+  changedB: boolean
+  unit: string | null
+}
+
+export interface VariableComparison {
+  status: DiagnosticStatus
+  unavailableSide: 'a' | 'b' | null
+  /** Variables écartées parce que leur valeur est cachée d'un côté au moins. */
+  masked: number
+  truncated: boolean
+  differences: VariableDifference[]
 }
 
 /** Un compte (ou un rôle) d'un serveur SQL. Jamais d'empreinte de mot de passe : `passwordSet` n'est qu'un booléen. */
@@ -644,4 +744,29 @@ export const COLUMN_TYPES: Record<Engine, string[]> = {
   postgresql: ['integer', 'bigint', 'smallint', 'numeric(10,2)', 'real', 'double precision', 'boolean', 'character varying(255)', 'text', 'uuid', 'jsonb', 'date', 'timestamp without time zone', 'timestamp with time zone', 'bytea'],
   clickhouse: ['UInt8', 'UInt32', 'UInt64', 'Int32', 'Int64', 'Float64', 'Decimal(18, 4)', 'String', 'UUID', 'Date', 'DateTime', 'DateTime64(3)', 'Bool', 'Array(String)', 'LowCardinality(String)'],
   redis: [],
+}
+
+/** Un jeton d’API vu par un administrateur : métadonnées seulement, jamais le texte du jeton ni sa clé. */
+export interface AdminTokenInfo {
+  id: string
+  name: string
+  owner: { id: string; username: string; disabled: boolean }
+  /** Un nom de droit par entrée (writeData, diagnostic…) ; un droit ajouté côté serveur arrive ici sans autre changement. */
+  permissions: Record<string, boolean>
+  allConnections: boolean
+  connectionCount: number
+  status: 'active' | 'expired'
+  createdAt: string
+  expiresAt: string | null
+  lastUsedAt: string | null
+}
+
+export interface AdminJournalEvent {
+  id: string
+  occurredAt: string
+  action: 'account.disabled' | 'account.enabled' | 'admin.token_revoked' | 'admin.administrator_token_revoked'
+  actor: { id: string; username: string | null } | null
+  subjectId: string | null
+  /** Propriétaire du jeton révoqué (identifiant de compte). */
+  owner: string | null
 }

@@ -1,0 +1,11 @@
+[
+    {
+        "rank": 1,
+        "state": "streaming",
+        "sync_state": "async",
+        "write_lag": 0.000977,
+        "flush_lag": 0.001552,
+        "replay_lag": 0.009603,
+        "behind_bytes": 0
+    }
+]

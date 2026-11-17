@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
@@ -13,6 +14,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineFaultReader;
 use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
@@ -27,6 +29,10 @@ use Doctrine\DBAL\Connection;
  *
  * Délais : MAX_EXECUTION_TIME (MySQL, SELECT seulement) ou max_statement_time (MariaDB, toute instruction).
  * Limite connue : sur MySQL, une écriture n'a pas de délai côté moteur.
+ *
+ * La transaction est AUSSI ouverte `READ ONLY`, sans condition : derrière Vitess, vtgate accepte le SET de session sans le
+ * transmettre et seule la transaction protège les écritures de données (#39) ; détecter Vitess par `@@version` laissait
+ * passer une version renommée ou illisible. Le SET reste, c'est lui qui fait refuser le DDL ailleurs.
  */
 final readonly class MySqlQueryRunner implements QueryRunner
 {
@@ -48,7 +54,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
         try {
             $pdo->exec('SET SESSION TRANSACTION '.($readOnly ? 'READ ONLY' : 'READ WRITE'));
             $pdo->exec($this->timeoutStatement($options->timeoutMs));
-            $pdo->exec('START TRANSACTION');
+            $pdo->exec($readOnly ? 'START TRANSACTION READ ONLY' : 'START TRANSACTION');
 
             $statement = $pdo->query($sql);
             \assert($statement instanceof \PDOStatement);
@@ -105,6 +111,12 @@ final readonly class MySqlQueryRunner implements QueryRunner
             return new LockConflictException($lock, $e);
         }
 
-        return new QueryFailedException(trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage()), previous: $e);
+        $message = trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage());
+        $fault = EngineFaultReader::of($this->engine, $e);
+        if (null !== $fault) {
+            return new EngineFaultException($fault, $e, $message);
+        }
+
+        return new QueryFailedException($message, previous: $e);
     }
 }

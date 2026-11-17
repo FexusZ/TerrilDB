@@ -33,6 +33,8 @@ describe('audit labels', () => {
     expect(describeEvent(entry('invitation.revoked'))).toBe('Invitation révoquée')
     expect(describeEvent(entry('account.disabled'))).toBe('Compte désactivé')
     expect(describeEvent(entry('account.enabled'))).toBe('Compte réactivé')
+    expect(describeEvent(entry('admin.token_revoked'))).toBe('Jeton d’un autre compte révoqué')
+    expect(describeEvent(entry('admin.administrator_token_revoked'))).toBe('Jeton d’un autre administrateur révoqué')
   })
 
   it('tells a query that ran from one that was refused or failed', () => {
@@ -62,6 +64,11 @@ describe('audit labels', () => {
     expect(ACTIVITY_FILTERS.map((f) => f.value)).toContain('diagnostic')
   })
 
+  it('describes a read of the database or schema list without its content', () => {
+    expect(describeEvent(entry('schema.read', { topic: 'databases', engine: 'mysql', rows: 4 }))).toBe('Liste des bases lue')
+    expect(describeEvent(entry('schema.read', { topic: 'schemas', engine: 'postgresql', rows: 2 }))).toBe('Liste des schémas lue')
+  })
+
   it('does not break on an action it does not know', () => {
     expect(describeEvent(entry('something.new'))).toBe('something.new')
   })
@@ -74,6 +81,6 @@ describe('audit labels', () => {
   })
 
   it('offers filters that match the server categories', () => {
-    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'account', 'query', 'schema', 'diagnostic'])
+    expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'account', 'admin', 'query', 'schema', 'diagnostic'])
   })
 })

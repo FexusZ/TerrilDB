@@ -50,4 +50,33 @@ final class VariableQueryTest extends TestCase
 
         new VariableQuery(search: str_repeat('a', VariableQuery::MAX_SEARCH_LENGTH + 1));
     }
+
+    public function testNamesAreLowercasedTrimmedAndDeduplicated(): void
+    {
+        $query = new VariableQuery(names: [' Sql_Mode ', 'sql_mode', 'LOCAL_INFILE', '  ']);
+
+        self::assertSame(['sql_mode', 'local_infile'], $query->names);
+        self::assertSame([], (new VariableQuery())->names);
+    }
+
+    public function testTooManyNamesAreRefused(): void
+    {
+        $this->expectException(InvalidVariableQueryException::class);
+
+        new VariableQuery(names: array_map(static fn (int $i): string => 'v'.$i, range(1, VariableQuery::MAX_NAMES + 1)));
+    }
+
+    public function testALongNameIsRefused(): void
+    {
+        $this->expectException(InvalidVariableQueryException::class);
+
+        new VariableQuery(names: [str_repeat('a', VariableQuery::MAX_NAME_LENGTH + 1)]);
+    }
+
+    public function testANameWithOddCharactersIsRefused(): void
+    {
+        $this->expectException(InvalidVariableQueryException::class);
+
+        new VariableQuery(names: ["a'b"]);
+    }
 }

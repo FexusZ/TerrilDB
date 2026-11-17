@@ -31,9 +31,13 @@ final class ScriptSplitter
      */
     public function split(string $script, SqlDialect $dialect): array
     {
-        $scan = $this->scanner->scan($script, $dialect);
+        $spans = [];
+        $scan = $this->scanner->scan($script, $dialect, $spans);
         if (!$scan->complete) {
             throw UnsplittableScriptException::incomplete();
+        }
+        if (SqlDialect::MySql === $dialect && $this->hasDelimiterDirective($script, $spans)) {
+            throw UnsplittableScriptException::delimiterDirective();
         }
         if ($scan->separatorInExecutableComment) {
             throw UnsplittableScriptException::separatorInExecutableComment();
@@ -50,5 +54,21 @@ final class ScriptSplitter
         }
 
         return $pieces;
+    }
+
+    /**
+     * Une ligne qui commence par DELIMITER suivi d'un argument, hors chaîne et commentaire (leurs zones sont blanchies
+     * d'abord). Un faux positif (un nom de colonne en tête de ligne suivi d'un mot) coûte un refus clair, jamais un
+     * découpage faux.
+     *
+     * @param list<array{int, int, string}> $spans
+     */
+    private function hasDelimiterDirective(string $script, array $spans): bool
+    {
+        foreach ($spans as [$from, $to]) {
+            $script = substr_replace($script, preg_replace('/[^\r\n]/', ' ', substr($script, $from, $to - $from)) ?? '', $from, $to - $from);
+        }
+
+        return 1 === preg_match('/^[ \t]*DELIMITER[ \t]+\S/im', $script);
     }
 }
