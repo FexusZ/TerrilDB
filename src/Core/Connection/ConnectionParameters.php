@@ -152,7 +152,7 @@ final readonly class ConnectionParameters
         return new self($host, $port, $database, $username, $password, transport: $transport);
     }
 
-    private static function transportFrom(mixed $data): Transport
+    private static function transportFrom(#[\SensitiveParameter] mixed $data): Transport
     {
         $text = static fn (string $key): ?string => \is_array($data) && \is_string($data[$key] ?? null) ? $data[$key] : null;
         $number = static fn (string $key): ?int => \is_array($data) && \is_int($data[$key] ?? null) ? $data[$key] : null;
