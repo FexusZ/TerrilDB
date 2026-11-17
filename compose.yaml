@@ -102,7 +102,7 @@ services:
       retries: 40
 
   # Vitess (profil "vitess", hors "targets" : ~1,5 Go de mémoire). vttestserver lance dans UN conteneur un keyspace "shop" non
-  # partagé avec des tablets PRIMARY, REPLICA et RDONLY, plus un vtgate qui parle le protocole MySQL (sans mot de passe, root).
+  # partagé avec des tablets PRIMARY, REPLICA et RDONLY, plus un vtgate qui parle le protocole MySQL (sans mot de passe, root : vttestserver n'offre aucun réglage d'authentification).
   # ATTENTION : les trois tablets partagent UN SEUL mysqld (vtcombo) : ni réplication réelle, ni retard, ni réplica en lecture
   # seule côté moteur. `shop@replica` (ou `USE \`shop@replica\``) change seulement la cible de routage de vtgate. Même jeu de
   # données que les autres cibles. Voir docs/vitess-tests.md.
@@ -184,6 +184,7 @@ services:
     image: *vitess-image
     entrypoint: ["/bin/sh"]
     command: ["/scripts/vtgate.sh"]
+    env_file: docker/dev/target-vitess.env
     ports: ["127.0.0.1:33578:15306"]
     volumes: [./docker/vitess-cluster:/scripts:ro]
     depends_on:
@@ -199,6 +200,7 @@ services:
     image: *vitess-image
     entrypoint: ["/bin/sh"]
     command: ["/scripts/init.sh"]
+    env_file: docker/dev/target-vitess.env
     volumes: [./docker/vitess-cluster:/scripts:ro, ./docker/targets/mysql:/schema:ro]
     depends_on:
       - vitess-tablet-primary

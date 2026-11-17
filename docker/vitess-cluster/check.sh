@@ -1,6 +1,8 @@
 #!/bin/sh
 # Santé du cluster : un primaire élu, un réplica SERVING, les 7 000 lignes lisibles par vtgate sur les DEUX tablets.
 set -eu
+# Le client mysql lit le mot de passe dans MYSQL_PWD (variable du conteneur, jamais sur la ligne de commande).
+export MYSQL_PWD="${VITESS_ROOT_PASSWORD:?VITESS_ROOT_PASSWORD manquant}"
 q() { mysql -h127.0.0.1 -P15306 -uroot -N -e "$1" 2>/dev/null; }
 # Le type de tablet visé se choisit par la base : -D shop@primary, -D shop@replica.
 count() { mysql -h127.0.0.1 -P15306 -uroot -D "shop@$1" -N -e 'select count(*) from order_items' 2>/dev/null; }

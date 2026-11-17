@@ -1,6 +1,8 @@
 #!/bin/sh
 # Élit le primaire, charge le schéma et les données du jeu "shop" (docker/targets/mysql). Idempotent : rejouable à chaud.
 set -eu
+# Le client mysql lit le mot de passe dans MYSQL_PWD (variable du conteneur, jamais sur la ligne de commande).
+export MYSQL_PWD="${VITESS_ROOT_PASSWORD:?VITESS_ROOT_PASSWORD manquant}"
 . "$(dirname "$0")/common.sh"
 
 until vtctl GetTablets --keyspace "$KEYSPACE" 2>/dev/null | grep -q "$PRIMARY_ALIAS" \

@@ -30,8 +30,8 @@ final class TargetVitessClusterTest extends TestCase
         }
 
         try {
-            $this->primary = $this->open($parts['host'], $parts['port'], 'shop@primary');
-            $this->replica = $this->open($parts['host'], $parts['port'], 'shop@replica');
+            $this->primary = $this->open($parts['host'], $parts['port'], 'shop@primary', $parts['pass'] ?? '');
+            $this->replica = $this->open($parts['host'], $parts['port'], 'shop@replica', $parts['pass'] ?? '');
         } catch (\PDOException) {
             throw new SkippedWithMessageException('The Vitess cluster is unreachable.');
         }
@@ -71,9 +71,9 @@ final class TargetVitessClusterTest extends TestCase
         }
     }
 
-    private function open(string $host, int $port, string $keyspace): \PDO
+    private function open(string $host, int $port, string $keyspace, string $password): \PDO
     {
-        return new \PDO(\sprintf('mysql:host=%s;port=%d;dbname=%s', $host, $port, $keyspace), 'root', '', [
+        return new \PDO(\sprintf('mysql:host=%s;port=%d;dbname=%s', $host, $port, $keyspace), 'root', $password, [
             \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
             \PDO::ATTR_TIMEOUT => 3,
         ]);

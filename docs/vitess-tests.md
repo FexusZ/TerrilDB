@@ -15,7 +15,7 @@ docker compose --profile vitess up -d --wait target-vitess  # ~1,5 Go de mémoir
 docker compose --profile vitess down                        # arrêt (les données sont jetables)
 ```
 
-- Accès depuis l'hôte : `127.0.0.1:33577`, utilisateur `root`, sans mot de passe. Depuis le conteneur `php` : `TARGET_VITESS_URL`
+- Accès depuis l'hôte : `127.0.0.1:33577`, utilisateur `root`, SANS mot de passe (`vttestserver` n'a aucun réglage d'authentification pour son vtgate, vérifié sur l'image `mysql80` : c'est la seule cible de test sans mot de passe, nommée dans `TargetDatabase`). Depuis le conteneur `php` : `TARGET_VITESS_URL`
   (`pdo-mysql://root@target-vitess:33577/shop`).
 - Version annoncée : `8.0.35-Vitess` (`@@version` se termine par `-Vitess`, c'est ce que le driver doit détecter).
 - Routage : `USE \`shop@replica\`` (ou `shop@primary`, `shop@rdonly`) choisit le type de tablet visé. `SHOW VITESS_TABLETS` les liste.
@@ -38,7 +38,7 @@ La cible ci-dessus ne répond pas aux questions de réplication. Le profil `vite
 | `vitess-vtctld` | vtctld + cellule `zone1` + keyspace `shop` non partagé, une partition (`0`) |
 | `vitess-tablet-primary` (uid 100) | `mysqld` PROPRE (mysqlctl, MySQL 8.4.6) + vttablet |
 | `vitess-tablet-replica` (uid 101) | autre `mysqld` PROPRE + vttablet, répliqué depuis le primaire (GTID) |
-| `vitess-vtgate` | protocole MySQL, sans mot de passe (`root`), publié sur `127.0.0.1:33578` |
+| `vitess-vtgate` | protocole MySQL, authentification statique (`root` + mot de passe tiré par `init-env.sh`, `docker/dev/target-vitess.env`, fichier des utilisateurs écrit au démarrage dans le conteneur), publié sur `127.0.0.1:33578` |
 | `vitess-init` | une fois : élection du primaire (`PlannedReparentShard`), schéma et données du jeu `shop` (7 000 lignes) |
 
 Image `vitess/lite:v23.0.0` (versions épinglées, aucune mise à jour automatique des majeures). Scripts shell idempotents dans
@@ -46,7 +46,7 @@ Image `vitess/lite:v23.0.0` (versions épinglées, aucune mise à jour automatiq
 `init.sh`. Santé de vtgate = `check.sh` : un PRIMARY et un REPLICA `SERVING`, 7 000 lignes lues sur `shop@primary` ET `shop@replica`.
 
 ```bash
-sh docker/init-env.sh        # ajoute TARGET_VITESS_CLUSTER_URL (pdo-mysql://root@vitess-vtgate:15306/shop)
+sh docker/init-env.sh        # crée docker/dev/target-vitess.env et TARGET_VITESS_CLUSTER_URL (pdo-mysql://root:<mot de passe>@vitess-vtgate:15306/shop) ; une ancienne URL sans mot de passe est complétée
 docker compose --profile vitess-cluster up -d vitess-init vitess-vtgate    # nommer les services : sinon php et db démarrent aussi
 docker compose --profile vitess-cluster ps -a                              # vitess-init sort en code 0 : c'est normal
 docker compose run --rm --no-deps php vendor/bin/phpunit --group integration tests/Integration/Driver/TargetVitessClusterTest.php
