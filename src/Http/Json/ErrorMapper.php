@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\ApiToken\Exception\AdministratorTokenNeedsConfirmationException;
 use App\ApiToken\Exception\ApiTokenNotFoundException;
 use App\ApiToken\Exception\ApiTokenPermissionException;
 use App\ApiToken\Exception\InvalidApiTokenException;
@@ -118,6 +119,7 @@ final class ErrorMapper
             $error instanceof ScriptDryRunUnavailableException => new ErrorResponse(409, 'dry_run_unavailable', ['reason' => $error->reason]),
             $error instanceof UnsplittableScriptException => new ErrorResponse(422, 'invalid_script', ['detail' => $error->getMessage(), 'reason' => $error->reason]),
             $error instanceof ScriptTooLargeException => new ErrorResponse(422, 'script_too_large', ['detail' => $error->getMessage()]),
+            $error instanceof AdministratorTokenNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => AdministratorTokenNeedsConfirmationException::REASON]),
             $error instanceof ConfirmationRequiredException => new ErrorResponse(409, 'preparation_required'),
             $error instanceof InvalidConfirmationException => new ErrorResponse(403, 'invalid_confirmation'),
             $error instanceof InvalidDataChangeException => new ErrorResponse(422, 'invalid_data_change', ['detail' => $error->getMessage()]),

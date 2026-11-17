@@ -33,6 +33,8 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Compte réactivé'
     case 'admin.token_revoked':
       return 'Jeton d’un autre compte révoqué'
+    case 'admin.administrator_token_revoked':
+      return 'Jeton d’un autre administrateur révoqué'
     case 'login.success':
       return 'Connexion'
     case 'login.failure':

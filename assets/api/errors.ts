@@ -13,6 +13,7 @@ const REASONS: Record<string, string> = {
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
   destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
   big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
+  other_administrator_token: 'Ce jeton appartient à un autre administrateur : sa révocation demande une confirmation explicite.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 

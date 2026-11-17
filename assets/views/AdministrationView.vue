@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { api } from '../api/client'
+import { ApiError, api } from '../api/client'
 import { messageFor } from '../api/errors'
 import type { AdminJournalEvent, AdminTokenInfo } from '../api/types'
 import AppButton from '../components/AppButton.vue'
@@ -21,6 +21,7 @@ const JOURNAL_LABELS: Record<AdminJournalEvent['action'], string> = {
   'account.disabled': 'Compte désactivé',
   'account.enabled': 'Compte réactivé',
   'admin.token_revoked': 'Jeton d’un autre compte révoqué',
+  'admin.administrator_token_revoked': 'Jeton d’un autre administrateur révoqué',
 }
 
 const tokens = ref<AdminTokenInfo[]>([])
@@ -31,6 +32,8 @@ const journalLoaded = ref(false)
 const error = ref<string | null>(null)
 const target = ref<AdminTokenInfo | null>(null)
 const busy = ref(false)
+/** Vrai quand le serveur a exigé la confirmation propre au jeton d’un autre administrateur. */
+const adminTarget = ref(false)
 
 const grantedRights = (token: AdminTokenInfo): string[] =>
   Object.entries(token.permissions)
@@ -83,15 +86,36 @@ async function revoke(): Promise<void> {
   error.value = null
   busy.value = true
   try {
-    await api('DELETE', `/web/admin/tokens/${token.id}`)
+    if (adminTarget.value) {
+      await api('DELETE', `/web/admin/tokens/${token.id}`, { confirmed: true })
+    } else {
+      await api('DELETE', `/web/admin/tokens/${token.id}`)
+    }
     tokens.value = tokens.value.filter((item) => item.id !== token.id)
     await loadJournal()
+    adminTarget.value = false
+    target.value = null
   } catch (failure) {
-    error.value = messageFor(failure)
+    if (!adminTarget.value && failure instanceof ApiError && failure.code === 'confirmation_required' && failure.details.reason === 'other_administrator_token') {
+      adminTarget.value = true
+    } else {
+      error.value = messageFor(failure)
+      adminTarget.value = false
+      target.value = null
+    }
   } finally {
     busy.value = false
-    target.value = null
   }
+}
+
+function cancel(): void {
+  adminTarget.value = false
+  target.value = null
+}
+
+function ask(token: AdminTokenInfo): void {
+  adminTarget.value = false
+  target.value = token
 }
 </script>
 
@@ -125,7 +149,7 @@ async function revoke(): Promise<void> {
             <td>{{ token.expiresAt === null ? 'Jamais' : formatDateTime(token.expiresAt) }}</td>
             <td>{{ token.lastUsedAt === null ? 'Jamais utilisé' : formatDateTime(token.lastUsedAt) }}</td>
             <td>{{ token.status === 'expired' ? 'Expiré' : 'Actif' }}</td>
-            <td class="act"><AppButton small variant="danger" @click="target = token">Révoquer</AppButton></td>
+            <td class="act"><AppButton small variant="danger" @click="ask(token)">Révoquer</AppButton></td>
           </tr>
         </tbody>
       </table>
@@ -145,13 +169,13 @@ async function revoke(): Promise<void> {
 
     <ConfirmDialog
       v-if="target"
-      title="Révoquer ce jeton ?"
-      :message="`Le jeton « ${target.name} » de « ${target.owner.username} » cessera de fonctionner tout de suite. Cette action est irréversible : le propriétaire devra en créer un autre, et il n’est pas prévenu.`"
+      :title="adminTarget ? 'Révoquer le jeton d’un autre administrateur ?' : 'Révoquer ce jeton ?'"
+      :message="adminTarget ? `« ${target.owner.username} » est un autre administrateur : son jeton « ${target.name} » cessera de fonctionner tout de suite, sans qu’il soit prévenu, et l’action sera tracée à part dans le journal d’administration. Confirmez-vous cette révocation ?` : `Le jeton « ${target.name} » de « ${target.owner.username} » cessera de fonctionner tout de suite. Cette action est irréversible : le propriétaire devra en créer un autre, et il n’est pas prévenu.`"
       confirm-label="Révoquer"
       danger
       :busy="busy"
       @confirm="revoke"
-      @cancel="target = null"
+      @cancel="cancel"
     />
   </main>
 </template>

@@ -10,6 +10,7 @@ use App\Audit\AuditLog;
 use App\Entity\ApiToken;
 use App\Entity\AuditEvent;
 use App\Entity\User;
+use App\Http\Json\JsonInput;
 use App\Invitation\Exception\NotAnAdministratorException;
 use App\Repository\AuditEventRepository;
 use App\Repository\UserRepository;
@@ -49,13 +50,14 @@ final readonly class AdminController
     }
 
     #[Route('/web/admin/tokens/{id}', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['DELETE'])]
-    public function revoke(string $id): Response
+    public function revoke(string $id, Request $request): Response
     {
         $admin = $this->session->user();
-        $token = $this->tokens->revoke($admin, Uuid::fromString($id));
+        $confirmed = JsonInput::fromRequest($request)->bool('confirmed', false);
+        $token = $this->tokens->revoke($admin, Uuid::fromString($id), $confirmed);
         $this->audit->record(
             $this->session->auditContext($admin),
-            AuditAction::AdminTokenRevoked,
+            TokenAdministration::belongsToAnotherAdministrator($admin, $token) ? AuditAction::AdminAdministratorTokenRevoked : AuditAction::AdminTokenRevoked,
             subject: $token->getId(),
             details: ['owner' => $token->getOwner()->getId()->toRfc4122()],
         );

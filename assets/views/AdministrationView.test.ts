@@ -102,6 +102,38 @@ describe('AdministrationView', () => {
     expect(wrapper.get('[role="alert"]').text().length).toBeGreaterThan(0)
   })
 
+  it('asks for a second, explicit confirmation when the token belongs to another administrator', async () => {
+    const wrapper = await mountView()
+    mocked.mockRejectedValueOnce(new ApiError(409, 'confirmation_required', { reason: 'other_administrator_token' }))
+
+    await wrapper.findAll('section.tokens tbody tr')[0]!.get('button').trigger('click')
+    await wrapper.get('[role="alertdialog"] button.danger, [role="dialog"] button.danger').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('autre administrateur')
+    expect(wrapper.findAll('section.tokens tbody tr')).toHaveLength(2)
+    mocked.mockResolvedValueOnce(undefined).mockResolvedValueOnce({ events: [], next: null })
+    await wrapper.get('[role="alertdialog"] button.danger, [role="dialog"] button.danger').trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('DELETE', '/web/admin/tokens/t1', { confirmed: true })
+    expect(wrapper.findAll('section.tokens tbody tr')).toHaveLength(1)
+  })
+
+  it('does not revoke the administrator token when the second confirmation is cancelled', async () => {
+    const wrapper = await mountView()
+    mocked.mockRejectedValueOnce(new ApiError(409, 'confirmation_required', { reason: 'other_administrator_token' }))
+
+    await wrapper.findAll('section.tokens tbody tr')[0]!.get('button').trigger('click')
+    await wrapper.get('[role="alertdialog"] button.danger, [role="dialog"] button.danger').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === 'Annuler')!.trigger('click')
+
+    expect(mocked).not.toHaveBeenCalledWith('DELETE', '/web/admin/tokens/t1', { confirmed: true })
+    expect(wrapper.findAll('section.tokens tbody tr')).toHaveLength(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+  })
+
   it('lists the administration journal and loads the next page by cursor', async () => {
     const wrapper = await mountView(undefined, { events: [event('e1', 'admin.token_revoked'), event('e2', 'account.disabled')], next: 'e2' })
 

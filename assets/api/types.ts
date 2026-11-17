@@ -651,7 +651,7 @@ export interface AdminTokenInfo {
 export interface AdminJournalEvent {
   id: string
   occurredAt: string
-  action: 'account.disabled' | 'account.enabled' | 'admin.token_revoked'
+  action: 'account.disabled' | 'account.enabled' | 'admin.token_revoked' | 'admin.administrator_token_revoked'
   actor: { id: string; username: string | null } | null
   subjectId: string | null
   /** Propriétaire du jeton révoqué (identifiant de compte). */

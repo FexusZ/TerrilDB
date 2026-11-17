@@ -204,6 +204,57 @@ final class AdminTokensWebTest extends WebApiTestCase
         self::assertSame([], $this->auditEvents($bob, 'admin'));
     }
 
+    public function testRevokingAnotherAdministratorsTokenNeedsAnExplicitConfirmationAndIsAuditedApart(): void
+    {
+        $alice = $this->seedUser('alice');
+        $bob = $this->seedUser('bob');
+        $this->makeAdmin($bob);
+        $this->login('bob');
+        $this->issueToken('Jeton de Bob');
+        $this->call('POST', '/web/logout');
+        $this->login('alice');
+        $id = self::stringOf($this->adminTokens()[0]['id']);
+
+        $refused = $this->call('DELETE', '/web/admin/tokens/'.$id);
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $refused['error']);
+        self::assertSame('other_administrator_token', $refused['reason']);
+        $this->call('DELETE', '/web/admin/tokens/'.$id, ['confirmed' => false]);
+        self::assertSame(409, $this->statusCode());
+        self::assertCount(1, $this->adminTokens());
+        self::assertSame([], $this->auditEvents($alice, 'admin'));
+
+        $this->call('DELETE', '/web/admin/tokens/'.$id, ['confirmed' => true]);
+
+        self::assertSame(204, $this->statusCode());
+        self::assertSame([], $this->adminTokens());
+        $events = $this->auditEvents($alice, 'admin');
+        self::assertCount(1, $events);
+        self::assertSame('admin.administrator_token_revoked', $events[0]->getAction()->value);
+        self::assertSame($id, $events[0]->getSubjectId()?->toRfc4122());
+        self::assertSame(['owner' => $bob->getId()->toRfc4122()], $events[0]->getDetails());
+        $journal = array_map(self::arrayOf(...), self::listOf($this->call('GET', '/web/admin/journal')['events']));
+        self::assertSame(['admin.administrator_token_revoked'], array_column($journal, 'action'));
+    }
+
+    public function testAnAdministratorRevokesItsOwnTokenOrAMembersWithoutConfirmation(): void
+    {
+        $this->seedUser('alice');
+        $this->seedUser('bob');
+        $this->login('bob');
+        $this->issueToken('Jeton de membre');
+        $this->call('POST', '/web/logout');
+        $this->login('alice');
+        $this->issueToken('Mon jeton');
+
+        foreach ($this->adminTokens() as $token) {
+            $this->call('DELETE', '/web/admin/tokens/'.self::stringOf($token['id']));
+            self::assertSame(204, $this->statusCode(), self::stringOf($token['name']));
+        }
+
+        self::assertSame([], $this->adminTokens());
+    }
+
     public function testAnUnknownTokenIsNotFoundAndNothingIsJournaled(): void
     {
         $alice = $this->seedAndLogin('alice');

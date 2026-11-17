@@ -34,6 +34,7 @@ describe('audit labels', () => {
     expect(describeEvent(entry('account.disabled'))).toBe('Compte désactivé')
     expect(describeEvent(entry('account.enabled'))).toBe('Compte réactivé')
     expect(describeEvent(entry('admin.token_revoked'))).toBe('Jeton d’un autre compte révoqué')
+    expect(describeEvent(entry('admin.administrator_token_revoked'))).toBe('Jeton d’un autre administrateur révoqué')
   })
 
   it('tells a query that ran from one that was refused or failed', () => {

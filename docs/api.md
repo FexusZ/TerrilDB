@@ -4,7 +4,7 @@ Base : `/api/v1`. Authentification : `Authorization: Bearer <jeton>` uniquement 
 Les jetons se créent dans l'interface (Sécurité du compte) : le texte du jeton n'est montré qu'une fois.
 
 Un jeton n'ouvre que les connexions cochées à sa création, jusqu'à son expiration (365 jours au plus, ou aucune si le propriétaire choisit « Jamais » : le jeton vaut alors jusqu'à sa révocation).
-Un administrateur de l'installation peut voir les métadonnées (jamais le texte ni les connexions) des jetons de tous les comptes et les révoquer depuis la page « Administration » ; le jeton révoqué reçoit alors `401 invalid_token`, et son propriétaire n'est pas prévenu.
+Un administrateur de l'installation peut voir les métadonnées (jamais le texte ni les connexions) des jetons de tous les comptes et les révoquer depuis la page « Administration » ; le jeton révoqué reçoit alors `401 invalid_token`, et son propriétaire n'est pas prévenu. Révoquer le jeton d'un autre administrateur exige une confirmation explicite (`DELETE /web/admin/tokens/{id}` avec `{"confirmed": true}`, sinon `409 confirmation_required` avec `reason: other_administrator_token`) et est tracé à part dans le journal d'administration.
 Un jeton « toutes mes connexions » couvre celles du compte au moment de sa création ; le bouton « Actualiser » de
 l'interface y ajoute ensuite les connexions créées depuis (et retire les supprimées) sans changer le texte du jeton,
 donc sans rien reconfigurer côté client. Il est

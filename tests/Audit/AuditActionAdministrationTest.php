@@ -16,7 +16,8 @@ final class AuditActionAdministrationTest extends TestCase
             array_values(array_filter(AuditAction::cases(), static fn (AuditAction $action): bool => $action->isAdministration())),
         );
 
-        self::assertSame(['account.disabled', 'account.enabled', 'admin.token_revoked'], $journal);
+        self::assertSame(['account.disabled', 'account.enabled', 'admin.token_revoked', 'admin.administrator_token_revoked'], $journal);
         self::assertSame('admin', AuditAction::AdminTokenRevoked->category());
+        self::assertSame('admin', AuditAction::AdminAdministratorTokenRevoked->category());
     }
 }

@@ -13,6 +13,8 @@ enum AuditAction: string
     case AccountDisabled = 'account.disabled';
     case AccountEnabled = 'account.enabled';
     case AdminTokenRevoked = 'admin.token_revoked';
+    /** Le jeton d'un AUTRE administrateur, révoqué après confirmation explicite : tracé à part. */
+    case AdminAdministratorTokenRevoked = 'admin.administrator_token_revoked';
     case LoginSuccess = 'login.success';
     case LoginFailure = 'login.failure';
     case LoginThrottled = 'login.throttled';
@@ -54,7 +56,7 @@ enum AuditAction: string
     public function isAdministration(): bool
     {
         return match ($this) {
-            self::AccountDisabled, self::AccountEnabled, self::AdminTokenRevoked => true,
+            self::AccountDisabled, self::AccountEnabled, self::AdminTokenRevoked, self::AdminAdministratorTokenRevoked => true,
             default => false,
         };
     }
