@@ -17,7 +17,7 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * L'outil MCP `lint_query` : les conseils du linter (AuditedLint, comme l'interface web et l'API) sur un texte SQL. Lecture seule,
- * visible de tout jeton : rien n'est exécuté, la cible n'est lue que pour la structure d'une table.
+ * visible des seuls jetons qui ont le droit `readSchema` (les conseils citent des noms d'index) : rien n'est exécuté, la cible n'est lue que pour la structure d'une table.
  */
 final readonly class McpLintTool
 {
@@ -36,6 +36,7 @@ final readonly class McpLintTool
     {
         try {
             $access = $this->request->get();
+            $access->requireReadSchema();
             if (!Uuid::isValid($connection) || !$access->token->allows(Uuid::fromString($connection))) {
                 throw ConnectionNotFoundException::create();
             }

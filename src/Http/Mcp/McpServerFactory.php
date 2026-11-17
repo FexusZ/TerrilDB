@@ -82,22 +82,6 @@ final readonly class McpServerFactory
                 ],
             );
 
-        $builder->addTool(
-            [$this->lintTool, 'lintQuery'],
-            name: 'lint_query',
-            description: 'Donne des conseils sur le TEXTE d’une requête de lecture avant de l’exécuter : fonction ou calcul sur une colonne indexée, LIKE à joker initial, colonne texte comparée à un nombre, OR entre colonnes, DISTINCT après jointure, grand OFFSET, SELECT *… Rien n’est exécuté ni écrit ; seule la structure de la table visée est lue (index, types). Les conseils sont informatifs, jamais un refus, et ne disent rien d’un texte qui n’est pas un SELECT.',
-            annotations: $readOnly,
-            inputSchema: [
-                'type' => 'object',
-                'properties' => [
-                    'connection' => $connection,
-                    'sql' => ['type' => 'string', 'description' => 'Une instruction SELECT (ou WITH … SELECT), dans le dialecte du moteur de la connexion.'],
-                ],
-                'required' => ['connection', 'sql'],
-                'additionalProperties' => false,
-            ],
-        );
-
         if ($this->access->get()->token->getPermissions()->createConnections) {
             $builder->addTool(
                 [$this->tools, 'createConnection'],
@@ -123,6 +107,21 @@ final readonly class McpServerFactory
 
         $permissions = $this->access->get()->token->getPermissions();
         if ($permissions->readSchema) {
+            $builder->addTool(
+                [$this->lintTool, 'lintQuery'],
+                name: 'lint_query',
+                description: 'Donne des conseils sur le TEXTE d’une requête de lecture avant de l’exécuter : fonction ou calcul sur une colonne indexée, LIKE à joker initial, colonne texte comparée à un nombre, OR entre colonnes, DISTINCT après jointure, grand OFFSET, SELECT *… Rien n’est exécuté ni écrit ; seule la structure de la table visée est lue (index, types). Les conseils sont informatifs, jamais un refus, et ne disent rien d’un texte qui n’est pas un SELECT.',
+                annotations: $readOnly,
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'sql' => ['type' => 'string', 'description' => 'Une instruction SELECT (ou WITH … SELECT), dans le dialecte du moteur de la connexion.'],
+                    ],
+                    'required' => ['connection', 'sql'],
+                    'additionalProperties' => false,
+                ],
+            );
             $builder->addTool(
                 [$this->tools, 'listDatabases'],
                 name: 'list_databases',

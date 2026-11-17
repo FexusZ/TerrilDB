@@ -17,8 +17,8 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Le linter de requête pour les jetons : mêmes conseils et même audit que l'interface web (AuditedLint), sans droit particulier,
- * car rien n'est exécuté ni écrit. Le texte reçu n'est jamais envoyé à la base ; seule la structure de la table visée est lue.
+ * Le linter de requête pour les jetons : mêmes conseils et même audit que l'interface web (AuditedLint), réservé au droit `readSchema` (les conseils citent des noms d'index de la cible).
+ * Rien n'est exécuté ni écrit. Le texte reçu n'est jamais envoyé à la base ; seule la structure de la table visée est lue.
  */
 final readonly class ApiLintController
 {
@@ -35,6 +35,7 @@ final readonly class ApiLintController
         $sql = JsonInput::fromRequest($request)->string('sql');
         $connectionId = Uuid::fromString($id);
         $access = $this->request->get();
+        $access->requireReadSchema();
         if (!$access->token->allows($connectionId)) {
             throw ConnectionNotFoundException::create();
         }

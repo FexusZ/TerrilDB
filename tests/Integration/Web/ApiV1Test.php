@@ -86,7 +86,7 @@ final class ApiV1Test extends WebApiTestCase
     #[DataProvider('relationalTargets')]
     public function testLintAdvisesFromTheStructureAndAuditsWithoutTheRawText(string $envVar): void
     {
-        $user = $this->prepare($envVar);
+        $user = $this->prepare($envVar, rights: ['readSchema' => true]);
 
         $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "select id from orders where lower(status) = 'jean.dupont@example.org'"]);
 
@@ -108,7 +108,7 @@ final class ApiV1Test extends WebApiTestCase
 
     public function testLintNeedsNoWriteRightAndJudgesNoWrite(): void
     {
-        $user = $this->prepare();
+        $user = $this->prepare(rights: ['readSchema' => true]);
 
         $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "delete from categories where lower(name) = 'x'"]);
 
@@ -118,9 +118,20 @@ final class ApiV1Test extends WebApiTestCase
         self::assertArrayNotHasKey('sql', $details);
     }
 
+    public function testLintNeedsTheReadSchemaRightBecauseItNamesTheIndexes(): void
+    {
+        $user = $this->prepare();
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "select id from orders where lower(status) = 'x'"]);
+
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $body);
+        self::assertSame([], array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value)));
+    }
+
     public function testLintRefusesAConnectionOutsideTheGrantAndABadBody(): void
     {
-        $this->prepare();
+        $this->prepare(rights: ['readSchema' => true]);
 
         $this->api('POST', '/api/v1/connections/'.$this->otherConnectionId.'/lint', ['sql' => 'select 1']);
         self::assertSame(404, $this->statusCode());

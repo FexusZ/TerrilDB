@@ -241,7 +241,7 @@ final class McpTest extends WebApiTestCase
         $message = $this->post(['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
 
         $tools = self::obj(self::obj($message['result'])['tools']);
-        self::assertSame(['describe_table', 'lint_query', 'list_connections', 'list_tables', 'run_query'], (static function (array $tools): array {
+        self::assertSame(['describe_table', 'list_connections', 'list_tables', 'run_query'], (static function (array $tools): array {
             $names = array_map(static fn (mixed $tool): string => self::str(self::obj($tool)['name']), $tools);
             sort($names);
 
@@ -320,7 +320,7 @@ final class McpTest extends WebApiTestCase
 
     public function testLintQueryAdvisesFromTheTableStructureWithoutRunningAnything(): void
     {
-        $user = $this->prepare();
+        $user = $this->prepare(rights: ['readSchema' => true]);
         $this->initialize();
 
         $result = self::textOf($this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => "select * from orders where lower(status) = 'jean.dupont@example.org'"]));
@@ -344,7 +344,7 @@ final class McpTest extends WebApiTestCase
 
     public function testLintQueryNeverJudgesNorRunsAWriteAndLeavesNoTextInTheAudit(): void
     {
-        $user = $this->prepare();
+        $user = $this->prepare(rights: ['readSchema' => true]);
         $this->initialize();
 
         $result = self::textOf($this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => "delete from categories where lower(name) = 'x'"]));
@@ -356,9 +356,19 @@ final class McpTest extends WebApiTestCase
         self::assertNotSame(0, self::obj(self::first($count['rows']))['n'] ?? 1);
     }
 
-    public function testLintQueryIsAvailableToAPlainTokenAndBoundsItsAnswer(): void
+    public function testLintQueryIsHiddenAndRefusedWithoutTheReadSchemaRight(): void
     {
         $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('lint_query', $this->toolNames());
+        $result = $this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => 'select 1']);
+        self::assertTrue(isset($result['error']) || true === ($result['isError'] ?? false), 'outil inconnu : erreur du protocole ou résultat en erreur');
+    }
+
+    public function testLintQueryIsAvailableToATokenWithReadSchemaAndBoundsItsAnswer(): void
+    {
+        $this->prepare(rights: ['readSchema' => true]);
         $this->initialize();
 
         $sql = 'select * from orders where '.implode(' and ', array_map(static fn (int $i): string => 'lower(c'.$i.') = 1', range(1, 120)));
@@ -981,7 +991,7 @@ final class McpTest extends WebApiTestCase
 
     public function testAConnectionOutsideTheGrantLooksInexistent(): void
     {
-        $this->prepare();
+        $this->prepare(rights: ['readSchema' => true]);
         $this->initialize();
 
         foreach ([
