@@ -60,10 +60,68 @@ final class InitEnvScriptTest extends TestCase
         self::assertStringContainsString('DATABASE_URL=x', (string) file_get_contents($this->root.'/docker/dev/php.env'));
     }
 
+    public function testFreshRunGivesTheVitessClusterAPassword(): void
+    {
+        $this->execute();
+
+        $env = (string) file_get_contents($this->root.'/docker/dev/target-vitess.env');
+        $password = $this->vitessPassword($env);
+        self::assertMatchesRegularExpression('/^[A-Za-z0-9]{24}$/', $password);
+        self::assertStringContainsString('TARGET_VITESS_CLUSTER_URL=pdo-mysql://root:'.$password.'@vitess-vtgate:15306/shop', (string) file_get_contents($this->root.'/docker/dev/php.env'));
+        self::assertSame(0o600, fileperms($this->root.'/docker/dev/target-vitess.env') & 0o777);
+    }
+
+    public function testExistingInstallationGetsAVitessPasswordOnlyWhereTheUrlHadNone(): void
+    {
+        mkdir($this->root.'/docker/dev', 0o700);
+        file_put_contents($this->root.'/docker/dev/php.env', "DATABASE_URL=x\nTARGET_MYSQL26_URL=x\nTARGET_MARIADB13_URL=x\nTARGET_VITESS_URL=x\nTARGET_VITESS_CLUSTER_URL=pdo-mysql://root@vitess-vtgate:15306/shop\n");
+        $this->siblingEnvFiles();
+
+        $this->execute();
+        $php = (string) file_get_contents($this->root.'/docker/dev/php.env');
+        $env = (string) file_get_contents($this->root.'/docker/dev/target-vitess.env');
+        $password = $this->vitessPassword($env);
+
+        self::assertStringContainsString('TARGET_VITESS_CLUSTER_URL=pdo-mysql://root:'.$password.'@vitess-vtgate:15306/shop', $php);
+        self::assertStringContainsString('DATABASE_URL=x', $php);
+
+        $this->execute();
+        self::assertSame($php, (string) file_get_contents($this->root.'/docker/dev/php.env'));
+        self::assertSame($env, (string) file_get_contents($this->root.'/docker/dev/target-vitess.env'));
+    }
+
+    public function testExistingVitessPasswordIsNeverRewritten(): void
+    {
+        mkdir($this->root.'/docker/dev', 0o700);
+        file_put_contents($this->root.'/docker/dev/php.env', "TARGET_MYSQL26_URL=x\nTARGET_MARIADB13_URL=x\nTARGET_VITESS_URL=x\nTARGET_VITESS_CLUSTER_URL=pdo-mysql://root:mine@vitess-vtgate:15306/shop\n");
+        $this->siblingEnvFiles();
+        file_put_contents($this->root.'/docker/dev/target-vitess.env', "VITESS_ROOT_PASSWORD=mine\n");
+
+        $this->execute();
+
+        self::assertStringContainsString("TARGET_VITESS_CLUSTER_URL=pdo-mysql://root:mine@vitess-vtgate:15306/shop\n", (string) file_get_contents($this->root.'/docker/dev/php.env'));
+        self::assertSame("VITESS_ROOT_PASSWORD=mine\n", (string) file_get_contents($this->root.'/docker/dev/target-vitess.env'));
+    }
+
     public function testNoSecretIsVersioned(): void
     {
         $dev = \dirname(__DIR__).'/.env.dev';
         self::assertTrue(!is_file($dev) || !preg_match('/^APP_SECRET=./m', (string) file_get_contents($dev)));
+    }
+
+    private function vitessPassword(string $env): string
+    {
+        if (1 !== preg_match('/^VITESS_ROOT_PASSWORD=(.+)$/m', $env, $m)) {
+            self::fail('VITESS_ROOT_PASSWORD absent.');
+        }
+
+        return $m[1];
+    }
+
+    private function siblingEnvFiles(): void
+    {
+        file_put_contents($this->root.'/docker/dev/target-mysql.env', "MYSQL_ROOT_PASSWORD=a\n");
+        file_put_contents($this->root.'/docker/dev/target-mariadb.env', "MARIADB_ROOT_PASSWORD=b\n");
     }
 
     private function generateIn(): string
