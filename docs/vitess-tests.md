@@ -17,7 +17,7 @@ docker compose --profile vitess down                        # arrêt (les donné
 
 - Accès depuis l'hôte : `127.0.0.1:33577`, utilisateur `root`, SANS mot de passe (`vttestserver` n'a aucun réglage d'authentification pour son vtgate, vérifié sur l'image `mysql80` : c'est la seule cible de test sans mot de passe, nommée dans `TargetDatabase`). Depuis le conteneur `php` : `TARGET_VITESS_URL`
   (`pdo-mysql://root@target-vitess:33577/shop`).
-- Version annoncée : `8.0.35-Vitess` (`@@version` se termine par `-Vitess`, c'est ce que le driver doit détecter).
+- Version annoncée : `8.0.35-Vitess` (`@@version` se termine par `-Vitess` ; le runner de lecture seule ne s'en sert pas, voir #39).
 - Routage : `USE \`shop@replica\`` (ou `shop@primary`, `shop@rdonly`) choisit le type de tablet visé. `SHOW VITESS_TABLETS` les liste.
 - Hors profil `targets` et hors CI : plus lourd et plus lent à démarrer que les autres cibles.
 
@@ -102,10 +102,11 @@ Cause : vtgate accepte `SET SESSION TRANSACTION READ ONLY` (et `SET SESSION tran
 - `SELECT GET_LOCK(...)` mêlé à d'autres colonnes : refusé par vtgate (« allowed only with dual ») ; `SELECT … INTO OUTFILE` : refusé
   par le mysqld ; `LOAD_FILE` rend NULL ; `CALL` inconnu : erreur 1305 ; `ALTER VITESS_MIGRATION` : refusé sur un réplica.
 
-Correctif : en lecture seule sur Vitess (détecté par `@@version` en `-Vitess`), le runner ouvre `START TRANSACTION READ ONLY` : les
-écritures de données sont refusées PAR LE TABLET. Le DDL reste borné par le garde seul sur le primaire (aucune barrière du moteur) :
-limite connue, verrouillée par `testTheEngineAloneDoesNotStopDdlOnThePrimary`. Coût : transaction coupée à 30 s
-(`--queryserver-config-transaction-timeout`). Barrière complète possible : lire sur `@replica` (voir #40).
+Correctif (groupe A, PR #156) : en lecture seule le runner MySQL ouvre TOUJOURS `START TRANSACTION READ ONLY`, sans détecter Vitess
+(une version renommée ou illisible aurait laissé passer les écritures) : les écritures de données sont refusées PAR LE TABLET. Le
+DDL reste borné par le garde seul sur le primaire (aucune barrière du moteur) : limite connue, verrouillée par
+`testTheEngineAloneDoesNotStopDdlOnThePrimary`. Coût : transaction coupée à 30 s (`--queryserver-config-transaction-timeout`).
+Barrière complète possible : lire sur `@replica` (voir #40). Ce dépôt apporte la preuve sur le vrai cluster.
 
 ```bash
 docker compose run --rm --no-deps php vendor/bin/phpunit --group integration tests/Integration/Driver/VitessReadOnlyTest.php
@@ -113,7 +114,7 @@ docker compose run --rm --no-deps php vendor/bin/phpunit --group integration tes
 
 ## #40 : ce qui justifierait `Engine::Vitess` (analyse, rien de codé)
 
-Aujourd'hui Vitess est « MySQL » avec une détection ponctuelle de `@@version` en `-Vitess` dans le runner. Mesuré sur le cluster
+Aujourd'hui Vitess est « MySQL » : le runner de lecture seule ne le détecte pas (il ouvre toujours la transaction en lecture seule). Mesuré sur le cluster
 (Vitess 23, `@@version` = `8.4.6-Vitess`) :
 
 1. Détection : `@@version` finit par `-Vitess` ; MariaDB n'est jamais derrière vtgate. Un `Engine` distinct la ferait une fois pour tout
@@ -142,8 +143,8 @@ Aujourd'hui Vitess est « MySQL » avec une détection ponctuelle de `@@version`
 
 Découpage proposé en PR (chacune : tests d'abord, sur le vrai cluster) :
 
-1. `Engine::Vitess` + détection à l'ouverture (`@@version`), servi par `MySqlDriver` ; le runner lit le moteur au lieu de redétecter
-   (absorbe #111 et ce correctif).
+1. `Engine::Vitess` + détection à l'ouverture (`@@version`), servi par `MySqlDriver` (absorbe #111) ; le correctif de lecture seule
+   n'en dépend pas et n'en a pas besoin.
 2. Lecture sur `@replica` en option de connexion, avec test du retard et du repli ; le primaire reste inchangé.
 3. Bases = keyspaces (`listDatabases`), masquage des bases internes.
 4. Diagnostics : thèmes `unsupported` (ou lus par tablet) pour Vitess, testés sur le cluster.
