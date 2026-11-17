@@ -49,6 +49,7 @@ enum AuditAction: string
     case DataChanged = 'data.changed';
     case DataChangeFailed = 'data.failed';
     case DiagnosticRead = 'diagnostic.read';
+    case SchemaRead = 'schema.read';
 
     /**
      * Actions faites PAR un administrateur sur le compte ou le jeton d'un autre : le journal d'administration les rassemble.

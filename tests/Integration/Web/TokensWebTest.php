@@ -178,6 +178,8 @@ final class TokensWebTest extends WebApiTestCase
         self::assertFalse($info['writeSchema']);
         self::assertFalse($info['createConnections']);
         self::assertFalse($info['diagnostic']);
+        self::assertFalse($info['readSchema']);
+        self::assertFalse($info['export']);
         self::assertFalse($info['singleStep'], 'une écriture passe par prepare puis execute, sauf choix contraire');
     }
 
@@ -193,6 +195,36 @@ final class TokensWebTest extends WebApiTestCase
         self::assertFalse($info['writeData']);
         $listed = self::arrayOf($this->call('GET', '/web/tokens')['tokens']);
         self::assertTrue(self::arrayOf($listed[0])['diagnostic']);
+    }
+
+    public function testCreatesATokenWithTheSchemaAndExportRightsAndAuditsThem(): void
+    {
+        $user = $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $created = $this->call('POST', '/web/tokens', ['name' => 'Lecture', 'connectionIds' => [$connection], 'readSchema' => true, 'export' => true]);
+
+        $info = self::arrayOf($created['tokenInfo']);
+        self::assertTrue($info['readSchema']);
+        self::assertTrue($info['export']);
+        self::assertFalse($info['writeData']);
+        $listed = self::arrayOf(self::arrayOf($this->call('GET', '/web/tokens')['tokens'])[0]);
+        self::assertTrue($listed['readSchema']);
+        self::assertTrue($listed['export']);
+        $details = $this->auditEvents($user, 'token')[0]->getDetails();
+        self::assertTrue($details['readSchema']);
+        self::assertTrue($details['export']);
+    }
+
+    public function testEachReadRightIsIndependent(): void
+    {
+        $this->seedAndLogin();
+        $connection = $this->createConnection();
+
+        $info = self::arrayOf($this->call('POST', '/web/tokens', ['name' => 'Export', 'connectionIds' => [$connection], 'export' => true])['tokenInfo']);
+
+        self::assertTrue($info['export']);
+        self::assertFalse($info['readSchema']);
     }
 
     public function testASingleStepTokenIsAnExplicitChoiceOfTheOwner(): void

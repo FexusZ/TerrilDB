@@ -38,4 +38,28 @@ final class ApiTokenAccessTest extends TestCase
 
         $this->addToAssertionCount(1);
     }
+
+    public function testSchemaAndExportRightsAreRefusedByDefaultAndIndependent(): void
+    {
+        foreach (['requireReadSchema', 'requireExport'] as $check) {
+            try {
+                $this->access(new TokenPermissions(writeData: true, writeSchema: true, createConnections: true, diagnostic: true, singleStep: true))->$check();
+                self::fail($check.' must refuse a token without the right.');
+            } catch (ApiTokenPermissionException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        $this->access(new TokenPermissions(readSchema: true))->requireReadSchema();
+        $this->access(new TokenPermissions(export: true))->requireExport();
+        $this->addToAssertionCount(2);
+
+        $this->expectException(ApiTokenPermissionException::class);
+        $this->access(new TokenPermissions(readSchema: true))->requireExport();
+    }
+
+    public function testNewReadRightsDoNotCountAsWriting(): void
+    {
+        self::assertFalse((new TokenPermissions(readSchema: true, export: true))->canWrite());
+    }
 }

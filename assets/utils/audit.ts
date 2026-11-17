@@ -111,6 +111,8 @@ export function describeEvent(entry: AuditEntry): string {
 
       return entry.outcome === 'failed' ? `Lecture de la supervision en échec : ${topic}` : `Supervision lue : ${topic}`
     }
+    case 'schema.read':
+      return details.topic === 'schemas' ? 'Liste des schémas lue' : 'Liste des bases lue'
     default:
       return entry.action
   }

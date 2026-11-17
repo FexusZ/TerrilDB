@@ -155,8 +155,18 @@ final class ApiTokenTest extends TestCase
         self::assertFalse($permissions->writeSchema);
         self::assertFalse($permissions->createConnections);
         self::assertFalse($permissions->diagnostic);
+        self::assertFalse($permissions->readSchema);
+        self::assertFalse($permissions->export);
         self::assertFalse($permissions->singleStep, 'deux étapes par défaut');
         self::assertFalse($permissions->canWrite());
+    }
+
+    public function testKeepsTheReadRightsAsIssued(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user(), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [], new \DateTimeImmutable(self::NOW), null, permissions: new TokenPermissions(readSchema: true));
+
+        self::assertTrue($token->getPermissions()->readSchema);
+        self::assertFalse($token->getPermissions()->export);
     }
 
     public function testKeepsTheSingleStepChoice(): void

@@ -12,7 +12,7 @@ vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<t
 const mocked = vi.mocked(api)
 const connection = (id: string, name: string): ConnectionSummary => ({ id, name, engine: 'postgresql', createdAt: '', updatedAt: '' })
 const token = (id: string, name: string, extra: Partial<ApiTokenInfo> = {}): ApiTokenInfo => ({
-  id, name, connectionIds: ['c1'], allConnections: false, writeData: false, writeSchema: false, createConnections: false, diagnostic: false, singleStep: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
+  id, name, connectionIds: ['c1'], allConnections: false, writeData: false, writeSchema: false, createConnections: false, diagnostic: false, readSchema: false, export: false, singleStep: false, createdAt: '2026-11-01T10:00:00+00:00', expiresAt: '2099-12-01T10:00:00+00:00', lastUsedAt: null, ...extra,
 })
 
 async function mountView(tokens: ApiTokenInfo[] = [], connections: ConnectionSummary[] = [connection('c1', 'Production'), connection('c2', 'Recette')]) {
@@ -112,6 +112,33 @@ describe('TokensView', () => {
     await flushPromises()
 
     expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Supervision', connectionIds: ['c1'], lifetimeDays: 30, diagnostic: true })
+    wrapper.unmount()
+  })
+
+  it('offers the schema and export rights, unticked, and sends each only when ticked', async () => {
+    const wrapper = await mountView()
+    expect((wrapper.get('#token-read-schema').element as HTMLInputElement).checked).toBe(false)
+    expect((wrapper.get('#token-export').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('#token-name').setValue('Lecture')
+    await wrapper.get('input[value="c1"]').setValue(true)
+    await wrapper.get('#token-read-schema').setValue(true)
+    mocked.mockResolvedValueOnce({ token: 'tdb_x', tokenInfo: token('n', 'Lecture', { readSchema: true }) })
+
+    await wrapper.get('form.create').trigger('submit')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/tokens', { name: 'Lecture', connectionIds: ['c1'], lifetimeDays: 30, readSchema: true })
+    expect((wrapper.get('#token-read-schema').element as HTMLInputElement).checked).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the schema and export rights of a token while it stays read-only', async () => {
+    const wrapper = await mountView([token('a', 'Lecture', { readSchema: true, export: true })])
+
+    const text = wrapper.get('li.token').text()
+    expect(text).toContain('Lit les bases et les schémas')
+    expect(text).toContain('Exporte des données')
+    expect(text).toContain('Lecture seule')
     wrapper.unmount()
   })
 

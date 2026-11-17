@@ -25,6 +25,8 @@ final class TokenPresenter
             'createConnections' => $token->getPermissions()->createConnections,
             'diagnostic' => $token->getPermissions()->diagnostic,
             'singleStep' => $token->getPermissions()->singleStep,
+            'readSchema' => $token->getPermissions()->readSchema,
+            'export' => $token->getPermissions()->export,
             'createdAt' => $token->getCreatedAt()->format(\DATE_ATOM),
             'expiresAt' => $token->getExpiresAt()?->format(\DATE_ATOM),
             'lastUsedAt' => $token->getLastUsedAt()?->format(\DATE_ATOM),

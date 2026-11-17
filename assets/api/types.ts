@@ -174,6 +174,10 @@ export interface ApiTokenInfo {
   createConnections: boolean
   /** Lit la supervision du serveur (sessions…), sans rien écrire. */
   diagnostic: boolean
+  /** Lit la liste des bases et des schémas du serveur (aucune donnée de table). */
+  readSchema: boolean
+  /** Exporte un résultat en CSV / JSON. */
+  export: boolean
   /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
   singleStep: boolean
   createdAt: string
@@ -194,6 +198,8 @@ export interface ApiTokenInput {
   writeSchema?: boolean
   createConnections?: boolean
   diagnostic?: boolean
+  readSchema?: boolean
+  export?: boolean
   singleStep?: boolean
 }
 

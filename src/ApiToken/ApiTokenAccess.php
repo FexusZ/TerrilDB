@@ -37,6 +37,30 @@ final readonly class ApiTokenAccess
     }
 
     /**
+     * La liste des bases et des schémas du serveur ne se lit qu'avec le droit `readSchema`, refusé par défaut.
+     *
+     * @throws ApiTokenPermissionException
+     */
+    public function requireReadSchema(): void
+    {
+        if (!$this->token->getPermissions()->readSchema) {
+            throw ApiTokenPermissionException::create();
+        }
+    }
+
+    /**
+     * L'export en masse (CSV, JSON) ne se fait qu'avec le droit `export`, refusé par défaut.
+     *
+     * @throws ApiTokenPermissionException
+     */
+    public function requireExport(): void
+    {
+        if (!$this->token->getPermissions()->export) {
+            throw ApiTokenPermissionException::create();
+        }
+    }
+
+    /**
      * Les options d'une exécution d'écriture : lecture-écriture bornée aux droits du jeton. Un jeton sans aucun
      * droit d'écriture n'exécute rien par cette voie (la lecture seule garde sa route, tenue par le moteur).
      *
