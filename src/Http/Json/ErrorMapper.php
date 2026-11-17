@@ -23,6 +23,8 @@ use App\Core\Diagnostics\Exception\DiagnosticsFailedException;
 use App\Core\Diagnostics\Exception\InvalidDigestQueryException;
 use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
 use App\Core\Diagnostics\Health\HealthBusyException;
+use App\Core\Driver\EngineFault;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedEngineException;
@@ -110,7 +112,7 @@ final class ErrorMapper
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
             $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException, $error instanceof AccountNotFoundException => new ErrorResponse(404, 'not_found'),
-            $error instanceof TargetConnectionFailedException => new ErrorResponse(502, 'target_unreachable'),
+            $error instanceof TargetConnectionFailedException => null !== $error->fault ? self::fault($error->fault) : new ErrorResponse(502, 'target_unreachable'),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
@@ -126,6 +128,8 @@ final class ErrorMapper
             $error instanceof DataChangeConflictException => new ErrorResponse(409, 'data_changed', ['statement' => $error->statementIndex, 'matched' => $error->matched]),
             $error instanceof DataChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'delete_rows'] + DataPlanPresenter::plan($error->plan)),
             $error instanceof LockConflictException => new ErrorResponse(409, $error->conflict->code(), ['retryable' => true]),
+            $error instanceof EngineFaultException => self::fault($error->fault),
+            $error instanceof DataChangeFailedException && null !== $error->fault => self::fault($error->fault, ['retryable' => $error->fault->retryable(), 'applied' => $error->applied, 'failed' => DataPlanPresenter::statement($error->failed, null)]),
             $error instanceof DataChangeFailedException => null !== $error->lock
                 ? new ErrorResponse(409, $error->lock->code(), ['retryable' => true, 'applied' => $error->applied, 'failed' => DataPlanPresenter::statement($error->failed, null)])
                 : new ErrorResponse(409, 'data_change_failed', [
@@ -139,6 +143,11 @@ final class ErrorMapper
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
             $error instanceof BigTableNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'big_table_name', 'bigTable' => ChangePlanPresenter::bigTable($error->assessment)]),
             $error instanceof SchemaChangeNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_schema_change'] + ChangePlanPresenter::plan($error->plan)),
+            $error instanceof SchemaChangeFailedException && null !== $error->fault => self::fault($error->fault, [
+                'retryable' => $error->fault->retryable() && [] === $error->applied,
+                'applied' => array_map(ChangePlanPresenter::statement(...), $error->applied),
+                'failed' => ChangePlanPresenter::statement($error->failed),
+            ]),
             $error instanceof SchemaChangeFailedException => null !== $error->lock
                 ? new ErrorResponse(409, $error->lock->code(), [
                     'retryable' => [] === $error->applied,
@@ -161,5 +170,30 @@ final class ErrorMapper
             $error instanceof QueryFailedException => new ErrorResponse(400, 'query_failed', ['message' => $error->getMessage()]),
             default => null,
         };
+    }
+
+    /**
+     * @param array<string, mixed>|null $extra remplace les détails par défaut (`retryable`, et `retryAfter` pour un serveur plein)
+     */
+    private static function fault(EngineFault $fault, ?array $extra = null): ErrorResponse
+    {
+        $seconds = $fault->retryAfterSeconds();
+        $extra ??= ['retryable' => $fault->retryable()];
+        $advise = null !== $seconds && true === ($extra['retryable'] ?? false);
+        if ($advise) {
+            $extra['retryAfter'] = $seconds;
+        }
+
+        return new ErrorResponse(
+            match ($fault) {
+                EngineFault::TooManyConnections => 503,
+                EngineFault::PermissionDenied => 403,
+                EngineFault::DuplicateKey => 409,
+                EngineFault::AuthRequiresTls, EngineFault::AuthenticationFailed => 502,
+            },
+            $fault->code(),
+            $extra,
+            $advise ? ['Retry-After' => (string) $seconds] : [],
+        );
     }
 }

@@ -93,6 +93,30 @@ describe('error messages', () => {
     expect(serialization).not.toContain('interblocage')
   })
 
+  it('gives advice for common engine errors without echoing anything from the engine', () => {
+    const full = messageFor(new ApiError(503, 'too_many_connections', { retryable: true, retryAfter: 5, message: "host 'db.internal'" }))
+    expect(full).toContain('connexions')
+    expect(full).toContain('5 s')
+    expect(full).not.toContain('db.internal')
+    expect(messageFor(new ApiError(503, 'too_many_connections', { retryable: true }))).toContain('quelques secondes')
+    const denied = messageFor(new ApiError(403, 'engine_permission_denied', { retryable: false }))
+    expect(denied).toContain('droit')
+    expect(denied).toContain('compte')
+    const duplicate = messageFor(new ApiError(409, 'duplicate_key', { retryable: false, message: "Duplicate entry 'jean@example.org'" }))
+    expect(duplicate).toContain('existe déjà')
+    expect(duplicate).not.toContain('jean')
+    expect(messageFor(new ApiError(502, 'auth_requires_tls'))).toContain('TLS')
+    const auth = messageFor(new ApiError(502, 'auth_failed', { message: "user 'jean'" }))
+    expect(auth).toContain('identifiants')
+    expect(auth).not.toContain('jean')
+  })
+
+  it('does not advise replaying an engine error when part of the change is already applied', () => {
+    const message = messageFor(new ApiError(503, 'too_many_connections', { retryable: false, applied: [{ sql: 'ALTER TABLE t ADD c int' }] }))
+    expect(message).toContain('déjà appliquées')
+    expect(message).not.toContain('verrou')
+  })
+
   it('does not advise replaying when part of the change is already applied', () => {
     const message = messageFor(new ApiError(409, 'lock_timeout', { retryable: false, applied: [{ sql: 'ALTER TABLE t ADD c int' }] }))
     expect(message).toContain('déjà appliquées')

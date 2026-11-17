@@ -46,8 +46,9 @@ final readonly class AuditedSchemaChanges
                 'sql' => self::sql($e->applied === [] ? [$e->failed] : [...$e->applied, $e->failed]),
                 'failedSql' => $e->failed->sql,
                 'applied' => \count($e->applied),
-                'error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH),
-            ]);
+            ] + (null !== $e->fault
+                ? ['reason' => $e->fault->code()]
+                : ['error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH)] + (null !== $e->lock ? ['reason' => $e->lock->code()] : [])));
 
             throw $e;
         }

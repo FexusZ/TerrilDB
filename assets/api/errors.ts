@@ -28,6 +28,9 @@ export function reasonText(reason: unknown): string {
 const PARTLY_APPLIED =
   'Un verrou a interrompu la modification : certaines instructions sont déjà appliquées (voir la liste). Ne la rejouez pas telle quelle : relisez la table, puis refaites ce qui manque.'
 
+const FAULT_PARTLY_APPLIED =
+  'La base a refusé une instruction : certaines sont déjà appliquées (voir la liste). Ne rejouez pas la modification telle quelle : relisez la table, puis refaites ce qui manque.'
+
 function partlyApplied(error: ApiError): boolean {
   return error.details.retryable === false && Array.isArray(error.details.applied) && error.details.applied.length > 0
 }
@@ -137,6 +140,19 @@ export function messageFor(error: unknown): string {
     case 'lock_timeout':
       if (partlyApplied(error)) return PARTLY_APPLIED
       return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
+    case 'too_many_connections':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return `Le serveur de base de données (ou ce compte) a atteint sa limite de connexions. Réessayez dans ${typeof error.details.retryAfter === 'number' ? `${String(error.details.retryAfter)} s` : 'quelques secondes'} ; si cela dure, fermez des sessions inutiles ou faites relever la limite.`
+    case 'engine_permission_denied':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return 'Le compte de cette connexion n’a pas le droit d’effectuer cette opération sur la base. Demandez le droit à son administrateur ou utilisez un autre compte.'
+    case 'duplicate_key':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return 'Une ligne avec la même valeur de clé ou d’index unique existe déjà : rien n’a été écrit. Changez la valeur ou modifiez la ligne existante.'
+    case 'auth_requires_tls':
+      return 'Le serveur exige une connexion chiffrée (TLS) et refuse celle-ci. Faites autoriser les connexions non chiffrées depuis TerrilDB ou utilisez le port TLS du serveur.'
+    case 'auth_failed':
+      return 'Le serveur a refusé les identifiants de cette connexion. Vérifiez l’identifiant et le mot de passe.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':

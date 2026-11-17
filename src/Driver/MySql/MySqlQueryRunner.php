@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
@@ -13,6 +14,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineFaultReader;
 use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
@@ -103,6 +105,11 @@ final readonly class MySqlQueryRunner implements QueryRunner
         $lock = EngineLockConflict::of($this->engine, $e);
         if (null !== $lock) {
             return new LockConflictException($lock, $e);
+        }
+
+        $fault = EngineFaultReader::of($this->engine, $e);
+        if (null !== $fault) {
+            return new EngineFaultException($fault, $e);
         }
 
         return new QueryFailedException(trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage()), previous: $e);

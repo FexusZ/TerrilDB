@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\QueryFailedException;
@@ -52,6 +53,10 @@ final readonly class AuditedQueries
             throw $e;
         } catch (LockConflictException $e) {
             $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => $e->conflict->code()]);
+
+            throw $e;
+        } catch (EngineFaultException $e) {
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => $e->fault->code()]);
 
             throw $e;
         } catch (QueryFailedException $e) {

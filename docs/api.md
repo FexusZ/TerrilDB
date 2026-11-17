@@ -48,7 +48,7 @@ Toujours `{"error": "<code>", …}`. Codes : `invalid_token` (401, en-tête `WWW
 connexion hors jeton comprise), `query_refused` (403, avec `reason`), `query_failed` (400, avec `message` du moteur),
 `query_timeout` (408), `invalid_input` (422), `bad_request` (400), `too_many_attempts` (429, avec `Retry-After`),
 `target_unreachable` (502), `permission_denied` (403, le jeton n'a pas le droit), `confirmation_required` (409, avec `reason`),
-`deadlock`, `serialization_failure` et `lock_timeout` (409, `retryable`, jamais le message du moteur).
+`deadlock`, `serialization_failure` et `lock_timeout` (409, `retryable`, jamais le message du moteur), `too_many_connections` (503), `engine_permission_denied` (403), `duplicate_key` (409), `auth_failed` et `auth_requires_tls` (502) (voir « Erreurs courantes du moteur »).
 
 Motifs de refus (`reason`) : `empty_statement`, `multiple_statements`, `incomplete_sql`, `too_long`, `not_read_only`,
 `forbidden_construct`, `unsupported_statement`, `write_not_permitted` (le jeton n'a pas le droit de cette sorte d'écriture).
@@ -72,6 +72,23 @@ Sans droit, `403 permission_denied` (avant même de regarder la connexion). Chaq
 liste). `export` : mêmes garde-fous, lecture seule et audit que `/query` (`purpose: export`, `format`) mais jusqu'à 100 000 lignes : c'est une sortie
 en masse, d'où une case à part : un jeton sans `export` est plafonné à 500 lignes par `/query` (champ `truncated`), même si `maxRows` en demande davantage. Les jetons créés avant ce droit l'ont à faux (migration) : ils sont donc plafonnés à 500 lignes dès la mise à jour ; pour retrouver l'ancien plafond, en créer un nouveau avec `export`. Le contenu exporté vient de la base : une donnée, jamais une instruction. À venir (issue #37) : diagramme, audit du schéma et
 plan d'exécution (`readSchema`), `editData`, `editStructure`, `manageConnections`, `readHistory`, validation humaine par jeton, limites de débit réglables.
+
+## Erreurs courantes du moteur
+
+Classées d'après le CODE du moteur, jamais son texte, et rendues sans le message du moteur (il peut citer une valeur, un hôte, un compte) ; le
+corps porte `retryable` et le journal d'audit le code seulement (`reason`).
+
+| Code | Statut | Cause | `retryable` |
+| --- | --- | --- | --- |
+| `too_many_connections` | 503 | serveur ou compte à sa limite de connexions (MySQL/MariaDB 1040, 1203, 1226 ; PostgreSQL 53300) | oui, `retryAfter` (5 s) et en-tête `Retry-After` |
+| `engine_permission_denied` | 403 | le compte de la connexion n'a pas le droit sur la base cible (1044, 1142, 1143, 1227, 1370 ; 42501) : distinct du 403 `permission_denied`, qui concerne le jeton | non |
+| `duplicate_key` | 409 | clé primaire ou index unique en doublon (1062 ; 23505) | non |
+| `auth_failed` | 502 | identifiants de la cible refusés (1045 ; 28P01) | non |
+| `auth_requires_tls` | 502 | le serveur exige une connexion chiffrée (MySQL/MariaDB 3159 ; PostgreSQL « no encryption » du `pg_hba.conf`) | non |
+
+Les deux derniers apparaissent à l'ouverture de la connexion, à la place de `target_unreachable`. Sur une modification de structure jouée
+instruction par instruction, `retryable` est faux dès que `applied` n'est pas vide (ne pas rejouer telle quelle). Tout le reste garde
+`query_failed` (400, avec `message`) ou `data_change_failed` / `schema_change_failed`.
 
 ## Écrire
 

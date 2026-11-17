@@ -44,7 +44,7 @@ final readonly class AuditedDataChanges
                 'table' => $table,
                 'engine' => $target->engine->value,
                 'error' => $e instanceof DataChangeFailedException ? 'engine_refused' : 'row_changed',
-            ]);
+            ] + ($e instanceof DataChangeFailedException && null !== ($code = $e->fault?->code() ?? $e->lock?->code()) ? ['reason' => $code] : []));
 
             throw $e;
         }
