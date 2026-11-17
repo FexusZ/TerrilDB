@@ -99,6 +99,44 @@ final class ApiReadRightsTest extends WebApiTestCase
         self::assertSame(403, $this->statusCode());
     }
 
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return list<mixed>
+     */
+    private function rowsOf(array $body): array
+    {
+        return self::listOf($body['rows']);
+    }
+
+    public function testATokenWithoutTheExportRightIsCappedAtFiveHundredRowsByQuery(): void
+    {
+        // Un jeton existant avant ce droit a `export` à faux (migration) : il est donc plafonné, sans erreur.
+        $this->prepare(rights: ['readSchema' => true]);
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertCount(500, $this->rowsOf($body));
+        self::assertTrue($body['truncated']);
+        $small = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 3]);
+        self::assertCount(3, $this->rowsOf($small));
+        $few = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select generate_series(1, 20) as n']);
+        self::assertCount(20, $this->rowsOf($few));
+        self::assertFalse($few['truncated']);
+    }
+
+    public function testATokenWithTheExportRightKeepsTheServerCeilingByQuery(): void
+    {
+        $this->prepare(rights: ['export' => true]);
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/query', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertCount(700, $this->rowsOf($body));
+        self::assertFalse($body['truncated']);
+    }
+
     public function testTheExportRightDoesNotGiveTheSchema(): void
     {
         $this->prepare(rights: ['export' => true]);

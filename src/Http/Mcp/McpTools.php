@@ -114,7 +114,7 @@ final readonly class McpTools
         return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs, $format, $measure): array|CallToolResult {
             $defaults = new QueryOptions();
             $measuring = $measure ?? false;
-            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $measuring ? self::PREVIEW_ROWS : ($maxRows ?? $defaults->maxRows), measure: $measuring);
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $this->request->get()->readRowLimit($measuring ? self::PREVIEW_ROWS : ($maxRows ?? $defaults->maxRows)), measure: $measuring);
 
             $result = $this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options));
 

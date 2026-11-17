@@ -470,6 +470,31 @@ final class McpTest extends WebApiTestCase
         self::assertTrue($this->callTool('list_schemas', ['connection' => $this->otherConnectionId])['isError']);
     }
 
+    public function testRunQueryIsCappedAtFiveHundredRowsWithoutTheExportRight(): void
+    {
+        $this->prepare(rights: ['readSchema' => true]);
+        $this->initialize();
+
+        $capped = self::textOf($this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]));
+
+        self::assertCount(500, self::list($capped['rows']));
+        self::assertTrue($capped['truncated']);
+        $few = self::textOf($this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select generate_series(1, 20) as n']));
+        self::assertCount(20, self::list($few['rows']));
+        self::assertFalse($few['truncated']);
+    }
+
+    public function testRunQueryKeepsTheServerCeilingWithTheExportRight(): void
+    {
+        $this->prepare(rights: ['export' => true]);
+        $this->initialize();
+
+        $all = self::textOf($this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]));
+
+        self::assertCount(700, self::list($all['rows']));
+        self::assertFalse($all['truncated']);
+    }
+
     public function testExportsAReadThroughMcpWithTheExportRight(): void
     {
         $this->prepare(rights: ['export' => true]);

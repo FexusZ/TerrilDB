@@ -132,7 +132,7 @@ final readonly class ApiController
         $options = new QueryOptions(
             QueryMode::ReadOnly,
             $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
-            $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
+            $this->request->get()->readRowLimit($input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows),
         );
 
         $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options));

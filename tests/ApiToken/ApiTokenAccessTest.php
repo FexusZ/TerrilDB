@@ -58,6 +58,25 @@ final class ApiTokenAccessTest extends TestCase
         $this->access(new TokenPermissions(readSchema: true))->requireExport();
     }
 
+    public function testATokenWithoutTheExportRightReadsAtMostFiveHundredRows(): void
+    {
+        self::assertSame(500, ApiTokenAccess::ROWS_WITHOUT_EXPORT);
+        $plain = $this->access(new TokenPermissions(writeData: true, readSchema: true));
+
+        self::assertSame(500, $plain->readRowLimit(100_000));
+        self::assertSame(500, $plain->readRowLimit(501));
+        self::assertSame(500, $plain->readRowLimit(500));
+        self::assertSame(3, $plain->readRowLimit(3));
+    }
+
+    public function testATokenWithTheExportRightKeepsTheServerRowCeiling(): void
+    {
+        $exporter = $this->access(new TokenPermissions(export: true));
+
+        self::assertSame(100_000, $exporter->readRowLimit(100_000));
+        self::assertSame(1_000, $exporter->readRowLimit(1_000));
+    }
+
     public function testNewReadRightsDoNotCountAsWriting(): void
     {
         self::assertFalse((new TokenPermissions(readSchema: true, export: true))->canWrite());

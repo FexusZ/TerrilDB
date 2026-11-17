@@ -37,6 +37,20 @@ final readonly class ApiTokenAccess
     }
 
     /**
+     * Lignes qu'une lecture rend à un jeton SANS le droit `export` : l'aperçu, pas l'extraction en masse. Au-delà, le résultat est
+     * coupé et marqué `truncated`, jamais refusé. Le plafond du serveur (`QueryOptions::MAX_ROWS`) reste celui des jetons avec `export`.
+     */
+    public const ROWS_WITHOUT_EXPORT = 500;
+
+    /**
+     * Le nombre de lignes demandé à `/query` ou `run_query`, ramené à `ROWS_WITHOUT_EXPORT` pour un jeton sans le droit `export`.
+     */
+    public function readRowLimit(int $requested): int
+    {
+        return $this->token->getPermissions()->export ? $requested : min($requested, self::ROWS_WITHOUT_EXPORT);
+    }
+
+    /**
      * La liste des bases et des schémas du serveur ne se lit qu'avec le droit `readSchema`, refusé par défaut.
      *
      * @throws ApiTokenPermissionException
