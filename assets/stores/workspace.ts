@@ -68,6 +68,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** Les noms de TOUTES les tables de la base explorée, pour l'autocomplétion de l'éditeur (le panneau, lui, est paginé). */
   const completionTables = ref<string[]>([])
   let completionLoaded = ''
+  /** Ce que le serveur de la connexion déclare savoir faire (matrice de capacités) ; nul tant que c'est inconnu : les extraits restent alors masqués. */
+  const capabilities = ref<Record<string, boolean> | null>(null)
+  let capabilitiesLoaded = ''
   // Une base clé-valeur (Redis) se parcourt par clés : même espace de travail, autre arborescence.
   const isKeyValue = ref(false)
   const keys = ref<KeyEntry[]>([])
@@ -131,6 +134,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     schemas.value = []
     completionTables.value = []
     completionLoaded = ''
+    capabilities.value = null
+    capabilitiesLoaded = ''
     keys.value = []
     keysCursor.value = null
     keysTotal.value = 0
@@ -321,6 +326,26 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       if (current()) {
         completionLoaded = ''
         completionTables.value = []
+      }
+    }
+  }
+
+  /** Une fois par connexion (la version du serveur ne dépend pas de la base explorée). Un échec laisse « inconnu » : rien n'est proposé à tort. */
+  async function loadCapabilities(): Promise<void> {
+    const id = connectionId.value
+    if (id === null || isKeyValue.value || capabilitiesLoaded === id) {
+      return
+    }
+    capabilitiesLoaded = id
+    try {
+      const answer = await api<{ capabilities?: Record<string, boolean> }>('GET', `/web/connections/${id}/capabilities`)
+      if (capabilitiesLoaded === id) {
+        capabilities.value = answer.capabilities ?? null
+      }
+    } catch {
+      if (capabilitiesLoaded === id) {
+        capabilitiesLoaded = ''
+        capabilities.value = null
       }
     }
   }
@@ -678,5 +703,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, capabilities, loadCapabilities, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, exportTab, confirmPending, cancelPending, describe }
 })

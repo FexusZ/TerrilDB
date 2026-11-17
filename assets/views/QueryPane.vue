@@ -12,6 +12,7 @@ import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
+import { snippetsFor } from '../utils/snippets'
 
 const workspace = useWorkspaceStore()
 const connections = useConnectionsStore()
@@ -22,10 +23,18 @@ const readOnly = computed(() => tab.value.mode === 'read_only')
 const dialect = computed(() => connections.byId(workspace.connectionId ?? '')?.engine ?? 'postgresql')
 const hasPlan = computed(() => ENGINE_HAS_PLAN[dialect.value])
 // Tout ce que le serveur connaît (lecture complète des noms), complété par ce que le panneau a déjà chargé en attendant.
+// Les extraits SQL moderne : seulement ceux que le serveur de la connexion déclare supporter.
+const snippets = computed(() => snippetsFor(dialect.value, workspace.capabilities))
 const tableNames = computed(() => [...new Set([...workspace.tables.map((table) => table.name), ...workspace.completionTables])])
 
-onMounted(() => void workspace.loadCompletion())
-watch(() => [workspace.connectionId, workspace.database, workspace.schema], () => void workspace.loadCompletion())
+onMounted(() => {
+  void workspace.loadCompletion()
+  void workspace.loadCapabilities()
+})
+watch(() => [workspace.connectionId, workspace.database, workspace.schema], () => {
+  void workspace.loadCompletion()
+  void workspace.loadCapabilities()
+})
 
 const showHistory = ref(false)
 const showScript = ref(false)
@@ -98,7 +107,7 @@ function toggleMode(): void {
     />
 
     <div v-if="!showHistory" class="editor">
-      <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" @update:model-value="workspace.setSql(tab.id, $event)" @run="workspace.run(tab.id)" />
+      <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" :snippets="snippets" @update:model-value="workspace.setSql(tab.id, $event)" @run="workspace.run(tab.id)" />
     </div>
 
     <p v-if="tab.exportNotice" class="export-notice" role="status">{{ tab.exportNotice }}</p>

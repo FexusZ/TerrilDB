@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { applyData, previewData, type DataPreview, type DataWarning } from '../api/data'
 import { messageFor, reasonText } from '../api/errors'
 import type { TableDetail } from '../api/types'
@@ -10,6 +10,7 @@ import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore } from '../stores/workspace'
+import { snippetsFor } from '../utils/snippets'
 import { buildPayload, editability, emptyDraft, pendingCount, setCell, type DataDraft, type Typed } from '../utils/dataDraft'
 import { isPlainReadOf, previewQuery } from '../utils/sql'
 
@@ -20,8 +21,12 @@ const connections = useConnectionsStore()
 const dialect = computed(() => connections.byId(props.id)?.engine ?? 'postgresql')
 const tab = computed(() => workspace.tabs.find((candidate) => candidate.table === props.name))
 const exportable = computed(() => tab.value?.result != null && tab.value.result.affectedRows === null && !tab.value.running && !tab.value.exporting)
+// Les extraits SQL moderne : seulement ceux que le serveur de la connexion déclare supporter.
+const snippets = computed(() => snippetsFor(dialect.value, workspace.capabilities))
 const tableNames = computed(() => [...new Set([...workspace.tables.map((table) => table.name), ...workspace.completionTables])])
 const scope = computed(() => ({ database: workspace.database, schema: workspace.schema }))
+
+onMounted(() => void workspace.loadCapabilities())
 
 // Chaque table garde son onglet : la première visite lit les 100 premières lignes, les suivantes retrouvent le SQL tel qu'il a été modifié.
 watch(
@@ -184,7 +189,7 @@ const matchedText = (matched: number | null): string => (matched === null ? '' :
 
     <template v-if="tab">
       <div class="editor">
-        <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" @update:model-value="pending === 0 && workspace.setSql(tab.id, $event)" @run="run" />
+        <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" :snippets="snippets" @update:model-value="pending === 0 && workspace.setSql(tab.id, $event)" @run="run" />
       </div>
       <p v-if="tab.exportNotice" class="notice" role="status">{{ tab.exportNotice }}</p>
 
