@@ -102,7 +102,7 @@ describe('ServerVariablesPane', () => {
 
     expect(wrapper.text()).toContain('Lecture seule')
     expect(wrapper.text()).not.toMatch(/SET GLOBAL|SET PERSIST/)
-    expect(wrapper.findAll('button').map((button) => button.text())).toEqual(['Chercher'])
+    expect(wrapper.findAll('button').map((button) => button.text())).toEqual(['Chercher', 'Lancer l’audit'])
   })
 
   it('says when nothing matches, only for a readable source', async () => {

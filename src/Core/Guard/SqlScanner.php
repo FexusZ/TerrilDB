@@ -79,7 +79,11 @@ final class SqlScanner
             } elseif ($backslash && '#' === $char) {
                 $spans[] = [$i, $i = $this->endOfLine($sql, $i), 'comment'];
             } elseif ('/' === $char && '*' === $next) {
-                if ($mysql && ('!' === ($sql[$i + 2] ?? '') || ('M' === ($sql[$i + 2] ?? '') && '!' === ($sql[$i + 3] ?? '')))) {
+                if ($mysql && '+' === ($sql[$i + 2] ?? '')) {
+                    // Indice d'optimiseur (MySQL) : le moteur l'applique à l'instruction (MAX_EXECUTION_TIME, SET_VAR). Ses mots comptent.
+                    $executableComment = true;
+                    $i += 3;
+                } elseif ($mysql && ('!' === ($sql[$i + 2] ?? '') || ('M' === ($sql[$i + 2] ?? '') && '!' === ($sql[$i + 3] ?? '')))) {
                     // MySQL et MariaDB exécutent le contenu de ces commentaires.
                     $executableComment = true;
                     $i += 'M' === $sql[$i + 2] ? 4 : 3;

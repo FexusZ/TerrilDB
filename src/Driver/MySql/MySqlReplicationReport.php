@@ -8,6 +8,7 @@ use App\Core\Connection\Engine;
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\Replication\ReplicationChannel;
 use App\Core\Diagnostics\Replication\ReplicationError;
+use App\Core\Diagnostics\Replication\ReplicationExtras;
 use App\Core\Diagnostics\Replication\ReplicationReport;
 use App\Core\Diagnostics\Replication\ReplicationRole;
 use App\Core\Diagnostics\Replication\ReplicationSettings;
@@ -30,7 +31,7 @@ final class MySqlReplicationReport
      * @param array<string, string>           $unapplied    par canal : GTID reçus et pas encore appliqués (MySQL, GTID_SUBTRACT) ; vide = tout est appliqué
      * @param array<string, ReplicationError> $workerErrors par canal : la dernière erreur du fil applicateur (plus parlante que celle du coordinateur)
      */
-    public static function build(Engine $engine, array $statusRows, array $variables, ?int $replicaCount, array $unapplied, array $workerErrors): ReplicationReport
+    public static function build(Engine $engine, array $statusRows, array $variables, ?int $replicaCount, array $unapplied, array $workerErrors, ReplicationExtras $extras = new ReplicationExtras()): ReplicationReport
     {
         $mariaDb = Engine::MariaDb === $engine;
         $channels = [];
@@ -54,6 +55,7 @@ final class MySqlReplicationReport
             $channels,
             new ReplicationSettings(self::flag($variables['read_only'] ?? null), self::flag($variables['super_read_only'] ?? null), $variables['binlog_format'] ?? null, $gtid),
             $replicaCount,
+            $extras,
         );
     }
 

@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { AccountReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableReport } from './types'
+import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport } from './types'
 
 export interface DiagnosticScope {
   database: string | null
@@ -55,3 +55,9 @@ export const fetchAccounts = (id: string, scope: DiagnosticScope): Promise<Accou
 
 /** La connexion de TerrilDB vers la cible est-elle chiffrée ? Une observation. */
 export const fetchEncryption = (id: string, scope: DiagnosticScope): Promise<ConnectionEncryption> => api<ConnectionEncryption>('GET', `/web/connections/${id}/diagnostics/encryption${suffix(scope)}`)
+
+/** Audit de la configuration du serveur : des règles sur les variables lues, rien n'est exécuté. */
+export const fetchConfigAudit = (id: string, scope: DiagnosticScope): Promise<ConfigAuditReport> => api<ConfigAuditReport>('GET', `/web/connections/${id}/diagnostics/config-audit${suffix(scope)}`)
+
+/** Écart de variables entre deux connexions du même moteur : lecture seule, les variables masquées ne sont pas comparées. */
+export const fetchVariableComparison = (a: string, b: string): Promise<VariableComparison> => api<VariableComparison>('GET', `/web/diagnostics/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)

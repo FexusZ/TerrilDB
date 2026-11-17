@@ -87,7 +87,8 @@ final readonly class WriteApproval
             if ($access->token->getPermissions()->singleStep) {
                 return;
             }
-            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $base + ['reason' => 'confirmation_required']);
+            // Refus AVANT tout jugement : le texte n'a pas été examiné, il ne va pas au journal (un CREATE USER … IDENTIFIED BY y resterait un an). Sa longueur seule.
+            $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, ['engine' => $target->engine->value, 'mode' => QueryMode::ReadWrite->value, 'length' => mb_strlen(mb_scrub($sql, 'UTF-8')), 'reason' => 'confirmation_required']);
 
             throw ConfirmationRequiredException::create();
         }

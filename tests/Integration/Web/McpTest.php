@@ -343,6 +343,7 @@ final class McpTest extends WebApiTestCase
         self::assertNotContains('connection_encryption', $this->toolNames());
         self::assertNotContains('top_queries', $this->toolNames());
         self::assertNotContains('list_variables', $this->toolNames());
+        self::assertNotContains('audit_config', $this->toolNames());
         $refused = $this->callTool('list_sessions', ['connection' => $this->connectionId]);
         self::assertTrue(isset($refused['error']) || true === ($refused['isError'] ?? false), 'The tool must not run.');
         self::assertArrayNotHasKey('structuredContent', $refused);
@@ -541,6 +542,24 @@ final class McpTest extends WebApiTestCase
         self::assertArrayNotHasKey('structuredContent', $bad);
     }
 
+    public function testAuditsTheConfigurationThroughMcpWithoutSettingAnything(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('audit_config', $this->toolNames());
+        $report = self::textOf($this->callTool('audit_config', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj($report['status'])['availability']);
+        $rules = array_map(static fn (mixed $f): mixed => self::obj($f)['rule'], self::list($report['findings']));
+        sort($rules);
+        self::assertSame(['slow_statement_log_off', 'ssl_off'], $rules);
+        self::assertNotContains('execute_statement', $this->toolNames());
+
+        $other = $this->callTool('audit_config', ['connection' => $this->otherConnectionId]);
+        self::assertTrue($other['isError']);
+    }
+
     public function testAReadOnlyTokenDoesNotSeePrepareStatement(): void
     {
         $this->prepare();
@@ -680,6 +699,29 @@ final class McpTest extends WebApiTestCase
         $this->prepare();
         $this->initialize();
         self::assertNotContains('server_health', $this->toolNames());
+    }
+
+    public function testTheLogsToolIsForTokensWithTheDiagnosticRightOnly(): void
+    {
+        $this->prepare();
+        $this->initialize();
+        self::assertNotContains('list_logs', $this->toolNames());
+    }
+
+    public function testReadsTheLogsThroughMcp(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+        $this->initialize();
+
+        self::assertContains('list_logs', $this->toolNames());
+        $report = self::textOf($this->callTool('list_logs', ['connection' => $this->connectionId]));
+
+        self::assertSame('available', self::obj(self::obj($report['errorLog'])['status'])['availability']);
+        self::assertNotEmpty(self::obj($report['errorLog'])['entries']);
+        self::assertArrayHasKey('slowQueries', $report);
+
+        $other = $this->callTool('list_logs', ['connection' => '00000000-0000-7000-8000-000000000000']);
+        self::assertTrue($other['isError']);
     }
 
     public function testMeasuresTheHealthThroughMcp(): void

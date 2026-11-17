@@ -297,6 +297,26 @@ final class WriteApprovalApiTest extends WebApiTestCase
         }
     }
 
+    public function testARefusalForWantOfATicketKeepsNoTextOfTheUnjudgedStatement(): void
+    {
+        $this->setUpToken();
+        self::assertNotNull($this->owner);
+
+        $this->api('execute', ['sql' => "UPDATE {$this->table} SET v = 'hunter2-secret-value' WHERE id = 1"]);
+        self::assertSame(409, $this->statusCode());
+
+        $found = false;
+        foreach ($this->auditEvents($this->owner, 'query') as $event) {
+            if ('query.refused' === $event->getAction()->value && 'confirmation_required' === ($event->getDetails()['reason'] ?? null)) {
+                $found = true;
+                self::assertArrayNotHasKey('sql', $event->getDetails());
+                self::assertIsInt($event->getDetails()['length']);
+                self::assertStringNotContainsString('hunter2', (string) json_encode($event->getDetails()));
+            }
+        }
+        self::assertTrue($found);
+    }
+
     public function testARefusalOfTheGuardAtExecutionIsAudited(): void
     {
         $this->setUpToken();

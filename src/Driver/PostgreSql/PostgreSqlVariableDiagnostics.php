@@ -44,6 +44,10 @@ final readonly class PostgreSqlVariableDiagnostics implements VariableDiagnostic
                 $where .= ' AND strpos(lower(name), lower(?)) > 0';
                 $params[] = $query->search;
             }
+            if ([] !== $query->names) {
+                $where .= ' AND lower(name) IN ('.implode(', ', array_fill(0, \count($query->names), '?')).')';
+                array_push($params, ...$query->names);
+            }
             if ($query->changedOnly) {
                 $where .= " AND source NOT IN ('default', 'override')";
             }
@@ -63,8 +67,8 @@ final readonly class PostgreSqlVariableDiagnostics implements VariableDiagnostic
                 $row = new RowReader($row);
                 $variables[] = new ServerVariable(
                     $row->string('name'),
-                    $row->nullableString('value'),
-                    $row->nullableString('default_value'),
+                    $row->nullableText('value'),
+                    $row->nullableText('default_value'),
                     $row->bool('changed'),
                     $row->nullableString('source'),
                     $row->bool('pending_restart') ? RestartNeed::Pending : ('postmaster' === $row->string('context') ? RestartNeed::Required : null),

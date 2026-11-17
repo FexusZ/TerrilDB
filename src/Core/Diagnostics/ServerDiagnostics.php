@@ -24,6 +24,7 @@ final readonly class ServerDiagnostics
         private ?AccountDiagnostics $accounts = null,
         private ?EncryptionDiagnostics $encryption = null,
         private ?ReplicationDiagnostics $replication = null,
+        private ?LogDiagnostics $logs = null,
     ) {
     }
 
@@ -92,6 +93,14 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function logs(): LogDiagnostics
+    {
+        return $this->logs ?? throw UnsupportedOperationException::for($this->engine, 'logs');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données. Un thème dont la vérification échoue pour une cause imprévue rend
      * l'état « erreur » sans masquer les autres ; `$onFailure` reçoit son nom et l'exception (pour la consigner, jamais la montrer).
      *
@@ -101,7 +110,7 @@ final readonly class ServerDiagnostics
      */
     public function capabilities(?\Closure $onFailure = null): array
     {
-        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption, 'health' => $this->health, 'replication' => $this->replication];
+        $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption, 'health' => $this->health, 'replication' => $this->replication, 'logs' => $this->logs];
         $capabilities = [];
         foreach ($themes as $name => $theme) {
             if (null === $theme) {
