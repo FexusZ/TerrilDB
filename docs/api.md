@@ -75,7 +75,12 @@ plan d'exécution (`readSchema`), `editData`, `editStructure`, `manageConnection
 
 ## Erreurs courantes du moteur
 
-Classées d'après le CODE du moteur, jamais son texte, et rendues sans le message du moteur (il peut citer une valeur, un hôte, un compte) ; le
+**Réservé aux installations qui l'activent** : `TERRILDB_DETAILED_ERRORS=1` (faux par défaut, réglage d'installation, valable pour tous les membres). Sans lui,
+TerrilDB garde ses réponses d'origine : un échec de connexion reste `target_unreachable`, une instruction refusée reste `query_failed` (400, `message`) ou
+`data_change_failed` / `schema_change_failed`, et le journal garde `engine_error`. Raison : un serveur qui répond « identifiants refusés » ou « serveur plein »
+prouve qu'il est joignable depuis TerrilDB, ce qui cartographie le réseau interne ; le choix revient à qui installe.
+
+Avec le réglage, classées d'après le CODE du moteur, jamais son texte, et rendues sans le message du moteur (il peut citer une valeur, un hôte, un compte) ; le
 corps porte `retryable` et le journal d'audit le code seulement (`reason`).
 
 | Code | Statut | Cause | `retryable` |
@@ -86,7 +91,7 @@ corps porte `retryable` et le journal d'audit le code seulement (`reason`).
 | `auth_failed` | 502 | identifiants de la cible refusés (1045 ; 28P01) | non |
 | `auth_requires_tls` | 502 | le serveur exige une connexion chiffrée (MySQL/MariaDB 3159 ; PostgreSQL « no encryption » du `pg_hba.conf`) | non |
 
-Les deux derniers apparaissent à l'ouverture de la connexion, à la place de `target_unreachable`. Sur une modification de structure jouée
+Les deux derniers (et `too_many_connections`) apparaissent à l'ouverture de la connexion, à la place de `target_unreachable`. Sur une modification de structure jouée
 instruction par instruction, `retryable` est faux dès que `applied` n'est pas vide (ne pas rejouer telle quelle). Tout le reste garde
 `query_failed` (400, avec `message`) ou `data_change_failed` / `schema_change_failed`.
 

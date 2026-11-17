@@ -60,7 +60,7 @@ sont lues au fil de l'eau (jamais tout en mémoire), mais une requête qui rend 
 bien : c'est le but. Non disponible pour ClickHouse ni Redis (`unsupported_operation`).
 
 Une erreur est rendue comme erreur d'outil (`isError`) avec un code stable en JSON : `not_found` (connexion hors jeton
-comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `deadlock` / `serialization_failure` / `lock_timeout` (`retryable: true`, voir docs/api.md), `too_many_connections` / `engine_permission_denied` / `duplicate_key` / `auth_failed` / `auth_requires_tls` (erreurs courantes du moteur, `retryable`, voir docs/api.md), `invalid_input`,
+comprise), `query_refused` (avec `reason`), `query_failed` (message du moteur), `query_timeout`, `deadlock` / `serialization_failure` / `lock_timeout` (`retryable: true`, voir docs/api.md), `too_many_connections` / `engine_permission_denied` / `duplicate_key` / `auth_failed` / `auth_requires_tls` (erreurs courantes du moteur, seulement si l'installation active `TERRILDB_DETAILED_ERRORS`, `retryable`, voir docs/api.md), `invalid_input`,
 `target_unreachable`, `permission_denied`, `confirmation_required` (avec `reason`) ; le motif `write_not_permitted` signale un droit manquant.
 
 ## Configuration d'un client
