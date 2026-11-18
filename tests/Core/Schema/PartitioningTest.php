@@ -78,4 +78,31 @@ final class PartitioningTest extends TestCase
         self::assertSame(100, $info->dataBytes());
         self::assertSame(2, $info->count());
     }
+
+    public function testAListCutShortKeepsTheRealCountAndNoMisleadingTotals(): void
+    {
+        $shown = [new PartitionDefinition('p0', null, null, false, 10, 100), new PartitionDefinition('p1', null, null, false, 10, 100)];
+        $info = new PartitioningInfo(PartitionMethod::Hash, 'id', null, null, $shown, totalCount: 50_000);
+
+        self::assertTrue($info->isTruncated());
+        self::assertSame(50_000, $info->count());
+        self::assertCount(2, $info->partitions);
+        // Une somme sur 2 partitions de 50 000 serait fausse : inconnue.
+        self::assertNull($info->estimatedRows());
+        self::assertNull($info->dataBytes());
+    }
+
+    public function testACompleteListIsNotTruncated(): void
+    {
+        $info = new PartitioningInfo(PartitionMethod::Hash, 'id', null, null, [new PartitionDefinition('p0', null, null, false, 10, 100)]);
+
+        self::assertFalse($info->isTruncated());
+        self::assertSame(1, $info->count());
+    }
+
+    public function testATotalSmallerThanTheListIsRefused(): void
+    {
+        $this->expectException(InvalidSchemaException::class);
+        new PartitioningInfo(PartitionMethod::Hash, 'id', null, null, [new PartitionDefinition('p0', null, null, false, 10, 100)], totalCount: 0);
+    }
 }

@@ -58,7 +58,8 @@ final class PartitionAuditor
     private function exhaustedBound(TableDefinition $table, \DateTimeImmutable $now): ?string
     {
         $partitioning = $table->partitioning;
-        if (null === $partitioning || PartitionMethod::Range !== $partitioning->method) {
+        // Une liste coupée n'a peut-être pas sa dernière borne : on ne conclut pas.
+        if (null === $partitioning || PartitionMethod::Range !== $partitioning->method || $partitioning->isTruncated()) {
             return null;
         }
         $name = $this->bareColumn($partitioning->expression);

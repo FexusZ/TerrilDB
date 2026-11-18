@@ -18,6 +18,9 @@ use Doctrine\DBAL\Connection;
  */
 final readonly class PostgreSqlPartitionReader
 {
+    /** Partitions lues au plus (une table découpée par jour ou par identifiant peut en avoir des dizaines de milliers) ; le total réel est compté à part. */
+    public const MAX_PARTITIONS = 200;
+
     public function __construct(private Connection $connection)
     {
     }
@@ -50,9 +53,16 @@ final readonly class PostgreSqlPartitionReader
                FROM pg_inherits i
                JOIN pg_class ch ON ch.oid = i.inhrelid
               WHERE i.inhparent = ?
-              ORDER BY ch.relname COLLATE "C"',
+              ORDER BY ch.relname COLLATE "C"
+              LIMIT '.(self::MAX_PARTITIONS + 1),
             [$oid],
         );
+        $total = null;
+        if (\count($rows) > self::MAX_PARTITIONS) {
+            $rows = \array_slice($rows, 0, self::MAX_PARTITIONS);
+            $count = $this->connection->fetchOne('SELECT count(*) FROM pg_inherits WHERE inhparent = ?', [$oid]);
+            $total = max(is_numeric($count) ? (int) $count : 0, self::MAX_PARTITIONS + 1);
+        }
         $partitions = [];
         foreach ($rows as $row) {
             $row = new RowReader($row);
@@ -64,7 +74,7 @@ final readonly class PostgreSqlPartitionReader
             return null;
         }
 
-        return new PartitioningInfo($method, self::expression($key->string('definition')), null, null, $partitions);
+        return new PartitioningInfo($method, self::expression($key->string('definition')), null, null, $partitions, $total);
     }
 
     /**

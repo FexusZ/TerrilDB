@@ -141,6 +141,23 @@ final class PostgreSqlPartitionsTest extends TestCase
         self::assertSame('WITH (modulus 2, remainder 0)', $partitioning->partitions[0]->bound);
     }
 
+    public function testAListOfMoreThanTwoHundredPartitionsIsCutShortWithItsRealCount(): void
+    {
+        $introspector = $this->open();
+        $children = [];
+        for ($i = 0; $i < 205; ++$i) {
+            $children[] = \sprintf('FOR VALUES WITH (MODULUS 205, REMAINDER %d)', $i);
+        }
+        $name = $this->create('id integer NOT NULL', 'HASH (id)', $children);
+
+        $partitioning = $introspector->describeTable($name)->partitioning;
+
+        self::assertNotNull($partitioning);
+        self::assertTrue($partitioning->isTruncated());
+        self::assertCount(200, $partitioning->partitions);
+        self::assertSame(205, $partitioning->count());
+    }
+
     public function testTheFingerprintDoesNotMoveWhenRowsArrive(): void
     {
         $introspector = $this->open();

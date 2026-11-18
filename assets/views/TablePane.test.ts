@@ -56,7 +56,7 @@ describe('TablePane', () => {
 
   it('shows the partitions of a partitioned table', async () => {
     const { router, pinia } = await mountPane()
-    mocked.mockResolvedValueOnce({ table: { ...detail, partitioning: { method: 'hash', expression: 'id', subMethod: null, subExpression: null, estimatedRows: 10, dataBytes: 16384, partitions: [{ name: 'p0', bound: null, catchAll: false, estimatedRows: 10, dataBytes: 16384, subpartitions: [] }] } } })
+    mocked.mockResolvedValueOnce({ table: { ...detail, partitioning: { method: 'hash', expression: 'id', subMethod: null, subExpression: null, estimatedRows: 10, dataBytes: 16384, partitionCount: 1, truncated: false, partitions: [{ name: 'p0', bound: null, catchAll: false, estimatedRows: 10, dataBytes: 16384, subpartitions: [] }] } } })
 
     const wrapper = mount(TablePane, { props: { id: 'abc', name: 'orders' }, global: { plugins: [pinia, router] } })
     await flushPromises()

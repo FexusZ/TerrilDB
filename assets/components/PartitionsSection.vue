@@ -5,7 +5,7 @@ import { formatBytes, formatEstimate } from '../utils/format'
 
 const props = defineProps<{ partitioning: PartitioningInfo }>()
 
-const count = computed(() => props.partitioning.partitions.length)
+const count = computed(() => props.partitioning.partitionCount)
 const hasBounds = computed(() => props.partitioning.partitions.some((partition) => partition.bound !== null))
 const method = (value: string): string => value.toUpperCase()
 </script>
@@ -16,6 +16,7 @@ const method = (value: string): string => value.toUpperCase()
     <p class="summary">
       Méthode <strong>{{ method(partitioning.method) }}</strong> sur <code>{{ partitioning.expression }}</code>, {{ count }} {{ count > 1 ? 'partitions' : 'partition' }}<template v-if="partitioning.subMethod">,
         sous-partitions {{ method(partitioning.subMethod) }} sur <code>{{ partitioning.subExpression }}</code></template>.
+      <span v-if="partitioning.truncated" class="dim">{{ partitioning.partitions.length }} sur {{ count }} sont listées.</span>
       <span class="dim">En lecture seule : les partitions ne se modifient pas depuis cet écran.</span>
     </p>
     <div class="box">
