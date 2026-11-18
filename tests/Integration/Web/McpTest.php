@@ -891,7 +891,7 @@ final class McpTest extends WebApiTestCase
         self::assertTrue($result['truncated']);
     }
 
-    public function testTheDefaultAnswerKeepsItsIndentedTextAndItsStructuredContent(): void
+    public function testTheDefaultAnswerCarriesTheSameDataAsTextAndAsStructuredContent(): void
     {
         $this->prepare();
         $this->initialize();
@@ -901,7 +901,7 @@ final class McpTest extends WebApiTestCase
         self::assertArrayHasKey('structuredContent', $result);
         $text = self::obj(self::first($result['content']))['text'];
         self::assertIsString($text);
-        self::assertStringContainsString("\n    ", $text);
+        self::assertSame($result['structuredContent'], json_decode($text, true, 512, \JSON_THROW_ON_ERROR));
     }
 
     public function testACsvAnswerIsCompactAndNotDoubledInStructuredContent(): void
