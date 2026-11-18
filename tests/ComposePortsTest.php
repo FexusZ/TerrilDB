@@ -28,4 +28,29 @@ final class ComposePortsTest extends TestCase
         }
         self::assertGreaterThan(0, $published);
     }
+
+    /** Les paires de réplication ont leur profil à part, des noms préfixés « repl- », et ne touchent ni aux cibles ni à leurs volumes. */
+    public function testReplicationServicesLiveInTheirOwnProfile(): void
+    {
+        $compose = Yaml::parseFile(\dirname(__DIR__).'/compose.yaml');
+        self::assertIsArray($compose);
+        $services = $compose['services'] ?? null;
+        self::assertIsArray($services);
+
+        $found = [];
+        foreach ($services as $name => $service) {
+            self::assertIsString($name);
+            self::assertIsArray($service);
+            $profiles = (array) ($service['profiles'] ?? []);
+            self::assertSame(str_starts_with($name, 'repl-'), \in_array('replication', $profiles, true), $name);
+            if (str_starts_with($name, 'repl-')) {
+                self::assertSame(['replication'], $profiles, $name);
+                self::assertNotNull($service['healthcheck'] ?? null, $name.' needs a healthcheck.');
+                $found[] = $name;
+            }
+        }
+        foreach (['repl-pg-primary', 'repl-pg-replica', 'repl-redis-primary', 'repl-redis-replica', 'repl-clickhouse', 'repl-mysql-source', 'repl-mysql-replica', 'repl-mysql-semisync', 'repl-mariadb-source', 'repl-mariadb-replica', 'repl-mariadb-binlog'] as $expected) {
+            self::assertContains($expected, $found);
+        }
+    }
 }

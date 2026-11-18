@@ -124,6 +124,83 @@ final class InitEnvScriptTest extends TestCase
         file_put_contents($this->root.'/docker/dev/target-mariadb.env', "MARIADB_ROOT_PASSWORD=b\n");
     }
 
+    private const REPLICATION_VARIABLES = [
+        'TARGET_REPLICATED_POSTGRES_URL' => ['replication-postgres.env', 'POSTGRES_PASSWORD', 'pdo-pgsql://postgres:%s@repl-pg-primary:5432/postgres'],
+        'TARGET_REPLICA_POSTGRES_URL' => ['replication-postgres.env', 'POSTGRES_PASSWORD', 'pdo-pgsql://postgres:%s@repl-pg-replica:5432/postgres'],
+        'TARGET_REPLICA_MYSQL_URL' => ['replication-mysql.env', 'MYSQL_ROOT_PASSWORD', 'pdo-mysql://root:%s@repl-mysql-replica:3306/mysql'],
+        'TARGET_SEMISYNC_MYSQL_URL' => ['replication-mysql.env', 'MYSQL_ROOT_PASSWORD', 'pdo-mysql://root:%s@repl-mysql-semisync:3306/mysql'],
+        'TARGET_REPLICA_MARIADB_URL' => ['replication-mariadb.env', 'MARIADB_ROOT_PASSWORD', 'pdo-mysql://root:%s@repl-mariadb-replica:3306/mysql'],
+        'TARGET_BINLOG_MARIADB_URL' => ['replication-mariadb.env', 'MARIADB_ROOT_PASSWORD', 'pdo-mysql://root:%s@repl-mariadb-binlog:3306/mysql'],
+        'TARGET_REPLICATED_CLICKHOUSE_URL' => ['replication-clickhouse.env', 'CLICKHOUSE_PASSWORD', 'clickhouse://tester:%s@repl-clickhouse:8123/d'],
+        'TARGET_REPLICATED_REDIS_URL' => ['replication-redis.env', 'REDIS_PASSWORD', 'redis://default:%s@repl-redis-primary:6379/15'],
+        'TARGET_REPLICA_REDIS_URL' => ['replication-redis.env', 'REDIS_PASSWORD', 'redis://default:%s@repl-redis-replica:6379/15'],
+    ];
+
+    /** Le profil « replication » : mots de passe propres, tirés au hasard, jamais versionnés ; les URL des tests suivent. */
+    public function testFreshRunWritesTheReplicationPasswordsAndUrls(): void
+    {
+        $this->execute();
+
+        $php = $this->envFile('php.env');
+        foreach (self::REPLICATION_VARIABLES as $variable => [$file, $key, $format]) {
+            $password = $this->envFile($file)[$key] ?? '';
+            self::assertMatchesRegularExpression('/^[A-Za-z0-9]{24}$/', $password, $file);
+            self::assertSame(\sprintf($format, $password), $php[$variable] ?? null, $variable);
+        }
+        self::assertSame('tester', $this->envFile('replication-clickhouse.env')['CLICKHOUSE_USER']);
+        self::assertSame('1', $this->envFile('replication-clickhouse.env')['CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT']);
+        self::assertNotSame($this->envFile('replication-mysql.env')['MYSQL_ROOT_PASSWORD'], $this->envFile('target-mysql.env')['MYSQL_ROOT_PASSWORD']);
+        self::assertSame('0600', substr(\sprintf('%04o', fileperms($this->root.'/docker/dev/replication-redis.env')), -4));
+    }
+
+    public function testExistingInstallationGetsTheReplicationSetupWithoutChangingAnythingElse(): void
+    {
+        mkdir($this->root.'/docker/dev', 0o700);
+        $before = "APP_SECRET=abc\nDATABASE_URL=x\nTARGET_MYSQL26_URL=x\nTARGET_MARIADB13_URL=x\nTARGET_REDIS_URL=keep\n";
+        file_put_contents($this->root.'/docker/dev/php.env', $before);
+        file_put_contents($this->root.'/docker/dev/target-redis.env', "REDIS_PASSWORD=old\n");
+
+        $this->execute();
+        $first = (string) file_get_contents($this->root.'/docker/dev/php.env');
+        $passwords = (string) file_get_contents($this->root.'/docker/dev/replication-postgres.env');
+        $this->execute();
+
+        self::assertStringStartsWith($before, $first);
+        self::assertSame($first, (string) file_get_contents($this->root.'/docker/dev/php.env'), 'A second run adds nothing.');
+        self::assertSame($passwords, (string) file_get_contents($this->root.'/docker/dev/replication-postgres.env'));
+        self::assertSame("REDIS_PASSWORD=old\n", (string) file_get_contents($this->root.'/docker/dev/target-redis.env'));
+        $php = $this->envFile('php.env');
+        foreach (array_keys(self::REPLICATION_VARIABLES) as $variable) {
+            self::assertArrayHasKey($variable, $php);
+        }
+    }
+
+    public function testAnExistingReplicationVariableIsNeverRewritten(): void
+    {
+        mkdir($this->root.'/docker/dev', 0o700);
+        file_put_contents($this->root.'/docker/dev/php.env', "APP_SECRET=abc\nTARGET_MYSQL26_URL=x\nTARGET_MARIADB13_URL=x\nTARGET_REPLICA_REDIS_URL=redis://mine\n");
+
+        $this->execute();
+
+        self::assertSame('redis://mine', $this->envFile('php.env')['TARGET_REPLICA_REDIS_URL']);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function envFile(string $name): array
+    {
+        $values = [];
+        foreach (explode("\n", (string) file_get_contents($this->root.'/docker/dev/'.$name)) as $line) {
+            if (str_contains($line, '=')) {
+                [$key, $value] = explode('=', $line, 2);
+                $values[$key] = $value;
+            }
+        }
+
+        return $values;
+    }
+
     private function generateIn(): string
     {
         $this->setUp();

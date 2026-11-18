@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReplicationAlert, ReplicationChannel } from '../api/types'
-import { alertText, lagNote, roleLabel, threadLabel } from './replication'
+import { alertText, formatBytes, lagNote, roleLabel, semiSyncLabel, threadLabel, walStatusLabel } from './replication'
 
 const thresholds = { warning: 30, critical: 300 }
 const channel = (overrides: Partial<ReplicationChannel> = {}): ReplicationChannel => ({
@@ -41,5 +41,46 @@ describe('replication wording', () => {
     expect(lagNote(channel({ lagSeconds: 0, pendingApply: true }))).toContain('trompeur')
     expect(lagNote(channel({ lagSeconds: 0, pendingApply: false }))).toBeNull()
     expect(lagNote(channel({ lagSeconds: 12, pendingApply: true }))).toBeNull()
+  })
+
+  it('names the peer role of replicated tables', () => {
+    expect(roleLabel('peer')).toBe('Tables répliquées entre pairs')
+  })
+
+  it('writes sizes in the largest sensible unit', () => {
+    expect(formatBytes(0)).toBe('0 o')
+    expect(formatBytes(1023)).toBe('1\u202f023 o')
+    expect(formatBytes(50331704)).toBe('48 Mio')
+    expect(formatBytes(10737418240)).toBe('10 Gio')
+    expect(formatBytes(null)).toBe('inconnu')
+  })
+
+  it('explains the WAL status of a slot and never shows an unknown one raw', () => {
+    expect(walStatusLabel('reserved')).toContain('dans les limites')
+    expect(walStatusLabel('unreserved')).toContain('menacé')
+    expect(walStatusLabel('lost')).toContain('perdu')
+    expect(walStatusLabel(null)).toBe('rien de retenu')
+    expect(walStatusLabel('<b>x</b>')).not.toContain('<b>')
+  })
+
+  it('names the semi-synchronous modes', () => {
+    expect(semiSyncLabel('not_loaded')).toBe('greffon non chargé')
+    expect(semiSyncLabel('off')).toBe('désactivé')
+    expect(semiSyncLabel('active')).toBe('actif')
+    expect(semiSyncLabel('fallen_back')).toContain('asynchrone')
+  })
+
+  it('gives a sentence to the new alerts, naming the slot, replica or table', () => {
+    const alert = (code: string, channel: string): ReplicationAlert => ({ code, severity: 'warning', channel })
+
+    expect(alertText(alert('slot_inactive', 'orphan'), thresholds)).toContain('retient')
+    expect(alertText(alert('slot_inactive', 'orphan'), thresholds)).toContain('slot orphan')
+    expect(alertText(alert('slot_wal_lost', 's1'), thresholds)).toContain('perdu')
+    expect(alertText(alert('replica_not_streaming', '2'), thresholds)).toContain('réplica 2')
+    expect(alertText(alert('table_readonly', 'd.rt'), thresholds)).toContain('table d.rt')
+    expect(alertText(alert('table_lag_critical', 'd.rt'), thresholds)).toContain('5 min')
+    expect(alertText(alert('binlog_no_expiry', ''), thresholds)).toContain('n’expirent jamais')
+    expect(alertText(alert('semisync_fallback', ''), thresholds)).toContain('asynchrone')
+    expect(alertText(alert('link_idle', ''), thresholds)).toContain('silence')
   })
 })

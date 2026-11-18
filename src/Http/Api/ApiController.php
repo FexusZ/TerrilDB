@@ -8,17 +8,20 @@ use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
+use App\Audit\AuditedSchemaReads;
 use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\ConnectionNotFoundException;
 use App\Core\Diagnostics\Masking;
 use App\Core\Driver\TargetConnection;
+use App\Core\Export\ExportFormat;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
+use App\Http\Json\BadRequestException;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
@@ -31,10 +34,14 @@ use App\Http\Json\SchemaPresenter;
 use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
 use App\Http\Json\VariableQueryParser;
+use App\Http\Web\DatabaseParam;
 use App\Http\Web\TokenPresenter;
 use App\Http\Web\UserPresenter;
+use Psr\Clock\ClockInterface;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Uid\Uuid;
 
@@ -46,6 +53,7 @@ use Symfony\Component\Uid\Uuid;
 final readonly class ApiController
 {
     private const ID = ['id' => '[0-9a-fA-F-]{36}'];
+    private const EXPORT_ROWS = 10_000;
 
     public function __construct(
         private ApiRequestAccess $request,
@@ -58,6 +66,8 @@ final readonly class ApiController
         private WriteApproval $approval,
         private AuditedScripts $scripts,
         private Masking $masking,
+        private AuditedSchemaReads $schemaReads,
+        private ClockInterface $clock,
     ) {
     }
 
@@ -122,7 +132,7 @@ final readonly class ApiController
         $options = new QueryOptions(
             QueryMode::ReadOnly,
             $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
-            $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
+            $this->request->get()->readRowLimit($input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows),
         );
 
         $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options));
@@ -152,6 +162,68 @@ final readonly class ApiController
         });
 
         return new JsonResponse(ResultPresenter::present($result));
+    }
+
+    /**
+     * Les bases que le compte voit sur le serveur (celles du moteur sont masquées sauf `?system=1`). Réservé au droit `readSchema`.
+     */
+    #[Route('/api/v1/connections/{id}/databases', requirements: self::ID, methods: ['GET'])]
+    public function databases(string $id, Request $request): JsonResponse
+    {
+        $access = $this->request->get();
+        $access->requireReadSchema();
+        $databases = $this->open($id, fn (TargetConnection $target): array => $this->schemaReads->databases($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $default = $this->targets->defaultDatabase($access->user, $access->key, Uuid::fromString($id));
+
+        return new JsonResponse(['default' => $default, 'databases' => SchemaPresenter::databases($databases, self::withSystem($request))]);
+    }
+
+    /**
+     * Les schémas d'une base (PostgreSQL ; 501 ailleurs), `?database=` pour une autre base. Réservé au droit `readSchema`.
+     */
+    #[Route('/api/v1/connections/{id}/schemas', requirements: self::ID, methods: ['GET'])]
+    public function schemas(string $id, Request $request): JsonResponse
+    {
+        $this->request->get()->requireReadSchema();
+        $schemas = $this->open($id, fn (TargetConnection $target): array => $this->schemaReads->schemas($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), DatabaseParam::fromQuery($request));
+
+        return new JsonResponse(['schemas' => SchemaPresenter::schemas($schemas, self::withSystem($request))]);
+    }
+
+    /**
+     * Exporte le résultat d'une lecture en CSV ou JSON (10 000 lignes par défaut, 100 000 au plus). Réservé au droit `export` ;
+     * même garde, lecture seule et audit que `/query`.
+     */
+    #[Route('/api/v1/connections/{id}/export', requirements: self::ID, methods: ['POST'])]
+    public function export(string $id, Request $request): Response
+    {
+        $this->request->get()->requireExport();
+        $input = JsonInput::fromRequest($request);
+        $sql = $input->string('sql');
+        $format = ExportFormat::tryFrom($input->string('format')) ?? throw new BadRequestException('The format must be "csv" or "json".');
+        $defaults = new QueryOptions();
+        $options = new QueryOptions(
+            QueryMode::ReadOnly,
+            $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
+            $input->optionalInt('maxRows', self::EXPORT_ROWS) ?? self::EXPORT_ROWS,
+        );
+
+        $result = $this->open($id, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $sql, $options, extra: ['purpose' => 'export', 'format' => $format->value]));
+
+        $headers = [
+            'Content-Type' => $format->contentType(),
+            'Content-Disposition' => HeaderUtils::makeDisposition(HeaderUtils::DISPOSITION_ATTACHMENT, \sprintf('terrildb-export-%s.%s', $this->clock->now()->format('Ymd-His'), $format->value)),
+        ];
+        if ($result->truncated) {
+            $headers['X-TerrilDB-Truncated'] = '1';
+        }
+
+        return new Response($format->render($result, $input->bool('bom', false)), Response::HTTP_OK, $headers);
+    }
+
+    private static function withSystem(Request $request): bool
+    {
+        return \in_array($request->query->get('system'), ['1', 'true'], true);
     }
 
     /**
@@ -215,6 +287,19 @@ final readonly class ApiController
     }
 
     /**
+     * Journal d'erreurs (MySQL) et requêtes lentes en table (MySQL, MariaDB) du serveur de la connexion, en lecture seule, les 200
+     * lignes les plus récentes, textes masqués puis raccourcis. L'état de chaque source dit si elle est éteinte, refusée ou sans objet.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/logs', requirements: self::ID, methods: ['GET'])]
+    public function logs(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        [$error, $slow] = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::logs($error, $slow));
+    }
+
+    /**
      * Santé du serveur sur un intervalle (`?seconds=`, 1 à 30, 5 par défaut) : deux relevés de compteurs, des taux par seconde et des
      * repères. Aucun historique ; la requête dure l'intervalle.
      */
@@ -253,6 +338,19 @@ final readonly class ApiController
         $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
 
         return new JsonResponse(DiagnosticsPresenter::variables($report));
+    }
+
+    /**
+     * Audit de la configuration du serveur de la connexion : des règles sur les variables lues, chacune avec sa gravité, son
+     * explication, la valeur recommandée et une suggestion à lire (jamais exécutée). Aucun SET.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/config-audit', requirements: self::ID, methods: ['GET'])]
+    public function configAudit(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::configAudit($report));
     }
 
     /**
@@ -313,7 +411,7 @@ final readonly class ApiController
      *
      * @return T
      */
-    private function open(string $id, \Closure $action): mixed
+    private function open(string $id, \Closure $action, ?string $database = null): mixed
     {
         $access = $this->request->get();
         $connectionId = Uuid::fromString($id);
@@ -321,7 +419,7 @@ final readonly class ApiController
             throw ConnectionNotFoundException::create();
         }
 
-        return $this->targets->with($access->user, $access->key, $connectionId, $action);
+        return $this->targets->with($access->user, $access->key, $connectionId, $action, $database);
     }
 
     /**

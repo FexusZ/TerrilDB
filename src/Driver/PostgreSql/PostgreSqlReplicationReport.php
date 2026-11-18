@@ -6,6 +6,7 @@ namespace App\Driver\PostgreSql;
 
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\Replication\ReplicationChannel;
+use App\Core\Diagnostics\Replication\ReplicationExtras;
 use App\Core\Diagnostics\Replication\ReplicationReport;
 use App\Core\Diagnostics\Replication\ReplicationRole;
 use App\Core\Diagnostics\Replication\ReplicationSettings;
@@ -23,7 +24,7 @@ final class PostgreSqlReplicationReport
     /**
      * @param array<string, mixed> $row
      */
-    public static function build(array $row): ReplicationReport
+    public static function build(array $row, ReplicationExtras $extras = new ReplicationExtras()): ReplicationReport
     {
         $row = new RowReader($row);
         $replicaCount = $row->nullableInt('replica_count');
@@ -35,6 +36,7 @@ final class PostgreSqlReplicationReport
                 [],
                 new ReplicationSettings(null, null, null, null),
                 $replicaCount,
+                $extras,
             );
         }
 
@@ -57,6 +59,6 @@ final class PostgreSqlReplicationReport
         );
 
         // Un réplica de PostgreSQL refuse toujours les écritures (hot standby) : pas de réglage à vérifier.
-        return new ReplicationReport(DiagnosticStatus::available(), ReplicationRole::Replica, [$channel], new ReplicationSettings(true, null, null, null), $replicaCount);
+        return new ReplicationReport(DiagnosticStatus::available(), ReplicationRole::Replica, [$channel], new ReplicationSettings(true, null, null, null), $replicaCount, $extras);
     }
 }

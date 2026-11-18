@@ -136,7 +136,8 @@ final readonly class ScannedStatement
                 $verb = $this->headAfterWith($inner);
             }
 
-            return \in_array($verb, ['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE'], true) ? $verb : 'ANALYZE';
+            // ANALYZE d'une lecture (mesure réelle d'un plan, MariaDB) : l'instruction jouée est la lecture, jugée comme telle.
+            return \in_array($verb, ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE'], true) ? $verb : 'ANALYZE';
         }
 
         return $first;

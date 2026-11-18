@@ -1,0 +1,20 @@
+[
+    {
+        "name": "orphan_slot",
+        "type": "physical",
+        "active": false,
+        "temporary": false,
+        "wal_status": "reserved",
+        "safe_wal_size": null,
+        "retained_bytes": 50331704
+    },
+    {
+        "name": "replica_slot",
+        "type": "physical",
+        "active": true,
+        "temporary": false,
+        "wal_status": "reserved",
+        "safe_wal_size": null,
+        "retained_bytes": 0
+    }
+]

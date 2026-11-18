@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
@@ -13,6 +14,7 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineFaultReader;
 use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
@@ -60,7 +62,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
                 ? ($options->measure && StatementKind::Read === $kind ? PdoRows::measure($statement, $options->maxRows, $started, $options->timeoutMs) : PdoRows::read($statement, $options->maxRows, $started))
                 : QueryResult::affected($statement->rowCount(), PdoRows::elapsed($started));
 
-            $pdo->exec($readOnly ? 'ROLLBACK' : 'COMMIT');
+            $pdo->exec($readOnly || $options->discard ? 'ROLLBACK' : 'COMMIT');
 
             return $result;
         } catch (\PDOException $e) {
@@ -109,6 +111,12 @@ final readonly class MySqlQueryRunner implements QueryRunner
             return new LockConflictException($lock, $e);
         }
 
-        return new QueryFailedException(trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage()), previous: $e);
+        $message = trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage());
+        $fault = EngineFaultReader::of($this->engine, $e);
+        if (null !== $fault) {
+            return new EngineFaultException($fault, $e, $message);
+        }
+
+        return new QueryFailedException($message, previous: $e);
     }
 }

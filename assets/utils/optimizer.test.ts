@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AuditCheck, PlanFindingInfo, SchemaFinding } from '../api/types'
-import { describeCheck, describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
+import { LINT_RULES, describeCheck, describePlanFinding, describeSchemaFinding, lintRuleLabel, planFindingHelp, planKindLabel } from './optimizer'
 
 const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
 
@@ -69,6 +69,27 @@ describe('optimizer wording', () => {
     expect(describePlanFinding({ ...base, condition: null })).not.toContain('condition')
   })
 
+  it('words an estimate far from the real number of rows by interpolation', () => {
+    const stale: PlanFindingInfo = { rule: 'stale_estimate', relation: 'orders', rows: 1, condition: null, actualRows: 3000, suggestion: 'ANALYZE "orders";' }
+
+    const text = describePlanFinding(stale)
+
+    expect(text).toContain('« orders »')
+    expect(text).toMatch(/estimait ~\s?1 ligne/)
+    expect(text).toMatch(/3\s?000 lignes/)
+    expect(text).toContain('statistiques')
+    expect(planFindingHelp(stale)).toContain('à relire')
+    expect(describePlanFinding({ ...stale, rows: 20000, actualRows: 1000 })).toContain('estimait ~')
+  })
+
+  it('words a sort that spilled to disk', () => {
+    const disk: PlanFindingInfo = { rule: 'sort_on_disk', relation: null, rows: 7000, condition: null, actualRows: 7000 }
+
+    expect(describePlanFinding(disk)).toMatch(/Un tri de 7\s?000 lignes a débordé de la mémoire/)
+    expect(planFindingHelp(disk)).toContain('index')
+    expect(describePlanFinding({ ...disk, actualRows: null })).toContain('Un tri a débordé')
+  })
+
   it('words the sort and wildcard findings with the right caution', () => {
     const sort = describePlanFinding({ rule: 'large_sort', relation: 'order_items', rows: 7000, condition: null })
     expect(sort).toMatch(/Tri de « order_items » \(~\s?7\s?000 lignes\)/)
@@ -93,5 +114,23 @@ describe('optimizer wording', () => {
 
   it('shows the engine label for what it has no word for', () => {
     expect(planKindLabel('other', 'Memoize')).toBe('Memoize')
+  })
+})
+
+describe('query linter wording', () => {
+  it('has a French label for every rule the server can send', () => {
+    const rules = ['function_on_column', 'arithmetic_on_column', 'leading_wildcard_like', 'select_star', 'large_offset', 'not_in_subquery', 'row_lock', 'recursive_cte', 'type_mismatch', 'or_on_columns', 'distinct_join', 'count_star_large', 'random_order']
+
+    expect([...LINT_RULES].sort()).toEqual([...rules].sort())
+    for (const rule of rules) {
+      expect(lintRuleLabel(rule)).toMatch(/^[A-ZÉ]/)
+    }
+    expect(lintRuleLabel('function_on_column')).toBe('Fonction sur une colonne')
+    expect(lintRuleLabel('type_mismatch')).toBe('Types comparés différents')
+    expect(lintRuleLabel('random_order')).toBe('Tri aléatoire de toute la table')
+  })
+
+  it('shows an unknown rule as is rather than hiding it', () => {
+    expect(lintRuleLabel('future_rule')).toBe('future_rule')
   })
 })

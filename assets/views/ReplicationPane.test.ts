@@ -99,4 +99,98 @@ describe('ReplicationPane', () => {
 
     expect(wrapper.text()).toContain('trompeur')
   })
+
+  it('lists the slots of a PostgreSQL primary and flags the one that holds WAL', async () => {
+    const wrapper = await mountPane({
+      ...none,
+      alerts: [{ code: 'slot_inactive', severity: 'warning', channel: 'orphan' }],
+      slots: {
+        status: ok,
+        slots: [
+          { name: 'orphan', type: 'physical', active: false, temporary: false, retainedBytes: 50331704, walStatus: 'reserved', safeWalSize: null },
+          { name: 'replica_slot', type: 'physical', active: true, temporary: false, retainedBytes: 0, walStatus: 'reserved', safeWalSize: 1048576 },
+        ],
+      },
+      limits: { slotRetainedWarningBytes: 1073741824, slotRetainedCriticalBytes: 10737418240, tableQueueWarning: 100 },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Slots de réplication')
+    expect(text).toContain('orphan')
+    expect(text).toContain('48 Mio')
+    expect(text).toContain('inactif')
+    expect(text).toContain('1 Gio')
+    expect(wrapper.findAll('[data-testid="alerts"] li')).toHaveLength(1)
+  })
+
+  it('says there is no slot, then reads the replicas of the source', async () => {
+    const wrapper = await mountPane({
+      ...none,
+      role: 'source',
+      replicaCount: 1,
+      slots: { status: ok, slots: [] },
+      replicas: { status: ok, replicas: [{ rank: 1, state: 'streaming', connected: true, syncState: 'async', writeLagSeconds: 0.001, flushLagSeconds: 0.002, replayLagSeconds: 2, behindBytes: 0 }] },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Aucun slot')
+    expect(text).toContain('streaming')
+    expect(text).toContain('async')
+    expect(text).toContain('2 s')
+  })
+
+  it('shows why a section cannot be read without hiding the others', async () => {
+    const wrapper = await mountPane({
+      ...none,
+      binlog: { status: { availability: 'disabled', reason: 'binary_log_off', privilege: null }, enabled: false, fileCount: null, totalBytes: null, expireSeconds: null, gtidExecuted: null, gtidPurged: null },
+      semiSync: { status: { availability: 'disabled', reason: 'semi_sync_not_loaded', privilege: null }, source: 'not_loaded', replica: 'not_loaded', clients: null },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Journaux binaires')
+    expect(text).toContain('journal binaire est éteint')
+    expect(text).toContain('Semi-synchrone')
+    expect(text).toContain('greffon non chargé')
+  })
+
+  it('shows binary logs with their size, expiry and GTID sets', async () => {
+    const wrapper = await mountPane({
+      ...none,
+      binlog: { status: ok, enabled: true, fileCount: 2, totalBytes: 600000000, expireSeconds: 2592000, gtidExecuted: 'u:1-166347', gtidPurged: null },
+      semiSync: { status: ok, source: 'fallen_back', replica: 'off', clients: 0 },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('572 Mio')
+    expect(text).toContain('30 j')
+    expect(text).toContain('u:1-166347')
+    expect(text).toContain('repassé en asynchrone')
+  })
+
+  it('lists the replicated tables of ClickHouse and says so when there are none', async () => {
+    const tables = await mountPane({
+      ...none,
+      role: 'peer',
+      replicatedTables: { status: ok, truncated: false, tables: [{ database: 'd', table: 'rt', readonly: false, sessionExpired: false, absoluteDelaySeconds: 3, queueSize: 4, insertsInQueue: 5, lostParts: 0 }] },
+    })
+    expect(tables.text()).toContain('Tables répliquées entre pairs')
+    expect(tables.text()).toContain('d.rt')
+
+    const empty = await mountPane({ ...none, replicatedTables: { status: ok, truncated: false, tables: [] } })
+    expect(empty.text()).toContain('Aucune table répliquée')
+  })
+
+  it('shows the link of a Redis replica without any address', async () => {
+    const wrapper = await mountPane({
+      ...none,
+      role: 'replica',
+      keyValue: { linkStatus: 'down', lastIoSecondsAgo: null, syncInProgress: false, backlogSize: 1048576, masterReplOffset: 840 },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('Lien avec la source')
+    expect(text).toContain('coupé')
+    expect(text).toContain('1 Mio')
+    expect(text).toContain('840')
+  })
 })

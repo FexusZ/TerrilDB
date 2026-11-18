@@ -34,6 +34,7 @@ async function mountView(path = '/connections/abc') {
           { path: 'variables', name: 'server-variables', component: { template: '<p class="child">variables</p>' } },
           { path: 'health', name: 'server-health', component: { template: '<p class="child">santé</p>' } },
           { path: 'replication', name: 'replication', component: { template: '<p class="child">réplication</p>' } },
+          { path: 'logs', name: 'server-logs', component: { template: '<p class="child">journaux</p>' } },
           { path: 'audit', name: 'audit', component: { template: '<p class="child">audit</p>' } },
           { path: 'key', name: 'key', component: { template: '<p class="child">clé</p>' } },
           { path: 'diagram', name: 'diagram', component: { template: '<p class="child">diagramme</p>' } },
@@ -190,15 +191,15 @@ describe('WorkspaceView', () => {
     const { wrapper } = await mountView()
 
     const links = wrapper.findAll('nav[aria-label="Vues de la connexion"] a')
-    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Variables', 'Santé', 'Réplication'])
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit', '/connections/abc/activity', '/connections/abc/variables', '/connections/abc/health', '/connections/abc/replication'])
+    expect(links.map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Variables', 'Santé', 'Réplication', 'Journaux'])
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/connections/abc', '/connections/abc/diagram', '/connections/abc/audit', '/connections/abc/activity', '/connections/abc/variables', '/connections/abc/health', '/connections/abc/replication', '/connections/abc/logs'])
   })
 
   it('puts the connection views on one line and the open tables, like browser tabs, on the next', async () => {
     mocked.mockImplementation(answer())
     const { wrapper } = await mountView('/connections/abc/tables/orders?database=shop')
 
-    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Variables', 'Santé', 'Réplication'])
+    expect(wrapper.findAll('nav[aria-label="Vues de la connexion"] a').map((link) => link.text())).toEqual(['Console', 'Diagramme', 'Audit du schéma', 'Activité', 'Variables', 'Santé', 'Réplication', 'Journaux'])
     const tabs = wrapper.findAll('[role="tablist"][aria-label="Tables ouvertes"] .tab')
     expect(tabs.map((tab) => tab.get('a.label').text())).toEqual(['orders'])
     expect(tabs[0]?.classes()).toContain('on')

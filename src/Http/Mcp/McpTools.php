@@ -8,6 +8,7 @@ use App\ApiToken\TokenConnections;
 use App\Audit\AuditActor;
 use App\Audit\AuditedDiagnostics;
 use App\Audit\AuditedQueries;
+use App\Audit\AuditedSchemaReads;
 use App\Audit\AuditedScripts;
 use App\Confirmation\WriteApproval;
 use App\Connection\ConnectionManager;
@@ -18,12 +19,14 @@ use App\Core\Connection\Exception\InvalidConnectionParametersException;
 use App\Core\Diagnostics\DigestQuery;
 use App\Core\Diagnostics\Masking;
 use App\Core\Driver\TargetConnection;
+use App\Core\Export\ExportFormat;
 use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\Script\ScriptOptions;
 use App\Entity\DatabaseConnection;
 use App\Http\Api\ApiRequestAccess;
+use App\Http\Json\BadRequestException;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\ErrorMapper;
 use App\Http\Json\HealthInterval;
@@ -45,6 +48,7 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class McpTools
 {
+    private const EXPORT_ROWS = 10_000;
     private const PREVIEW_ROWS = 100;
 
     public function __construct(
@@ -59,6 +63,7 @@ final readonly class McpTools
         private WriteApproval $approval,
         private AuditedScripts $scripts,
         private Masking $masking,
+        private AuditedSchemaReads $schemaReads,
     ) {
     }
 
@@ -109,7 +114,7 @@ final readonly class McpTools
         return $this->guard(function () use ($connection, $sql, $maxRows, $timeoutMs, $format, $measure): array|CallToolResult {
             $defaults = new QueryOptions();
             $measuring = $measure ?? false;
-            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $measuring ? self::PREVIEW_ROWS : ($maxRows ?? $defaults->maxRows), measure: $measuring);
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, $defaults->timeoutMs), $this->request->get()->readRowLimit($measuring ? self::PREVIEW_ROWS : ($maxRows ?? $defaults->maxRows)), measure: $measuring);
 
             $result = $this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options));
 
@@ -181,6 +186,19 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function listLogs(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+            [$error, $slow] = $this->open($connection, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target));
+
+            return DiagnosticsPresenter::logs($error, $slow);
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function serverHealth(string $connection, ?int $seconds = null): array
     {
         return $this->guard(function () use ($connection, $seconds): array {
@@ -244,6 +262,60 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function listDatabases(string $connection, ?bool $includeSystem = null): array
+    {
+        return $this->guard(function () use ($connection, $includeSystem): array {
+            $access = $this->request->get();
+            $access->requireReadSchema();
+            $databases = $this->open($connection, fn (TargetConnection $target): array => $this->schemaReads->databases($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target));
+
+            return ['default' => $this->targets->defaultDatabase($access->user, $access->key, Uuid::fromString($connection)), 'databases' => SchemaPresenter::databases($databases, $includeSystem ?? false)];
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listSchemas(string $connection, ?string $database = null, ?bool $includeSystem = null): array
+    {
+        return $this->guard(function () use ($connection, $database, $includeSystem): array {
+            $this->request->get()->requireReadSchema();
+            $schemas = $this->open($connection, fn (TargetConnection $target): array => $this->schemaReads->schemas($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), '' === $database ? null : $database);
+
+            return ['schemas' => SchemaPresenter::schemas($schemas, $includeSystem ?? false)];
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function exportQuery(string $connection, string $sql, string $format, ?int $maxRows = null, ?int $timeoutMs = null): array
+    {
+        return $this->guard(function () use ($connection, $sql, $format, $maxRows, $timeoutMs): array {
+            $this->request->get()->requireExport();
+            $kind = ExportFormat::tryFrom($format) ?? throw new BadRequestException('The format must be "csv" or "json".');
+            $options = new QueryOptions(QueryMode::ReadOnly, $this->limit->timeout($timeoutMs, (new QueryOptions())->timeoutMs), $maxRows ?? self::EXPORT_ROWS);
+            $result = $this->open($connection, fn (TargetConnection $target) => $this->queries->execute($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $sql, $options, extra: ['purpose' => 'export', 'format' => $kind->value]));
+
+            return ['format' => $kind->value, 'truncated' => $result->truncated, 'content' => $kind->render($result)];
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function auditConfig(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::configAudit($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function prepareStatement(string $connection, string $sql): array
     {
         return $this->guard(fn (): array => PreparedWritePresenter::present(
@@ -291,14 +363,14 @@ final readonly class McpTools
      *
      * @return T
      */
-    private function open(string $connection, \Closure $action): mixed
+    private function open(string $connection, \Closure $action, ?string $database = null): mixed
     {
         $access = $this->request->get();
         if (!Uuid::isValid($connection) || !$access->token->allows(Uuid::fromString($connection))) {
             throw ConnectionNotFoundException::create();
         }
 
-        return $this->targets->with($access->user, $access->key, Uuid::fromString($connection), $action);
+        return $this->targets->with($access->user, $access->key, Uuid::fromString($connection), $action, $database);
     }
 
     /**

@@ -24,6 +24,8 @@ final readonly class ReplicationChannel
         public ?bool $pendingApply,
         public ?ReplicationError $receiverError,
         public ?ReplicationError $applierError,
+        /** Faux quand le moteur n'a pas de retard en secondes (Redis) : un retard inconnu n'y est pas une alerte. */
+        public bool $reportsLag = true,
     ) {
     }
 }

@@ -60,4 +60,17 @@ final class ApiTokenRepository extends ServiceEntityRepository
     {
         return $this->findBy(['owner' => $owner], ['createdAt' => 'DESC']);
     }
+
+    /**
+     * Les jetons de tous les comptes (administration), propriétaire chargé d'avance.
+     *
+     * @return list<ApiToken> du plus récent au plus ancien
+     */
+    public function findAllWithOwners(): array
+    {
+        /** @var list<ApiToken> $tokens */
+        $tokens = $this->createQueryBuilder('t')->addSelect('o')->join('t.owner', 'o')->orderBy('t.createdAt', 'DESC')->addOrderBy('t.id', 'DESC')->getQuery()->getResult();
+
+        return $tokens;
+    }
 }

@@ -79,4 +79,26 @@ final class SchemaPresenter
             ], $table->foreignKeys),
         ];
     }
+
+    /**
+     * Les bases à montrer : celles du moteur (information_schema…) sont masquées sauf demande expresse.
+     *
+     * @param list<DatabaseSummary> $databases
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function databases(array $databases, bool $withSystem): array
+    {
+        return array_values(array_map(self::database(...), array_filter($databases, static fn (DatabaseSummary $database): bool => $withSystem || !$database->system)));
+    }
+
+    /**
+     * @param list<SchemaSummary> $schemas
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function schemas(array $schemas, bool $withSystem): array
+    {
+        return array_values(array_map(self::schema(...), array_filter($schemas, static fn (SchemaSummary $schema): bool => $withSystem || !$schema->system)));
+    }
 }
