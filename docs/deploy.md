@@ -134,6 +134,7 @@ redémarrage du conteneur concerné (`docker compose -f compose.prod.yaml up -d 
 | `TERRILDB_AUDIT_RETENTION_DAYS` | `365` | ancienneté au-delà de laquelle `app:audit:purge` supprime | `app.env` |
 | `TERRILDB_BIG_TABLE_WARN_ROWS` | `100000` | lignes estimées à partir desquelles modifier ou supprimer une table avertit (`0` : désactivé) | `app.env` |
 | `TERRILDB_BIG_TABLE_CONFIRM_ROWS` | `1000000` | seuil au-delà duquel il faut retaper le nom de la table (`0` : désactivé) | `app.env` |
+| `TERRILDB_DETAILED_ERRORS` | `0` (faux) | `1` : les erreurs courantes du moteur (trop de connexions, droit refusé, clé dupliquée, authentification refusée, TLS exigé) rendent un code précis au lieu du message générique, pour TOUS les membres ; réglage d'installation, voir docs/api.md | `app.env` |
 | `TERRILDB_MAIL_FROM` | vide | expéditeur des invitations ; l'envoi n'est actif que si `MAILER_DSN` est aussi renseigné (`TERRILDB_PUBLIC_URL` est toujours posée par compose) | `app.env` |
 | `MAILER_DSN` | `null://null` (rien n'est envoyé) | transport `symfony/mailer` | `app.env` |
 | `TERRILDB_DOMAIN` | aucun (obligatoire) | nom public ; secret GitHub `TERRILDB_DOMAIN`, mis à jour dans `deploy.env` à chaque déploiement ; compose en tire `TERRILDB_ALLOWED_HOSTS` et `TERRILDB_PUBLIC_URL` | secret GitHub, puis `deploy.env` |
@@ -171,7 +172,7 @@ Les jetons d'API ne dépendent pas de la session.
 
 **Ce que fait `deploy.sh`** : à chaque déploiement qui suit le premier, avant les migrations, `pg_dump` (SQL texte) compressé par `gzip`
 dans `$TERRILDB_DEPLOY_DIR/backups/<AAAAMMJJ-HHMMSS>-<étiquette de l'image précédente>.sql.gz` (droits 600, dossier 700), les **sept plus
-récents** sont gardés (les autres supprimés au même moment ; le déploiement s'arrête avant les migrations si le vidage échoue ou est vide, sans rien purger). Il n'y a donc : pas de sauvegarde au premier déploiement, pas de sauvegarde
+récents** sont gardés (les autres supprimés au même moment ; le déploiement s'arrête avant les migrations si le vidage échoue ou est vide, sans rien purger ; le journal du déploiement dit « Sauvegarde de la base : <fichier> (<n> octets) » en cas de succès, « Échec de la sauvegarde de la base… » sinon). Il n'y a donc : pas de sauvegarde au premier déploiement, pas de sauvegarde
 périodique (un jour sans déploiement n'en produit aucune), et tout reste sur la machine.
 
 **Ce qu'elle contient** : toute la base interne : comptes (hash Argon2id du mot de passe, paramètres de dérivation, secret TOTP et codes de
