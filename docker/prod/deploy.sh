@@ -59,6 +59,8 @@ if [ ! -e "$dir/deploy.env" ]; then
     echo "TERRILDB_DOMAIN manquant : relancez avec TERRILDB_DOMAIN=<domaine> pour le premier déploiement." >&2
     exit 2
 fi
+# Les bastions du tunnel ne viennent QUE de deploy.env : une variable du shell du runner ne doit pas allumer le tunnel.
+unset TERRILDB_SSH_ALLOWED_BASTIONS
 set -a
 . "$dir/deploy.env"
 set +a
@@ -98,6 +100,18 @@ if TERRILDB_TAG="$tag" compose up -d --wait --remove-orphans app; then
     echo "$tag" > "$dir/current-tag"
     docker image prune -f >/dev/null
     echo "Déployé : $tag"
+    # Tunnel SSH (facultatif) : démarré seulement si des bastions sont déclarés dans deploy.env. Un échec ici ne défait jamais le
+    # déploiement de l'application (sans tunnel, une connexion à rebond répond simplement `tunnel_failed`).
+    if [ -n "${TERRILDB_SSH_ALLOWED_BASTIONS:-}" ]; then
+        if TERRILDB_TAG="$tag" compose --profile tunnel build tunnel \
+            && TERRILDB_TAG="$tag" compose --profile tunnel up -d --wait tunnel-init tunnel; then
+            echo "Tunnel SSH démarré (bastions déclarés dans deploy.env)."
+        else
+            echo "Tunnel SSH non démarré : l'application reste déployée, les connexions à rebond échoueront (docs/ssh-tunnel.md)." >&2
+        fi
+    else
+        compose --profile tunnel rm -sf tunnel tunnel-init >/dev/null 2>&1 || true
+    fi
     # nginx et l'application doivent tirer la même limite de durée de la même valeur ; un désaccord est signalé, sans faire échouer
     # un déploiement qu'un retour à l'image précédente ne réparerait pas.
     sh "$root/docker/prod/proxy-timeout.sh" check "${TERRILDB_NGINX_SITE:-/etc/nginx/sites-available/terrildb}" "${TERRILDB_PROXY_TIMEOUT:-120}" || true
