@@ -34,6 +34,27 @@ final class ScriptRunRepository extends ServiceEntityRepository
     }
 
     /**
+     * La demande d'annulation, lue à la base à chaque fois (jamais depuis l'objet en mémoire : une autre requête la pose).
+     */
+    public function isCancelRequested(Uuid $id): bool
+    {
+        return true === $this->getEntityManager()->getConnection()->fetchOne('SELECT cancel_requested FROM script_run WHERE id = ?', [$id->toRfc4122()]);
+    }
+
+    /**
+     * Pose la demande d'annulation d'une exécution vivante, en UNE instruction (sans toucher au reste de la ligne).
+     *
+     * @return bool vrai si une exécution vivante l'a reçue
+     */
+    public function requestCancelOf(Uuid $id): bool
+    {
+        return 1 === (int) $this->getEntityManager()->getConnection()->executeStatement(
+            "UPDATE script_run SET cancel_requested = TRUE WHERE id = ? AND status IN ('queued', 'running')",
+            [$id->toRfc4122()],
+        );
+    }
+
+    /**
      * Déclare interrompues, en UNE instruction, les exécutions vivantes sans signe de vie depuis `HEARTBEAT_TIMEOUT_SECONDS`.
      *
      * @return int le nombre d'exécutions déclarées interrompues

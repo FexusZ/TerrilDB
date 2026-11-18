@@ -113,8 +113,21 @@ final class ScriptRun
     public function recordStatement(int $rank, string $status, ?int $affectedRows, int $durationMs, ?string $sqlstate, \DateTimeImmutable $now): void
     {
         $this->requireRunning();
-        if ($rank !== $this->completed + 1 || $rank > $this->total) {
+        if ($rank !== $this->completed + 1) {
             throw new InvalidScriptRunException(\sprintf('Statements are recorded in order: expected rank %d of %d.', $this->completed + 1, $this->total));
+        }
+        $this->statements[] = $this->checkedStatement($rank, $status, $affectedRows, $durationMs, $sqlstate);
+        $this->completed = $rank;
+        $this->heartbeatAt = $now;
+    }
+
+    /**
+     * @return array{rank: int, status: string, affectedRows: int|null, durationMs: int, sqlstate: string|null}
+     */
+    private function checkedStatement(int $rank, string $status, ?int $affectedRows, int $durationMs, ?string $sqlstate): array
+    {
+        if ($rank < 1 || $rank > $this->total) {
+            throw new InvalidScriptRunException(\sprintf('The rank must be between 1 and %d.', $this->total));
         }
         if (!\in_array($status, self::STATEMENT_STATUSES, true)) {
             throw new InvalidScriptRunException('Unknown statement status.');
@@ -125,9 +138,8 @@ final class ScriptRun
         if ($durationMs < 0 || (null !== $affectedRows && $affectedRows < 0)) {
             throw new InvalidScriptRunException('A measure cannot be negative.');
         }
-        $this->statements[] = ['rank' => $rank, 'status' => $status, 'affectedRows' => $affectedRows, 'durationMs' => $durationMs, 'sqlstate' => $sqlstate];
-        $this->completed = $rank;
-        $this->heartbeatAt = $now;
+
+        return ['rank' => $rank, 'status' => $status, 'affectedRows' => $affectedRows, 'durationMs' => $durationMs, 'sqlstate' => $sqlstate];
     }
 
     public function requestCancel(): void
@@ -138,13 +150,35 @@ final class ScriptRun
         $this->cancelRequested = true;
     }
 
-    public function finish(ScriptRunStatus $status, \DateTimeImmutable $now): void
+    /**
+     * Termine l'exécution. Le rapport final (`$statements`, une ligne par instruction dans l'ordre) REMPLACE ce qui était noté en
+     * route : pendant l'exécution « appliquée » est provisoire, seul le moteur dit à la fin si la transaction a tout gardé ou annulé.
+     * Un rapport refusé ne termine rien.
+     *
+     * @param list<array{rank: int, status: string, affectedRows: int|null, durationMs: int, sqlstate: string|null}>|null $statements
+     */
+    public function finish(ScriptRunStatus $status, \DateTimeImmutable $now, ?array $statements = null): void
     {
         if ($this->status->isTerminal()) {
             throw new InvalidScriptRunException('A finished run cannot finish again.');
         }
         if (!$status->canBeReportedAtTheEnd()) {
             throw new InvalidScriptRunException('The status "'.$status->value.'" is not a way to finish a run.');
+        }
+        if (null !== $statements) {
+            $checked = [];
+            $completed = 0;
+            foreach ($statements as $position => $statement) {
+                if ($statement['rank'] !== $position + 1) {
+                    throw new InvalidScriptRunException('The final report must list the statements in order.');
+                }
+                $checked[] = $this->checkedStatement($statement['rank'], $statement['status'], $statement['affectedRows'], $statement['durationMs'], $statement['sqlstate']);
+                if ('not_run' !== $statement['status']) {
+                    ++$completed;
+                }
+            }
+            $this->statements = $checked;
+            $this->completed = $completed;
         }
         $this->status = $status;
         $this->finishedAt = $now;

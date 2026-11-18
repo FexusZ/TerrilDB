@@ -224,4 +224,46 @@ final class ScriptRunTest extends TestCase
         $this->expectException(InvalidScriptRunException::class);
         $run->interrupt($this->at(61));
     }
+
+    public function testTheFinalReportReplacesWhatWasProvisional(): void
+    {
+        $run = $this->scriptRun(3);
+        $run->start($this->at());
+        $run->recordStatement(1, 'applied', 1, 1, null, $this->at(1));
+        $run->recordStatement(2, 'failed', null, 1, '23505', $this->at(2));
+
+        $run->finish(ScriptRunStatus::RolledBack, $this->at(3), [
+            ['rank' => 1, 'status' => 'rolled_back', 'affectedRows' => 1, 'durationMs' => 1, 'sqlstate' => null],
+            ['rank' => 2, 'status' => 'failed', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => '23505'],
+            ['rank' => 3, 'status' => 'not_run', 'affectedRows' => null, 'durationMs' => 0, 'sqlstate' => null],
+        ]);
+
+        self::assertSame(['rolled_back', 'failed', 'not_run'], array_map(static fn (array $s): string => $s['status'], $run->getStatements()));
+        self::assertSame(2, $run->getCompleted(), 'les instructions non lancées ne comptent pas comme finies');
+    }
+
+    public function testAFinalReportIsCheckedLikeTheStatementsOneByOne(): void
+    {
+        $run = $this->scriptRun(2);
+        $run->start($this->at());
+
+        foreach ([
+            [['rank' => 2, 'status' => 'applied', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => null]],
+            [['rank' => 1, 'status' => 'exploded', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => null]],
+            [['rank' => 1, 'status' => 'failed', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => 'Duplicate entry']],
+            [
+                ['rank' => 1, 'status' => 'applied', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => null],
+                ['rank' => 2, 'status' => 'applied', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => null],
+                ['rank' => 3, 'status' => 'applied', 'affectedRows' => null, 'durationMs' => 1, 'sqlstate' => null],
+            ],
+        ] as $report) {
+            try {
+                $run->finish(ScriptRunStatus::Failed, $this->at(1), $report);
+                self::fail('A bad final report must be refused.');
+            } catch (InvalidScriptRunException) {
+                self::addToAssertionCount(1);
+            }
+        }
+        self::assertSame(ScriptRunStatus::Running, $run->getStatus(), 'un rapport refusé ne termine pas l\'exécution');
+    }
 }
