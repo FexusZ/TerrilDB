@@ -325,6 +325,95 @@ describe('QueryPane', () => {
     wrapper.unmount()
   })
 
+  describe('measure', () => {
+    const measuredPlan = {
+      plan: { totalCost: 5, measured: true, executionTimeMs: 2.5, root: { kind: 'full_scan', label: 'Seq Scan', relation: 'orders', index: null, rows: 1, cost: 5, condition: null, fullScan: true, children: [], actualRows: 3000, actualTimeMs: 1, loops: 1, sortsOnDisk: false, buffers: null } },
+      findings: [],
+      measure: { status: 'measured' },
+    }
+
+    it('warns before running the query, and runs nothing until confirmed', async () => {
+      const { wrapper } = await mountPane()
+      await wrapper.get('.stub').setValue('select * from orders')
+      mocked.mockClear()
+
+      await wrapper.get('button.measure').trigger('click')
+
+      expect(wrapper.get('.measure-warning').text()).toContain('sera réellement exécutée')
+      expect(mocked).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('measures after the confirmation and shows the real numbers', async () => {
+      const { wrapper } = await mountPane()
+      await wrapper.get('.stub').setValue('select * from orders')
+      await wrapper.get('button.measure').trigger('click')
+      mocked.mockResolvedValueOnce(measuredPlan)
+
+      await wrapper.get('button.measure-confirm').trigger('click')
+      await flushPromises()
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/abc/plan', { sql: 'select * from orders', measure: true })
+      expect(wrapper.find('.measure-warning').exists()).toBe(false)
+      expect(wrapper.get('.summary').text()).toContain('Plan mesuré')
+      expect(wrapper.get('li.node').text()).toContain('réel')
+      wrapper.unmount()
+    })
+
+    it('does nothing when the warning is cancelled', async () => {
+      const { wrapper } = await mountPane()
+      await wrapper.get('.stub').setValue('select * from orders')
+      await wrapper.get('button.measure').trigger('click')
+      mocked.mockClear()
+
+      await wrapper.get('button.measure-cancel').trigger('click')
+
+      expect(wrapper.find('.measure-warning').exists()).toBe(false)
+      expect(mocked).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('does not offer the measure in read-write mode', async () => {
+      const { wrapper } = await mountPane()
+
+      await wrapper.get('button.mode').trigger('click')
+
+      expect(wrapper.find('button.measure').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it.each([
+      ['postgresql', true],
+      ['mysql', true],
+      ['mariadb', true],
+      ['clickhouse', false],
+      ['redis', false],
+    ] as const)('offers the measure only where the engine can run it (%s)', async (engine, offered) => {
+      const pinia = createPinia()
+      setActivePinia(pinia)
+      useConnectionsStore().items = [{ id: 'abc', name: 'Cible', engine, createdAt: '', updatedAt: '' }]
+      mocked.mockResolvedValueOnce({ tables: [] })
+      await useWorkspaceStore().open('abc')
+      const wrapper = mount(QueryPane, { global: { plugins: [pinia], stubs: { SqlEditor: EditorStub } }, attachTo: document.body })
+
+      expect(wrapper.find('button.measure').exists()).toBe(offered)
+      wrapper.unmount()
+    })
+
+    it('reports a measure the server refused', async () => {
+      const { wrapper } = await mountPane()
+      await wrapper.get('.stub').setValue('delete from orders')
+      await wrapper.get('button.measure').trigger('click')
+      mocked.mockRejectedValueOnce(new ApiError(403, 'query_refused', { reason: 'not_read_only' }))
+
+      await wrapper.get('button.measure-confirm').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain('lecture seule')
+      wrapper.unmount()
+    })
+  })
+
   it('opens the script panel on the text of the editor, with the explored base', async () => {
     const { wrapper, store } = await mountPane()
     store.database = 'shop'

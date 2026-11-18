@@ -34,6 +34,11 @@ parameters:
     # masqués par défaut ; mettre 0 pour tout montrer, comme un client SQL. Une valeur de ligne n'est jamais masquée.
     env(TERRILDB_MASKING): '1'
 
+    # Messages précis pour les erreurs courantes du moteur (identifiants refusés, TLS exigé, serveur plein, droit refusé, doublon).
+    # Faux par défaut : TerrilDB garde son message générique, qui ne dit rien du réseau visé. Vrai : pour toute l'installation,
+    # tous les membres voient les codes précis ; un serveur qui répond par un refus prouve qu'il est joignable depuis TerrilDB.
+    env(TERRILDB_DETAILED_ERRORS): '0'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -50,6 +55,10 @@ services:
             $from: '%env(TERRILDB_MAIL_FROM)%'
             $publicUrl: '%env(TERRILDB_PUBLIC_URL)%'
 
+    App\Core\Optimizer\MeasureSlots:
+        public: true
+        arguments:
+            $directory: '%kernel.cache_dir%/measure-slots'
     App\Http\Json\RequestTimeLimit:
         arguments:
             $proxyTimeoutSeconds: '%env(int:TERRILDB_PROXY_TIMEOUT)%'
@@ -62,6 +71,10 @@ services:
     App\Core\Diagnostics\Masking:
         arguments:
             $enabled: '%env(bool:TERRILDB_MASKING)%'
+
+    App\Core\Driver\DetailedErrors:
+        arguments:
+            $enabled: '%env(bool:TERRILDB_DETAILED_ERRORS)%'
 
     App\Core\Diagnostics\Health\HealthSlots:
         arguments:

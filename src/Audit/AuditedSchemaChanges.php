@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Driver\DetailedErrors;
 use App\Core\Driver\TargetConnection;
 use App\Core\Schema\Change\ChangePlan;
 use App\Core\Schema\Change\ChangePreview;
@@ -24,6 +25,7 @@ final readonly class AuditedSchemaChanges
     public function __construct(
         private SchemaChangeService $changes,
         private AuditLog $audit,
+        private DetailedErrors $detailed = new DetailedErrors(),
     ) {
     }
 
@@ -46,8 +48,9 @@ final readonly class AuditedSchemaChanges
                 'sql' => self::sql($e->applied === [] ? [$e->failed] : [...$e->applied, $e->failed]),
                 'failedSql' => $e->failed->sql,
                 'applied' => \count($e->applied),
-                'error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH),
-            ]);
+            ] + ($this->detailed->enabled && null !== $e->fault
+                ? ['reason' => $e->fault->code()]
+                : ['error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH)] + (null !== $e->lock ? ['reason' => $e->lock->code()] : [])));
 
             throw $e;
         }

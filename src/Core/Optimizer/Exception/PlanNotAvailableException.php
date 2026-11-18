@@ -15,4 +15,12 @@ final class PlanNotAvailableException extends \DomainException
     {
         return new self(\sprintf('No execution plan is available for "%s".', $engine->value));
     }
+
+    /**
+     * Le moteur sait expliquer d'autres instructions, mais pas celle-ci (MySQL 9+ en JSON v2 pour UPDATE et DELETE).
+     */
+    public static function forStatement(Engine $engine): self
+    {
+        return new self(\sprintf('The engine "%s" gives no execution plan for this statement.', $engine->value));
+    }
 }

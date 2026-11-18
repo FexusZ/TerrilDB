@@ -17,4 +17,9 @@ enum LintRule: string
     case NotInSubquery = 'not_in_subquery';
     case RowLock = 'row_lock';
     case RecursiveCte = 'recursive_cte';
+    case TypeMismatch = 'type_mismatch';
+    case OrOnColumns = 'or_on_columns';
+    case DistinctJoin = 'distinct_join';
+    case CountStarLarge = 'count_star_large';
+    case RandomOrder = 'random_order';
 }

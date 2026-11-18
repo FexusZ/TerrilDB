@@ -24,7 +24,7 @@ final class PlanAnalyzerTest extends TestCase
     {
         $json = (string) file_get_contents(__DIR__.'/../../Fixtures/plans/'.$fixture.'.json');
 
-        return (new PlanAnalyzer())->analyze($parser->parse($json), $limited);
+        return (new PlanAnalyzer())->analyze($parser->parse($json), limited: $limited);
     }
 
     /**

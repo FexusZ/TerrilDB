@@ -13,6 +13,7 @@ const REASONS: Record<string, string> = {
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
   destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
   big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
+  other_administrator_token: 'Ce jeton appartient à un autre administrateur : sa révocation demande une confirmation explicite.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -26,6 +27,9 @@ export function reasonText(reason: unknown): string {
 /** Message à montrer à l'utilisateur pour une erreur de l'API. */
 const PARTLY_APPLIED =
   'Un verrou a interrompu la modification : certaines instructions sont déjà appliquées (voir la liste). Ne la rejouez pas telle quelle : relisez la table, puis refaites ce qui manque.'
+
+const FAULT_PARTLY_APPLIED =
+  'La base a refusé une instruction : certaines sont déjà appliquées (voir la liste). Ne rejouez pas la modification telle quelle : relisez la table, puis refaites ce qui manque.'
 
 function partlyApplied(error: ApiError): boolean {
   return error.details.retryable === false && Array.isArray(error.details.applied) && error.details.applied.length > 0
@@ -94,6 +98,9 @@ export function messageFor(error: unknown): string {
       return `L’instruction ${String(rank)} est refusée : ${reasonText(error.details.reason)} Rien n’a été exécuté.`
     }
     case 'invalid_script':
+      if (error.details.reason === 'delimiter_directive') {
+        return 'La directive DELIMITER (une commande du client mysql, pas du moteur) n’est pas prise en charge : envoyez le corps de la procédure ou du déclencheur comme une seule instruction, sans DELIMITER. Rien n’a été exécuté.'
+      }
       return 'Le script ne peut pas être découpé avec certitude : une chaîne, un commentaire ou un nom entre guillemets n’est pas refermé. Rien n’a été exécuté.'
     case 'script_too_large':
       return 'Le script est trop long (500 instructions et 1 Mo au plus).'
@@ -135,6 +142,19 @@ export function messageFor(error: unknown): string {
     case 'lock_timeout':
       if (partlyApplied(error)) return PARTLY_APPLIED
       return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
+    case 'too_many_connections':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return `Le serveur de base de données (ou ce compte) a atteint sa limite de connexions. Réessayez dans ${typeof error.details.retryAfter === 'number' ? `${String(error.details.retryAfter)} s` : 'quelques secondes'} ; si cela dure, fermez des sessions inutiles ou faites relever la limite.`
+    case 'engine_permission_denied':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return 'Le compte de cette connexion n’a pas le droit d’effectuer cette opération sur la base. Demandez le droit à son administrateur ou utilisez un autre compte.'
+    case 'duplicate_key':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return 'Une ligne avec la même valeur de clé ou d’index unique existe déjà : rien n’a été écrit. Changez la valeur ou modifiez la ligne existante.'
+    case 'auth_requires_tls':
+      return 'Le serveur exige une connexion chiffrée (TLS) et refuse celle-ci. Faites autoriser les connexions non chiffrées depuis TerrilDB ou utilisez le port TLS du serveur.'
+    case 'auth_failed':
+      return 'Le serveur a refusé les identifiants de cette connexion. Vérifiez l’identifiant et le mot de passe.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':

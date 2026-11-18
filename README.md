@@ -63,6 +63,10 @@ La liste complète des commandes (qualité, front, migrations) et l'architecture
 TerrilDB manipule des identifiants de bases de données : ne l'exposez que derrière HTTPS. Renseignez un `APP_SECRET`
 propre et `TERRILDB_ALLOWED_HOSTS` en production. Les valeurs de développement (générées localement, ou de test) ne protègent rien.
 
+- Modèle de menaces, ce que le serveur peut et ne peut pas lire : [`docs/security.md`](docs/security.md).
+- Déploiement, variables d'environnement de production, sauvegarde et restauration, rotation des secrets, TLS vers les bases cibles,
+  mise à jour et retour arrière, surveillance : [`docs/deploy.md`](docs/deploy.md).
+
 ## Licence
 
 [GNU AGPL-3.0](LICENSE) — Copyright (c) 2026 FexusZ.

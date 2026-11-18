@@ -211,6 +211,54 @@ final class WriteApprovalApiTest extends WebApiTestCase
         self::assertSame(['error' => 'permission_denied'], $body);
     }
 
+    public function testADuplicateKeyThroughTheApiHasItsStableCodeAndNoEngineMessage(): void
+    {
+        $this->detailedErrors();
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup-secret-value')", $this->table)]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('duplicate_key', $body['error']);
+        self::assertFalse($body['retryable']);
+        self::assertArrayNotHasKey('message', $body);
+        self::assertStringNotContainsString('dup-secret-value', json_encode($body, \JSON_THROW_ON_ERROR));
+        self::assertSame('a', $this->value());
+    }
+
+    public function testADuplicateKeyThroughTheApiKeepsTheGenericFailureByDefault(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => \sprintf("INSERT INTO %s VALUES (1, 'dup')", $this->table)]);
+
+        self::assertSame(400, $this->statusCode());
+        self::assertSame('query_failed', $body['error']);
+    }
+
+    public function testExecuteCapsTheRowsOfATokenWithoutTheExportRightAndLeavesWritesAlone(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true]);
+
+        $body = $this->api('execute', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+        self::assertSame(200, $this->statusCode());
+        self::assertCount(500, self::listOf($body['rows']));
+        self::assertTrue($body['truncated']);
+
+        $this->api('execute', ['sql' => $this->update()]);
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('b', $this->value());
+    }
+
+    public function testExecuteKeepsTheServerCeilingWithTheExportRight(): void
+    {
+        $this->setUpToken(['writeData' => true, 'singleStep' => true, 'export' => true]);
+
+        $body = $this->api('execute', ['sql' => 'select generate_series(1, 700) as n', 'maxRows' => 100_000]);
+        self::assertCount(700, self::listOf($body['rows']));
+        self::assertFalse($body['truncated']);
+    }
+
     public function testASingleStepTokenKeepsTheDirectBehaviourButStillChecksAGivenTicket(): void
     {
         $this->setUpToken(['writeData' => true, 'singleStep' => true]);
@@ -247,6 +295,26 @@ final class WriteApprovalApiTest extends WebApiTestCase
                 self::assertArrayNotHasKey('confirmationToken', $event->getDetails());
             }
         }
+    }
+
+    public function testARefusalForWantOfATicketKeepsNoTextOfTheUnjudgedStatement(): void
+    {
+        $this->setUpToken();
+        self::assertNotNull($this->owner);
+
+        $this->api('execute', ['sql' => "UPDATE {$this->table} SET v = 'hunter2-secret-value' WHERE id = 1"]);
+        self::assertSame(409, $this->statusCode());
+
+        $found = false;
+        foreach ($this->auditEvents($this->owner, 'query') as $event) {
+            if ('query.refused' === $event->getAction()->value && 'confirmation_required' === ($event->getDetails()['reason'] ?? null)) {
+                $found = true;
+                self::assertArrayNotHasKey('sql', $event->getDetails());
+                self::assertIsInt($event->getDetails()['length']);
+                self::assertStringNotContainsString('hunter2', (string) json_encode($event->getDetails()));
+            }
+        }
+        self::assertTrue($found);
     }
 
     public function testARefusalOfTheGuardAtExecutionIsAudited(): void

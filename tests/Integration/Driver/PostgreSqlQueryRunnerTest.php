@@ -236,4 +236,14 @@ final class PostgreSqlQueryRunnerTest extends TestCase
     {
         self::assertNull($this->read('select * from order_items', 10)->totalRows);
     }
+
+    public function testADiscardedWriteLeavesNothingEvenInReadWriteMode(): void
+    {
+        $this->runner->run('create temporary table scratch_discard (a int)', StatementKind::Schema, new QueryOptions(QueryMode::ReadWrite));
+
+        $this->runner->run('insert into scratch_discard (a) values (1)', StatementKind::Write, new QueryOptions(QueryMode::ReadWrite, 30_000, 10, discard: true));
+
+        self::assertSame([[0]], $this->runner->run('select count(*) from scratch_discard', StatementKind::Read, new QueryOptions(QueryMode::ReadWrite))->rows);
+        $this->runner->run('drop table scratch_discard', StatementKind::Schema, new QueryOptions(QueryMode::ReadWrite));
+    }
 }

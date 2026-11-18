@@ -55,6 +55,9 @@ final readonly class DbalConnector
             if (Engine::PostgreSql !== $engine) {
                 $this->readTextLikeTheGuard($connection);
             }
+            if (Engine::MySql === $engine) {
+                $this->readFreshStatistics($connection);
+            }
             if (Engine::PostgreSql === $engine) {
                 // Le garde lit '…' sans échappement par antislash et en UTF-8 : la session aussi, quel que soit le réglage du rôle ou de la base.
                 $connection->executeQuery("SELECT set_config('standard_conforming_strings', 'on', false), set_config('client_encoding', 'UTF8', false)");
@@ -66,7 +69,20 @@ final readonly class DbalConnector
 
             return $connection;
         } catch (DbalException $e) {
-            throw TargetConnectionFailedException::create($e);
+            throw TargetConnectionFailedException::create($e, EngineFaultReader::ofConnection($engine, $e));
+        }
+    }
+
+    /**
+     * MySQL 8 garde les statistiques de information_schema.TABLES / STATISTICS (lignes estimées, tailles, AUTO_INCREMENT) en
+     * cache jusqu'à 24 h : juste après un gros chargement, l'introspection montrerait des chiffres d'avant. Pour CETTE session
+     * seulement (la variable n'existe pas sur MariaDB, qui lit toujours à jour : un refus est sans conséquence).
+     */
+    private function readFreshStatistics(Connection $connection): void
+    {
+        try {
+            $connection->executeStatement('SET SESSION information_schema_stats_expiry = 0');
+        } catch (DbalException) {
         }
     }
 
