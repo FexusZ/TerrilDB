@@ -194,6 +194,7 @@ final class DiagnosticsPresenter
                 'valueB' => $d->valueB,
                 'changedB' => $d->changedB,
                 'unit' => $d->unit,
+                'beyondDisplay' => $d->beyondDisplay,
             ], $comparison->differences),
         ];
     }

@@ -515,6 +515,8 @@ export interface VariableDifference {
   valueB: string | null
   changedB: boolean
   unit: string | null
+  /** Les deux textes montrés sont identiques (coupés à l’affichage) : la différence est plus loin. */
+  beyondDisplay: boolean
 }
 
 export interface VariableComparison {

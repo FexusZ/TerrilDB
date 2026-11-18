@@ -19,6 +19,8 @@ final readonly class VariableDifference
         public ?string $valueB,
         public bool $changedB,
         public ?string $unit,
+        /** Les deux textes montrés sont identiques (coupés à `ServerVariable::MAX_VALUE_LENGTH`) : la différence est plus loin. */
+        public bool $beyondDisplay = false,
     ) {
     }
 }
