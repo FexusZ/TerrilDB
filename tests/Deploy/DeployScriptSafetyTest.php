@@ -98,10 +98,11 @@ final class DeployScriptSafetyTest extends TestCase
     {
         file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
 
-        [$code, , $log] = $this->deploy();
+        [$code, $output, $log] = $this->deploy();
 
         self::assertSame(0, $code);
         self::assertStringContainsString('MIGRATE', $log);
+        self::assertMatchesRegularExpression('/Sauvegarde de la base : \S+\.sql\.gz \(\d+ octets\)/', $output, 'Le succès de la sauvegarde est dit.');
         $backups = glob($this->dir.'/backups/*.sql.gz') ?: [];
         self::assertCount(1, $backups);
         self::assertSame('0600', substr(\sprintf('%o', fileperms($backups[0])), -4));
