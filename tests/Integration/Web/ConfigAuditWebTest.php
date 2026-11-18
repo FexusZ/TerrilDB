@@ -201,7 +201,7 @@ final class ConfigAuditWebTest extends WebApiTestCase
                 $byName[$difference['name']] = $difference;
             }
             self::assertArrayHasKey('net_write_timeout', $byName);
-            self::assertSame(['name', 'presentA', 'valueA', 'changedA', 'presentB', 'valueB', 'changedB', 'unit'], array_keys($byName['net_write_timeout']));
+            self::assertSame(['name', 'presentA', 'valueA', 'changedA', 'presentB', 'valueB', 'changedB', 'unit', 'beyondDisplay'], array_keys($byName['net_write_timeout']));
             self::assertSame('77', $byName['net_write_timeout']['valueA']);
             self::assertTrue($byName['net_write_timeout']['changedA']);
             self::assertNotSame('77', $byName['net_write_timeout']['valueB']);
