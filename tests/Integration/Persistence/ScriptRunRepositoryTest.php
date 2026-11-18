@@ -143,4 +143,28 @@ final class ScriptRunRepositoryTest extends DatabaseTestCase
 
         self::assertNull($this->repository->findOwned($run->getId(), $alice->getId()));
     }
+
+    public function testTheHeartbeatOfSeveralLiveRunsMovesInOneStatementAndEndedRunsAreLeftAlone(): void
+    {
+        $alice = $this->user('alice');
+        $running = $this->scriptRun($alice);
+        $running->start(new \DateTimeImmutable('2026-11-18T10:00:00Z'));
+        $queued = $this->scriptRun($alice);
+        $ended = $this->scriptRun($alice);
+        $ended->start(new \DateTimeImmutable('2026-11-18T10:00:00Z'));
+        $ended->finish(ScriptRunStatus::Committed, new \DateTimeImmutable('2026-11-18T10:00:01Z'));
+        foreach ([$running, $queued, $ended] as $run) {
+            $this->repository->save($run);
+        }
+        $this->entityManager->clear();
+
+        $count = $this->repository->beatAll([$running->getId(), $queued->getId(), $ended->getId()], new \DateTimeImmutable('2026-11-18T10:00:20Z'));
+        $this->entityManager->clear();
+
+        self::assertSame(2, $count);
+        self::assertEquals(new \DateTimeImmutable('2026-11-18T10:00:20Z'), $this->repository->findOwned($running->getId(), $alice->getId())?->getHeartbeatAt());
+        self::assertEquals(new \DateTimeImmutable('2026-11-18T10:00:20Z'), $this->repository->findOwned($queued->getId(), $alice->getId())?->getHeartbeatAt());
+        self::assertEquals(new \DateTimeImmutable('2026-11-18T10:00:00Z'), $this->repository->findOwned($ended->getId(), $alice->getId())?->getHeartbeatAt(), 'une exécution terminée garde son dernier signe de vie');
+        self::assertSame(0, $this->repository->beatAll([], new \DateTimeImmutable('2026-11-18T10:00:30Z')));
+    }
 }

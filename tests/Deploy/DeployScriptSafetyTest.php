@@ -36,6 +36,7 @@ final class DeployScriptSafetyTest extends TestCase
                     ;;
                 *"doctrine:migrations:migrate"*) echo MIGRATE >> "$FAKE_LOG" ;;
                 *"--profile tunnel"*"up"*) [ "${FAKE_TUNNEL_FAIL:-}" = 1 ] && exit 1 ;;
+                *"up -d --wait script-init script-worker"*) [ "${FAKE_WORKER_FAIL:-}" = 1 ] && exit 1 ;;
             esac
             exit 0
             SH);
@@ -128,6 +129,29 @@ final class DeployScriptSafetyTest extends TestCase
         self::assertSame(0, $code);
         self::assertStringContainsString('Déployé', $output);
         self::assertStringContainsString('Tunnel SSH non démarré', $output);
+    }
+
+    public function testTheScriptWorkerIsStartedAfterTheApplication(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
+
+        [$code, $output, $log] = $this->deploy();
+
+        self::assertSame(0, $code);
+        self::assertStringContainsString('up -d --wait script-init script-worker', $log);
+        self::assertStringContainsString('Worker des scripts démarré', $output);
+        self::assertLessThan(strpos($log, 'up -d --wait script-init script-worker'), strpos($log, 'up -d --wait --remove-orphans app'), 'Après l\'application.');
+    }
+
+    public function testAFailingScriptWorkerNeverFailsTheDeploymentOfTheApplication(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
+
+        [$code, $output] = $this->deploy(['FAKE_WORKER_FAIL' => '1']);
+
+        self::assertSame(0, $code);
+        self::assertStringContainsString('Déployé', $output);
+        self::assertStringContainsString('Worker des scripts non démarré', $output);
     }
 
     public function testASuccessfulDumpIsGzippedPrivateAndTheMigrationRuns(): void

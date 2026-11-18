@@ -100,6 +100,13 @@ if TERRILDB_TAG="$tag" compose up -d --wait --remove-orphans app; then
     echo "$tag" > "$dir/current-tag"
     docker image prune -f >/dev/null
     echo "Déployé : $tag"
+    # Worker des scripts détachés (#169) : après l'application, et sans jamais défaire son déploiement (sans lui, un script détaché répond
+    # « worker indisponible » ; la console, l'API et le MCP ne changent pas).
+    if TERRILDB_TAG="$tag" compose up -d --wait script-init script-worker; then
+        echo "Worker des scripts démarré."
+    else
+        echo "Worker des scripts non démarré : l'application reste déployée, les scripts détachés seront refusés (docs/deploy.md)." >&2
+    fi
     # Tunnel SSH (facultatif) : démarré seulement si des bastions sont déclarés dans deploy.env. Un échec ici ne défait jamais le
     # déploiement de l'application (sans tunnel, une connexion à rebond répond simplement `tunnel_failed`).
     if [ -n "${TERRILDB_SSH_ALLOWED_BASTIONS:-}" ]; then
