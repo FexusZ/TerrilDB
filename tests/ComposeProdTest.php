@@ -40,7 +40,7 @@ final class ComposeProdTest extends TestCase
         self::assertContains('sessions:/data/sessions', (array) ($app['volumes'] ?? []));
     }
 
-    /** @return array<string, mixed> */
+    /** @return array<mixed> */
     private function compose(): array
     {
         $compose = Yaml::parseFile(\dirname(__DIR__).'/compose.prod.yaml');
@@ -69,16 +69,21 @@ final class ComposeProdTest extends TestCase
         self::assertContains('no-new-privileges:true', (array) ($tunnel['security_opt'] ?? []));
         self::assertArrayNotHasKey('ports', $tunnel, 'Aucun port publié.');
         self::assertSame(['tunnel'], $tunnel['networks'] ?? null, 'Seul réseau : celui qui sort vers les bastions.');
-        self::assertSame('33', (string) ($tunnel['build']['args']['UID'] ?? ''), 'Même uid que www-data, qui sert l\'application.');
+        $build = $tunnel['build'] ?? null;
+        self::assertIsArray($build);
+        $args = $build['args'] ?? null;
+        self::assertIsArray($args);
+        self::assertSame(33, $args['UID'] ?? null, 'Même uid que www-data, qui sert l\'application.');
     }
 
     public function testOnlyTheTunnelNetworkHasEgressAndTheInternalDatabaseStaysIsolated(): void
     {
         $networks = $this->compose()['networks'] ?? null;
         self::assertIsArray($networks);
+        self::assertIsArray($networks['backend'] ?? null);
         self::assertTrue($networks['backend']['internal'] ?? false);
         self::assertArrayHasKey('tunnel', $networks);
-        self::assertNotTrue($networks['tunnel']['internal'] ?? false, 'Le tunnel doit pouvoir sortir.');
+        self::assertNotTrue(\is_array($networks['tunnel']) ? ($networks['tunnel']['internal'] ?? false) : false, 'Le tunnel doit pouvoir sortir.');
     }
 
     public function testTheApplicationSharesTheSocketsAndTheBastionListWithTheTunnel(): void
