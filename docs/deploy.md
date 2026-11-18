@@ -95,6 +95,15 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 - Après la pose, vérifier depuis le conteneur qu'une adresse non listée est bien injoignable (`docker compose -f compose.prod.yaml exec app php -r 'var_dump(@fsockopen("1.1.1.1", 443, $e, $m, 3));'` doit rendre `false`) et qu'une base listée l'est toujours, avant de fermer la session.
 - Ces règles ne sont pas testées par l'intégration continue : à valider sur votre machine.
 
+## Worker des scripts détachés
+
+Un script SQL peut s'exécuter en arrière-plan, au-delà de la durée d'une requête, avec un suivi et une annulation entre deux instructions (issue #169). Le conteneur `script-worker` (même image que l'application, sans serveur web) le joue : il est démarré par `deploy.sh` APRÈS l'application, avec `script-init` qui pose le dossier de son socket en 0700 dans le volume `script-sockets`. Un échec de démarrage ne défait jamais le déploiement : l'application reste en ligne, la console, l'API et le MCP ne changent pas, seuls les scripts détachés répondent « worker indisponible ».
+
+- L'application lui envoie chaque exécution par ce socket Unix (identifiants déchiffrés de la cible compris) : le message est signé avec `APP_SECRET`, ne vit qu'en mémoire du worker et n'est jamais écrit sur disque, ni dans la base interne, ni dans l'audit.
+- Il atteint les bases cibles par les mêmes réseaux que l'application : les règles de sortie du pare-feu de l'hôte qui s'appliquent à l'une valent pour l'autre.
+- Un redémarrage du worker (ou un déploiement) interrompt les exécutions en cours : elles sont déclarées « interrompues » au bout de 30 s sans signe de vie, avec ce qui avait été appliqué ; rien n'est relancé tout seul.
+- Réglages : `TERRILDB_SCRIPT_SOCKET` (chemin du socket, défaut `/run/script-runs/worker.sock`), `--max-children` (exécutions simultanées, 4 par défaut). La durée de conservation du compte rendu est celle de l'audit (`TERRILDB_AUDIT_RETENTION_DAYS`, purgée par `app:audit:purge`).
+
 ## Tunnel SSH (rebond par un bastion), facultatif
 
 Éteint par défaut : tant que `TERRILDB_SSH_ALLOWED_BASTIONS` est vide dans `deploy.env`, aucun conteneur supplémentaire ne tourne et toute

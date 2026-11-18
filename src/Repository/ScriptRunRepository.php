@@ -55,6 +55,26 @@ final class ScriptRunRepository extends ServiceEntityRepository
     }
 
     /**
+     * Le signe de vie de plusieurs exécutions vivantes à la fois (le worker le donne pour ses processus, pendant qu'une longue
+     * instruction occupe celui qui joue le script).
+     *
+     * @param list<Uuid> $ids
+     *
+     * @return int le nombre d'exécutions vivantes touchées
+     */
+    public function beatAll(array $ids, \DateTimeImmutable $now): int
+    {
+        if ([] === $ids) {
+            return 0;
+        }
+
+        return (int) $this->getEntityManager()->getConnection()->executeStatement(
+            \sprintf("UPDATE script_run SET heartbeat_at = ? WHERE status IN ('queued', 'running') AND id IN (%s)", implode(', ', array_fill(0, \count($ids), '?'))),
+            [self::utc($now), ...array_map(static fn (Uuid $id): string => $id->toRfc4122(), $ids)],
+        );
+    }
+
+    /**
      * Déclare interrompues, en UNE instruction, les exécutions vivantes sans signe de vie depuis `HEARTBEAT_TIMEOUT_SECONDS`.
      *
      * @return int le nombre d'exécutions déclarées interrompues

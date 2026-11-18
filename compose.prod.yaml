@@ -41,6 +41,8 @@ services:
       - sessions:/data/sessions
       # Sockets du tunnel SSH (dossier 0700 posé par `tunnel-init`) : seul lien avec le conteneur `tunnel`.
       - tunnel-sockets:/run/tunnels
+      # Socket du worker des scripts détachés (dossier 0700 posé par `script-init`) : seul lien avec le conteneur `script-worker`.
+      - script-sockets:/run/script-runs
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
@@ -65,6 +67,49 @@ services:
       - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U terrildb"]
+      interval: 3s
+      retries: 20
+
+  # Worker des exécutions de scripts SQL détachées (#169) : la même image que l'application, sans serveur web. Il écoute le socket Unix du
+  # volume `script-sockets`, joue chaque exécution dans un processus à lui et atteint les bases cibles par les mêmes réseaux que
+  # l'application. Les identifiants d'une exécution lui arrivent par ce socket (en mémoire, signés avec APP_SECRET), jamais autrement.
+  # Non facultatif, mais jamais bloquant : s'il ne démarre pas, l'application reste déployée et un script détaché répond « worker indisponible ».
+  script-init:
+    image: alpine:3
+    user: root
+    restart: "no"
+    command: ["sh", "-c", "chown 33:33 /run/script-runs && chmod 700 /run/script-runs"]
+    volumes:
+      - script-sockets:/run/script-runs
+    networks: [backend]
+
+  script-worker:
+    image: terrildb:${TERRILDB_TAG:-latest}
+    restart: unless-stopped
+    user: "33:33"
+    command: ["php", "bin/console", "app:script:worker"]
+    read_only: true
+    tmpfs:
+      - /app/var/cache:uid=33,gid=33,mode=0700,size=128m
+      - /app/var/log:uid=33,gid=33,mode=0700,size=16m
+      - /tmp:uid=33,gid=33,mode=1777,size=64m
+    env_file: ${TERRILDB_DEPLOY_DIR:?}/app.env
+    environment:
+      APP_ENV: prod
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    mem_limit: 1g
+    networks: [default, backend]
+    volumes:
+      - script-sockets:/run/script-runs
+    depends_on:
+      db:
+        condition: service_healthy
+      script-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/script-runs/worker.sock"]
       interval: 3s
       retries: 20
 
@@ -124,3 +169,4 @@ volumes:
   db-data:
   sessions:
   tunnel-sockets:
+  script-sockets:

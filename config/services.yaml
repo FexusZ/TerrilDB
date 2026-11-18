@@ -45,6 +45,9 @@ parameters:
     # tous les membres voient les codes précis ; un serveur qui répond par un refus prouve qu'il est joignable depuis TerrilDB.
     env(TERRILDB_DETAILED_ERRORS): '0'
 
+    # Socket Unix du worker des scripts détachés (#169) : dans un dossier 0700 d'un volume partagé avec l'application.
+    env(TERRILDB_SCRIPT_SOCKET): '/run/script-runs/worker.sock'
+
 services:
     # default configuration for services in *this* file
     _defaults:
@@ -89,6 +92,17 @@ services:
     App\Http\Web\RegistrationPolicy:
         arguments:
             $mode: '%env(APP_REGISTRATION)%'
+
+    App\ScriptRun\Channel\ScriptRunChannel:
+        arguments:
+            $secret: '%kernel.secret%'
+
+    App\ScriptRun\Channel\ScriptRunDispatcher:
+        arguments:
+            $socketPath: '%env(TERRILDB_SCRIPT_SOCKET)%'
+
+    App\ScriptRun\Channel\ChildSpawner:
+        alias: App\ScriptRun\Channel\ProcessChildSpawner
 
     App\Tunnel\UnixSocketTunnelOpener:
         arguments:

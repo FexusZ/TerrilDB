@@ -95,6 +95,46 @@ final class ComposeProdTest extends TestCase
         self::assertArrayHasKey('TERRILDB_SSH_ALLOWED_BASTIONS', (array) ($this->tunnel()['environment'] ?? []));
     }
 
+    /** @return array<mixed> */
+    private function worker(): array
+    {
+        $services = $this->compose()['services'] ?? null;
+        self::assertIsArray($services);
+        $worker = $services['script-worker'] ?? null;
+        self::assertIsArray($worker, 'Le service `script-worker` doit exister.');
+
+        return $worker;
+    }
+
+    public function testTheScriptWorkerIsHardenedAndHasNoPublishedPort(): void
+    {
+        $worker = $this->worker();
+        self::assertTrue($worker['read_only'] ?? false);
+        self::assertSame(['ALL'], $worker['cap_drop'] ?? null);
+        self::assertContains('no-new-privileges:true', (array) ($worker['security_opt'] ?? []));
+        self::assertArrayNotHasKey('ports', $worker, 'Aucun port publié.');
+        self::assertSame('33:33', $worker['user'] ?? null, 'Même uid que l\'application : le dossier du socket est en 0700.');
+        self::assertSame(['php', 'bin/console', 'app:script:worker'], $worker['command'] ?? null);
+        self::assertArrayNotHasKey('profiles', $worker, 'Le worker n\'est pas facultatif : sans lui, un script détaché ne démarre pas.');
+    }
+
+    public function testTheScriptWorkerReachesTheTargetsAndTheInternalDatabaseLikeTheApplication(): void
+    {
+        self::assertEqualsCanonicalizing((array) ($this->app()['networks'] ?? []), (array) ($this->worker()['networks'] ?? []));
+        self::assertSame($this->app()['image'] ?? null, $this->worker()['image'] ?? false, 'Même image : même code, même autoload.');
+    }
+
+    public function testTheApplicationAndTheWorkerShareOnlyTheSocketVolumeAndTheSecret(): void
+    {
+        self::assertContains('script-sockets:/run/script-runs', (array) ($this->app()['volumes'] ?? []));
+        self::assertContains('script-sockets:/run/script-runs', (array) ($this->worker()['volumes'] ?? []));
+        self::assertNotContains('sessions:/data/sessions', (array) ($this->worker()['volumes'] ?? []), 'Le worker n\'a pas les sessions.');
+        self::assertSame($this->app()['env_file'] ?? null, $this->worker()['env_file'] ?? false, 'Même secret : il signe le message.');
+        $services = $this->compose()['services'] ?? null;
+        self::assertIsArray($services);
+        self::assertIsArray($services['script-init'] ?? null, 'Le dossier du socket est posé en 0700 par `script-init`.');
+    }
+
     /** @return list<array{string, string, bool}> */
     public static function hosts(): array
     {
