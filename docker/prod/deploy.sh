@@ -85,6 +85,7 @@ if [ -n "$previous" ]; then
         exit 1
     fi
     rm -f "$partial"
+    echo "Sauvegarde de la base : $(basename "$backup") ($(wc -c < "$backup" | tr -d ' ') octets)"
     # Sept sauvegardes au plus.
     ls -1t "$dir"/backups/*.sql.gz 2>/dev/null | tail -n +8 | while read -r old; do rm -f "$old"; done
 fi
