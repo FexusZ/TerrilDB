@@ -117,7 +117,7 @@ final class VitessReadOnlyTest extends TestCase
     public function testTheEngineAloneDoesNotStopDdlOnThePrimary(): void
     {
         // Limite connue, verrouillée : sur le primaire, `START TRANSACTION READ ONLY` laisse passer un DDL (vtgate l'exécute hors
-        // de la transaction). Si ce test casse, la barrière du moteur a progressé : mettre à jour CLAUDE.md.
+        // de la transaction). Si ce test casse, la barrière du moteur a progressé : mettre à jour docs/architecture/garde-et-scripts.md.
         $target = $this->open(null);
 
         try {
