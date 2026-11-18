@@ -43,7 +43,7 @@ export interface ScriptRun {
   executionId: string
   status: 'committed' | 'dry_run' | 'rolled_back' | 'partial' | 'failed'
   dryRun: boolean
-  failureReason: 'engine_error' | 'timeout' | null
+  failureReason: 'engine_error' | 'timeout' | 'cancelled' | null
   applied: number[]
   failed: number | null
   notRun: number[]

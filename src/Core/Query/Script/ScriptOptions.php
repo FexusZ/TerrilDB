@@ -17,6 +17,7 @@ final readonly class ScriptOptions
         public WritePermissions $writes,
         public int $timeoutMs = self::DEFAULT_TIMEOUT_MS,
         public bool $dryRun = false,
+        public ?ScriptProgress $progress = null,
     ) {
         if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > QueryOptions::MAX_TIMEOUT_MS) {
             throw new InvalidQueryOptionsException('The timeout is out of bounds.');

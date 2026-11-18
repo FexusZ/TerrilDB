@@ -97,7 +97,7 @@ final readonly class ScriptService
             throw new ScriptDryRunUnavailableException($preview->capabilities->dryRunUnavailableReason ?? 'no_transaction');
         }
 
-        return $executor->execute($this->statements($report, $target->engine, $unsafe), $options->timeoutMs, $options->dryRun);
+        return $executor->execute($this->statements($report, $target->engine, $unsafe), $options->timeoutMs, $options->dryRun, $options->progress);
     }
 
     /**

@@ -6,6 +6,7 @@ namespace App\Driver;
 
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Script\ScriptExecutor;
+use App\Core\Query\Script\ScriptProgress;
 use App\Core\Query\Script\ScriptResult;
 use App\Core\Query\Script\ScriptStatement;
 use App\Core\Query\Script\ScriptStatus;
@@ -32,7 +33,7 @@ abstract class PdoScriptExecutor implements ScriptExecutor
         return [];
     }
 
-    final public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult
+    final public function execute(array $statements, int $timeoutMs, bool $dryRun, ?ScriptProgress $progress = null): ScriptResult
     {
         $pdo = $this->connection->getNativeConnection();
         if (!$pdo instanceof \PDO) {
@@ -48,9 +49,14 @@ abstract class PdoScriptExecutor implements ScriptExecutor
         try {
             $this->begin($pdo);
             foreach ($statements as $position => $statement) {
+                if (true === $progress?->shouldStop()) {
+                    $failure = 'cancelled';
+                    break;
+                }
                 $remaining = intdiv($deadline - hrtime(true), 1_000_000);
                 if ($remaining < 1) {
                     $steps[] = new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::Failed, error: 'The time limit of the script is reached.');
+                    $progress?->executed($steps[array_key_last($steps)]);
                     $failure = 'timeout';
                     break;
                 }
@@ -62,9 +68,11 @@ abstract class PdoScriptExecutor implements ScriptExecutor
                     $steps[] = $this->runOne($pdo, $statement, $remaining);
                 } catch (\PDOException $e) {
                     $steps[] = new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::Failed, error: $this->message($e), errorCode: self::code($e));
+                    $progress?->executed($steps[array_key_last($steps)]);
                     $failure = $this->isTimeout($e) ? 'timeout' : 'engine_error';
                     break;
                 }
+                $progress?->executed($steps[array_key_last($steps)]);
                 if ($statement->commitsImplicitly) {
                     $durable = $position;
                     // La transaction est terminée : sans en rouvrir une, la suite partirait en validation automatique.

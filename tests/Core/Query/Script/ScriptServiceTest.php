@@ -57,7 +57,7 @@ final class ScriptServiceTest extends TestCase
                 return $this->nonTransactional;
             }
 
-            public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult
+            public function execute(array $statements, int $timeoutMs, bool $dryRun, ?\App\Core\Query\Script\ScriptProgress $progress = null): ScriptResult
             {
                 ++$this->calls;
                 $this->statements = $statements;
