@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Repository\AuditEventRepository;
+use App\Repository\ScriptRunRepository;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -15,13 +16,15 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * Supprime les événements d'audit plus vieux que la durée de conservation (365 jours par défaut, réglable avec
- * TERRILDB_AUDIT_RETENTION_DAYS). À planifier (cron) : le journal ne se purge pas tout seul.
+ * TERRILDB_AUDIT_RETENTION_DAYS). Les exécutions de scripts terminées (`script_run`) suivent la même durée ; une exécution
+ * vivante sans signe de vie est d'abord déclarée interrompue. À planifier (cron) : le journal ne se purge pas tout seul.
  */
 #[AsCommand(name: 'app:audit:purge', description: 'Supprime les événements d’audit plus anciens que la durée de conservation.')]
 final class AuditPurgeCommand extends Command
 {
     public function __construct(
         private readonly AuditEventRepository $events,
+        private readonly ScriptRunRepository $scriptRuns,
         private readonly ClockInterface $clock,
         #[Autowire('%env(int:TERRILDB_AUDIT_RETENTION_DAYS)%')] private readonly int $defaultDays,
     ) {
@@ -43,9 +46,13 @@ final class AuditPurgeCommand extends Command
             return Command::INVALID;
         }
 
-        $limit = \DateTimeImmutable::createFromInterface($this->clock->now())->modify(\sprintf('-%d days', $days));
+        $now = \DateTimeImmutable::createFromInterface($this->clock->now());
+        $limit = $now->modify(\sprintf('-%d days', $days));
         $removed = $this->events->purgeOlderThan($limit);
         $output->writeln(\sprintf('%d événement(s) d’audit supprimé(s) (conservation : %d jours).', $removed, $days));
+        $interrupted = $this->scriptRuns->interruptStale($now);
+        $removedRuns = $this->scriptRuns->purgeOlderThan($limit);
+        $output->writeln(\sprintf('%d exécution(s) de script supprimée(s), %d déclarée(s) interrompue(s).', $removedRuns, $interrupted));
 
         return Command::SUCCESS;
     }
