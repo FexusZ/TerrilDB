@@ -44,6 +44,7 @@ enum AuditAction: string
     case QueryPrepared = 'query.prepared';
     case QueryLinted = 'query.linted';
     case TargetForbidden = 'target.forbidden';
+    case TunnelFailed = 'target.tunnel_failed';
     case SchemaChanged = 'schema.changed';
     case SchemaChangeFailed = 'schema.failed';
     case DataChanged = 'data.changed';

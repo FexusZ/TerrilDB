@@ -79,7 +79,7 @@ le fichier du thème, et ne remonter ici qu'un invariant nouveau.
 
 - **Secrets et connexions** (`secrets-connexions-introspection.md`) : la clé vient du mot de passe (Argon2id), jamais stockée en clair ; les paramètres de
   connexion sont chiffrés d'un bloc, cloisonnés par propriétaire ; `TargetHostPolicy` borne les hôtes visés, le nom n'est résolu qu'une fois (adresse épinglée) ;
-  une erreur de connexion reste générique (le détail du moteur n'est jamais montré). `CapabilityMatrix` est la seule source de ce qu'un serveur sait faire.
+  une erreur de connexion reste générique (le détail du moteur n'est jamais montré). Tunnel SSH : liste d'autorisation des bastions (`TERRILDB_SSH_ALLOWED_BASTIONS`) vide = tout refusé, clé privée chiffrée avec la clé de l'utilisateur et seulement en tmpfs, empreinte de l'hôte obligatoire, jamais de secret en clair ni de connexion directe en repli. `CapabilityMatrix` est la seule source de ce qu'un serveur sait faire.
 - **Garde SQL et exécution** (`garde-et-scripts.md`) : `QueryService` est l'entrée unique ; lecture seule par défaut, filtre lexical ET transaction du moteur
   (le moteur fait foi) ; un refus du garde est définitif ; une seule instruction ; les scripts sont jugés en entier avant la première exécution.
 - **Web, API à jetons, MCP, comptes, audit** (`web-api-mcp-comptes.md`) : adaptateurs fins autour du cœur ; CSRF par en-tête, plafonds de tentatives ;

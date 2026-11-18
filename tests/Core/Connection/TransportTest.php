@@ -109,4 +109,20 @@ final class TransportTest extends TestCase
             }
         }
     }
+
+    public function testAnInvalidStoredJumpDoesNotLeakItsKeyThroughTheTrace(): void
+    {
+        $json = json_encode([
+            'v' => 2, 'host' => 'db.internal', 'port' => 5432, 'database' => 'shop', 'username' => 'reader', 'password' => 'secret',
+            'transport' => ['type' => 'ssh', 'host' => 'bastion.example', 'username' => 'tunnel', 'privateKey' => self::KEY],
+        ], \JSON_THROW_ON_ERROR);
+
+        try {
+            ConnectionParameters::fromJson($json);
+            self::fail('invalid transport expected');
+        } catch (InvalidConnectionParametersException $error) {
+            self::assertStringNotContainsString('AAAAfaux', $error->getTraceAsString());
+            self::assertStringNotContainsString('AAAAfaux', json_encode($error->getTrace(), \JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '');
+        }
+    }
 }

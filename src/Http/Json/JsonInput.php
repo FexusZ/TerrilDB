@@ -118,6 +118,14 @@ final readonly class JsonInput
         return $scalars;
     }
 
+    /**
+     * Le champ est présent, même nul (`has` ne voit pas la différence entre un champ absent et un champ nul).
+     */
+    public function hasKey(string $field): bool
+    {
+        return \array_key_exists($field, $this->data);
+    }
+
     public function has(string $field): bool
     {
         return null !== ($this->data[$field] ?? null);

@@ -28,6 +28,15 @@ final class EngineTest extends TestCase
         self::assertSame(6379, Engine::Redis->defaultPort());
     }
 
+    public function testOnlyTheEnginesWithAUnixSocketCanGoThroughAJump(): void
+    {
+        foreach ([Engine::MySql, Engine::MariaDb, Engine::PostgreSql] as $engine) {
+            self::assertTrue($engine->reachableThroughJump(), $engine->value);
+        }
+        self::assertFalse(Engine::ClickHouse->reachableThroughJump());
+        self::assertFalse(Engine::Redis->reachableThroughJump());
+    }
+
     public function testOnlyRedisIsNotSql(): void
     {
         self::assertFalse(Engine::Redis->speaksSql());

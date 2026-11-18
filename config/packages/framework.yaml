@@ -38,6 +38,12 @@ framework:
             policy: sliding_window
             limit: 20
             interval: '1 hour'
+        # Lectures d'empreinte de bastion (chaque lecture est une connexion sortante du relais) : 20 par 10 minutes et par compte,
+        # refusées comprises ; sans plafond, un compte ferait pénaliser l'adresse du relais par le bastion (sshd PerSourcePenalties)
+        host_key_read:
+            policy: sliding_window
+            limit: 20
+            interval: '10 minutes'
 
     #esi: true
     #fragments: true

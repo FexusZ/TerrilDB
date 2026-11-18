@@ -6,6 +6,8 @@ namespace App\Http\Json;
 
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Connection\SshJump;
 use App\Entity\ConnectionColor;
 use App\Entity\Exception\InvalidDatabaseConnectionException;
 
@@ -43,7 +45,41 @@ final class ConnectionInput
                 $input->optionalString('database') ?? '',
                 $input->string('username'),
                 $password,
+                transport: self::transport($input, $current),
             ),
         ];
+    }
+
+    /**
+     * Le rebond SSH. Champ absent : la connexion garde celui qu'elle a (une modification ne retire jamais un rebond en silence,
+     * et n'en ajoute pas) ; `null` : on le retire. La clé privée absente garde celle qui est enregistrée (comme le mot de passe) ;
+     * l'empreinte absente garde celle du MÊME bastion (hôte et port), jamais celle d'un autre.
+     */
+    private static function transport(JsonInput $input, ?ConnectionParameters $current): ?SshJump
+    {
+        $currentJump = $current?->transport instanceof SshJump ? $current->transport : null;
+        if (!$input->hasKey('transport')) {
+            return $currentJump;
+        }
+        if (!$input->has('transport')) {
+            return null;
+        }
+
+        $jump = $input->object('transport');
+        if ('ssh' !== $jump->string('type')) {
+            throw new InvalidConnectionParametersException('The connection transport is not supported.');
+        }
+        $host = $jump->string('host');
+        $port = $jump->optionalInt('port') ?? 22;
+        $key = $jump->optionalString('privateKey') ?? $currentJump?->privateKey() ?? throw new InvalidConnectionParametersException('The jump key is required.');
+        $sameBastion = null !== $currentJump && 0 === strcasecmp($currentJump->host, $host) && $currentJump->port === $port;
+
+        return new SshJump(
+            $host,
+            $port,
+            $jump->string('username'),
+            $key,
+            $jump->optionalString('hostKeyFingerprint') ?? ($sameBastion ? $currentJump->hostKeyFingerprint : null),
+        );
     }
 }

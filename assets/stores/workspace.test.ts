@@ -775,6 +775,61 @@ describe('workspace store', () => {
   })
 })
 
+describe('workspace store capabilities', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    mocked.mockReset()
+  })
+
+  it('reads what the server declares once per connection, for the editor snippets', async () => {
+    const store = await opened()
+    expect(store.capabilities).toBeNull()
+    mocked.mockResolvedValueOnce({ engine: 'postgresql', version: null, capabilities: { lateral: true, json_table: false } })
+
+    await store.loadCapabilities()
+    await store.loadCapabilities()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/connections/conn-1/capabilities')
+    expect(mocked.mock.calls.filter(([, url]) => String(url).endsWith('/capabilities'))).toHaveLength(1)
+    expect(store.capabilities).toEqual({ lateral: true, json_table: false })
+  })
+
+  it('forgets them when another connection is opened, and stays unknown when the read fails', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({ engine: 'postgresql', version: null, capabilities: { lateral: true } })
+    await store.loadCapabilities()
+    mocked.mockResolvedValueOnce({ tables })
+    await store.open('conn-2')
+    expect(store.capabilities).toBeNull()
+
+    mocked.mockRejectedValueOnce(new ApiError(502, 'target_unreachable'))
+    await store.loadCapabilities()
+
+    expect(store.capabilities).toBeNull()
+  })
+
+  it('stays unknown when the answer carries no capabilities', async () => {
+    const store = await opened()
+    mocked.mockResolvedValueOnce({})
+
+    await store.loadCapabilities()
+
+    expect(store.capabilities).toBeNull()
+  })
+
+  it('does not ask a key-value connection', async () => {
+    useConnectionsStore().items = [{ id: 'conn-r', name: 'Cache', engine: 'redis', createdAt: '', updatedAt: '' }]
+    mocked.mockResolvedValueOnce({ keys: [], nextCursor: null, total: 0 })
+    const store = useWorkspaceStore()
+    await store.open('conn-r')
+    const calls = mocked.mock.calls.length
+
+    await store.loadCapabilities()
+
+    expect(mocked.mock.calls.length).toBe(calls)
+  })
+})
+
 describe('workspace store on a key-value connection', () => {
   const page = (names: string[], nextCursor: string | null, total = 40) => ({
     keys: names.map((name) => ({ name, type: 'string', ttl: null })),

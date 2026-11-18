@@ -65,7 +65,12 @@ export function describeEvent(entry: AuditEntry): string {
       return `Jeton${quoted(details)} créé`
     case 'token.refreshed':
       return `Jeton${quoted(details)} actualisé`
+    case 'target.tunnel_failed':
+      return tunnelFailure(details)
     case 'target.forbidden':
+      if (details.via === 'jump' && typeof details.host === 'string') {
+        return `Rebond SSH refusé : ${details.host}${typeof details.port === 'number' ? `:${details.port}` : ''}`
+      }
       return typeof details.host === 'string' ? `Adresse réservée aux administrateurs refusée : ${details.host}` : 'Adresse réservée aux administrateurs refusée'
     case 'token.revoked':
       return 'Jeton révoqué'
@@ -121,3 +126,19 @@ export function describeEvent(entry: AuditEntry): string {
 const ACTORS: Record<AuditActor, string> = { web: 'Interface', api: 'API', mcp: 'MCP', system: 'Système' }
 
 export const actorLabel = (actor: AuditActor): string => ACTORS[actor]
+
+const TUNNEL_REASONS: Record<string, string> = {
+  host_key_changed: 'empreinte de la clé d’hôte changée',
+  host_key_unconfirmed: 'empreinte de la clé d’hôte non confirmée',
+  unavailable: 'bastion injoignable ou refusé',
+}
+
+function tunnelFailure(details: Record<string, unknown>): string {
+  if (typeof details.host !== 'string') {
+    return 'Rebond SSH en échec'
+  }
+  const where = `${details.host}${typeof details.port === 'number' ? `:${details.port}` : ''}`
+  const reason = typeof details.reason === 'string' ? TUNNEL_REASONS[details.reason] : undefined
+
+  return reason === undefined ? `Rebond SSH en échec : ${where}` : `Rebond SSH en échec : ${where} (${reason})`
+}

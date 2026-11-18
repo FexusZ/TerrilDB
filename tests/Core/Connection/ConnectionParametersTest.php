@@ -205,4 +205,37 @@ final class ConnectionParametersTest extends TestCase
 
         (new ConnectionParameters('db', 5432, 'shop', 'reader', 'x'))->withSchema("bad\x00name");
     }
+
+    public function testATunnelSocketIsEphemeralLikeThePinnedAddress(): void
+    {
+        $parameters = $this->parameters()->withSocket('/run/tunnels/0123456789abcdef0123456789abcdef/tunnel.sock');
+
+        self::assertSame('/run/tunnels/0123456789abcdef0123456789abcdef/tunnel.sock', $parameters->socketPath());
+        self::assertNull($this->parameters()->socketPath());
+        self::assertSame($this->parameters()->toJson(), $parameters->toJson());
+        self::assertNull(ConnectionParameters::fromJson($parameters->toJson())->socketPath());
+        self::assertSame($parameters->socketPath(), $parameters->withDatabase('other')->socketPath());
+        self::assertSame($parameters->socketPath(), $parameters->withSchema('sales')->socketPath());
+        self::assertSame($parameters->socketPath(), $parameters->withAddress('203.0.113.9')->socketPath());
+        self::assertSame($parameters->socketPath(), $parameters->withPassword('y')->socketPath());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function badSockets(): iterable
+    {
+        yield 'relative' => ['tunnel.sock'];
+        yield 'parent segment' => ['/run/tunnels/../etc/x.sock'];
+        yield 'nul byte' => ["/run/tunnels/a\0b.sock"];
+        yield 'empty' => [''];
+    }
+
+    #[DataProvider('badSockets')]
+    public function testAnInvalidSocketPathIsRefused(string $path): void
+    {
+        $this->expectException(InvalidConnectionParametersException::class);
+
+        $this->parameters()->withSocket($path);
+    }
 }
