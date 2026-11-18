@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\ScriptRun;
 
+use App\Audit\AuditActor;
+use App\Audit\AuditContext;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\SshJump;
@@ -28,6 +30,7 @@ final class ScriptRunRequestTest extends TestCase
             true,
             false,
             $timeoutMs,
+            new AuditContext(AuditActor::Web, Uuid::fromString('0192f1c0-0000-7000-8000-000000000001'), null, '203.0.113.5'),
         );
     }
 
@@ -50,6 +53,10 @@ final class ScriptRunRequestTest extends TestCase
         self::assertTrue($back->confirmed);
         self::assertFalse($back->dryRun);
         self::assertSame(120_000, $back->timeoutMs);
+        self::assertSame(AuditActor::Web, $back->audit->actor);
+        self::assertSame('0192f1c0-0000-7000-8000-000000000001', $back->audit->userId?->toRfc4122());
+        self::assertNull($back->audit->tokenId);
+        self::assertSame('203.0.113.5', $back->audit->ip);
     }
 
     public function testWithoutAPinnedAddressTheHostIsKept(): void
@@ -105,5 +112,20 @@ final class ScriptRunRequestTest extends TestCase
         self::assertStringNotContainsString(self::SECRET, var_export($request->__debugInfo(), true));
         $this->expectException(\LogicException::class);
         serialize($request);
+    }
+
+    public function testAnAuthorThatIsNotValidIsRefused(): void
+    {
+        $data = json_decode($this->request()->toJson(), true, 8, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($data);
+        foreach ([null, ['actor' => 'root', 'user' => null, 'token' => null, 'ip' => null], ['actor' => 'web', 'user' => 'not-a-uuid', 'token' => null, 'ip' => null], ['actor' => 'web', 'user' => null, 'token' => null, 'ip' => str_repeat('1', 46)]] as $audit) {
+            $data['audit'] = $audit;
+            try {
+                ScriptRunRequest::fromJson(json_encode($data, \JSON_THROW_ON_ERROR));
+                self::fail('An author that is not valid must be refused.');
+            } catch (InvalidScriptRunRequestException) {
+                self::addToAssertionCount(1);
+            }
+        }
     }
 }

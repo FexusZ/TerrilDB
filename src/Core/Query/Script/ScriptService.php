@@ -84,6 +84,40 @@ final readonly class ScriptService
         $unsafe = $this->nonTransactionalTables($executor, $target->engine, $report);
         $preview = $this->preview($script, $target->engine, $options->writes, $unsafe);
 
+        $this->assertRunnable($report, $preview, $options->dryRun, $confirmed);
+
+        return $executor->execute($this->statements($report, $target->engine, $unsafe), $options->timeoutMs, $options->dryRun, $options->progress);
+    }
+
+    /**
+     * Le jugement d'un script SANS cible ouverte (le lancement d'une exécution détachée : la cible n'est jointe que par le worker) :
+     * mêmes refus, même confirmation unique, même jeu à blanc que `execute`, sans la lecture des tables sans transaction de MySQL/MariaDB
+     * (qui exige la cible ; le worker la refait au moment d'exécuter). Rend le compte rendu du garde.
+     *
+     * @throws QueryRefusedException            script vide
+     * @throws ScriptRefusedException
+     * @throws ScriptNeedsConfirmationException
+     * @throws ScriptDryRunUnavailableException
+     * @throws UnsplittableScriptException
+     * @throws ScriptTooLargeException
+     * @throws UnsupportedOperationException
+     */
+    public function judge(string $script, Engine $engine, WritePermissions $writes, bool $dryRun, bool $confirmed): ScriptReport
+    {
+        $preview = $this->preview($script, $engine, $writes);
+        $this->assertRunnable($preview->report, $preview, $dryRun, $confirmed);
+
+        return $preview->report;
+    }
+
+    /**
+     * @throws QueryRefusedException
+     * @throws ScriptRefusedException
+     * @throws ScriptNeedsConfirmationException
+     * @throws ScriptDryRunUnavailableException
+     */
+    private function assertRunnable(ScriptReport $report, ScriptPreview $preview, bool $dryRun, bool $confirmed): void
+    {
         if ([] === $report->steps) {
             throw new QueryRefusedException(GuardReason::EmptyStatement);
         }
@@ -93,11 +127,9 @@ final readonly class ScriptService
         if ($report->needsConfirmation() && !$confirmed) {
             throw new ScriptNeedsConfirmationException($report->destructiveCount());
         }
-        if ($options->dryRun && !$preview->capabilities->dryRunAvailable) {
+        if ($dryRun && !$preview->capabilities->dryRunAvailable) {
             throw new ScriptDryRunUnavailableException($preview->capabilities->dryRunUnavailableReason ?? 'no_transaction');
         }
-
-        return $executor->execute($this->statements($report, $target->engine, $unsafe), $options->timeoutMs, $options->dryRun, $options->progress);
     }
 
     /**

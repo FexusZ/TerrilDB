@@ -35,9 +35,9 @@ final readonly class AuditedScripts
     /**
      * @throws ScriptRefusedException
      */
-    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $script, ScriptOptions $options, bool $confirmed = false): AuditedScriptRun
+    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $script, ScriptOptions $options, bool $confirmed = false, ?Uuid $executionId = null): AuditedScriptRun
     {
-        $executionId = Uuid::v7();
+        $executionId ??= Uuid::v7();
         $base = ['mode' => 'read_write', 'engine' => $target->engine->value, 'confirmed' => $confirmed, 'script' => true, 'executionId' => $executionId->toRfc4122(), 'dryRun' => $options->dryRun];
 
         try {

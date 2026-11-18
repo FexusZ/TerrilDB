@@ -94,6 +94,11 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Requête refusée'
     case 'query.failed':
       return details.reason === 'timeout' ? 'Requête arrêtée : délai dépassé' : 'Requête en erreur'
+    case 'script.started': {
+      const count = typeof details.statements === 'number' ? details.statements : 0
+
+      return `Script lancé en arrière-plan (${String(count)} instruction${count > 1 ? 's' : ''})`
+    }
     case 'query.linted': {
       const count = typeof details.findings === 'number' ? details.findings : 0
 

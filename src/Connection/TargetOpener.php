@@ -66,6 +66,33 @@ final readonly class TargetOpener
     }
 
     /**
+     * Prépare la cible d'une connexion enregistrée pour un AUTRE processus (le worker des scripts détachés) sans l'ouvrir : mêmes
+     * paramètres déchiffrés, mêmes base et schéma, même règle d'adresses (adresse contrôlée puis épinglée). Une connexion avec rebond
+     * n'est pas portée : le tunnel est ouvert par la requête web, il ne survivrait pas à son retour.
+     *
+     * @throws Exception\ConnectionNotFoundException
+     * @throws Exception\ForbiddenTargetHostException
+     * @throws InvalidConnectionParametersException
+     * @throws UnsupportedOperationException          connexion avec rebond
+     */
+    public function resolve(User $owner, DerivedKey $key, Uuid $id, ?string $database = null, ?string $schema = null): ResolvedTarget
+    {
+        $engine = $this->connections->get($owner, $id)->getEngine();
+        $parameters = $this->connections->reveal($owner, $key, $id);
+        if (null !== $parameters->transport) {
+            throw UnsupportedOperationException::for($engine, 'detached script through a jump');
+        }
+        if (null !== $database) {
+            $parameters = $parameters->withDatabase($database);
+        }
+        if (null !== $schema) {
+            $parameters = $parameters->withSchema($schema);
+        }
+
+        return new ResolvedTarget($engine, $this->hosts->pinned($owner, $parameters));
+    }
+
+    /**
      * Ouvre une cible depuis des paramètres déjà en main (essai d'une connexion non enregistrée comprise), par la seule voie
      * permise : la règle d'adresses d'abord, puis, pour un rebond, le tunnel du conteneur dédié. Jamais en direct vers la
      * base d'une connexion à rebond.

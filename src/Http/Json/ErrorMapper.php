@@ -66,6 +66,11 @@ use App\Invitation\Exception\InvalidInvitationTokenException;
 use App\Invitation\Exception\InvitationNotFoundException;
 use App\Invitation\Exception\MailDisabledException;
 use App\Invitation\Exception\NotAnAdministratorException;
+use App\ScriptRun\Channel\ScriptWorkerBusyException;
+use App\ScriptRun\Channel\ScriptWorkerUnavailableException;
+use App\ScriptRun\Exception\InvalidScriptRunRequestException;
+use App\ScriptRun\Exception\ScriptRunFinishedException;
+use App\ScriptRun\Exception\ScriptRunNotFoundException;
 use App\Security\Exception\AccountAlreadyExistsException;
 use App\Security\Exception\AccountNotFoundException;
 use App\Security\Exception\CannotDisableAccountException;
@@ -129,11 +134,15 @@ final class ErrorMapper
             $error instanceof TotpAlreadyEnabledException => new ErrorResponse(409, 'totp_already_enabled'),
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
-            $error instanceof ConnectionNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException, $error instanceof AccountNotFoundException => new ErrorResponse(404, 'not_found'),
+            $error instanceof ConnectionNotFoundException, $error instanceof ScriptRunNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException, $error instanceof AccountNotFoundException => new ErrorResponse(404, 'not_found'),
             $error instanceof TargetConnectionFailedException => null !== $error->fault ? self::fault($error->fault) : new ErrorResponse(502, 'target_unreachable'),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value]),
+            $error instanceof ScriptWorkerBusyException => new ErrorResponse(503, 'script_worker_busy', ['retryable' => true, 'retryAfter' => 5], ['Retry-After' => '5']),
+            $error instanceof ScriptWorkerUnavailableException => new ErrorResponse(503, 'script_worker_unavailable', ['retryable' => false]),
+            $error instanceof ScriptRunFinishedException => new ErrorResponse(409, 'run_finished'),
+            $error instanceof InvalidScriptRunRequestException => new ErrorResponse(422, 'invalid_script', ['reason' => 'invalid_run_request']),
             $error instanceof ScriptRefusedException => new ErrorResponse(403, 'script_refused', ['reason' => $error->reason->value, 'statement' => $error->statementIndex]),
             $error instanceof ScriptNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'destructive_script', 'destructiveCount' => $error->destructiveCount]),
             $error instanceof ScriptDryRunUnavailableException => new ErrorResponse(409, 'dry_run_unavailable', ['reason' => $error->reason]),

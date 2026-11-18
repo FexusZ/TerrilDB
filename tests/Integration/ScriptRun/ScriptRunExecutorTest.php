@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\ScriptRun;
 
+use App\Audit\AuditAction;
+use App\Audit\AuditActor;
+use App\Audit\AuditContext;
+use App\Audit\AuditedScripts;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Driver\DriverRegistry;
-use App\Core\Guard\ScriptAnalyzer;
-use App\Core\Query\Script\ScriptService;
 use App\Core\Query\WritePermissions;
 use App\Crypto\KeyDerivation;
 use App\Entity\ScriptRun;
 use App\Entity\ScriptRunStatus;
 use App\Entity\User;
+use App\Repository\AuditEventRepository;
 use App\Repository\ScriptRunRepository;
 use App\Repository\UserRepository;
 use App\ScriptRun\ScriptRunExecutor;
@@ -51,7 +54,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
         $drivers = self::getContainer()->get(DriverRegistry::class);
         self::assertInstanceOf(DriverRegistry::class, $drivers);
         $this->clock = new MockClock('2026-11-19 01:00:00 UTC');
-        $this->executor = new ScriptRunExecutor($this->runs, $drivers, new ScriptService(new ScriptAnalyzer()), $this->clock);
+        $this->executor = new ScriptRunExecutor($this->runs, $drivers, $this->audited(), $this->clock);
     }
 
     protected function tearDown(): void
@@ -94,6 +97,19 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
         return array_map(static fn (mixed $v): int => is_numeric($v) ? (int) $v : 0, $this->raw->fetchFirstColumn(\sprintf('SELECT id FROM %s ORDER BY id', $table)));
     }
 
+    private function audited(): AuditedScripts
+    {
+        $audited = self::getContainer()->get(AuditedScripts::class);
+        self::assertInstanceOf(AuditedScripts::class, $audited);
+
+        return $audited;
+    }
+
+    private function audit(ScriptRun $run): AuditContext
+    {
+        return new AuditContext(AuditActor::Web, $run->getUser()->getId(), null, '203.0.113.5');
+    }
+
     private function owner(): User
     {
         $users = self::getContainer()->get(UserRepository::class);
@@ -114,7 +130,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
 
     private function request(ScriptRun $run, string $envVar, string $script, bool $dryRun = false, ?ConnectionParameters $parameters = null): ScriptRunRequest
     {
-        return new ScriptRunRequest($run->getId(), TargetDatabase::engine($envVar), $parameters ?? TargetDatabase::parameters($envVar), $script, WritePermissions::all(), true, $dryRun, 60_000);
+        return new ScriptRunRequest($run->getId(), TargetDatabase::engine($envVar), $parameters ?? TargetDatabase::parameters($envVar), $script, WritePermissions::all(), true, $dryRun, 60_000, $this->audit($run));
     }
 
     private function reload(ScriptRun $run): ScriptRun
@@ -197,7 +213,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
         $runs = $this->runs;
         $id = $run->getId();
         // Le second client (la route d'annulation) pose la demande pendant l'exécution : on la simule dès la première instruction finie.
-        $executor = new ScriptRunExecutor($this->runs, self::driverRegistry(), new ScriptService(new ScriptAnalyzer()), $this->clock, afterStatement: static function () use ($runs, $id): void {
+        $executor = new ScriptRunExecutor($this->runs, self::driverRegistry(), $this->audited(), $this->clock, afterStatement: static function () use ($runs, $id): void {
             $runs->requestCancelOf($id);
         });
 
@@ -214,7 +230,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
         $run = $this->queued(1);
         $parameters = new ConnectionParameters('127.0.0.1', 1, 'nope', 'nobody', 'wrong-password-value');
 
-        $this->executor->run(new ScriptRunRequest($run->getId(), Engine::PostgreSql, $parameters, 'SELECT 1', WritePermissions::all(), true, false, 5_000));
+        $this->executor->run(new ScriptRunRequest($run->getId(), Engine::PostgreSql, $parameters, 'SELECT 1', WritePermissions::all(), true, false, 5_000, $this->audit($run)));
 
         $done = $this->reload($run);
         self::assertSame(ScriptRunStatus::Failed, $done->getStatus());
@@ -226,7 +242,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
     {
         $run = $this->queued(1);
 
-        $this->executor->run(new ScriptRunRequest($run->getId(), Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'), 'COPY t FROM PROGRAM \'x\'', new WritePermissions(false, false), true, false, 5_000));
+        $this->executor->run(new ScriptRunRequest($run->getId(), Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'), 'COPY t FROM PROGRAM \'x\'', new WritePermissions(false, false), true, false, 5_000, $this->audit($run)));
 
         self::assertSame(ScriptRunStatus::Failed, $this->reload($run)->getStatus());
     }
@@ -248,7 +264,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
     {
         $table = $this->table('TARGET_POSTGRES_URL');
 
-        $this->executor->run(new ScriptRunRequest(Uuid::v7(), Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'), \sprintf("INSERT INTO %s VALUES (1, 'a')", $table), WritePermissions::all(), true, false, 5_000));
+        $this->executor->run(new ScriptRunRequest(Uuid::v7(), Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'), \sprintf("INSERT INTO %s VALUES (1, 'a')", $table), WritePermissions::all(), true, false, 5_000, new AuditContext(AuditActor::Web, Uuid::v7(), null, null)));
 
         self::assertSame([], $this->ids($table));
     }
@@ -258,7 +274,7 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
         $table = $this->table('TARGET_POSTGRES_URL');
         $run = $this->queued(2);
         $clock = $this->clock;
-        $executor = new ScriptRunExecutor($this->runs, self::driverRegistry(), new ScriptService(new ScriptAnalyzer()), $this->clock, afterStatement: static function () use ($clock): void {
+        $executor = new ScriptRunExecutor($this->runs, self::driverRegistry(), $this->audited(), $this->clock, afterStatement: static function () use ($clock): void {
             $clock->sleep(10);
         });
 
@@ -266,6 +282,35 @@ final class ScriptRunExecutorTest extends DatabaseTestCase
 
         $done = $this->reload($run);
         self::assertEquals(new \DateTimeImmutable('2026-11-19 01:00:20 UTC'), $done->getHeartbeatAt()->setTimezone(new \DateTimeZone('UTC')));
+    }
+
+    public function testTheStatementsAreAuditedUnderTheRunIdentifierInTheNameOfWhoStartedIt(): void
+    {
+        $table = $this->table('TARGET_POSTGRES_URL');
+        $run = $this->queued(2);
+
+        $this->executor->run($this->request($run, 'TARGET_POSTGRES_URL', \sprintf("INSERT INTO %1\$s VALUES (1, 'a'); INSERT INTO %1\$s VALUES (2, 'b');", $table)));
+
+        $events = self::getContainer()->get(AuditEventRepository::class);
+        self::assertInstanceOf(AuditEventRepository::class, $events);
+        $lines = array_values(array_filter($events->findForUser($run->getUser()->getId()), static fn ($e): bool => AuditAction::QueryExecuted === $e->getAction()));
+        self::assertCount(2, $lines);
+        foreach ($lines as $line) {
+            self::assertSame($run->getId()->toRfc4122(), $line->getDetails()['executionId']);
+            self::assertTrue($line->getDetails()['script']);
+            self::assertSame('203.0.113.5', $line->getIp());
+        }
+    }
+
+    public function testAScriptTheGuardRefusesLeavesARefusalLineToo(): void
+    {
+        $run = $this->queued(1);
+
+        $this->executor->run(new ScriptRunRequest($run->getId(), Engine::PostgreSql, TargetDatabase::parameters('TARGET_POSTGRES_URL'), 'COPY t FROM PROGRAM \'x\'', new WritePermissions(false, false), true, false, 5_000, $this->audit($run)));
+
+        $events = self::getContainer()->get(AuditEventRepository::class);
+        self::assertInstanceOf(AuditEventRepository::class, $events);
+        self::assertContains(AuditAction::QueryRefused, array_map(static fn ($e): AuditAction => $e->getAction(), $events->findForUser($run->getUser()->getId())));
     }
 
     private static function driverRegistry(): DriverRegistry

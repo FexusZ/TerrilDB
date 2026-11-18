@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\ScriptRun;
 
+use App\Audit\AuditActor;
+use App\Audit\AuditContext;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Query\QueryOptions;
@@ -32,6 +34,8 @@ final readonly class ScriptRunRequest
         public bool $confirmed,
         public bool $dryRun,
         public int $timeoutMs,
+        /** Qui a lancé l'exécution : les lignes d'audit des instructions s'écrivent à son nom, depuis le processus du worker. */
+        public AuditContext $audit,
     ) {
         if (null !== $parameters->transport) {
             throw new InvalidScriptRunRequestException('A connection through a jump cannot run a detached script yet.');
@@ -61,6 +65,12 @@ final readonly class ScriptRunRequest
             'confirmed' => $this->confirmed,
             'dryRun' => $this->dryRun,
             'timeoutMs' => $this->timeoutMs,
+            'audit' => [
+                'actor' => $this->audit->actor->value,
+                'user' => $this->audit->userId?->toRfc4122(),
+                'token' => $this->audit->tokenId?->toRfc4122(),
+                'ip' => $this->audit->ip,
+            ],
         ], \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
     }
 
@@ -91,6 +101,8 @@ final readonly class ScriptRunRequest
             throw new InvalidScriptRunRequestException('The message is incomplete.');
         }
 
+        $audit = self::auditFrom($data['audit'] ?? null);
+
         try {
             $parameters = ConnectionParameters::fromJson($connection);
             if (\is_string($data['address'] ?? null)) {
@@ -103,7 +115,23 @@ final readonly class ScriptRunRequest
             throw new InvalidScriptRunRequestException('The connection of the message is not valid.');
         }
 
-        return new self(Uuid::fromString($run), $engine, $parameters, $script, new WritePermissions($data['writeData'], $data['writeSchema']), $data['confirmed'], $data['dryRun'], $timeoutMs);
+        return new self(Uuid::fromString($run), $engine, $parameters, $script, new WritePermissions($data['writeData'], $data['writeSchema']), $data['confirmed'], $data['dryRun'], $timeoutMs, $audit);
+    }
+
+    private static function auditFrom(mixed $data): AuditContext
+    {
+        if (!\is_array($data)) {
+            throw new InvalidScriptRunRequestException('The message names nobody.');
+        }
+        $actor = \is_string($data['actor'] ?? null) ? AuditActor::tryFrom($data['actor']) : null;
+        $user = $data['user'] ?? null;
+        $token = $data['token'] ?? null;
+        $ip = $data['ip'] ?? null;
+        if (null === $actor || (null !== $user && (!\is_string($user) || !Uuid::isValid($user))) || (null !== $token && (!\is_string($token) || !Uuid::isValid($token))) || (null !== $ip && (!\is_string($ip) || \strlen($ip) > 45))) {
+            throw new InvalidScriptRunRequestException('The author of the message is not valid.');
+        }
+
+        return new AuditContext($actor, \is_string($user) ? Uuid::fromString($user) : null, \is_string($token) ? Uuid::fromString($token) : null, $ip);
     }
 
     /**
