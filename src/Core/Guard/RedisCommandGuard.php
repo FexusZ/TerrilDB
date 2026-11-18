@@ -120,6 +120,10 @@ final class RedisCommandGuard
             if (QueryMode::ReadOnly === $mode) {
                 return GuardVerdict::refused(GuardReason::NotReadOnly, StatementKind::Write);
             }
+            // COPY … DB n écrit dans une autre base que celle de la connexion (comme FLUSHALL, MOVE ou SWAPDB, hors de son périmètre).
+            if ('COPY' === $name && \in_array('DB', array_map('strtoupper', \array_slice($arguments, 3)), true)) {
+                return GuardVerdict::refused(GuardReason::ForbiddenConstruct, StatementKind::Write);
+            }
             if (!$writes->data) {
                 return GuardVerdict::refused(GuardReason::WriteNotPermitted, StatementKind::Write);
             }

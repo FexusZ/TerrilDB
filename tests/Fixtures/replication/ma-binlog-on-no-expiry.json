@@ -1,0 +1,37 @@
+{
+    "variables": {
+        "binlog_expire_logs_seconds": "0",
+        "expire_logs_days": "0.000000",
+        "gtid_binlog_pos": "0-1-4",
+        "gtid_current_pos": "0-1-4",
+        "log_bin": "ON",
+        "rpl_semi_sync_master_enabled": "OFF",
+        "rpl_semi_sync_master_timeout": "10000",
+        "rpl_semi_sync_master_trace_level": "32",
+        "rpl_semi_sync_master_wait_no_slave": "ON",
+        "rpl_semi_sync_master_wait_point": "AFTER_COMMIT",
+        "rpl_semi_sync_slave_delay_master": "OFF",
+        "rpl_semi_sync_slave_enabled": "OFF",
+        "rpl_semi_sync_slave_kill_conn_timeout": "5",
+        "rpl_semi_sync_slave_trace_level": "32"
+    },
+    "status": {
+        "Rpl_semi_sync_master_clients": "0",
+        "Rpl_semi_sync_master_status": "OFF",
+        "Rpl_semi_sync_slave_status": "OFF"
+    },
+    "logs": [
+        {
+            "Log_name": "binlog.000001",
+            "File_size": "348"
+        },
+        {
+            "Log_name": "binlog.000002",
+            "File_size": "805"
+        },
+        {
+            "Log_name": "binlog.000003",
+            "File_size": "540"
+        }
+    ]
+}

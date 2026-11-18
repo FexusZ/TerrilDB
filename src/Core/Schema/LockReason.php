@@ -12,6 +12,7 @@ namespace App\Core\Schema;
 enum LockReason: string
 {
     case Generated = 'generated';
+    case SystemPeriod = 'system_period';
     case ColumnCheck = 'column_check';
     case IndexInvisible = 'index_invisible';
     case IndexIgnored = 'index_ignored';

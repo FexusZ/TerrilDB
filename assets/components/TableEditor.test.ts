@@ -297,6 +297,25 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('gives advice, not the engine message, when the account lacks the right', async () => {
+    mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
+      if (url.endsWith('/preview')) {
+        return Promise.resolve(preview())
+      }
+
+      return Promise.reject(new ApiError(403, 'engine_permission_denied', { retryable: false, applied: [], failed: { sql: 'y', operation: 'add_column', subject: 'x', destructive: false } }))
+    })
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    await wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('n’a pas le droit')
+    wrapper.unmount()
+  })
+
   it('shows what the engine said and what was already applied when a change fails half way', async () => {
     mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => {
       if (url.endsWith('/preview')) {
@@ -319,6 +338,41 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('flags a versioned table and says the drop loses its history', async () => {
+    const dropStatement = { sql: 'DROP TABLE `orders`', operation: 'drop_table', subject: 'orders', destructive: true }
+    const losses = [{ code: 'system_history', subject: 'orders', values: [] }]
+    mocked.mockResolvedValue(preview({ statements: [dropStatement], destructive: true, losses }))
+    const wrapper = mountEditor('mariadb', { ...detail(), versioned: true })
+
+    expect(wrapper.get('[data-test="versioned"]').text()).toContain('versionnée')
+    await wrapper.findAll('button').find((button) => button.text().startsWith('Supprimer la table'))?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="dialog"]').text()).toContain('l’historique des lignes de « orders »')
+    wrapper.unmount()
+  })
+
+  it('does not flag an ordinary table', () => {
+    const wrapper = mountEditor()
+
+    expect(wrapper.find('[data-test="versioned"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lists the values an ENUM loses in the confirmation', async () => {
+    const statement = { sql: 'ALTER TABLE `orders` MODIFY COLUMN `note` enum(\'a\') NULL', operation: 'modify_column', subject: 'note', destructive: true }
+    mocked.mockResolvedValue(preview({ statements: [statement], destructive: true, losses: [{ code: 'values_removed', subject: 'note', values: ['b'] }] }))
+    const wrapper = mountEditor('mariadb')
+
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue("enum('a')")
+    await settle()
+    await wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="dialog"]').text()).toContain('les valeurs « b » de « note »')
+    wrapper.unmount()
+  })
+
   it('previews, confirms and runs the drop of the table', async () => {
     const dropStatement = { sql: 'DROP TABLE "orders"', operation: 'drop_table', subject: 'orders', destructive: true }
     mocked.mockImplementation((_method?: string, url = ''): Promise<unknown> => Promise.resolve(url.endsWith('/preview') ? preview({ statements: [dropStatement], destructive: true }) : { statements: [dropStatement], transactional: true, destructive: true, table: null }))
@@ -336,6 +390,64 @@ describe('TableEditor', () => {
     expect(structureCalls('apply')[0]?.[2]).toMatchObject({ drop: true, confirmed: true })
     expect(wrapper.emitted('applied')?.[0]).toEqual([null, 'orders'])
     wrapper.unmount()
+  })
+
+  describe('algorithm of the ALTER', () => {
+    const copying = { sql: 'ALTER TABLE `orders` MODIFY COLUMN `note` varchar(80) NULL', operation: 'modify_column', subject: 'note', destructive: false, algorithm: 'copy' as const, blocksWrites: true, copiesTable: true, estimatedExtraBytes: 300 * 1024 * 1024, algorithmReason: null }
+
+    async function withStatements(statements: StructurePreview['statements'], bigTable: StructurePreview['bigTable'], engine: Engine = 'mysql'): Promise<VueWrapper> {
+      mocked.mockImplementation(() => Promise.resolve(preview({ statements, bigTable })))
+      const wrapper = mountEditor(engine)
+      await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+      await settle()
+
+      return wrapper
+    }
+
+    it('shows a pill and a sentence for each statement the server judged', async () => {
+      const wrapper = await withStatements([{ ...copying, algorithm: 'instant', blocksWrites: false, copiesTable: false, estimatedExtraBytes: null }], { level: 'none', estimatedRows: 10, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('instantané')
+      expect(wrapper.get('[data-test="algorithm-note"]').text()).toContain('métadonnées')
+      expect(wrapper.find('[data-test="copy-warning"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('warns before validating a copy of a table of more than 100 000 rows', async () => {
+      const wrapper = await withStatements([copying], { level: 'none', estimatedRows: 250_000, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('recopie')
+      const warning = wrapper.get('[data-test="copy-warning"]')
+      expect(warning.text()).toContain('250')
+      expect(warning.text()).toContain('gh-ost')
+      expect(wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.attributes('disabled')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('stays quiet about a copy of a small table', async () => {
+      const wrapper = await withStatements([{ ...copying, estimatedExtraBytes: 1024 }], { level: 'none', estimatedRows: 500, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('recopie')
+      expect(wrapper.find('[data-test="copy-warning"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('does not rassure when the algorithm is unknown', async () => {
+      const wrapper = await withStatements([{ ...copying, algorithm: 'unknown', blocksWrites: null, copiesTable: null, estimatedExtraBytes: null, algorithmReason: 'unverified_version' }], { level: 'none', estimatedRows: 900_000, warnAt: 0, confirmAt: 0 })
+
+      expect(wrapper.get('[data-test="algorithm"]').text()).toBe('algorithme inconnu')
+      expect(wrapper.get('[data-test="algorithm-note"]').text()).toContain('version du serveur')
+      expect(wrapper.find('[data-test="copy-warning"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('shows nothing for a server that gives no advice', async () => {
+      const wrapper = await withStatements([{ sql: 'ALTER TABLE x', operation: 'modify_column', subject: 'note', destructive: false }], { level: 'none', estimatedRows: 10, warnAt: 0, confirmAt: 0 }, 'clickhouse')
+
+      expect(wrapper.find('[data-test="algorithm"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="algorithm-note"]').exists()).toBe(false)
+      wrapper.unmount()
+    })
   })
 
   describe('big tables', () => {

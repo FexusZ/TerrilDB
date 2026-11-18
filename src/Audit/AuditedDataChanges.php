@@ -11,6 +11,7 @@ use App\Core\Data\DataPreview;
 use App\Core\Data\DataStatement;
 use App\Core\Data\Exception\DataChangeConflictException;
 use App\Core\Data\Exception\DataChangeFailedException;
+use App\Core\Driver\DetailedErrors;
 use App\Core\Driver\TargetConnection;
 use Symfony\Component\Uid\Uuid;
 
@@ -27,6 +28,7 @@ final readonly class AuditedDataChanges
     public function __construct(
         private DataChangeService $changes,
         private AuditLog $audit,
+        private DetailedErrors $detailed = new DetailedErrors(),
     ) {
     }
 
@@ -44,7 +46,7 @@ final readonly class AuditedDataChanges
                 'table' => $table,
                 'engine' => $target->engine->value,
                 'error' => $e instanceof DataChangeFailedException ? 'engine_refused' : 'row_changed',
-            ]);
+            ] + ($e instanceof DataChangeFailedException && null !== ($code = ($this->detailed->enabled ? $e->fault?->code() : null) ?? $e->lock?->code()) ? ['reason' => $code] : []));
 
             throw $e;
         }

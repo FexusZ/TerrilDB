@@ -6,8 +6,12 @@ namespace App\Http\Web;
 
 use App\Core\Driver\TargetConnection;
 use App\Core\Optimizer\AuditCheck;
+use App\Core\Optimizer\CheckState;
 use App\Core\Optimizer\Finding;
+use App\Core\Optimizer\FindingRule;
+use App\Core\Optimizer\OperationsCheck;
 use App\Core\Optimizer\SchemaAuditor;
+use App\Core\Schema\OperationsSource;
 use App\Core\Schema\TableKind;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -47,8 +51,22 @@ final readonly class SchemaAuditController
             }
 
             $usage = $introspector->indexUsage();
+            $findings = $this->auditor->audit($target->engine, $definitions, $usage, $introspector->autoCounters());
+            $checks = $this->auditor->checks($target->engine, $usage);
+            // L'exploitation (statistiques, place libre, créateurs) : une source illisible devient un « non vérifié », jamais une erreur.
+            if ($introspector instanceof OperationsSource) {
+                $upkeep = $introspector->upkeep();
+                $definers = $introspector->orphanDefiners();
+                $audited = array_fill_keys(array_map(static fn ($d): string => $d->name, $definitions), true);
+                // Seules les tables auditées (la borne de 300 tables vaut aussi ici) ; les autres objets n'ont pas de table à eux.
+                array_push($findings, ...array_values(array_filter(
+                    $this->auditor->operations($target->engine, $upkeep, $definers),
+                    static fn (Finding $f): bool => FindingRule::OrphanDefiner === $f->rule || isset($audited[$f->table]),
+                )));
+                array_push($checks, ...array_map(static fn (OperationsCheck $c): AuditCheck => new AuditCheck($c->rule, CheckState::Unavailable, $c->reason), $this->auditor->operationsChecks($target->engine, $upkeep, $definers)));
+            }
 
-            return [$this->auditor->audit($target->engine, $definitions, $usage, $introspector->autoCounters()), $this->auditor->checks($target->engine, $usage), \count($definitions), $truncated];
+            return [$findings, $checks, \count($definitions), $truncated];
         }, DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse([

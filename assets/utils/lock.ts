@@ -4,6 +4,7 @@
  */
 const LABELS: Record<string, { short: string; sentence: string }> = {
   generated: { short: 'colonne générée', sentence: 'cette colonne est générée' },
+  system_period: { short: 'colonne de période', sentence: 'cette colonne marque le début ou la fin de validité des lignes d’une table versionnée' },
   column_check: { short: 'colonne avec CHECK', sentence: 'cette colonne porte une contrainte CHECK' },
   index_invisible: { short: 'index invisible', sentence: 'cet index est invisible' },
   index_ignored: { short: 'index ignoré', sentence: 'cet index est ignoré (IGNORED)' },

@@ -9,6 +9,8 @@ use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
+use App\Core\Schema\PartitionDefinition;
+use App\Core\Schema\PartitioningInfo;
 use App\Core\Schema\SchemaSummary;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableSummary;
@@ -48,6 +50,7 @@ final class SchemaPresenter
             'name' => $table->name,
             'fingerprint' => SchemaChangePlanner::fingerprint($table),
             'kind' => $table->kind->value,
+            'versioned' => $table->versioned,
             'estimatedRows' => $table->estimatedRows,
             'dataBytes' => $table->dataBytes,
             'indexBytes' => $table->indexBytes,
@@ -69,6 +72,7 @@ final class SchemaPresenter
                 'sizeBytes' => $i->sizeBytes,
                 'lock' => $i->lock?->value,
             ], $table->indexes),
+            'partitioning' => null === $table->partitioning ? null : self::partitioning($table->partitioning),
             'foreignKeys' => array_map(static fn (ForeignKeyDefinition $f): array => [
                 'name' => $f->name,
                 'columns' => $f->columns,
@@ -78,5 +82,50 @@ final class SchemaPresenter
                 'onDelete' => $f->onDelete->value,
             ], $table->foreignKeys),
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function partitioning(PartitioningInfo $info): array
+    {
+        return [
+            'method' => $info->method->value,
+            'expression' => $info->expression,
+            'subMethod' => $info->subMethod?->value,
+            'subExpression' => $info->subExpression,
+            'estimatedRows' => $info->estimatedRows(),
+            'dataBytes' => $info->dataBytes(),
+            'partitions' => array_map(static fn (PartitionDefinition $p): array => [
+                'name' => $p->name,
+                'bound' => $p->bound,
+                'catchAll' => $p->catchAll,
+                'estimatedRows' => $p->estimatedRows,
+                'dataBytes' => $p->dataBytes,
+                'subpartitions' => array_map(static fn (PartitionDefinition $s): array => ['name' => $s->name, 'estimatedRows' => $s->estimatedRows, 'dataBytes' => $s->dataBytes], $p->subpartitions),
+            ], $info->partitions),
+        ];
+    }
+
+    /**
+     * Les bases à montrer : celles du moteur (information_schema…) sont masquées sauf demande expresse.
+     *
+     * @param list<DatabaseSummary> $databases
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function databases(array $databases, bool $withSystem): array
+    {
+        return array_values(array_map(self::database(...), array_filter($databases, static fn (DatabaseSummary $database): bool => $withSystem || !$database->system)));
+    }
+
+    /**
+     * @param list<SchemaSummary> $schemas
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function schemas(array $schemas, bool $withSystem): array
+    {
+        return array_values(array_map(self::schema(...), array_filter($schemas, static fn (SchemaSummary $schema): bool => $withSystem || !$schema->system)));
     }
 }

@@ -29,7 +29,7 @@ final readonly class DbalDataExecutor implements DataExecutor
 
             return is_numeric($count) ? (int) $count : 0;
         } catch (\Throwable $e) {
-            throw new DataChangeFailedException(self::message($e), 0, $statement, $e, EngineLockConflict::of($this->engine, $e));
+            throw new DataChangeFailedException(self::message($e), 0, $statement, $e, EngineLockConflict::of($this->engine, $e), EngineFaultReader::of($this->engine, $e));
         }
     }
 
@@ -53,7 +53,7 @@ final readonly class DbalDataExecutor implements DataExecutor
         } catch (\Throwable $e) {
             $this->rollBack();
 
-            throw new DataChangeFailedException(self::message($e), 0, $current, $e, EngineLockConflict::of($this->engine, $e));
+            throw new DataChangeFailedException(self::message($e), 0, $current, $e, EngineLockConflict::of($this->engine, $e), EngineFaultReader::of($this->engine, $e));
         }
     }
 

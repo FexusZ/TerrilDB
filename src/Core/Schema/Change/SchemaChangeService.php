@@ -9,6 +9,7 @@ use App\Core\Diagnostics\TableHolders;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Driver\LockConflict;
 use App\Core\Driver\TargetConnection;
+use App\Core\Schema\Change\Algorithm\AlterAlgorithmAdvisor;
 use App\Core\Schema\Change\Exception\BigTableNeedsConfirmationException;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
@@ -27,6 +28,7 @@ final class SchemaChangeService
     public function __construct(
         private readonly SchemaChangePlanner $planner = new SchemaChangePlanner(),
         private readonly BigTablePolicy $bigTables = new BigTablePolicy(),
+        private readonly AlterAlgorithmAdvisor $algorithms = new AlterAlgorithmAdvisor(),
     ) {
     }
 
@@ -41,7 +43,14 @@ final class SchemaChangeService
 
         $plan = $this->plan($target, $current, $draft);
 
-        return new ChangePreview($plan, $actual, null !== $fingerprint && $fingerprint !== $actual, $this->assess($plan, $current), [] === $plan->statements ? null : self::holders($target, $table));
+        return new ChangePreview(
+            $plan,
+            $actual,
+            null !== $fingerprint && $fingerprint !== $actual,
+            $this->assess($plan, $current),
+            [] === $plan->statements ? null : self::holders($target, $table),
+            $this->algorithms->advise($target->engine, $target->version(), $current, $draft, $plan),
+        );
     }
 
     /**

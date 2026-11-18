@@ -4,6 +4,7 @@ import { fetchVariables } from '../api/diagnostics'
 import { messageFor } from '../api/errors'
 import type { VariableReport } from '../api/types'
 import AppButton from '../components/AppButton.vue'
+import ConfigAuditPanel from '../components/ConfigAuditPanel.vue'
 import { useWorkspaceStore } from '../stores/workspace'
 import { describeRestart, describeSource, describeStatus } from '../utils/diagnostics'
 
@@ -70,6 +71,8 @@ const shown = (value: string | null, unit: string | null): string => (value === 
         </table>
       </div>
     </template>
+
+    <ConfigAuditPanel :id="id" :database="workspace.database" :schema="workspace.schema" />
   </section>
 </template>
 

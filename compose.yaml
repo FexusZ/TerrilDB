@@ -104,6 +104,113 @@ services:
       interval: 3s
       retries: 40
 
+  # Vitess (profil "vitess", hors "targets" : ~1,5 Go de mémoire). vttestserver lance dans UN conteneur un keyspace "shop" non
+  # partagé avec des tablets PRIMARY, REPLICA et RDONLY, plus un vtgate qui parle le protocole MySQL (sans mot de passe, root : vttestserver n'offre aucun réglage d'authentification).
+  # ATTENTION : les trois tablets partagent UN SEUL mysqld (vtcombo) : ni réplication réelle, ni retard, ni réplica en lecture
+  # seule côté moteur. `shop@replica` (ou `USE \`shop@replica\``) change seulement la cible de routage de vtgate. Même jeu de
+  # données que les autres cibles. Voir docs/vitess-tests.md.
+  target-vitess:
+    profiles: [vitess]
+    image: vitess/vttestserver:mysql80
+    command:
+      - /vt/bin/vttestserver
+      - --port=33574
+      - --keyspaces=shop
+      - --num-shards=1
+      - --replica-count=2
+      - --rdonly-count=0
+      - --mysql-bind-host=0.0.0.0
+      - --mysql-server-version=8.0.35-Vitess
+      - --schema-dir=/schema
+      - --foreign-key-mode=allow
+      - --enable-system-settings
+      - --tablet-hostname=localhost
+    ports: ["127.0.0.1:33577:33577"]
+    volumes:
+      - ./docker/targets/mysql:/schema/shop:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P33577 -uroot -N -e 'select count(*) from shop.order_items' | grep -q 7000"]
+      interval: 5s
+      retries: 60
+
+  # VRAI cluster Vitess (profil "vitess-cluster", à part de "vitess" et de "targets") : etcd, vtctld, keyspace "shop" non partagé,
+  # DEUX tablets (PRIMARY + REPLICA) ayant chacun SON mysqld (mysqlctl) réellement répliqué, un vtgate (protocole MySQL).
+  # ~3 Go de mémoire, premier démarrage de quelques minutes. Scripts dans docker/vitess-cluster/, notes dans docs/vitess-tests.md.
+  vitess-etcd:
+    profiles: [vitess-cluster]
+    image: quay.io/coreos/etcd:v3.5.21
+    command:
+      - etcd
+      - --data-dir=/etcd-data
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://vitess-etcd:2379
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 3s
+      retries: 30
+
+  vitess-vtctld:
+    profiles: [vitess-cluster]
+    image: &vitess-image vitess/lite:v23.0.0
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/vtctld.sh"]
+    volumes: [./docker/vitess-cluster:/scripts:ro]
+    depends_on:
+      vitess-etcd: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "test", "-e", "/tmp/vtctld-ready"]
+      interval: 3s
+      retries: 40
+
+  vitess-tablet-primary:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/tablet.sh"]
+    environment: {TABLET_UID: "100"}
+    volumes: [./docker/vitess-cluster:/scripts:ro, vitess-primary-data:/vt/vtdataroot]
+    depends_on:
+      vitess-vtctld: {condition: service_healthy}
+
+  vitess-tablet-replica:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/tablet.sh"]
+    environment: {TABLET_UID: "101"}
+    volumes: [./docker/vitess-cluster:/scripts:ro, vitess-replica-data:/vt/vtdataroot]
+    depends_on:
+      vitess-vtctld: {condition: service_healthy}
+
+  vitess-vtgate:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/vtgate.sh"]
+    env_file: docker/dev/target-vitess.env
+    ports: ["127.0.0.1:33578:15306"]
+    volumes: [./docker/vitess-cluster:/scripts:ro]
+    depends_on:
+      vitess-vtctld: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "/scripts/check.sh"]
+      interval: 5s
+      retries: 120
+
+  # Une seule fois : élit le primaire, charge le schéma et les données. Rejouable sans dégât.
+  vitess-init:
+    profiles: [vitess-cluster]
+    image: *vitess-image
+    entrypoint: ["/bin/sh"]
+    command: ["/scripts/init.sh"]
+    env_file: docker/dev/target-vitess.env
+    volumes: [./docker/vitess-cluster:/scripts:ro, ./docker/targets/mysql:/schema:ro]
+    depends_on:
+      - vitess-tablet-primary
+      - vitess-tablet-replica
+      - vitess-vtgate
+    restart: "no"
+
   target-postgres:
     profiles: [targets]
     image: postgres:18-alpine
@@ -210,6 +317,159 @@ services:
       interval: 3s
       retries: 40
 
+  # Paires source / réplica jetables (profil "replication", à part de "targets") : ce que lit
+  # tests/Integration/Driver/ReplicationDiagnosticsTest quand TARGET_REPLICA_* / TARGET_REPLICATED_* sont définies. Aucune ne touche aux
+  # cibles partagées. Voir docs/replication-tests.md.
+  repl-pg-primary:
+    profiles: [replication]
+    image: postgres:18-alpine
+    env_file: docker/dev/replication-postgres.env
+    ports: ["127.0.0.1:54341:5432"]
+    volumes:
+      - ./docker/replication/postgres-primary:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres"]
+      interval: 3s
+      retries: 40
+
+  repl-pg-replica:
+    profiles: [replication]
+    image: postgres:18-alpine
+    user: postgres
+    env_file: docker/dev/replication-postgres.env
+    ports: ["127.0.0.1:54342:5432"]
+    volumes:
+      - ./docker/replication/postgres-replica/replica.sh:/replica.sh:ro
+    entrypoint: ["sh", "/replica.sh"]
+    depends_on:
+      repl-pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U postgres -Atc 'SELECT pg_is_in_recovery()' | grep -q t"]
+      interval: 3s
+      retries: 60
+
+  repl-redis-primary:
+    profiles: [replication]
+    image: redis:8-alpine
+    env_file: docker/dev/replication-redis.env
+    ports: ["127.0.0.1:63792:6379"]
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\""]
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 3s
+      retries: 20
+
+  repl-redis-replica:
+    profiles: [replication]
+    image: redis:8-alpine
+    env_file: docker/dev/replication-redis.env
+    ports: ["127.0.0.1:63793:6379"]
+    command: ["sh", "-c", "exec redis-server --save '' --appendonly no --requirepass \"$$REDIS_PASSWORD\" --masterauth \"$$REDIS_PASSWORD\" --replicaof repl-redis-primary 6379"]
+    depends_on:
+      repl-redis-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli info replication | grep -q master_link_status:up"]
+      interval: 3s
+      retries: 40
+
+  repl-clickhouse:
+    profiles: [replication]
+    image: clickhouse/clickhouse-server:26.10
+    env_file: docker/dev/replication-clickhouse.env
+    ports: ["127.0.0.1:18124:8123"]
+    volumes:
+      - ./docker/replication/clickhouse/keeper.xml:/etc/clickhouse-server/config.d/keeper.xml:ro
+      - ./docker/replication/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host $$(hostname -i) --user $$CLICKHOUSE_USER --password $$CLICKHOUSE_PASSWORD --query 'SELECT count() FROM d.rt' | grep -q 2"]
+      interval: 3s
+      retries: 60
+
+  repl-mysql-source:
+    profiles: [replication]
+    image: mysql:8.4
+    env_file: docker/dev/replication-mysql.env
+    command: ["--server-id=1", "--log-bin=binlog", "--gtid-mode=ON", "--enforce-gtid-consistency=ON"]
+    ports: ["127.0.0.1:33071:3306"]
+    volumes:
+      - ./docker/replication/mysql-source:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      retries: 40
+
+  repl-mysql-replica:
+    profiles: [replication]
+    image: mysql:8.4
+    env_file: docker/dev/replication-mysql.env
+    # Sans journal binaire : le réplica n'écrit rien de local, aucune transaction errante.
+    command: ["--server-id=2", "--skip-log-bin", "--gtid-mode=ON", "--enforce-gtid-consistency=ON", "--read-only=ON"]
+    ports: ["127.0.0.1:33072:3306"]
+    volumes:
+      - ./docker/replication/mysql-replica:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      repl-mysql-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD -e 'SHOW REPLICA STATUS\\G' 2>/dev/null | grep -q 'Replica_SQL_Running: Yes'"]
+      interval: 3s
+      retries: 60
+
+  # MySQL seul, greffon semi-synchrone chargé, journal binaire et GTID allumés (TARGET_SEMISYNC_MYSQL_URL).
+  repl-mysql-semisync:
+    profiles: [replication]
+    image: mysql:8.4
+    env_file: docker/dev/replication-mysql.env
+    command: ["--server-id=3", "--log-bin=binlog", "--gtid-mode=ON", "--enforce-gtid-consistency=ON", "--plugin-load-add=semisync_source.so"]
+    ports: ["127.0.0.1:33073:3306"]
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 3s
+      retries: 40
+
+  repl-mariadb-source:
+    profiles: [replication]
+    image: mariadb:11.8
+    env_file: docker/dev/replication-mariadb.env
+    command: ["--server-id=1", "--log-bin=binlog", "--binlog-format=ROW"]
+    ports: ["127.0.0.1:33074:3306"]
+    volumes:
+      - ./docker/replication/mariadb-source:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 40
+
+  repl-mariadb-replica:
+    profiles: [replication]
+    image: mariadb:11.8
+    env_file: docker/dev/replication-mariadb.env
+    command: ["--server-id=2", "--read-only=1"]
+    ports: ["127.0.0.1:33075:3306"]
+    volumes:
+      - ./docker/replication/mariadb-replica:/docker-entrypoint-initdb.d:ro
+    depends_on:
+      repl-mariadb-source:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb -h 127.0.0.1 -uroot -p$$MARIADB_ROOT_PASSWORD -e 'SHOW REPLICA STATUS\\G' 2>/dev/null | grep -q 'Slave_SQL_Running: Yes'"]
+      interval: 3s
+      retries: 60
+
+  # MariaDB seul, journal binaire sans expiration (TARGET_BINLOG_MARIADB_URL) : MariaDB 11.8 expire par défaut après 10 jours, d'où le 0 explicite.
+  repl-mariadb-binlog:
+    profiles: [replication]
+    image: mariadb:11.8
+    env_file: docker/dev/replication-mariadb.env
+    command: ["--server-id=4", "--log-bin=binlog", "--binlog-format=ROW", "--binlog-expire-logs-seconds=0"]
+    ports: ["127.0.0.1:33076:3306"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 3s
+      retries: 40
+
 networks:
   bastion-net: {}
   # Sans route vers l'extérieur ni vers `php` : seule la base cachée y vit, avec le bastion.
@@ -221,3 +481,5 @@ volumes:
   bastion-keys:
   composer-cache:
   db-data:
+  vitess-primary-data:
+  vitess-replica-data:

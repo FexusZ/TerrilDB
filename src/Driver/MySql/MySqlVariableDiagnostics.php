@@ -53,8 +53,8 @@ final readonly class MySqlVariableDiagnostics implements VariableDiagnostics
                 $row = new RowReader($row);
                 $variables[] = new ServerVariable(
                     $row->string('name'),
-                    $row->nullableString('value'),
-                    $row->nullableString('default_value'),
+                    $row->nullableText('value'),
+                    $row->nullableText('default_value'),
                     $row->bool('changed'),
                     $row->nullableString('source'),
                     $row->bool('read_only') ? RestartNeed::Required : null,
@@ -86,6 +86,10 @@ final readonly class MySqlVariableDiagnostics implements VariableDiagnostics
             $where .= ' AND INSTR(LOWER(g.VARIABLE_NAME), LOWER(?)) > 0';
             $params[] = $query->search;
         }
+        if ([] !== $query->names) {
+            $where .= ' AND LOWER(g.VARIABLE_NAME) IN ('.implode(', ', array_fill(0, \count($query->names), '?')).')';
+            array_push($params, ...$query->names);
+        }
         if ($query->changedOnly) {
             $where .= " AND i.VARIABLE_SOURCE <> 'COMPILED'";
         }
@@ -113,6 +117,10 @@ final readonly class MySqlVariableDiagnostics implements VariableDiagnostics
         if (null !== $query->search) {
             $where .= ' AND INSTR(LOWER(VARIABLE_NAME), LOWER(?)) > 0';
             $params[] = $query->search;
+        }
+        if ([] !== $query->names) {
+            $where .= ' AND LOWER(VARIABLE_NAME) IN ('.implode(', ', array_fill(0, \count($query->names), '?')).')';
+            array_push($params, ...$query->names);
         }
         if ($query->changedOnly) {
             $where .= " AND GLOBAL_VALUE_ORIGIN <> 'COMPILE-TIME'";

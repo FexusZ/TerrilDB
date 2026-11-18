@@ -1,0 +1,22 @@
+{
+    "variables": {
+        "binlog_expire_logs_auto_purge": "ON",
+        "binlog_expire_logs_seconds": "2592000",
+        "gtid_executed": "",
+        "gtid_purged": "",
+        "log_bin": "ON"
+    },
+    "status": {},
+    "logs": [
+        {
+            "Log_name": "binlog.000001",
+            "File_size": "3267761",
+            "Encrypted": "No"
+        },
+        {
+            "Log_name": "binlog.000002",
+            "File_size": "597578115",
+            "Encrypted": "No"
+        }
+    ]
+}

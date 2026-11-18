@@ -207,6 +207,21 @@ final class ScriptWebTest extends WebApiTestCase
         self::assertSame('script_too_large', $body['error']);
     }
 
+    public function testADelimiterDirectiveIsRefusedWithItsReasonAndNothingRuns(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('mysql', 'TARGET_MYSQL_URL');
+        $script = "DELIMITER $$\nCREATE PROCEDURE terrildb_never() BEGIN SELECT 1; END$$\nDELIMITER ;";
+
+        foreach (['preview', 'execute'] as $step) {
+            $body = $this->call('POST', '/web/connections/'.$id.'/script/'.$step, ['script' => $script, 'confirmed' => true]);
+
+            self::assertSame(422, $this->statusCode());
+            self::assertSame('invalid_script', $body['error']);
+            self::assertSame('delimiter_directive', $body['reason']);
+        }
+    }
+
     public function testAScriptDurationAboveWhatTheProxyAllowsIsRefusedBeforeAnythingRuns(): void
     {
         $this->seedAndLogin();

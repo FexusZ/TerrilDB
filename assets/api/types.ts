@@ -13,6 +13,8 @@ export const ENGINE_BADGES: Record<Engine, string> = { mysql: 'My', mariadb: 'Ma
 export const DEFAULT_PORTS: Record<Engine, number> = { mysql: 3306, mariadb: 3306, postgresql: 5432, clickhouse: 8123, redis: 6379 }
 /** Les moteurs dont TerrilDB sait lire un plan d’exécution. */
 export const ENGINE_HAS_PLAN: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: true, redis: false }
+/** Les moteurs qui savent MESURER un plan (EXPLAIN ANALYZE) : la requête y est jouée pour de bon. ClickHouse ne garde que l’estimation. */
+export const ENGINE_CAN_MEASURE: Record<Engine, boolean> = { mysql: true, mariadb: true, postgresql: true, clickhouse: false, redis: false }
 
 export interface User {
   id: string
@@ -145,11 +147,43 @@ export interface ForeignKeyInfo {
   onDelete: string
 }
 
+export type PartitionMethod = 'range' | 'list' | 'hash' | 'key'
+
+export interface SubpartitionInfo {
+  name: string
+  estimatedRows: number | null
+  dataBytes: number | null
+}
+
+export interface PartitionInfo {
+  name: string
+  /** Borne ou valeurs telles que le moteur les écrit (affichage seulement). */
+  bound: string | null
+  /** MAXVALUE ou DEFAULT : reçoit tout ce que les autres refusent. */
+  catchAll: boolean
+  estimatedRows: number | null
+  dataBytes: number | null
+  subpartitions: SubpartitionInfo[]
+}
+
+/** Le découpage d’une table en partitions (lecture seule). */
+export interface PartitioningInfo {
+  method: PartitionMethod
+  expression: string
+  subMethod: PartitionMethod | null
+  subExpression: string | null
+  estimatedRows: number | null
+  dataBytes: number | null
+  partitions: PartitionInfo[]
+}
+
 export interface TableDetail {
   name: string
   /** Empreinte de la structure : renvoyée à l’API pour refuser un brouillon bâti sur une table qui a changé. */
   fingerprint: string
   kind: TableKind
+  /** Table à versionnement système (MariaDB) : elle garde l’historique de ses lignes. */
+  versioned?: boolean
   estimatedRows: number | null
   viewDefinition: string | null
   /** Place sur disque des données et de tous les index, quand le moteur la donne. */
@@ -158,6 +192,8 @@ export interface TableDetail {
   columns: ColumnInfo[]
   indexes: IndexInfo[]
   foreignKeys: ForeignKeyInfo[]
+  /** Partitions de la table (lecture seule) ; nul ou absent sans partition. */
+  partitioning?: PartitioningInfo | null
 }
 
 export type KeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'other'
@@ -205,6 +241,10 @@ export interface ApiTokenInfo {
   createConnections: boolean
   /** Lit la supervision du serveur (sessions…), sans rien écrire. */
   diagnostic: boolean
+  /** Lit la liste des bases et des schémas du serveur (aucune donnée de table). */
+  readSchema: boolean
+  /** Exporte un résultat en CSV / JSON. */
+  export: boolean
   /** Écrit sans préparation préalable (choix du propriétaire) ; sinon prepare puis execute. */
   singleStep: boolean
   createdAt: string
@@ -225,6 +265,8 @@ export interface ApiTokenInput {
   writeSchema?: boolean
   createConnections?: boolean
   diagnostic?: boolean
+  readSchema?: boolean
+  export?: boolean
   singleStep?: boolean
 }
 
@@ -298,7 +340,7 @@ export interface LockReport {
   blockingTruncated: boolean
 }
 
-export type ReplicationRole = 'none' | 'source' | 'replica'
+export type ReplicationRole = 'none' | 'source' | 'replica' | 'peer'
 export type ThreadState = 'running' | 'connecting' | 'stopped'
 
 /** Dernière erreur d'un fil de réplication : texte neutralisé par le serveur (ni hôte, ni compte, ni mot de passe). */
@@ -327,6 +369,43 @@ export interface ReplicationAlert {
   channel: string
 }
 
+/** PostgreSQL : un slot de réplication ; inactif ou en retard, il retient du WAL sur le disque du primaire. */
+export interface ReplicationSlot {
+  name: string
+  type: string
+  active: boolean
+  temporary: boolean
+  retainedBytes: number | null
+  walStatus: string | null
+  safeWalSize: number | null
+}
+
+/** Un réplica vu depuis sa source : un rang, jamais d'adresse. Retards en secondes. */
+export interface ReplicaLink {
+  rank: number
+  state: string | null
+  connected: boolean
+  syncState: string | null
+  writeLagSeconds: number | null
+  flushLagSeconds: number | null
+  replayLagSeconds: number | null
+  behindBytes: number | null
+}
+
+export type SemiSyncMode = 'not_loaded' | 'off' | 'active' | 'fallen_back'
+
+export interface ReplicatedTable {
+  database: string
+  table: string
+  readonly: boolean
+  sessionExpired: boolean
+  absoluteDelaySeconds: number
+  queueSize: number
+  insertsInQueue: number
+  lostParts: number
+}
+
+/** Les sections propres au moteur sont absentes quand le moteur n'a pas la notion ; chacune a son état. */
 export interface ReplicationReport {
   status: DiagnosticStatus
   role: ReplicationRole
@@ -335,6 +414,22 @@ export interface ReplicationReport {
   channels: ReplicationChannel[]
   alerts: ReplicationAlert[]
   thresholds: { warning: number; critical: number }
+  slots?: { status: DiagnosticStatus; slots: ReplicationSlot[] }
+  replicas?: { status: DiagnosticStatus; replicas: ReplicaLink[] }
+  binlog?: {
+    status: DiagnosticStatus
+    enabled: boolean | null
+    fileCount: number | null
+    totalBytes: number | null
+    /** 0 : rien n'expire jamais. */
+    expireSeconds: number | null
+    gtidExecuted: string | null
+    gtidPurged: string | null
+  }
+  semiSync?: { status: DiagnosticStatus; source: SemiSyncMode; replica: SemiSyncMode; clients: number | null }
+  replicatedTables?: { status: DiagnosticStatus; tables: ReplicatedTable[]; truncated: boolean }
+  keyValue?: { linkStatus: string | null; lastIoSecondsAgo: number | null; syncInProgress: boolean | null; backlogSize: number | null; masterReplOffset: number | null }
+  limits?: { slotRetainedWarningBytes: number; slotRetainedCriticalBytes: number; tableQueueWarning: number }
 }
 
 export type DigestOrder = 'total_time' | 'mean_time' | 'calls'
@@ -388,6 +483,47 @@ export interface VariableReport {
   status: DiagnosticStatus
   truncated: boolean
   variables: ServerVariable[]
+}
+
+/** Une constatation de l'audit de configuration : l'explication et la suggestion sont des textes fixes du serveur, la suggestion est à LIRE. */
+export interface ConfigFinding {
+  rule: string
+  severity: 'high' | 'medium' | 'low'
+  variable: string
+  value: string
+  recommended: string
+  suggestion: string | null
+  explanation: string
+}
+
+export interface ConfigAuditReport {
+  status: DiagnosticStatus
+  engine: string
+  /** Règles dont les variables étaient lisibles, sur le total du moteur. */
+  evaluated: number
+  rulesTotal: number
+  findings: ConfigFinding[]
+}
+
+/** Une variable qui n'a pas la même valeur sur deux serveurs ; jamais une variable masquée. */
+export interface VariableDifference {
+  name: string
+  presentA: boolean
+  valueA: string | null
+  changedA: boolean
+  presentB: boolean
+  valueB: string | null
+  changedB: boolean
+  unit: string | null
+}
+
+export interface VariableComparison {
+  status: DiagnosticStatus
+  unavailableSide: 'a' | 'b' | null
+  /** Variables écartées parce que leur valeur est cachée d'un côté au moins. */
+  masked: number
+  truncated: boolean
+  differences: VariableDifference[]
 }
 
 /** Un compte (ou un rôle) d'un serveur SQL. Jamais d'empreinte de mot de passe : `passwordSet` n'est qu'un booléen. */
@@ -478,6 +614,12 @@ export interface PlanNodeInfo {
   condition: string | null
   fullScan: boolean
   children: PlanNodeInfo[]
+  /** Plan mesuré seulement : lignes réellement rendues par exécution du nœud, temps d’une exécution, nombre d’exécutions. */
+  actualRows?: number | null
+  actualTimeMs?: number | null
+  loops?: number | null
+  sortsOnDisk?: boolean
+  buffers?: { sharedHit: number; sharedRead: number; tempRead: number; tempWritten: number } | null
 }
 
 export interface PlanFindingInfo {
@@ -485,12 +627,20 @@ export interface PlanFindingInfo {
   relation: string | null
   rows: number | null
   condition: string | null
+  actualRows?: number | null
+  /** Une instruction SQL À LIRE : TerrilDB ne l’exécute jamais. */
+  suggestion?: string | null
 }
 
 export interface PlanResult {
-  plan: { totalCost: number | null; root: PlanNodeInfo }
+  plan: { totalCost: number | null; root: PlanNodeInfo; measured?: boolean; executionTimeMs?: number | null }
   findings: PlanFindingInfo[]
+  /** Présent quand une mesure a été demandée : `measured`, ou `unsupported` (le moteur ne mesure pas, le plan est estimé). */
+  measure?: { status: 'measured' | 'unsupported'; reason?: string }
 }
+
+/** Les règles de conception de l'audit (voir `designWording.ts`). */
+export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key' | 'collation_mismatch' | 'twin_table' | 'copy_without_indexes' | 'timestamp_deadline' | 'date_as_text'
 
 export interface LintFindingInfo {
   rule: string
@@ -505,7 +655,7 @@ export interface LintResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit' | OperationsRule | DesignRule | 'partition_range_exhausted' | 'too_many_partitions'
   severity: 'critical' | 'warning' | 'info'
   table: string
   columns: string[]
@@ -515,9 +665,12 @@ export interface SchemaFinding {
   detail: string | null
 }
 
+/** Les règles d'exploitation : lues dans les compteurs et le catalogue du moteur. */
+export type OperationsRule = 'stale_statistics' | 'dead_tuples' | 'reclaimable_space' | 'orphan_definer'
+
 /** Une règle d'exploitation qui n'a pas pu juger : une raison, jamais un constat. */
 export interface AuditCheck {
-  rule: 'unused_index'
+  rule: 'unused_index' | OperationsRule
   state: 'unavailable' | 'too_short'
   reason: string | null
   detail: string | null
@@ -583,10 +736,30 @@ export interface StructureStatement {
   operation: string
   subject: string
   destructive: boolean
+  /** Seulement dans l’aperçu : l’algorithme probable du moteur d’après une table de règles vérifiée (rien n’est essayé). */
+  algorithm?: AlterAlgorithmName
+  /** Bloque les écritures pendant l’instruction ; nul : non vérifié. */
+  blocksWrites?: boolean | null
+  /** Recopie toute la table ; nul : non vérifié. */
+  copiesTable?: boolean | null
+  /** Place disque en plus pour une copie ou une réécriture (données + index). */
+  estimatedExtraBytes?: number | null
+  /** Pourquoi l’algorithme est inconnu (code stable), nul sinon. */
+  algorithmReason?: string | null
 }
+
+/** Ce qu'un plan fait perdre au-delà de son SQL (historique d'une table versionnée, valeurs retirées d'un ENUM/SET). */
+export interface StructureLoss {
+  code: string
+  subject: string
+  values: string[]
+}
+
+export type AlterAlgorithmName = 'instant' | 'inplace' | 'copy' | 'rewrite' | 'unknown'
 
 export interface StructurePlan {
   statements: StructureStatement[]
+  losses?: StructureLoss[]
   /** Tout ou rien (une transaction) ; sinon chaque instruction est validée seule. */
   transactional: boolean
   destructive: boolean
@@ -662,4 +835,29 @@ export const COLUMN_TYPES: Record<Engine, string[]> = {
   postgresql: ['integer', 'bigint', 'smallint', 'numeric(10,2)', 'real', 'double precision', 'boolean', 'character varying(255)', 'text', 'uuid', 'jsonb', 'date', 'timestamp without time zone', 'timestamp with time zone', 'bytea'],
   clickhouse: ['UInt8', 'UInt32', 'UInt64', 'Int32', 'Int64', 'Float64', 'Decimal(18, 4)', 'String', 'UUID', 'Date', 'DateTime', 'DateTime64(3)', 'Bool', 'Array(String)', 'LowCardinality(String)'],
   redis: [],
+}
+
+/** Un jeton d’API vu par un administrateur : métadonnées seulement, jamais le texte du jeton ni sa clé. */
+export interface AdminTokenInfo {
+  id: string
+  name: string
+  owner: { id: string; username: string; disabled: boolean }
+  /** Un nom de droit par entrée (writeData, diagnostic…) ; un droit ajouté côté serveur arrive ici sans autre changement. */
+  permissions: Record<string, boolean>
+  allConnections: boolean
+  connectionCount: number
+  status: 'active' | 'expired'
+  createdAt: string
+  expiresAt: string | null
+  lastUsedAt: string | null
+}
+
+export interface AdminJournalEvent {
+  id: string
+  occurredAt: string
+  action: 'account.disabled' | 'account.enabled' | 'admin.token_revoked' | 'admin.administrator_token_revoked'
+  actor: { id: string; username: string | null } | null
+  subjectId: string | null
+  /** Propriétaire du jeton révoqué (identifiant de compte). */
+  owner: string | null
 }

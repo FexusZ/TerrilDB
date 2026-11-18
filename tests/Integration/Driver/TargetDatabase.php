@@ -27,7 +27,19 @@ final class TargetDatabase
         'TARGET_REPLICA_MYSQL_URL' => Engine::MySql,
         'TARGET_REPLICA_MARIADB_URL' => Engine::MariaDb,
         'TARGET_REPLICA_POSTGRES_URL' => Engine::PostgreSql,
+        'TARGET_REPLICATED_POSTGRES_URL' => Engine::PostgreSql,
+        'TARGET_SEMISYNC_MYSQL_URL' => Engine::MySql,
+        'TARGET_BINLOG_MARIADB_URL' => Engine::MariaDb,
+        'TARGET_REPLICATED_CLICKHOUSE_URL' => Engine::ClickHouse,
+        'TARGET_REPLICATED_REDIS_URL' => Engine::Redis,
+        'TARGET_REPLICA_REDIS_URL' => Engine::Redis,
     ];
+
+    /**
+     * Les seules cibles qui n'ont pas de mot de passe : `vttestserver` n'offre aucun réglage d'authentification pour son vtgate
+     * (vérifié, v23). Toute autre cible EXIGE un mot de passe, fourni par docker/init-env.sh (le vtgate du vrai cluster y compris).
+     */
+    private const WITHOUT_PASSWORD = ['TARGET_VITESS_URL'];
 
     /**
      * @return iterable<string, array{string}>
@@ -76,7 +88,7 @@ final class TargetDatabase
             (int) self::part($parts, 'port'),
             self::part($parts, 'dbname'),
             self::part($parts, 'user'),
-            self::part($parts, 'password'),
+            \in_array($envVar, self::WITHOUT_PASSWORD, true) && !isset($parts['password']) ? '' : self::part($parts, 'password'),
         );
     }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AuditCheck, PlanFindingInfo, SchemaFinding } from '../api/types'
-import { describeCheck, describePlanFinding, describeSchemaFinding, planKindLabel } from './optimizer'
+import { LINT_RULES, describeCheck, describePlanFinding, describeSchemaFinding, lintRuleLabel, planFindingHelp, planKindLabel } from './optimizer'
 
 const finding = (extra: Partial<SchemaFinding>): SchemaFinding => ({ rule: 'missing_primary_key', severity: 'warning', table: 'log', columns: [], index: null, coveredBy: null, suggestion: null, detail: null, ...extra })
 
@@ -61,12 +61,83 @@ describe('optimizer wording', () => {
     expect(describeCheck(check({ state: 'too_short', detail: '90000' }))).toContain('1 j 1 h')
   })
 
+  it('words stale statistics with what changed, and the cost of recomputing them', () => {
+    const wording = describeSchemaFinding(finding({ rule: 'stale_statistics', severity: 'info', table: 'orders', detail: '40000 lignes modifiées depuis la dernière analyse (jamais analysée depuis le début des compteurs)' }))
+
+    expect(wording.title).toBe('Les statistiques de « orders » sont périmées (40000 lignes modifiées depuis la dernière analyse (jamais analysée depuis le début des compteurs)).')
+    expect(wording.help).toContain('plans')
+    expect(wording.help).toContain('autovacuum')
+  })
+
+  it('words dead tuples without promising the file shrinks', () => {
+    const wording = describeSchemaFinding(finding({ rule: 'dead_tuples', severity: 'info', table: 'events', detail: '30000 tuples morts pour 50000 vivants (dernier vacuum : 2026-09-01 02:00:00)' }))
+
+    expect(wording.title).toContain('« events » garde beaucoup de lignes mortes')
+    expect(wording.help).toContain('VACUUM FULL')
+    expect(wording.help).toContain('exclusif')
+    expect(wording.help).toContain('estimations')
+  })
+
+  it('words reclaimable space with the real cost of the rebuild', () => {
+    const wording = describeSchemaFinding(finding({ rule: 'reclaimable_space', severity: 'info', table: 'logs', detail: 'environ 100 Mio libres dans le fichier de la table (83 % de sa taille)' }))
+
+    expect(wording.title).toContain('« logs » a de la place libre à récupérer (environ 100 Mio')
+    expect(wording.help).toContain('réécrit')
+    expect(wording.help).toContain('espace temporaire')
+  })
+
+  it('words an object whose creator account is gone', () => {
+    const wording = describeSchemaFinding(finding({ rule: 'orphan_definer', severity: 'warning', table: 'v_totals', index: 'v_totals', detail: 'vue créée par « gone@% », compte inexistant' }))
+
+    expect(wording.title).toBe('« v_totals » : vue créée par « gone@% », compte inexistant.')
+    expect(wording.help).toContain('1449')
+  })
+
+  it('says why an operations check could not judge', () => {
+    const check = (extra: Partial<AuditCheck>): AuditCheck => ({ rule: 'dead_tuples', state: 'unavailable', reason: null, detail: null, ...extra })
+
+    expect(describeCheck(check({ reason: 'permission_denied' }))).toBe('Tuples morts : non vérifiable, le compte n’a pas le droit de lire ces informations.')
+    expect(describeCheck(check({ rule: 'orphan_definer', reason: 'unreadable' }))).toBe('Créateurs d’objets : non vérifiable, ces informations n’ont pas pu être lues.')
+    expect(describeCheck(check({ rule: 'reclaimable_space' }))).toContain('Place libre')
+  })
+
+  it('words the partition rules', () => {
+    const exhausted = describeSchemaFinding(finding({ rule: 'partition_range_exhausted', table: 'events', columns: ['created_on'], detail: '2025-01-01' }))
+    expect(exhausted.title).toBe('La plage de partitions de « events » sur created_on s’arrête au 2025-01-01, sans partition pour la suite.')
+    expect(exhausted.help).toContain('refuse')
+
+    const many = describeSchemaFinding(finding({ rule: 'too_many_partitions', severity: 'info', table: 'events', detail: '1500' }))
+    expect(many.title).toBe('La table « events » a 1500 partitions.')
+    expect(many.help).toContain('1000')
+  })
+
   it('words a big full scan, with its condition when there is one', () => {
     const base: PlanFindingInfo = { rule: 'full_scan', relation: 'orders', rows: 11420, condition: '(status = 1)' }
 
     expect(describePlanFinding(base)).toMatch(/Parcours complet de « orders » \(~\s?11\s?420 lignes\)/)
     expect(describePlanFinding(base)).toContain('(status = 1)')
     expect(describePlanFinding({ ...base, condition: null })).not.toContain('condition')
+  })
+
+  it('words an estimate far from the real number of rows by interpolation', () => {
+    const stale: PlanFindingInfo = { rule: 'stale_estimate', relation: 'orders', rows: 1, condition: null, actualRows: 3000, suggestion: 'ANALYZE "orders";' }
+
+    const text = describePlanFinding(stale)
+
+    expect(text).toContain('« orders »')
+    expect(text).toMatch(/estimait ~\s?1 ligne/)
+    expect(text).toMatch(/3\s?000 lignes/)
+    expect(text).toContain('statistiques')
+    expect(planFindingHelp(stale)).toContain('à relire')
+    expect(describePlanFinding({ ...stale, rows: 20000, actualRows: 1000 })).toContain('estimait ~')
+  })
+
+  it('words a sort that spilled to disk', () => {
+    const disk: PlanFindingInfo = { rule: 'sort_on_disk', relation: null, rows: 7000, condition: null, actualRows: 7000 }
+
+    expect(describePlanFinding(disk)).toMatch(/Un tri de 7\s?000 lignes a débordé de la mémoire/)
+    expect(planFindingHelp(disk)).toContain('index')
+    expect(describePlanFinding({ ...disk, actualRows: null })).toContain('Un tri a débordé')
   })
 
   it('words the sort and wildcard findings with the right caution', () => {
@@ -93,5 +164,23 @@ describe('optimizer wording', () => {
 
   it('shows the engine label for what it has no word for', () => {
     expect(planKindLabel('other', 'Memoize')).toBe('Memoize')
+  })
+})
+
+describe('query linter wording', () => {
+  it('has a French label for every rule the server can send', () => {
+    const rules = ['function_on_column', 'arithmetic_on_column', 'leading_wildcard_like', 'select_star', 'large_offset', 'not_in_subquery', 'row_lock', 'recursive_cte', 'type_mismatch', 'or_on_columns', 'distinct_join', 'count_star_large', 'random_order']
+
+    expect([...LINT_RULES].sort()).toEqual([...rules].sort())
+    for (const rule of rules) {
+      expect(lintRuleLabel(rule)).toMatch(/^[A-ZÉ]/)
+    }
+    expect(lintRuleLabel('function_on_column')).toBe('Fonction sur une colonne')
+    expect(lintRuleLabel('type_mismatch')).toBe('Types comparés différents')
+    expect(lintRuleLabel('random_order')).toBe('Tri aléatoire de toute la table')
+  })
+
+  it('shows an unknown rule as is rather than hiding it', () => {
+    expect(lintRuleLabel('future_rule')).toBe('future_rule')
   })
 })

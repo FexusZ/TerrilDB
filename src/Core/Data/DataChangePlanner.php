@@ -7,6 +7,7 @@ namespace App\Core\Data;
 use App\Core\Connection\Engine;
 use App\Core\Data\Exception\InvalidDataChangeException;
 use App\Core\Schema\ColumnDefinition;
+use App\Core\Schema\LockReason;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 
@@ -71,6 +72,9 @@ final class DataChangePlanner
         if ([] === $update->changes) {
             return null;
         }
+        foreach (array_keys($update->changes) as $name) {
+            $this->assertWritable($table, (string) $name);
+        }
         $where = $this->whereColumns($table, $update->original, array_keys($update->changes));
 
         return $this->build($engine, $table, 'update', false, function (Binder $b) use ($table, $update, $where): array {
@@ -97,7 +101,7 @@ final class DataChangePlanner
             throw new InvalidDataChangeException('A new row needs at least one value.');
         }
         foreach (array_keys($insert->values) as $name) {
-            $this->column($table, (string) $name);
+            $this->assertWritable($table, (string) $name);
         }
 
         return $this->build($engine, $table, 'insert', false, function (Binder $b) use ($table, $insert, $engine): array {
@@ -231,6 +235,18 @@ final class DataChangePlanner
         $negative = '-' === $m[1] && ('0' !== $integer || '' !== $fraction);
 
         return ($negative ? '-' : '').$integer.('' === $fraction ? '' : '.'.$fraction);
+    }
+
+    /**
+     * Le moteur calcule une colonne générée et les colonnes de période d'une table versionnée : leur donner une valeur serait refusé
+     * (ou, pire, lu autrement qu'on ne le croit), donc on ne l'envoie pas.
+     */
+    private function assertWritable(TableDefinition $table, string $name): void
+    {
+        $lock = $this->column($table, $name)->lock;
+        if (LockReason::Generated === $lock || LockReason::SystemPeriod === $lock) {
+            throw new InvalidDataChangeException(\sprintf('The column "%s" is computed by the engine and cannot be written.', $name));
+        }
     }
 
     private function column(TableDefinition $table, string $name): ColumnDefinition

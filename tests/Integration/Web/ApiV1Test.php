@@ -83,6 +83,74 @@ final class ApiV1Test extends WebApiTestCase
         return $this->call($method, $uri, $body, csrf: false, extraServer: '' === $token ? [] : ['HTTP_AUTHORIZATION' => 'Bearer '.$token]);
     }
 
+    #[DataProvider('relationalTargets')]
+    public function testLintAdvisesFromTheStructureAndAuditsWithoutTheRawText(string $envVar): void
+    {
+        $user = $this->prepare($envVar, rights: ['readSchema' => true]);
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "select id from orders where lower(status) = 'jean.dupont@example.org'"]);
+
+        self::assertSame(200, $this->statusCode());
+        $findings = self::listOf($body['findings']);
+        self::assertCount(1, $findings);
+        $finding = self::arrayOf($findings[0]);
+        self::assertSame('function_on_column', $finding['rule']);
+        self::assertStringContainsString('idx_orders_status', self::stringOf($finding['message']));
+        self::assertSame(['status'], $finding['columns']);
+
+        $events = array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value));
+        self::assertCount(1, $events);
+        self::assertSame('api', $events[0]->getActor()->value);
+        self::assertSame($this->tokenId, $events[0]->getTokenId()?->toRfc4122());
+        self::assertSame('select id from orders where lower(status) = ?', $events[0]->getDetails()['sql']);
+        self::assertStringNotContainsString('jean.dupont', json_encode($events[0]->getDetails(), \JSON_THROW_ON_ERROR));
+    }
+
+    public function testLintNeedsNoWriteRightAndJudgesNoWrite(): void
+    {
+        $user = $this->prepare(rights: ['readSchema' => true]);
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "delete from categories where lower(name) = 'x'"]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame([], $body['findings']);
+        $details = array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value))[0]->getDetails();
+        self::assertArrayNotHasKey('sql', $details);
+    }
+
+    public function testLintNeedsTheReadSchemaRightBecauseItNamesTheIndexes(): void
+    {
+        $user = $this->prepare();
+
+        $body = $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => "select id from orders where lower(status) = 'x'"]);
+
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $body);
+        self::assertSame([], array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value)));
+    }
+
+    public function testLintRefusesAConnectionOutsideTheGrantAndABadBody(): void
+    {
+        $this->prepare(rights: ['readSchema' => true]);
+
+        $this->api('POST', '/api/v1/connections/'.$this->otherConnectionId.'/lint', ['sql' => 'select 1']);
+        self::assertSame(404, $this->statusCode());
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['nope' => 'select 1']);
+        self::assertSame(400, $this->statusCode());
+
+        $this->api('POST', '/api/v1/connections/'.$this->connectionId.'/lint', ['sql' => 'select 1'], token: 'tdb_bad');
+        self::assertSame(401, $this->statusCode());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function relationalTargets(): iterable
+    {
+        yield from TargetDatabase::relational();
+    }
+
     public function testNoTokenIsRefusedWithAChallenge(): void
     {
         $body = $this->api('GET', '/api/v1/connections', token: '');
@@ -609,6 +677,37 @@ final class ApiV1Test extends WebApiTestCase
         $variables = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/variables');
         self::assertSame(403, $this->statusCode());
         self::assertSame(['error' => 'permission_denied'], $variables);
+
+        $audit = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/config-audit');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $audit);
+
+        $logs = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/logs');
+        self::assertSame(403, $this->statusCode());
+        self::assertSame(['error' => 'permission_denied'], $logs);
+    }
+
+    public function testATokenWithTheDiagnosticRightReadsTheConfigAudit(): void
+    {
+        $this->prepare('TARGET_POSTGRES_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/config-audit');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'engine', 'evaluated', 'rulesTotal', 'findings'], array_keys($body));
+        $rules = array_map(static fn ($f): mixed => self::arrayOf($f)['rule'], self::arrayOf($body['findings']));
+        sort($rules);
+        self::assertSame(['slow_statement_log_off', 'ssl_off'], $rules);
+        self::assertStringNotContainsString('hunter', json_encode($body, \JSON_THROW_ON_ERROR));
+    }
+
+    public function testTheConfigAuditOfAConnectionOutsideTheListIsNotFound(): void
+    {
+        $this->prepare(rights: ['diagnostic' => true]);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/config-audit');
+
+        self::assertSame(404, $this->statusCode());
     }
 
     #[DataProvider('targets')]
@@ -621,14 +720,33 @@ final class ApiV1Test extends WebApiTestCase
         $locks = 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available';
         $accounts = \in_array($envVar, ['TARGET_POSTGRES_URL', 'TARGET_CLICKHOUSE_URL'], true) ? 'unsupported' : 'available';
         $statuses = array_map(static fn (mixed $c): mixed => self::arrayOf($c)['availability'], self::arrayOf($capabilities['capabilities']));
-        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption', 'health', 'replication'], array_keys($statuses));
-        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => $statuses['statements'], 'variables' => 'available', 'accounts' => $accounts, 'encryption' => 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available', 'health' => 'available' === $locks ? 'available' : 'unsupported', 'replication' => 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available'], $statuses);
+        self::assertSame(['sessions', 'locks', 'statements', 'variables', 'accounts', 'encryption', 'health', 'replication', 'logs'], array_keys($statuses));
+        self::assertSame(['sessions' => 'available', 'locks' => $locks, 'statements' => $statuses['statements'], 'variables' => 'available', 'accounts' => $accounts, 'encryption' => 'TARGET_CLICKHOUSE_URL' === $envVar ? 'unsupported' : 'available', 'health' => 'available' === $locks ? 'available' : 'unsupported', 'replication' => 'available', 'logs' => match ($envVar) {
+            'TARGET_MYSQL_URL', 'TARGET_MYSQL26_URL' => 'available',
+            'TARGET_MARIADB_URL', 'TARGET_MARIADB13_URL' => 'disabled',
+            default => 'unsupported',
+        }], $statuses);
 
         $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/sessions');
         self::assertSame(200, $this->statusCode());
         self::assertSame('available', self::arrayOf($body['status'])['availability']);
         self::assertIsArray($body['sessions']);
         self::assertNotEmpty($body['sessions']);
+    }
+
+    public function testATokenWithTheDiagnosticRightReadsTheLogs(): void
+    {
+        $this->prepare('TARGET_MYSQL_URL', rights: ['diagnostic' => true]);
+
+        $body = $this->api('GET', '/api/v1/connections/'.$this->connectionId.'/diagnostics/logs');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('available', self::arrayOf(self::arrayOf($body['errorLog'])['status'])['availability']);
+        self::assertNotEmpty(self::arrayOf($body['errorLog'])['entries']);
+        self::assertArrayHasKey('slowQueries', $body);
+
+        $this->api('GET', '/api/v1/connections/'.$this->otherConnectionId.'/diagnostics/logs');
+        self::assertSame(404, $this->statusCode());
     }
 
     public function testATokenWithTheDiagnosticRightMeasuresTheHealth(): void

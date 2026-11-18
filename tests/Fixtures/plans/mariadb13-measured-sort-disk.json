@@ -1,0 +1,45 @@
+{
+  "query_optimization": {
+    "r_total_time_ms": 0.016321437
+  },
+  "query_block": {
+    "select_id": 1,
+    "cost": 5.802297528,
+    "r_loops": 1,
+    "r_total_time_ms": 2.345422263,
+    "nested_loop": [
+      {
+        "read_sorted_file": {
+          "r_rows": 7000,
+          "filesort": {
+            "sort_key": "order_items.unit_price_cents desc",
+            "r_loops": 1,
+            "r_total_time_ms": 2.028453607,
+            "r_used_priority_queue": false,
+            "r_output_rows": 7000,
+            "r_sort_passes": 1,
+            "r_buffer_size": "26KiB",
+            "r_sort_mode": "sort_key,addon_fields",
+            "table": {
+              "table_name": "order_items",
+              "access_type": "ALL",
+              "loops": 1,
+              "r_loops": 1,
+              "rows": 7000,
+              "r_rows": 7000,
+              "cost": 1.168096,
+              "r_table_time_ms": 0.803109424,
+              "r_other_time_ms": 1.222032978,
+              "r_engine_stats": {
+                "pages_accessed": 20
+              },
+              "filtered": 100,
+              "r_total_filtered": 100,
+              "r_filtered": 100
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -9,12 +9,14 @@ use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Schema\AutoCounter;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
+use App\Core\Schema\DefinerReport;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Core\Schema\ForeignKeyDefinition;
 use App\Core\Schema\IndexDefinition;
 use App\Core\Schema\IndexUsage;
 use App\Core\Schema\IndexUsageReport;
 use App\Core\Schema\LockReason;
+use App\Core\Schema\OperationsSource;
 use App\Core\Schema\ReferentialAction;
 use App\Core\Schema\SchemaIntrospector;
 use App\Core\Schema\TableDefinition;
@@ -22,6 +24,7 @@ use App\Core\Schema\TableKind;
 use App\Core\Schema\TablePage;
 use App\Core\Schema\TablePageRequest;
 use App\Core\Schema\TableSummary;
+use App\Core\Schema\UpkeepReport;
 use App\Driver\RowReader;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
@@ -33,7 +36,7 @@ use Doctrine\DBAL\Exception\DriverException;
  * Les index fonctionnels (expressions) n'ont pas de nom de colonne dans information_schema : leurs parties
  * sont ignorées, et un index qui n'a plus aucune colonne nommée n'est pas listé.
  */
-final readonly class MySqlIntrospector implements SchemaIntrospector
+final readonly class MySqlIntrospector implements SchemaIntrospector, OperationsSource
 {
     public function __construct(private Connection $connection)
     {
@@ -42,6 +45,16 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     private const COMPRESSED = '~\s*/\*M?!\d+\s+COMPRESSED(?:=\w+)?\s*\*/~i';
 
     private const SYSTEM_DATABASES = ['information_schema', 'mysql', 'performance_schema', 'sys'];
+
+    public function upkeep(): UpkeepReport
+    {
+        return (new MySqlOperations($this->connection))->upkeep();
+    }
+
+    public function orphanDefiners(): DefinerReport
+    {
+        return (new MySqlOperations($this->connection))->orphanDefiners();
+    }
 
     public function listDatabases(): array
     {
@@ -84,6 +97,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
         return $tables;
     }
 
+    private static function hasFourByteCharacter(string $text): bool
+    {
+        return 1 === preg_match('/[\x{10000}-\x{10FFFF}]/u', $text);
+    }
+
     private static function count(mixed $value): int
     {
         return is_numeric($value) ? (int) $value : 0;
@@ -91,6 +109,11 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 
     public function listTablesPage(TablePageRequest $request): TablePage
     {
+        // Aucun nom ne contient un caractère sur 4 octets (voir describeTable) : la comparaison avec TABLE_NAME échouerait, la réponse est vide.
+        if (null !== $request->search && self::hasFourByteCharacter($request->search)) {
+            return new TablePage([], null, null === $request->after ? 0 : null);
+        }
+
         $where = 'TABLE_SCHEMA = DATABASE()';
         $params = [];
         if (null !== $request->search) {
@@ -201,6 +224,12 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
 
     public function describeTable(string $name): TableDefinition
     {
+        // Les noms d'objets sont stockés en utf8mb3 : MariaDB refuse un caractère sur 4 octets, MySQL le range en « ? ». Un tel
+        // nom ne désigne aucune table, et le comparer à une colonne utf8mb3 ferait échouer la requête (collations incompatibles).
+        if (self::hasFourByteCharacter($name)) {
+            throw TableNotFoundException::named($name);
+        }
+
         $header = $this->connection->fetchAssociative(
             'SELECT t.TABLE_NAME AS name, t.TABLE_TYPE AS kind, t.TABLE_ROWS AS estimate, t.DATA_LENGTH AS data_bytes, t.INDEX_LENGTH AS index_bytes,
                     t.ENGINE AS storage_engine, e.TRANSACTIONS AS engine_transactions
@@ -231,6 +260,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
             TableKind::View === $kind ? null : $header->nullableString('storage_engine'),
             TableKind::View === $kind ? null : self::transactional($header->nullableString('engine_transactions')),
             TableKind::View === $kind ? null : $this->triggerCount($name),
+            TableKind::View === $kind ? null : (new MySqlPartitionReader($this->connection))->read($name),
+            versioned: 'SYSTEM VERSIONED' === $header->string('kind'),
         );
     }
 
@@ -263,7 +294,8 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
     {
         $rows = $this->connection->fetchAllAssociative(
             'SELECT COLUMN_NAME AS name, COLUMN_TYPE AS type, IS_NULLABLE AS nullable, COLUMN_DEFAULT AS col_default,
-                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation
+                    EXTRA AS extra, COLUMN_COMMENT AS comment, GENERATION_EXPRESSION AS generation,
+                    CHARACTER_SET_NAME AS charset, COLLATION_NAME AS collation
                FROM information_schema.COLUMNS
               WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
               ORDER BY ORDINAL_POSITION',
@@ -290,11 +322,29 @@ final readonly class MySqlIntrospector implements SchemaIntrospector
                 str_contains($row->string('extra'), 'INVISIBLE'),
                 1 === preg_match('/on update\s+([A-Za-z_]+(?:\(\d*\))?)/i', $row->string('extra'), $onUpdate) ? $onUpdate[1] : null,
                 $compressed,
-                1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $row->string('extra')) || '' !== (string) $row->nullableString('generation') ? LockReason::Generated : (isset($checked[$row->string('name')]) ? LockReason::ColumnCheck : null),
+                self::lock($row->string('extra'), (string) $row->nullableString('generation'), isset($checked[$row->string('name')])),
+                $row->nullableString('charset'),
+                $row->nullableString('collation'),
             );
         }
 
         return $columns;
+    }
+
+    /**
+     * Pourquoi la colonne ne se redéfinit pas. MariaDB rend les colonnes de période d'une table versionnée comme des colonnes générées
+     * dont l'expression est « ROW START » / « ROW END » : on les distingue d'une colonne générée ordinaire.
+     */
+    private static function lock(string $extra, string $generation, bool $checked): ?LockReason
+    {
+        if (1 === preg_match('/^ROW\s+(?:START|END)$/i', trim($generation))) {
+            return LockReason::SystemPeriod;
+        }
+        if (1 === preg_match('/\b(?:VIRTUAL|STORED|PERSISTENT)\s+GENERATED\b/i', $extra) || '' !== $generation) {
+            return LockReason::Generated;
+        }
+
+        return $checked ? LockReason::ColumnCheck : null;
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Core\Schema\Change\Dialect\MySqlDdlDialect;
 use App\Core\Schema\Change\Dialect\PostgreSqlDdlDialect;
 use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Operation\DropTable;
+use App\Core\Schema\Change\Operation\ModifyColumn;
 use App\Core\Schema\TableDefinition;
 use App\Core\Schema\TableKind;
 
@@ -33,7 +34,10 @@ final class SchemaChangePlanner
         $this->assertTable($current);
         $draft = $dialect->prepare($current, $draft);
 
-        return new ChangePlan($dialect->statements($current->name, $this->differ->diff($current, $draft)), $dialect->transactional());
+        $operations = $this->differ->diff($current, $draft);
+        PartitionedTableGuard::check($engine, $current, $draft, $operations);
+
+        return new ChangePlan($dialect->statements($current->name, $operations), $dialect->transactional(), self::removedValues($engine, $operations));
     }
 
     /**
@@ -44,7 +48,11 @@ final class SchemaChangePlanner
         $dialect = $this->dialect($engine);
         $this->assertTable($current);
 
-        return new ChangePlan($dialect->statements($current->name, [new DropTable($current->name)]), $dialect->transactional());
+        return new ChangePlan(
+            $dialect->statements($current->name, [new DropTable($current->name)]),
+            $dialect->transactional(),
+            $current->versioned ? [new PlanLoss('system_history', $current->name)] : [],
+        );
     }
 
     /**
@@ -59,6 +67,35 @@ final class SchemaChangePlanner
             array_map(static fn ($i): array => [$i->name, $i->columns, $i->unique, $i->primary], $table->indexes),
             array_map(static fn ($f): array => [$f->name, $f->columns, $f->referencedTable, $f->referencedColumns, $f->onUpdate->value, $f->onDelete->value], $table->foreignKeys),
         ], \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Les valeurs qu'une liste ENUM / SET perd (MySQL et MariaDB) : changer une liste est une migration de données, les lignes qui
+     * portent une valeur retirée bloquent le changement (mode strict) ou la perdent.
+     *
+     * @param list<object> $operations
+     *
+     * @return list<PlanLoss>
+     */
+    private static function removedValues(Engine $engine, array $operations): array
+    {
+        if (Engine::MySql !== $engine && Engine::MariaDb !== $engine) {
+            return [];
+        }
+        $losses = [];
+        foreach ($operations as $operation) {
+            if (!$operation instanceof ModifyColumn || !$operation->typeChanged) {
+                continue;
+            }
+            $before = EnumMembers::of($operation->before->type);
+            $after = EnumMembers::of($operation->after->type);
+            $removed = null === $before || null === $after ? [] : array_values(array_diff($before, $after));
+            if ([] !== $removed) {
+                $losses[] = new PlanLoss('values_removed', $operation->after->name, $removed);
+            }
+        }
+
+        return $losses;
     }
 
     private function dialect(Engine $engine): DdlDialect

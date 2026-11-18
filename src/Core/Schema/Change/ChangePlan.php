@@ -11,10 +11,12 @@ final readonly class ChangePlan
 {
     /**
      * @param list<DdlStatement> $statements
+     * @param list<PlanLoss>     $losses     ce que le plan fait perdre au-delà de son SQL (historique, valeurs d'une liste), à lister avant de confirmer
      */
     public function __construct(
         public array $statements,
         public bool $transactional,
+        public array $losses = [],
     ) {
     }
 
