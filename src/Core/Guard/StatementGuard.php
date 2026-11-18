@@ -48,9 +48,10 @@ final class StatementGuard
         'PG_REPLICATION_ORIGIN_XACT_RESET', 'PG_LOGICAL_EMIT_MESSAGE', 'PG_SWITCH_WAL', 'PG_CREATE_RESTORE_POINT', 'PG_BACKUP_START', 'PG_BACKUP_STOP',
         'PG_START_BACKUP', 'PG_STOP_BACKUP', 'PG_PROMOTE', 'PG_LOG_STANDBY_SNAPSHOT', 'PG_LOG_BACKEND_MEMORY_CONTEXTS', 'PG_SYNC_REPLICATION_SLOTS',
         // Statistiques du planificateur écrites dans le catalogue (validées en lecture-écriture), collations importées, compteurs de l'extension remis à zéro.
-        'PG_RESTORE_RELATION_STATS', 'PG_RESTORE_ATTRIBUTE_STATS', 'PG_CLEAR_RELATION_STATS', 'PG_CLEAR_ATTRIBUTE_STATS', 'PG_IMPORT_SYSTEM_COLLATIONS', 'PG_STAT_STATEMENTS_RESET',
+        'PG_NOTIFY', 'PG_RESTORE_RELATION_STATS', 'PG_RESTORE_ATTRIBUTE_STATS', 'PG_CLEAR_RELATION_STATS', 'PG_CLEAR_ATTRIBUTE_STATS', 'PG_IMPORT_SYSTEM_COLLATIONS', 'PG_STAT_STATEMENTS_RESET',
     ];
-    private const SERVER_STATE_PREFIXES = ['PG_LOGICAL_SLOT_', 'PG_STAT_RESET', 'PG_WAL_REPLAY_', 'PG_LS_'];
+    // `QUERY_TO_XML*` exécute le texte SQL reçu en argument (le filtre lexical n'y verrait qu'un SELECT).
+    private const SERVER_STATE_PREFIXES = ['PG_LOGICAL_SLOT_', 'PG_STAT_RESET', 'PG_WAL_REPLAY_', 'PG_LS_', 'QUERY_TO_XML'];
     // Fonctions de table ClickHouse qui lisent des fichiers du serveur ou ouvrent des connexions sortantes : elles ne
     // sont refusées que lorsqu'elles sont appelées (« file(…) »), une colonne nommée « file » reste lisible.
     private const CLICKHOUSE_TABLE_FUNCTIONS = [
