@@ -8,6 +8,7 @@ use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Driver;
+use App\Core\Driver\ServerFlavour;
 use App\Core\Driver\ServerVersion;
 use App\Core\Driver\TargetConnection;
 use App\Driver\DbalConnector;
@@ -38,7 +39,7 @@ final readonly class MySqlDriver implements Driver
         $connection = $this->connector->connect($engine, $parameters);
         $version = self::version($connection);
 
-        return new TargetConnection($engine, new MySqlIntrospector($connection), new MySqlQueryRunner($connection, $engine), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection, $engine), diagnostics: new ServerDiagnostics($engine, new MySqlSessionDiagnostics($connection, $engine), new MySqlLockDiagnostics($connection, $engine), new MySqlStatementDiagnostics($connection), variables: new MySqlVariableDiagnostics($connection, $engine), accounts: new MySqlAccountDiagnostics($connection, $engine), encryption: new MySqlEncryptionDiagnostics($connection), health: new MySqlHealthDiagnostics($connection), replication: new MySqlReplicationDiagnostics($connection, $engine), logs: new MySqlLogDiagnostics($connection, $engine)), script: new MySqlScriptExecutor($connection, $engine), version: $version);
+        return new TargetConnection($engine, new MySqlIntrospector($connection), new MySqlQueryRunner($connection, $engine, ServerFlavour::Vitess === $version?->flavour), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection, $engine), diagnostics: new ServerDiagnostics($engine, new MySqlSessionDiagnostics($connection, $engine), new MySqlLockDiagnostics($connection, $engine), new MySqlStatementDiagnostics($connection), variables: new MySqlVariableDiagnostics($connection, $engine), accounts: new MySqlAccountDiagnostics($connection, $engine), encryption: new MySqlEncryptionDiagnostics($connection), health: new MySqlHealthDiagnostics($connection), replication: new MySqlReplicationDiagnostics($connection, $engine), logs: new MySqlLogDiagnostics($connection, $engine)), script: new MySqlScriptExecutor($connection, $engine), version: $version);
     }
 
     /**

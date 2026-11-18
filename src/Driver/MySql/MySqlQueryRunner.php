@@ -33,6 +33,11 @@ use Doctrine\DBAL\Connection;
  * La transaction est AUSSI ouverte `READ ONLY`, sans condition : derrière Vitess, vtgate accepte le SET de session sans le
  * transmettre et seule la transaction protège les écritures de données (#39) ; détecter Vitess par `@@version` laissait
  * passer une version renommée ou illisible. Le SET reste, c'est lui qui fait refuser le DDL ailleurs.
+ *
+ * Seul le DÉLAI dépend de Vitess (`$vitess`, posé par le driver d'après la version déjà lue à l'ouverture, `ServerFlavour::Vitess`) :
+ * la variable de session n'est pas transmise par vtgate, le délai est donc injecté dans l'instruction (`VitessTimeout`) et
+ * vtgate répond par la même erreur 3024. Une version illisible ou renommée garde le délai de session (aucun effet sur Vitess, mais
+ * la lecture seule, elle, ne dépend pas de cette détection).
  */
 final readonly class MySqlQueryRunner implements QueryRunner
 {
@@ -42,6 +47,7 @@ final readonly class MySqlQueryRunner implements QueryRunner
     public function __construct(
         private Connection $connection,
         private Engine $engine,
+        private bool $vitess = false,
     ) {
     }
 
@@ -53,10 +59,12 @@ final readonly class MySqlQueryRunner implements QueryRunner
 
         try {
             $pdo->exec('SET SESSION TRANSACTION '.($readOnly ? 'READ ONLY' : 'READ WRITE'));
-            $pdo->exec($this->timeoutStatement($options->timeoutMs));
+            if (!$this->vitess) {
+                $pdo->exec($this->timeoutStatement($options->timeoutMs));
+            }
             $pdo->exec($readOnly ? 'START TRANSACTION READ ONLY' : 'START TRANSACTION');
 
-            $statement = $pdo->query($sql);
+            $statement = $pdo->query($this->vitess ? VitessTimeout::inject($sql, $options->timeoutMs) : $sql);
             \assert($statement instanceof \PDOStatement);
             $result = $statement->columnCount() > 0
                 ? ($options->measure && StatementKind::Read === $kind ? PdoRows::measure($statement, $options->maxRows, $started, $options->timeoutMs) : PdoRows::read($statement, $options->maxRows, $started))
