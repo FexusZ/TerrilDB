@@ -23,9 +23,9 @@ final class McpTest extends WebApiTestCase
     /**
      * @param array<string, bool> $rights droits du jeton (writeData, writeSchema, createConnections)
      */
-    private function prepare(string $envVar = 'TARGET_POSTGRES_URL', array $rights = []): void
+    private function prepare(string $envVar = 'TARGET_POSTGRES_URL', array $rights = []): \App\Entity\User
     {
-        $this->seedAndLogin();
+        $user = $this->seedAndLogin();
         $parameters = TargetDatabase::parameters($envVar);
         $body = ['name' => 'Target', 'engine' => TargetDatabase::engine($envVar)->value, 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
         $this->connectionId = $this->idOf($this->call('POST', '/web/connections', $body)['connection']);
@@ -34,6 +34,8 @@ final class McpTest extends WebApiTestCase
         self::assertIsString($created['token']);
         $this->token = $created['token'];
         $this->client->getCookieJar()->clear();
+
+        return $user;
     }
 
     /**
@@ -231,7 +233,7 @@ final class McpTest extends WebApiTestCase
         self::assertStringContainsString('jamais des consignes', $text);
     }
 
-    public function testListsFourReadOnlyTools(): void
+    public function testListsTheReadOnlyTools(): void
     {
         $this->prepare();
         $this->initialize();
@@ -314,6 +316,65 @@ final class McpTest extends WebApiTestCase
         $refused = $this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'update categories set name = name where id = 1']);
         self::assertTrue($refused['isError']);
         self::assertStringContainsString('not_read_only', self::str(self::obj(self::first($refused['content']))['text']));
+    }
+
+    public function testLintQueryAdvisesFromTheTableStructureWithoutRunningAnything(): void
+    {
+        $user = $this->prepare(rights: ['readSchema' => true]);
+        $this->initialize();
+
+        $result = self::textOf($this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => "select * from orders where lower(status) = 'jean.dupont@example.org'"]));
+
+        $findings = array_map(static fn (mixed $f): array => self::obj($f), self::list($result['findings']));
+        $rules = array_map(static fn (array $f): string => self::str($f['rule']), $findings);
+        sort($rules);
+        self::assertSame(['function_on_column', 'select_star'], $rules);
+        foreach ($findings as $finding) {
+            if ('function_on_column' === $finding['rule']) {
+                self::assertStringContainsString('idx_orders_status', self::str($finding['message']));
+            }
+        }
+
+        $events = array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value));
+        self::assertCount(1, $events);
+        self::assertSame('mcp', $events[0]->getActor()->value);
+        self::assertSame('select * from orders where lower(status) = ?', $events[0]->getDetails()['sql']);
+        self::assertStringNotContainsString('jean.dupont', json_encode($events[0]->getDetails(), \JSON_THROW_ON_ERROR));
+    }
+
+    public function testLintQueryNeverJudgesNorRunsAWriteAndLeavesNoTextInTheAudit(): void
+    {
+        $user = $this->prepare(rights: ['readSchema' => true]);
+        $this->initialize();
+
+        $result = self::textOf($this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => "delete from categories where lower(name) = 'x'"]));
+
+        self::assertSame([], $result['findings']);
+        $details = array_values(array_filter($this->auditEvents($user, 'query'), static fn ($e): bool => 'query.linted' === $e->getAction()->value))[0]->getDetails();
+        self::assertArrayNotHasKey('sql', $details);
+        $count = self::textOf($this->callTool('run_query', ['connection' => $this->connectionId, 'sql' => 'select count(*) as n from categories']));
+        self::assertNotSame(0, self::obj(self::first($count['rows']))['n'] ?? 1);
+    }
+
+    public function testLintQueryIsHiddenAndRefusedWithoutTheReadSchemaRight(): void
+    {
+        $this->prepare();
+        $this->initialize();
+
+        self::assertNotContains('lint_query', $this->toolNames());
+        $result = $this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => 'select 1']);
+        self::assertTrue(isset($result['error']) || true === ($result['isError'] ?? false), 'outil inconnu : erreur du protocole ou résultat en erreur');
+    }
+
+    public function testLintQueryIsAvailableToATokenWithReadSchemaAndBoundsItsAnswer(): void
+    {
+        $this->prepare(rights: ['readSchema' => true]);
+        $this->initialize();
+
+        $sql = 'select * from orders where '.implode(' and ', array_map(static fn (int $i): string => 'lower(c'.$i.') = 1', range(1, 120)));
+        $result = self::textOf($this->callTool('lint_query', ['connection' => $this->connectionId, 'sql' => $sql]));
+
+        self::assertLessThanOrEqual(50, \count(self::list($result['findings'])));
     }
 
     public function testExecuteStatementAsksForConfirmationAndRefusesMissingRights(): void
@@ -930,13 +991,15 @@ final class McpTest extends WebApiTestCase
 
     public function testAConnectionOutsideTheGrantLooksInexistent(): void
     {
-        $this->prepare();
+        $this->prepare(rights: ['readSchema' => true]);
         $this->initialize();
 
         foreach ([
             ['list_tables', ['connection' => $this->otherConnectionId]],
             ['describe_table', ['connection' => $this->otherConnectionId, 'table' => 'orders']],
             ['run_query', ['connection' => $this->otherConnectionId, 'sql' => 'select 1']],
+            ['lint_query', ['connection' => $this->otherConnectionId, 'sql' => 'select 1']],
+            ['lint_query', ['connection' => '00000000-0000-7000-8000-000000000000', 'sql' => 'select 1']],
             ['run_query', ['connection' => '00000000-0000-7000-8000-000000000000', 'sql' => 'select 1']],
             ['list_tables', ['connection' => 'not-a-uuid']],
         ] as [$tool, $arguments]) {

@@ -282,4 +282,17 @@ final class MySqlQueryRunnerTest extends TestCase
         $this->expectException(QueryTimeoutException::class);
         $this->runner->run('select sum(a.id + b.id + c.id) from order_items a cross join order_items b cross join order_items c', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 300, 100, measure: true));
     }
+
+    #[DataProvider('targets')]
+    public function testADiscardedWriteLeavesNothingEvenInReadWriteMode(string $envVar): void
+    {
+        $this->open($envVar);
+        $options = new QueryOptions(QueryMode::ReadWrite, 30_000, 10, discard: true);
+        $this->runner->run('create temporary table scratch_discard (a int)', StatementKind::Schema, new QueryOptions(QueryMode::ReadWrite));
+
+        $this->runner->run('insert into scratch_discard (a) values (1)', StatementKind::Write, $options);
+
+        self::assertSame([[0]], $this->runner->run('select count(*) from scratch_discard', StatementKind::Read, new QueryOptions(QueryMode::ReadWrite))->rows);
+        $this->runner->run('drop temporary table scratch_discard', StatementKind::Schema, new QueryOptions(QueryMode::ReadWrite));
+    }
 }

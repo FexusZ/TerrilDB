@@ -1,0 +1,6 @@
+-> Limit: 50 row(s)  (cost=0.7 rows=1) (actual time=0.744..0.797 rows=50 loops=1)
+    -> Nested loop inner join  (cost=0.7 rows=1) (actual time=0.743..0.794 rows=50 loops=1)
+        -> Sort: o.ordered_at  (cost=0.35 rows=1) (actual time=0.736..0.738 rows=50 loops=1)
+            -> Filter: (o.`status` = 'shipped')  (cost=0.35 rows=1) (actual time=0.00938..0.661 rows=750 loops=1)
+                -> Table scan on o  (cost=0.35 rows=1) (actual time=0.00673..0.491 rows=3000 loops=1)
+        -> Single-row index lookup on c using PRIMARY (id = o.customer_id)  (cost=0.35 rows=1) (actual time=975e-6..994e-6 rows=1 loops=50)

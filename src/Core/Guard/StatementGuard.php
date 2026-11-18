@@ -141,7 +141,7 @@ final class StatementGuard
         if (StatementKind::Read === $kind && ($verb !== $first || 'WITH' === $first) && $this->hasWriteVerb($statement)) {
             $kind = StatementKind::Write;
         }
-        if ('EXPLAIN' === $first && 'EXPLAIN' !== $verb) {
+        if (('EXPLAIN' === $first && 'EXPLAIN' !== $verb) || ('ANALYZE' === $first && 'ANALYZE' !== $verb)) {
             return StatementKind::Write === $kind || StatementKind::Schema === $kind ? $kind : StatementKind::Inspect;
         }
 
