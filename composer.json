@@ -11,7 +11,7 @@
         "doctrine/doctrine-bundle": "^3.3",
         "doctrine/doctrine-migrations-bundle": "^4.0",
         "doctrine/orm": "^3.7",
-        "mcp/sdk": "^0.9.0",
+        "mcp/sdk": "^0.10.0",
         "nyholm/psr7": "^1.8",
         "predis/predis": "^3.7",
         "spomky-labs/otphp": "^11.5",
