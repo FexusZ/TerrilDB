@@ -35,6 +35,7 @@ final class DeployScriptSafetyTest extends TestCase
                     echo "-- dump complet"
                     ;;
                 *"doctrine:migrations:migrate"*) echo MIGRATE >> "$FAKE_LOG" ;;
+                *"--profile tunnel"*"up"*) [ "${FAKE_TUNNEL_FAIL:-}" = 1 ] && exit 1 ;;
             esac
             exit 0
             SH);
@@ -92,6 +93,41 @@ final class DeployScriptSafetyTest extends TestCase
         self::assertStringContainsString('sauvegarde', $output);
         self::assertStringNotContainsString('MIGRATE', $log);
         self::assertSame($before, $this->backups(), 'Aucun partiel, aucune purge des sauvegardes valides.');
+    }
+
+    public function testTheTunnelIsNotStartedWhileTheBastionListIsEmpty(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
+
+        [$code, , $log] = $this->deploy();
+
+        self::assertSame(0, $code);
+        self::assertStringNotContainsString('build tunnel', $log);
+        self::assertDoesNotMatchRegularExpression('/up .*tunnel/', $log);
+        self::assertStringContainsString('rm -sf tunnel', $log, 'Un tunnel resté d\'un déploiement précédent est arrêté.');
+    }
+
+    public function testTheTunnelIsBuiltAndStartedWhenBastionsAreDeclared(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\nTERRILDB_SSH_ALLOWED_BASTIONS=bastion.test:22\n");
+
+        [$code, $output, $log] = $this->deploy();
+
+        self::assertSame(0, $code);
+        self::assertStringContainsString('--profile tunnel build tunnel', $log);
+        self::assertMatchesRegularExpression('/--profile tunnel up -d --wait .*tunnel/', $log);
+        self::assertStringContainsString('Tunnel SSH démarré', $output);
+    }
+
+    public function testAFailingTunnelNeverFailsTheDeploymentOfTheApplication(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\nTERRILDB_SSH_ALLOWED_BASTIONS=bastion.test:22\n");
+
+        [$code, $output] = $this->deploy(['FAKE_TUNNEL_FAIL' => '1']);
+
+        self::assertSame(0, $code);
+        self::assertStringContainsString('Déployé', $output);
+        self::assertStringContainsString('Tunnel SSH non démarré', $output);
     }
 
     public function testASuccessfulDumpIsGzippedPrivateAndTheMigrationRuns(): void

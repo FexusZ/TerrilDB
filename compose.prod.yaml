@@ -26,6 +26,9 @@ services:
       # Le délai (secondes) du reverse proxy de l'hôte, qui règle aussi nginx (docker/prod/proxy-timeout.sh) : l'application en tire
       # la limite de durée d'une requête ou d'un script.
       TERRILDB_PROXY_TIMEOUT: ${TERRILDB_PROXY_TIMEOUT:-120}
+      # Bastions SSH autorisés (« hôte » ou « hôte:port », virgules) : VIDE par défaut = tout refusé, le tunnel reste éteint.
+      # Le conteneur `tunnel` lit la même valeur (docs/ssh-tunnel.md).
+      TERRILDB_SSH_ALLOWED_BASTIONS: ${TERRILDB_SSH_ALLOWED_BASTIONS:-}
     ports:
       # Local par défaut ; TERRILDB_BIND ouvre temporairement une adresse du réseau privé (création du premier compte).
       - "${TERRILDB_BIND:-127.0.0.1}:${TERRILDB_PORT:-8090}:8080"
@@ -36,6 +39,8 @@ services:
     networks: [default, backend]
     volumes:
       - sessions:/data/sessions
+      # Sockets du tunnel SSH (dossier 0700 posé par `tunnel-init`) : seul lien avec le conteneur `tunnel`.
+      - tunnel-sockets:/run/tunnels
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
@@ -63,10 +68,59 @@ services:
       interval: 3s
       retries: 20
 
+  # Tunnel SSH (#13), facultatif : `deploy.sh` ne le démarre que si TERRILDB_SSH_ALLOWED_BASTIONS (deploy.env) n'est pas vide. Seul
+  # conteneur à embarquer `ssh` et à sortir vers les bastions ; l'application lui parle par un socket Unix (volume), pas par le réseau.
+  # Même uid que l'application (www-data, 33) : le dossier des sockets est en 0700. Règles de sortie : docs/deploy.md.
+  tunnel-init:
+    profiles: [tunnel]
+    image: alpine:3
+    user: root
+    restart: "no"
+    command: ["sh", "-c", "chown 33:33 /run/tunnels && chmod 700 /run/tunnels"]
+    volumes:
+      - tunnel-sockets:/run/tunnels
+    networks: [tunnel]
+
+  tunnel:
+    profiles: [tunnel]
+    image: terrildb-tunnel:${TERRILDB_TAG:-latest}
+    build:
+      context: docker/tunnel
+      args:
+        UID: 33
+        GID: 33
+    restart: unless-stopped
+    user: "33:33"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 256m
+    cpus: 1.0
+    # Les clés privées n'existent que dans ce tmpfs, le temps de l'authentification.
+    tmpfs:
+      - /run/relay-keys:mode=0700,uid=33,gid=33
+      - /tmp
+    volumes:
+      - tunnel-sockets:/run/tunnels
+    environment:
+      TERRILDB_SSH_ALLOWED_BASTIONS: ${TERRILDB_SSH_ALLOWED_BASTIONS:-}
+    networks: [tunnel]
+    depends_on:
+      tunnel-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /run/tunnels/control.sock"]
+      interval: 3s
+      retries: 20
+
 networks:
   backend:
     internal: true
+  # Seul réseau avec sortie du tunnel : ce sous-réseau (`terrildb-prod_tunnel`) reçoit les règles de sortie vers les bastions.
+  tunnel: {}
 
 volumes:
   db-data:
   sessions:
+  tunnel-sockets:

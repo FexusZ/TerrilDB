@@ -8,9 +8,7 @@ Une connexion peut passer par un bastion SSH (issue #13). Ce document décrit le
 Livré : le contrat, le conteneur, le bastion de test, la preuve de bout en bout, et le branchement : `TargetOpener::connect`
 ouvre une connexion à rebond (MySQL, MariaDB, PostgreSQL) par le tunnel, essai de paramètres compris, avec la règle
 d'adresses sur le bastion ET sur la cible, la liste de bastions dès l'enregistrement, la lecture de l'empreinte à confirmer
-(`POST /web/connections/host-key`), le formulaire et le corps de l'API à jetons. **Pas dans `compose.prod.yaml`** : en production,
-rien ne démarre le conteneur `tunnel`, donc une connexion à rebond y échoue (`tunnel_failed`, `unavailable`) tant que le service
-n'y est pas (voir « Ce qui reste »).
+(`POST /web/connections/host-key`), le formulaire et le corps de l'API à jetons. **En production** : service `tunnel` facultatif de `compose.prod.yaml` (profil `tunnel`), démarré par `deploy.sh` seulement si `TERRILDB_SSH_ALLOWED_BASTIONS` n'est pas vide dans `deploy.env` (voir `docs/deploy.md`, « Tunnel SSH »).
 
 ## Les pièces
 
@@ -101,8 +99,8 @@ connecter par socket Unix (ClickHouse HTTP et Redis via leurs clients actuels ?)
 | `TERRILDB_SSH_ALLOWED_BASTIONS` | application ET conteneur tunnel | bastions autorisés, vide = tout refusé |
 | `TERRILDB_TUNNEL_CONTROL` | application | socket de contrôle (`/run/tunnels/control.sock`) |
 
-Pour la production, le service `tunnel` de `compose.yaml` est le modèle (sans `tunnel-init` si le dossier des sockets est
-préparé autrement) ; il n'est volontairement pas encore dans `compose.prod.yaml` tant que rien ne l'appelle.
+En production, le service `tunnel` de `compose.prod.yaml` reprend celui de `compose.yaml` (uid 33 fixé, réseau `tunnel` propre, profil
+`tunnel`) ; la valeur vient de `deploy.env` et est la même pour l'application et le conteneur.
 
 ## Essayer
 
@@ -116,8 +114,7 @@ Les clés du bastion de test sont générées à chaque démarrage (volume `bast
 
 ## Ce qui reste
 
-1. `compose.prod.yaml` : service `tunnel` (modèle : `compose.yaml`), pare-feu de sortie, `TERRILDB_SSH_ALLOWED_BASTIONS` dans
-   `deploy.env`, volume des sockets partagé avec l'application sous le même uid.
+1. Poser à la main les règles de sortie du réseau `tunnel` (`docs/deploy.md`) : jamais appliquées par `deploy.sh`.
 2. Étape CI pour le service `tunnel` : tests du relais (`python3 -m unittest`) et `--group integration tests/Integration/Tunnel`
    + `JumpConnectionsWebTest` (profil `targets`, hôte de CI à nommer).
 3. ClickHouse et Redis : repli sur un port local (loopback) pour les pilotes qui ne savent pas se connecter par un socket Unix.
