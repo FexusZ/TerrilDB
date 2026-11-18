@@ -24,24 +24,43 @@ final readonly class PartitioningInfo
         public ?PartitionMethod $subMethod,
         public ?string $subExpression,
         public array $partitions,
+        /** Nombre RÉEL de partitions quand la liste a été coupée (PostgreSQL en lit 200 au plus) ; null = la liste est complète. */
+        public ?int $totalCount = null,
     ) {
         if ('' === $expression || [] === $partitions) {
             throw new InvalidSchemaException('A partitioning needs an expression and at least one partition.');
+        }
+        if (null !== $totalCount && $totalCount < \count($partitions)) {
+            throw new InvalidSchemaException('The total of partitions cannot be smaller than the list.');
         }
     }
 
     public function count(): int
     {
-        return \count($this->partitions);
+        return $this->totalCount ?? \count($this->partitions);
     }
 
+    public function isTruncated(): bool
+    {
+        return null !== $this->totalCount && $this->totalCount > \count($this->partitions);
+    }
+
+    /** Une somme sur une liste coupée serait fausse : inconnue. */
     public function estimatedRows(): ?int
     {
+        if ($this->isTruncated()) {
+            return null;
+        }
+
         return self::sum(array_map(static fn (PartitionDefinition $p): ?int => $p->estimatedRows, $this->partitions));
     }
 
     public function dataBytes(): ?int
     {
+        if ($this->isTruncated()) {
+            return null;
+        }
+
         return self::sum(array_map(static fn (PartitionDefinition $p): ?int => $p->dataBytes, $this->partitions));
     }
 

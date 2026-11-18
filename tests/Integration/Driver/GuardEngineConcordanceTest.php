@@ -203,13 +203,16 @@ final class GuardEngineConcordanceTest extends TestCase
         }
     }
 
-    public function testPostgreSqlRefusesAnExecutedTextInReadOnlyLikeTheDocumentedLimit(): void
+    public function testPostgreSqlFunctionsThatRunTheTextTheyAreGivenAreRefusedByTheGuardAndByTheEngineInReadOnly(): void
     {
         $runner = $this->postgres();
         $sql = "select query_to_xml('delete from categories where id = -1', true, true, '')";
 
-        // Le garde ne voit qu'un SELECT (limite documentée en lecture-écriture) : en lecture seule c'est le moteur qui refuse.
-        self::assertSame(Decision::Allowed, (new StatementGuard())->check($sql, Engine::PostgreSql, QueryMode::ReadOnly)->decision);
+        // Le filtre lexical ne verrait qu'un SELECT : il refuse la fonction elle-même, dans les deux modes.
+        foreach ([QueryMode::ReadOnly, QueryMode::ReadWrite] as $mode) {
+            self::assertSame(Decision::Refused, (new StatementGuard())->check($sql, Engine::PostgreSql, $mode)->decision);
+        }
+        // Le moteur refuse aussi en lecture seule (le garde n'est pas le seul rempart).
         $this->expectException(QueryFailedException::class);
         $runner->run($sql, StatementKind::Read, $this->readOnly());
     }

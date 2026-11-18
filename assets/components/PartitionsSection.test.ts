@@ -10,6 +10,8 @@ const partitioning: PartitioningInfo = {
   subExpression: null,
   estimatedRows: 1200,
   dataBytes: 32768,
+  partitionCount: 2,
+  truncated: false,
   partitions: [
     { name: 'p2024', bound: "LESS THAN ('2025-01-01')", catchAll: false, estimatedRows: 1200, dataBytes: 16384, subpartitions: [] },
     { name: 'pmax', bound: 'LESS THAN (MAXVALUE)', catchAll: true, estimatedRows: null, dataBytes: null, subpartitions: [] },
@@ -61,5 +63,12 @@ describe('PartitionsSection', () => {
 
   it('says it is read-only', () => {
     expect(mount(PartitionsSection, { props: { partitioning } }).text()).toContain('lecture seule')
+  })
+
+  it('says how many of the partitions are listed when the list is cut short', () => {
+    const wrapper = mount(PartitionsSection, { props: { partitioning: { ...partitioning, partitionCount: 50000, truncated: true, estimatedRows: null, dataBytes: null } } })
+
+    expect(wrapper.text()).toContain('50000 partitions')
+    expect(wrapper.text()).toContain('2 sur 50000 sont listées')
   })
 })

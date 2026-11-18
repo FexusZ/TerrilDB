@@ -174,6 +174,9 @@ export interface PartitioningInfo {
   subExpression: string | null
   estimatedRows: number | null
   dataBytes: number | null
+  /** Nombre réel de partitions ; la liste n’en montre que 200 au plus quand `truncated` est vrai (totaux alors inconnus). */
+  partitionCount: number
+  truncated: boolean
   partitions: PartitionInfo[]
 }
 
@@ -515,6 +518,8 @@ export interface VariableDifference {
   valueB: string | null
   changedB: boolean
   unit: string | null
+  /** Les deux textes montrés sont identiques (coupés à l’affichage) : la différence est plus loin. */
+  beyondDisplay: boolean
 }
 
 export interface VariableComparison {

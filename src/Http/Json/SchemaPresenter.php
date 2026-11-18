@@ -96,6 +96,8 @@ final class SchemaPresenter
             'subExpression' => $info->subExpression,
             'estimatedRows' => $info->estimatedRows(),
             'dataBytes' => $info->dataBytes(),
+            'partitionCount' => $info->count(),
+            'truncated' => $info->isTruncated(),
             'partitions' => array_map(static fn (PartitionDefinition $p): array => [
                 'name' => $p->name,
                 'bound' => $p->bound,

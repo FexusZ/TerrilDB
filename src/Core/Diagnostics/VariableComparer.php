@@ -48,10 +48,12 @@ final class VariableComparer
 
                 continue;
             }
-            if (null !== $va && null !== $vb && $va->value === $vb->value) {
+            // Comparées sur la valeur COMPLÈTE (empreinte) : deux textes qui ne diffèrent qu'après la coupure d'affichage ne sont pas égaux.
+            if (null !== $va && null !== $vb && $va->valueDigest === $vb->valueDigest) {
                 continue;
             }
-            $differences[] = new VariableDifference($name, null !== $va, $va?->value, $va->changed ?? false, null !== $vb, $vb?->value, $vb->changed ?? false, $va->unit ?? $vb->unit ?? null);
+            $beyondDisplay = null !== $va && null !== $vb && $va->value === $vb->value;
+            $differences[] = new VariableDifference($name, null !== $va, $va?->value, $va->changed ?? false, null !== $vb, $vb?->value, $vb->changed ?? false, $va->unit ?? $vb->unit ?? null, $beyondDisplay);
         }
 
         return new VariableComparison(DiagnosticStatus::available(), null, $differences, $masked, $truncated);

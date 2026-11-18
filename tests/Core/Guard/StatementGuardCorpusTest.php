@@ -441,11 +441,18 @@ final class StatementGuardCorpusTest extends TestCase
         ] as $sql) {
             yield from self::rows($sql, $pg, $ro, 'refuse:NotReadOnly');
         }
-        // Limite documentée : une fonction qui exécute le texte qu'on lui donne. Le moteur la refuse en lecture seule
-        // (transaction READ ONLY) ; en lecture-écriture seul le filtre juge, et il ne voit qu'un SELECT.
-        foreach (["SELECT query_to_xml('delete from t', true, true, '')", "SELECT query_to_xml_and_xmlschema('delete from t', true, true, '')", "SELECT table_to_xml('t', true, true, '')"] as $sql) {
-            yield from self::rows($sql, $pg, $ro, 'allow:Read');
-            yield from self::rows($sql, $pg, $rw, 'allow:Read');
+        // Une fonction qui exécute le texte qu'on lui donne échappe au filtre lexical (il ne verrait qu'un SELECT) : refusée dans les
+        // deux modes. `table_to_xml` ne lit qu'une table nommée, elle reste permise.
+        foreach (["SELECT query_to_xml('delete from t', true, true, '')", "SELECT query_to_xml_and_xmlschema('delete from t', true, true, '')", "SELECT query_to_xmlschema('delete from t', true, true, '')", "SELECT \"query_to_xml\"('delete from t', true, true, '')"] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $pg, $rw, 'refuse:ForbiddenConstruct');
+        }
+        yield from self::rows("SELECT table_to_xml('t', true, true, '')", $pg, $ro, 'allow:Read');
+        yield from self::rows("SELECT table_to_xml('t', true, true, '')", $pg, $rw, 'allow:Read');
+        // Une notification est un effet de bord visible des autres sessions, hors transaction : refusée comme l'instruction NOTIFY.
+        foreach (["SELECT pg_notify('c', 'x')", "SELECT \"pg_notify\"('c', 'x')"] as $sql) {
+            yield from self::rows($sql, $pg, $ro, 'refuse:ForbiddenConstruct');
+            yield from self::rows($sql, $pg, $rw, 'refuse:ForbiddenConstruct');
         }
 
         // ---- MySQL / MariaDB : session, administration, programmes stockés

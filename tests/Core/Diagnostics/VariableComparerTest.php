@@ -66,6 +66,42 @@ final class VariableComparerTest extends TestCase
         self::assertFalse($result->truncated);
     }
 
+    public function testTwoLongValuesThatOnlyDifferBeyondTheDisplayedPartAreADifference(): void
+    {
+        $common = str_repeat('a', 550);
+        $comparison = (new VariableComparer())->compare(
+            self::server(['sql_mode' => [$common.'X', true]]),
+            self::server(['sql_mode' => [$common.'Y', true]]),
+        );
+
+        self::assertCount(1, $comparison->differences);
+        $difference = $comparison->differences[0];
+        self::assertSame('sql_mode', $difference->name);
+        self::assertSame($difference->valueA, $difference->valueB, 'les deux textes montrés sont coupés avant la différence');
+        self::assertTrue($difference->beyondDisplay);
+    }
+
+    public function testTwoIdenticalLongValuesAreNotADifference(): void
+    {
+        $long = str_repeat('a', 700);
+        $comparison = (new VariableComparer())->compare(
+            self::server(['sql_mode' => [$long, true]]),
+            self::server(['sql_mode' => [$long, true]]),
+        );
+
+        self::assertSame([], $comparison->differences);
+    }
+
+    public function testAnOrdinaryDifferenceIsNotFlaggedAsBeyondTheDisplay(): void
+    {
+        $comparison = (new VariableComparer())->compare(
+            self::server(['a' => ['1', true]]),
+            self::server(['a' => ['2', true]]),
+        );
+
+        self::assertFalse($comparison->differences[0]->beyondDisplay);
+    }
+
     public function testAVariableOnOneSideOnlyIsADifference(): void
     {
         $a = self::server(['only_a' => ['1', true]]);

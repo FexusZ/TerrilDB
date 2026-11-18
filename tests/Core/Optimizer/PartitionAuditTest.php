@@ -123,4 +123,29 @@ final class PartitionAuditTest extends TestCase
         $enough = \array_slice($many, 0, SchemaAuditor::PARTITION_COUNT_ADVISED);
         self::assertSame([], $this->audit(Engine::MySql, $this->table('events', 'int', '`id`', $enough, PartitionMethod::Hash)));
     }
+
+    public function testTheCountOfAListCutShortIsTheRealOne(): void
+    {
+        $shown = [new PartitionDefinition('p0', null, null, false, null, null)];
+        $table = $this->table('events', 'int', '`id`', $shown, PartitionMethod::Hash);
+        $partitioning = new PartitioningInfo(PartitionMethod::Hash, '`id`', null, null, $shown, totalCount: 5000);
+        $table = new TableDefinition('events', TableKind::Table, $table->columns, [], [], null, null, null, null, partitioning: $partitioning);
+
+        $findings = $this->audit(Engine::PostgreSql, $table);
+
+        self::assertCount(1, $findings);
+        self::assertSame(FindingRule::TooManyPartitions, $findings[0]->rule);
+        self::assertSame('5000', $findings[0]->detail);
+    }
+
+    public function testARangeCutShortIsNotJudgedForItsLastBound(): void
+    {
+        $shown = [$this->range('p2023', '2024-01-01')];
+        $base = $this->table('events', 'date', '"created_on"', $shown);
+        $partitioning = new PartitioningInfo(PartitionMethod::Range, '"created_on"', null, null, $shown, totalCount: 300);
+        $table = new TableDefinition('events', TableKind::Table, $base->columns, [], [], null, null, null, null, partitioning: $partitioning);
+
+        // La dernière borne n'est pas dans la liste montrée : conclure « échue » serait faux.
+        self::assertSame([], $this->audit(Engine::PostgreSql, $table));
+    }
 }

@@ -15,6 +15,8 @@ final readonly class ServerVariable
     public ?string $value;
     public ?string $default;
     public bool $masked;
+    /** Empreinte de la valeur COMPLÈTE (avant coupure), pour comparer deux serveurs ; jamais rendue, nulle si la valeur est masquée. */
+    public ?string $valueDigest;
 
     public function __construct(
         public string $name,
@@ -33,6 +35,7 @@ final readonly class ServerVariable
         $this->masked = SecretVariables::matches($name) || (null !== $value && SecretVariables::valueLooksSecret($value)) || (null !== $default && SecretVariables::valueLooksSecret($default));
         $this->value = $this->masked ? null : self::shorten($value);
         $this->default = $this->masked ? null : self::shorten($default);
+        $this->valueDigest = $this->masked || null === $value ? null : hash('sha256', mb_scrub($value, 'UTF-8'));
     }
 
     private static function shorten(?string $value): ?string
