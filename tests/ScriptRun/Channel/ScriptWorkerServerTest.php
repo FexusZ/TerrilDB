@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\ScriptRun\Channel;
 
+use App\Audit\AuditActor;
+use App\Audit\AuditContext;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Query\WritePermissions;
@@ -49,7 +51,7 @@ final class ScriptWorkerServerTest extends TestCase
 
     private static function json(): string
     {
-        return (new ScriptRunRequest(Uuid::v7(), Engine::PostgreSql, new ConnectionParameters('db.example.test', 5432, 'shop', 'app', 'pw-unique-1'), 'SELECT 1', new WritePermissions(), false, false, 10_000))->toJson();
+        return (new ScriptRunRequest(Uuid::v7(), Engine::PostgreSql, new ConnectionParameters('db.example.test', 5432, 'shop', 'app', 'pw-unique-1'), 'SELECT 1', new WritePermissions(), false, false, 10_000, new AuditContext(AuditActor::Web, null, null, null)))->toJson();
     }
 
     /**

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\ScriptRun\Channel;
 
+use App\ScriptRun\ScriptRunLauncher;
 use App\ScriptRun\ScriptRunRequest;
 
 /**
  * Le côté de la requête web : envoie le message au worker par le socket Unix du volume partagé et attend son accord. Rien n'est
  * écrit ailleurs : les identifiants du message ne passent que par ce socket.
  */
-final readonly class ScriptRunDispatcher
+final readonly class ScriptRunDispatcher implements ScriptRunLauncher
 {
     private const CONNECT_TIMEOUT_SECONDS = 2;
     private const REPLY_TIMEOUT_SECONDS = 5;

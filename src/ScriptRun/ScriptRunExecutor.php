@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\ScriptRun;
 
+use App\Audit\AuditedScripts;
 use App\Core\Driver\DriverRegistry;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Script\ScriptOptions;
-use App\Core\Query\Script\ScriptService;
 use App\Entity\Exception\InvalidScriptRunException;
 use App\Entity\ScriptRun;
 use App\Entity\ScriptRunStatus;
@@ -25,7 +25,7 @@ final readonly class ScriptRunExecutor
     public function __construct(
         private ScriptRunRepository $runs,
         private DriverRegistry $drivers,
-        private ScriptService $scripts,
+        private AuditedScripts $scripts,
         private ClockInterface $clock,
         /** Point d'observation des tests, voir `ScriptRunProgress`. */
         private ?\Closure $afterStatement = null,
@@ -45,13 +45,17 @@ final readonly class ScriptRunExecutor
         $target = null;
         try {
             $target = $this->drivers->for($request->engine)->connect($request->engine, $request->parameters);
-            $result = $this->scripts->execute(
+            // L'audit des instructions s'écrit ici, au nom de celui qui a lancé l'exécution, sous l'identifiant de l'exécution.
+            $audited = $this->scripts->execute(
+                $request->audit,
+                $run->getConnectionId(),
                 $target,
                 $request->script,
                 new ScriptOptions($request->writes, $request->timeoutMs, $request->dryRun, new ScriptRunProgress($run, $this->runs, $this->clock, $this->afterStatement)),
                 $request->confirmed,
+                $run->getId(),
             );
-            $this->finish($run, ScriptRunReport::status($result), ScriptRunReport::statements($result));
+            $this->finish($run, ScriptRunReport::status($audited->result), ScriptRunReport::statements($audited->result));
         } catch (\DomainException|\RuntimeException) {
             // Cible injoignable, script refusé par le garde, droit manquant… : rien à rejouer, l'exécution se dit simplement échouée.
             $this->finish($run, ScriptRunStatus::Failed, null);

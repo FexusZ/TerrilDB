@@ -19,6 +19,14 @@ final class ScriptRunRepository extends ServiceEntityRepository
         parent::__construct($registry, ScriptRun::class);
     }
 
+    /**
+     * Relit la ligne : le worker l'écrit depuis un autre processus, l'objet en mémoire de cette requête ne le sait pas.
+     */
+    public function refresh(ScriptRun $run): void
+    {
+        $this->getEntityManager()->refresh($run);
+    }
+
     public function save(ScriptRun $run): void
     {
         $this->getEntityManager()->persist($run);

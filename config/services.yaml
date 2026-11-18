@@ -101,6 +101,9 @@ services:
         arguments:
             $socketPath: '%env(TERRILDB_SCRIPT_SOCKET)%'
 
+    App\ScriptRun\ScriptRunLauncher:
+        alias: App\ScriptRun\Channel\ScriptRunDispatcher
+
     App\ScriptRun\Channel\ChildSpawner:
         alias: App\ScriptRun\Channel\ProcessChildSpawner
 
@@ -135,6 +138,10 @@ when@test:
         # Pas encore injecté par un contrôleur : sans cela le conteneur compilé le retire.
         App\Core\Driver\DriverRegistry:
             autowire: true
+            public: true
+        # Un worker dans un autre processus ne verrait pas la base du test (transaction annulée) : les routes notent le message au lieu de l'envoyer.
+        App\ScriptRun\ScriptRunLauncher:
+            class: App\Tests\Integration\Web\RecordingScriptRunLauncher
             public: true
         # Coûts Argon2id réduits : les tests vérifient le comportement, pas la dureté de la dérivation.
         App\Security\AuthPasswordHasher:

@@ -43,6 +43,8 @@ enum AuditAction: string
     /** Une écriture jugée par `prepare`, sans exécution : le jeton de confirmation n'est jamais journalisé. */
     case QueryPrepared = 'query.prepared';
     case QueryLinted = 'query.linted';
+    /** Une exécution de script détachée est lancée (nombre d'instructions et empreinte du texte, jamais le texte) : la trace existe même si le processus meurt en route. */
+    case ScriptStarted = 'script.started';
     case TargetForbidden = 'target.forbidden';
     case TunnelFailed = 'target.tunnel_failed';
     case SchemaChanged = 'schema.changed';

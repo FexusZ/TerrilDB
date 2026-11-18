@@ -87,4 +87,9 @@ describe('audit labels', () => {
   it('offers filters that match the server categories', () => {
     expect(ACTIVITY_FILTERS.map((filter) => filter.value)).toEqual(['', 'login', 'password', 'totp', 'phrase', 'connection', 'token', 'target', 'invitation', 'account', 'admin', 'query', 'schema', 'diagnostic'])
   })
+
+  it('says a script was started in the background with its number of statements', () => {
+    expect(describeEvent(entry('script.started', { statements: 3 }))).toBe('Script lancé en arrière-plan (3 instructions)')
+    expect(describeEvent(entry('script.started', { statements: 1 }))).toBe('Script lancé en arrière-plan (1 instruction)')
+  })
 })
