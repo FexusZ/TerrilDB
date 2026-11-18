@@ -121,6 +121,12 @@ export function messageFor(error: unknown): string {
       return 'Le script ne peut pas être découpé avec certitude : une chaîne, un commentaire ou un nom entre guillemets n’est pas refermé. Rien n’a été exécuté.'
     case 'script_too_large':
       return 'Le script est trop long (500 instructions et 1 Mo au plus).'
+    case 'script_worker_unavailable':
+      return 'Le worker des scripts en arrière-plan ne répond pas : le script n’est pas parti. Réessayez plus tard ou exécutez-le ici, sans arrière-plan.'
+    case 'script_worker_busy':
+      return 'Le worker joue déjà le nombre maximal de scripts : le script n’est pas parti, réessayez dans quelques secondes.'
+    case 'run_finished':
+      return 'Ce script est déjà terminé.'
     case 'dry_run_unavailable':
       if (error.details.reason === 'non_transactional_tables') {
         return 'Ce script écrit dans une table sans transaction (MyISAM, MEMORY…) : rien ne s’y annule, il ne peut pas être testé sans valider.'

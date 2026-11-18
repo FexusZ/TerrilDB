@@ -63,3 +63,42 @@ export const previewScript = (id: string, script: string, scope: StructureScope)
 /** Exécute le script ; `confirmed` couvre toutes les instructions destructrices à la fois, `dryRun` annule tout à la fin. */
 export const executeScript = (id: string, script: string, options: { confirmed: boolean; dryRun: boolean }, scope: StructureScope): Promise<ScriptRun> =>
   api<ScriptRun>('POST', `/web/connections/${id}/script/execute`, withScope({ script, ...options }, scope))
+
+export type BackgroundRunStatus = 'queued' | 'running' | 'committed' | 'dry_run' | 'rolled_back' | 'partial' | 'failed' | 'cancelled' | 'interrupted'
+
+/** Une instruction d'une exécution en arrière-plan : rang, état, nombres et SQLSTATE. Jamais le texte (le client garde celui de l'aperçu). */
+export interface BackgroundStatement {
+  rank: number
+  /** Tant que l'exécution n'est pas terminée, « applied » est provisoire (la transaction n'est pas validée). */
+  status: ScriptStepStatus
+  affectedRows: number | null
+  durationMs: number
+  sqlstate: string | null
+}
+
+/** Le suivi d'un script lancé en arrière-plan (#169). */
+export interface BackgroundRun {
+  id: string
+  connectionId: string
+  status: BackgroundRunStatus
+  finished: boolean
+  dryRun: boolean
+  total: number
+  completed: number
+  cancelRequested: boolean
+  statements: BackgroundStatement[]
+  createdAt: string
+  startedAt: string | null
+  heartbeatAt: string
+  finishedAt: string | null
+}
+
+/** Confie le script au worker : la réponse est immédiate (202), l'exécution se suit ensuite par `fetchScriptRun`. */
+export const startScriptRun = (id: string, script: string, options: { confirmed: boolean; dryRun: boolean }, scope: StructureScope): Promise<{ run: BackgroundRun }> =>
+  api<{ run: BackgroundRun }>('POST', `/web/connections/${id}/script/run`, withScope({ script, ...options }, scope))
+
+export const fetchScriptRun = (runId: string): Promise<{ run: BackgroundRun }> => api<{ run: BackgroundRun }>('GET', `/web/script-runs/${runId}`)
+
+/** Demande l'arrêt ENTRE deux instructions : celle qui tourne va à son terme, rien n'est tué. */
+export const cancelScriptRun = (runId: string): Promise<{ run: BackgroundRun }> => api<{ run: BackgroundRun }>('POST', `/web/script-runs/${runId}/cancel`)
+

@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, api } from '../api/client'
-import type { ScriptPreview, ScriptRun } from '../api/script'
+import type { BackgroundRun, ScriptPreview, ScriptRun } from '../api/script'
 import ScriptPanel from './ScriptPanel.vue'
 
 vi.mock('../api/client', async (importOriginal) => ({ ...(await importOriginal<typeof import('../api/client')>()), api: vi.fn() }))
@@ -320,4 +320,182 @@ describe('ScriptPanel file import', () => {
     expect(wrapper.emitted('import')).toBeUndefined()
     wrapper.unmount()
   })
+
+})
+
+describe('ScriptPanel in the background', () => {
+  beforeEach(() => mocked.mockReset())
+
+    const bg = (over: Partial<BackgroundRun> = {}): BackgroundRun => ({
+      id: 'r1',
+      connectionId: 'abc',
+      status: 'running',
+      finished: false,
+      dryRun: false,
+      total: 2,
+      completed: 0,
+      cancelRequested: false,
+      statements: [],
+      createdAt: '2026-11-19T01:00:00+00:00',
+      startedAt: '2026-11-19T01:00:01+00:00',
+      heartbeatAt: '2026-11-19T01:00:01+00:00',
+      finishedAt: null,
+      ...over,
+    })
+    const statement = (rank: number, status: BackgroundRun['statements'][number]['status'], extra: Partial<BackgroundRun['statements'][number]> = {}): BackgroundRun['statements'][number] => ({ rank, status, affectedRows: 1, durationMs: 4, sqlstate: null, ...extra })
+
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    async function started(first: BackgroundRun, confirmedScript = false) {
+      const wrapper = await previewed(confirmedScript ? {} : { needsConfirmation: false, destructiveCount: 0 })
+      await wrapper.get('input.background').setValue(true)
+      mocked.mockResolvedValueOnce({ run: first })
+      await wrapper.get('button.execute').trigger('click')
+      await flushPromises()
+
+      return wrapper
+    }
+
+    it('offers the background run only after the preview and labels the button accordingly', async () => {
+      const wrapper = mountPanel()
+      expect(wrapper.get('input.background').attributes('disabled')).toBeDefined()
+      mocked.mockResolvedValueOnce(preview())
+      await wrapper.get('button.preview').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('input.background').attributes('disabled')).toBeUndefined()
+      await wrapper.get('input.background').setValue(true)
+      expect(wrapper.get('button.execute').text()).toBe('Lancer en arrière-plan')
+      wrapper.unmount()
+    })
+
+    it('starts the run on the server, never through the synchronous route', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      expect(mocked).toHaveBeenCalledWith('POST', '/web/connections/abc/script/run', { script: 'INSERT INTO t VALUES (1); DELETE FROM t', confirmed: false, dryRun: false })
+      expect(mocked).not.toHaveBeenCalledWith('POST', '/web/connections/abc/script/execute', expect.anything())
+      expect(wrapper.get('.outcome').text()).toContain('attente')
+      wrapper.unmount()
+    })
+
+    it('follows the progress every two seconds and shows each statement with the text of the preview', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      mocked.mockResolvedValueOnce({ run: bg({ completed: 1, statements: [statement(1, 'applied')] }) })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+
+      expect(mocked).toHaveBeenLastCalledWith('GET', '/web/script-runs/r1')
+      expect(wrapper.get('.outcome').text()).toContain('Instruction 1 sur 2')
+      const steps = wrapper.findAll('.result li.step')
+      expect(steps).toHaveLength(1)
+      expect(steps[0]!.text()).toContain('INSERT INTO t VALUES (1)')
+      expect(steps[0]!.text()).toContain('Exécutée')
+      wrapper.unmount()
+    })
+
+    it('stops following once the run is finished and says how it ended', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      mocked.mockResolvedValueOnce({ run: bg({ status: 'committed', finished: true, completed: 2, statements: [statement(1, 'applied'), statement(2, 'applied')], finishedAt: '2026-11-19T01:00:05+00:00' }) })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+
+      expect(wrapper.get('.outcome').text()).toContain('2 instructions appliquées')
+      const calls = mocked.mock.calls.length
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(mocked.mock.calls.length).toBe(calls)
+      expect(wrapper.find('button.cancel-run').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('asks to stop after the current statement and says the statement in progress goes to its end', async () => {
+      const wrapper = await started(bg())
+
+      mocked.mockResolvedValueOnce({ run: bg({ cancelRequested: true }) })
+      await wrapper.get('button.cancel-run').trigger('click')
+      await flushPromises()
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/script-runs/r1/cancel')
+      expect(wrapper.get('.cancel-note').text()).toContain('instruction en cours ira jusqu’au bout')
+      expect(wrapper.get('button.cancel-run').attributes('disabled')).toBeDefined()
+      wrapper.unmount()
+    })
+
+    it.each([
+      ['rolled_back', [statement(1, 'rolled_back'), statement(2, 'failed', { sqlstate: '23505', affectedRows: null })], 'tout a été annulé'],
+      ['partial', [statement(1, 'applied'), statement(2, 'failed', { sqlstate: '42601', affectedRows: null })], '1 instruction reste appliquée'],
+      ['failed', [], 'pas pu être joué'],
+      ['cancelled', [statement(1, 'rolled_back'), statement(2, 'not_run', { affectedRows: null })], 'arrêté à votre demande'],
+      ['interrupted', [statement(1, 'applied')], 'signe de vie du worker'],
+      ['dry_run', [statement(1, 'rolled_back'), statement(2, 'rolled_back')], 'tout a été exécuté puis annulé'],
+    ] as const)('explains a run that ended %s', async (status, statements, text) => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      mocked.mockResolvedValueOnce({ run: bg({ status, finished: true, completed: statements.filter((x) => x.status !== 'not_run').length, statements: [...statements] }) })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+
+      expect(wrapper.get('.outcome').text()).toContain(text)
+      wrapper.unmount()
+    })
+
+    it('shows the SQLSTATE of a failed statement and never an engine message', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      mocked.mockResolvedValueOnce({ run: bg({ status: 'rolled_back', finished: true, completed: 2, statements: [statement(1, 'rolled_back'), statement(2, 'failed', { sqlstate: '23505', affectedRows: null })] }) })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+
+      expect(wrapper.findAll('.result li.step')[1]!.text()).toContain('23505')
+      wrapper.unmount()
+    })
+
+    it('says so when the worker is not available, without pretending the script started', async () => {
+      const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
+      await wrapper.get('input.background').setValue(true)
+      mocked.mockRejectedValueOnce(new ApiError(503, 'script_worker_unavailable', {}))
+      await wrapper.get('button.execute').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.error').text()).toContain('worker')
+      expect(wrapper.find('.result').exists()).toBe(false)
+      wrapper.unmount()
+    })
+
+    it('keeps following when one poll fails and gives up with a message after several', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      for (let i = 0; i < 5; i += 1) {
+        mocked.mockRejectedValueOnce(new ApiError(500, 'internal_error', {}))
+        await vi.advanceTimersByTimeAsync(2000)
+        await flushPromises()
+      }
+
+      expect(wrapper.get('.error').text().length).toBeGreaterThan(0)
+      const calls = mocked.mock.calls.length
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(mocked.mock.calls.length).toBe(calls)
+      wrapper.unmount()
+    })
+
+    it('stops following when the panel goes away', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+      wrapper.unmount()
+      const calls = mocked.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(10_000)
+
+      expect(mocked.mock.calls.length).toBe(calls)
+    })
+
+    it('forgets the run when the script is edited', async () => {
+      const wrapper = await started(bg({ status: 'queued' }))
+
+      await wrapper.setProps({ script: 'SELECT 1' })
+
+      expect(wrapper.find('.result').exists()).toBe(false)
+      wrapper.unmount()
+    })
 })

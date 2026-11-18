@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { reasonText, messageFor } from '../api/errors'
-import { executeScript, previewScript } from '../api/script'
-import type { ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
+import { cancelScriptRun, executeScript, fetchScriptRun, previewScript, startScriptRun } from '../api/script'
+import type { BackgroundRun, ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
 import type { StructureScope } from '../api/structure'
 import { readSqlFile, SQL_FILE_MESSAGES } from '../utils/sqlFile'
 import AppButton from './AppButton.vue'
@@ -21,6 +21,13 @@ const confirming = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileError = ref<string | null>(null)
 const pendingImport = ref<{ text: string; name: string } | null>(null)
+// Exécution en arrière-plan : le worker la joue, ce panneau la suit toutes les 2 s tant qu'il est affiché.
+const background = ref(false)
+const bgRun = ref<BackgroundRun | null>(null)
+let pollTimer: ReturnType<typeof setTimeout> | null = null
+let pollFailures = 0
+const POLL_EVERY_MS = 2000
+const POLL_FAILURES_MAX = 5
 
 const VERDICTS: Record<StepVerdict, string> = { allowed: 'Autorisée', needs_confirmation: 'À confirmer', refused: 'Refusée' }
 const STATUSES: Record<ScriptStepStatus, string> = { applied: 'Appliquée', rolled_back: 'Annulée', failed: 'En échec', not_run: 'Non lancée' }
@@ -32,8 +39,10 @@ const WARNINGS: Record<ScriptPreview['warnings'][number], string> = {
 }
 
 // Après un succès réel, un second clic rejouerait un script qui n'est pas forcément idempotent : il faut le modifier ou le réexaminer.
-const done = computed(() => run.value?.status === 'committed')
-const canRun = computed(() => preview.value?.canRun === true && !busy.value && !done.value)
+const done = computed(() => run.value?.status === 'committed' || bgRun.value?.status === 'committed')
+// Une exécution en arrière-plan vivante occupe le panneau : en lancer une seconde sur le même texte la doublerait.
+const following = computed(() => bgRun.value !== null && !bgRun.value.finished)
+const canRun = computed(() => preview.value?.canRun === true && !busy.value && !done.value && !following.value)
 const dryRunReason = computed(() => {
   const reason = preview.value?.dryRun.reason
   if (reason === 'implicit_commit') {
@@ -46,10 +55,21 @@ const dryRunReason = computed(() => {
 })
 const refusedRank = computed(() => (preview.value?.firstRefused ? preview.value.firstRefused.index + 1 : null))
 
+function stopPolling(): void {
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer)
+    pollTimer = null
+  }
+}
+
+onBeforeUnmount(stopPolling)
+
 // Un aperçu ne vaut que pour le texte qu'il a jugé.
 watch(() => props.script, () => {
+  stopPolling()
   preview.value = null
   run.value = null
+  bgRun.value = null
   error.value = null
   dryRun.value = false
 })
@@ -99,7 +119,61 @@ async function doPreview(): Promise<void> {
   }
 }
 
+function schedulePoll(id: string): void {
+  stopPolling()
+  pollTimer = setTimeout(() => void poll(id), POLL_EVERY_MS)
+}
+
+async function poll(id: string): Promise<void> {
+  try {
+    bgRun.value = (await fetchScriptRun(id)).run
+    pollFailures = 0
+    error.value = null
+  } catch (e) {
+    pollFailures += 1
+    if (pollFailures >= POLL_FAILURES_MAX) {
+      // L'exécution continue côté serveur : on le dit, on cesse seulement de la suivre d'ici.
+      error.value = `${messageFor(e)} Le suivi est interrompu ; le script, lui, continue sur le serveur.`
+      return
+    }
+  }
+  if (bgRun.value !== null && !bgRun.value.finished) {
+    schedulePoll(id)
+  }
+}
+
+async function startInBackground(confirmed: boolean): Promise<void> {
+  confirming.value = false
+  busy.value = true
+  error.value = null
+  stopPolling()
+  pollFailures = 0
+  try {
+    bgRun.value = (await startScriptRun(props.connectionId, props.script, { confirmed, dryRun: dryRun.value }, props.scope)).run
+    schedulePoll(bgRun.value.id)
+  } catch (e) {
+    error.value = messageFor(e)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function cancelRun(): Promise<void> {
+  if (bgRun.value === null) {
+    return
+  }
+  try {
+    bgRun.value = (await cancelScriptRun(bgRun.value.id)).run
+  } catch (e) {
+    error.value = messageFor(e)
+  }
+}
+
 async function send(confirmed: boolean): Promise<void> {
+  if (background.value) {
+    await startInBackground(confirmed)
+    return
+  }
   confirming.value = false
   busy.value = true
   error.value = null
@@ -159,6 +233,42 @@ const outcome = computed(() => {
   }
 })
 const failedRun = computed(() => run.value !== null && run.value.failed !== null)
+
+const BG_STATEMENTS: Record<ScriptStepStatus, string> = { applied: 'Exécutée', rolled_back: 'Annulée', failed: 'En échec', not_run: 'Non lancée' }
+
+// Le suivi ne porte jamais le texte : on le retrouve par le rang dans l'aperçu que l'on vient de juger.
+const sqlOf = (rank: number): string => preview.value?.steps[rank - 1]?.sql ?? ''
+const bgApplied = computed(() => bgRun.value?.statements.filter((s) => s.status === 'applied').length ?? 0)
+const bgFailedRank = computed(() => bgRun.value?.statements.find((s) => s.status === 'failed')?.rank ?? null)
+
+const bgOutcome = computed(() => {
+  const r = bgRun.value
+  if (r === null) {
+    return ''
+  }
+  const remain = bgApplied.value > 1 ? `${String(bgApplied.value)} instructions restent appliquées` : '1 instruction reste appliquée'
+  switch (r.status) {
+    case 'queued':
+      return 'En attente du worker…'
+    case 'running':
+      return `Instruction ${String(r.completed)} sur ${String(r.total)} terminée…`
+    case 'committed':
+      return `Script exécuté en arrière-plan : ${plural(bgApplied.value, 'instruction appliquée', 'instructions appliquées')}.`
+    case 'dry_run':
+      return 'Test réussi : tout a été exécuté puis annulé, rien n’a été validé.'
+    case 'rolled_back':
+      return `Échec à l’instruction ${String(bgFailedRank.value ?? 0)} : tout a été annulé.`
+    case 'partial':
+      return `Échec ou arrêt à l’instruction ${String(bgFailedRank.value ?? r.completed + 1)} : ${bgApplied.value > 0 ? remain : 'rien n’est resté appliqué'}, les suivantes ne sont pas parties.`
+    case 'cancelled':
+      return `Script arrêté à votre demande après ${plural(r.completed, 'instruction', 'instructions')} : ${bgApplied.value > 0 ? remain : 'rien n’est resté appliqué'}.`
+    case 'interrupted':
+      return `Plus de signe de vie du worker (redémarrage ou panne) : ${plural(r.completed, 'instruction était terminée', 'instructions étaient terminées')}. Vérifiez l’état de la base avant de relancer : ce que le moteur a déjà validé reste appliqué.`
+    default:
+      return 'Le script n’a pas pu être joué (cible injoignable, instruction refusée ou erreur du worker). Rien n’est resté appliqué.'
+  }
+})
+const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 'failed', 'interrupted'].includes(bgRun.value.status))
 </script>
 
 <template>
@@ -173,7 +283,11 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
         <input v-model="dryRun" class="dry-run" type="checkbox" :disabled="!preview || !preview.dryRun.available">
         Tester sans valider
       </label>
-      <AppButton class="execute" small variant="primary" :disabled="!canRun" @click="execute">{{ dryRun ? 'Tester le script' : 'Exécuter le script' }}</AppButton>
+      <label class="bg" title="Le script continue sur le serveur même si vous quittez cette page, sans la limite de durée d’une requête.">
+        <input v-model="background" class="background" type="checkbox" :disabled="!preview || following">
+        En arrière-plan
+      </label>
+      <AppButton class="execute" small variant="primary" :disabled="!canRun" @click="execute">{{ background ? 'Lancer en arrière-plan' : dryRun ? 'Tester le script' : 'Exécuter le script' }}</AppButton>
     </div>
     <p v-if="preview && dryRunReason" class="dry-run-reason note">{{ dryRunReason }}</p>
     <p v-else-if="preview && dryRun" class="note">Tout est exécuté pour de vrai dans la transaction, puis annulé. Des verrous sont posés le temps du test et les compteurs automatiques (séquences, auto-incréments) avancent malgré l’annulation.</p>
@@ -185,7 +299,24 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
     <p v-if="refusedRank !== null" class="refused-note" role="alert">L’instruction {{ refusedRank }} est refusée : {{ reasonText(preview?.firstRefused?.reason) }} Rien ne partira.</p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
 
-    <ol v-if="run" class="steps result" aria-label="Compte rendu">
+    <template v-if="bgRun">
+      <ol v-if="bgRun.statements.length > 0" class="steps result" aria-label="Suivi de l’exécution">
+        <li v-for="statement in bgRun.statements" :key="statement.rank" class="step" :data-status="statement.status">
+          <span class="rank">{{ statement.rank }}</span>
+          <code>{{ sqlOf(statement.rank) }}</code>
+          <span class="chip">{{ statement.status === 'applied' && !bgRun.finished ? 'Exécutée' : BG_STATEMENTS[statement.status] }}</span>
+          <span v-if="statement.status !== 'not_run'" class="metrics">{{ statement.affectedRows !== null ? `${plural(statement.affectedRows, 'ligne', 'lignes')} · ` : '' }}{{ statement.durationMs }} ms</span>
+          <span v-if="statement.sqlstate" class="step-error">Code SQLSTATE {{ statement.sqlstate }}</span>
+        </li>
+      </ol>
+      <p class="outcome" :class="{ bad: bgBad }" role="status">{{ bgOutcome }}</p>
+      <div v-if="!bgRun.finished" class="cancel">
+        <AppButton class="cancel-run" small :disabled="bgRun.cancelRequested" @click="cancelRun">Demander l’arrêt</AppButton>
+        <span class="cancel-note note">{{ bgRun.cancelRequested ? 'Arrêt demandé : l’instruction en cours ira jusqu’au bout, les suivantes ne partiront pas.' : 'L’arrêt se fait entre deux instructions : celle qui tourne n’est jamais interrompue.' }}</span>
+      </div>
+    </template>
+
+    <ol v-else-if="run" class="steps result" aria-label="Compte rendu">
       <li v-for="step in run.steps" :key="step.index" class="step" :data-status="step.status">
         <span class="rank">{{ step.index + 1 }}</span>
         <code>{{ step.sql }}</code>
@@ -194,9 +325,9 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
         <span v-if="step.error" class="step-error">{{ step.error }}</span>
       </li>
     </ol>
-    <p v-if="run" class="outcome" :class="{ bad: failedRun }" role="status">{{ outcome }}</p>
+    <p v-if="run && !bgRun" class="outcome" :class="{ bad: failedRun }" role="status">{{ outcome }}</p>
 
-    <ol v-else-if="preview" class="steps" aria-label="Aperçu">
+    <ol v-if="preview && !run && !bgRun" class="steps" aria-label="Aperçu">
       <li v-for="step in preview.steps" :key="step.index" class="step" :data-verdict="step.verdict">
         <span class="rank">{{ step.index + 1 }}</span>
         <code>{{ step.sql }}</code>
@@ -229,7 +360,8 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
 .script { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--s1); }
 .intro, .note { color: var(--mut); font-size: 13px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.dry { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg); }
+.dry, .bg { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg); }
+.cancel { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .warnings { margin: 0; padding: 8px 12px 8px 28px; border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
 .refused-note, .error { padding: 8px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 32vh; overflow: auto; }
