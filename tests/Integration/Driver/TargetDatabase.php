@@ -36,6 +36,12 @@ final class TargetDatabase
     ];
 
     /**
+     * Les seules cibles qui n'ont pas de mot de passe : `vttestserver` n'offre aucun réglage d'authentification pour son vtgate
+     * (vérifié, v23). Toute autre cible EXIGE un mot de passe, fourni par docker/init-env.sh (le vtgate du vrai cluster y compris).
+     */
+    private const WITHOUT_PASSWORD = ['TARGET_VITESS_URL'];
+
+    /**
      * @return iterable<string, array{string}>
      */
     public static function all(): iterable
@@ -82,7 +88,7 @@ final class TargetDatabase
             (int) self::part($parts, 'port'),
             self::part($parts, 'dbname'),
             self::part($parts, 'user'),
-            self::part($parts, 'password'),
+            \in_array($envVar, self::WITHOUT_PASSWORD, true) && !isset($parts['password']) ? '' : self::part($parts, 'password'),
         );
     }
 
