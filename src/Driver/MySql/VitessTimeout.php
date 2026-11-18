@@ -15,12 +15,6 @@ final class VitessTimeout
 {
     private const KEYWORDS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'REPLACE'];
 
-    /** Fin de la version annoncée par vtgate (`8.0.35-Vitess`). */
-    public static function isVitessVersion(string $version): bool
-    {
-        return str_ends_with($version, '-Vitess');
-    }
-
     public static function inject(string $sql, int $timeoutMs): string
     {
         $length = \strlen($sql);

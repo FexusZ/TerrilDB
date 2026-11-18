@@ -3,12 +3,21 @@ import { ApiError } from './client'
 import { messageFor, reasonText } from './errors'
 
 describe('error messages', () => {
+  it('does not show the engine message when a diagnostic read fails', () => {
+    expect(messageFor(new ApiError(502, 'diagnostics_failed', { message: 'secret host' }))).toBe('La lecture de l’activité du serveur a échoué. Réessayez.')
+  })
+
   it('speaks French for the stable codes', () => {
     expect(messageFor(new ApiError(401, 'invalid_credentials'))).toBe('Identifiant ou mot de passe incorrect.')
     expect(messageFor(new ApiError(401, 'invalid_second_factor'))).toContain('Code')
     expect(messageFor(new ApiError(502, 'target_unreachable'))).toContain('joindre')
     expect(messageFor(new ApiError(409, 'connection_name_used'))).toContain('nom')
     expect(messageFor(new ApiError(401, 'locked'))).toContain('reconnect')
+  })
+
+  it('explains why an account cannot be disabled', () => {
+    expect(messageFor(new ApiError(409, 'cannot_disable_self'))).toContain('votre propre compte')
+    expect(messageFor(new ApiError(409, 'last_administrator'))).toContain('dernier administrateur')
   })
 
   it('explains a refused invitation and a forbidden action', () => {
@@ -55,6 +64,9 @@ describe('error messages', () => {
   it('explains the refusals of the structure editor', () => {
     expect(messageFor(new ApiError(422, 'invalid_schema_change', { detail: 'A column needs a type.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_changed'))).toContain('modifiée')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'generated', subject: 'total' }))).toBe('« total » : cette colonne est générée, sa modification n’est pas prise en charge.')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', { reason: 'index_invisible', subject: 'idx_a' }))).toContain('invisible')
+    expect(messageFor(new ApiError(422, 'unsupported_schema_change', {}))).toContain('pas prise en charge')
     expect(messageFor(new ApiError(409, 'schema_change_failed', { message: 'column "x" does not exist' }))).toBe('column "x" does not exist')
     expect(messageFor(new ApiError(409, 'data_changed', { statement: 0, matched: 0 }))).toContain('modifiée')
     expect(messageFor(new ApiError(409, 'data_change_failed', { message: 'duplicate key' }))).toBe('duplicate key')
@@ -62,5 +74,71 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(422, 'invalid_data_change', { detail: 'The column "x" does not exist.' }))).toContain('invalide')
     expect(messageFor(new ApiError(409, 'schema_change_failed'))).toContain('refusé')
     expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'destructive_schema_change' }))).toContain('détruit')
+    expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'big_table_name' }))).toContain('nom de la table')
+    expect(messageFor(new ApiError(409, 'confirmation_required', { reason: 'other_administrator_token' }))).toContain('autre administrateur')
+  })
+
+  it('gives advice for lock conflicts without echoing anything from the engine', () => {
+    const deadlock = messageFor(new ApiError(409, 'deadlock', { retryable: true, message: "value 'jean@example.org'" }))
+    expect(deadlock).toContain('interblocage')
+    expect(deadlock).toContain('Relancez')
+    expect(deadlock).not.toContain('jean')
+    const timeout = messageFor(new ApiError(409, 'lock_timeout', { retryable: true }))
+    expect(timeout).toContain('verrou')
+    expect(timeout).not.toBe(deadlock)
+    const serialization = messageFor(new ApiError(409, 'serialization_failure', { retryable: true, message: "value 'jean@example.org'" }))
+    expect(serialization).toContain('simultanée')
+    expect(serialization).toContain('Relancez')
+    expect(serialization).not.toContain('jean')
+    expect(serialization).not.toContain('interblocage')
+  })
+
+  it('gives advice for common engine errors without echoing anything from the engine', () => {
+    const full = messageFor(new ApiError(503, 'too_many_connections', { retryable: true, retryAfter: 5, message: "host 'db.internal'" }))
+    expect(full).toContain('connexions')
+    expect(full).toContain('5 s')
+    expect(full).not.toContain('db.internal')
+    expect(messageFor(new ApiError(503, 'too_many_connections', { retryable: true }))).toContain('quelques secondes')
+    const denied = messageFor(new ApiError(403, 'engine_permission_denied', { retryable: false }))
+    expect(denied).toContain('droit')
+    expect(denied).toContain('compte')
+    const duplicate = messageFor(new ApiError(409, 'duplicate_key', { retryable: false, message: "Duplicate entry 'jean@example.org'" }))
+    expect(duplicate).toContain('existe déjà')
+    expect(duplicate).not.toContain('jean')
+    expect(messageFor(new ApiError(502, 'auth_requires_tls'))).toContain('TLS')
+    const auth = messageFor(new ApiError(502, 'auth_failed', { message: "user 'jean'" }))
+    expect(auth).toContain('identifiants')
+    expect(auth).not.toContain('jean')
+  })
+
+  it('does not advise replaying an engine error when part of the change is already applied', () => {
+    const message = messageFor(new ApiError(503, 'too_many_connections', { retryable: false, applied: [{ sql: 'ALTER TABLE t ADD c int' }] }))
+    expect(message).toContain('déjà appliquées')
+    expect(message).not.toContain('verrou')
+  })
+
+  it('does not advise replaying when part of the change is already applied', () => {
+    const message = messageFor(new ApiError(409, 'lock_timeout', { retryable: false, applied: [{ sql: 'ALTER TABLE t ADD c int' }] }))
+    expect(message).toContain('déjà appliquées')
+    expect(message).not.toContain('Relancez')
+    expect(messageFor(new ApiError(409, 'deadlock', { retryable: false, applied: [{ sql: 'x' }] }))).toContain('déjà appliquées')
+  })
+
+  it('names the refused statement of a script and says nothing ran', () => {
+    const message = messageFor(new ApiError(403, 'script_refused', { reason: 'forbidden_construct', statement: 2 }))
+
+    expect(message).toContain('instruction 3')
+    expect(message).toContain('Rien n’a été exécuté')
+    expect(message).toContain('interdite')
+  })
+
+  it('explains a malformed, oversized or untestable script', () => {
+    expect(messageFor(new ApiError(422, 'invalid_script'))).toContain('chaîne')
+    expect(messageFor(new ApiError(422, 'invalid_script', { reason: 'delimiter_directive' }))).toContain('DELIMITER')
+    expect(messageFor(new ApiError(422, 'script_too_large'))).toContain('500')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'implicit_commit' }))).toContain('valide')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'no_transaction' }))).toContain('transaction')
+    expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'non_transactional_tables' }))).toContain('sans transaction')
+    expect(reasonText('destructive_script')).toContain('confirm')
   })
 })

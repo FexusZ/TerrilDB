@@ -232,6 +232,22 @@ async function removePhrase(): Promise<void> {
       <p class="lede">Chaque personne invitée crée son propre compte, avec son propre mot de passe : vous ne voyez jamais ses connexions.</p>
     </section>
 
+    <section v-if="session.user?.role === 'admin'" class="panel accounts">
+      <div class="head">
+        <h2>Comptes</h2>
+        <RouterLink class="more" :to="{ name: 'accounts' }">Gérer les comptes</RouterLink>
+      </div>
+      <p class="lede">Qui a un compte, son rôle et sa dernière connexion ; vous pouvez en désactiver un sans rien supprimer.</p>
+    </section>
+
+    <section v-if="session.user?.role === 'admin'" class="panel administration">
+      <div class="head">
+        <h2>Administration</h2>
+        <RouterLink class="more" :to="{ name: 'administration' }">Jetons et journal</RouterLink>
+      </div>
+      <p class="lede">Les jetons d’API de tous les comptes (révocation possible) et le journal de ce que les administrateurs ont fait.</p>
+    </section>
+
     <section class="panel activity">
       <div class="head">
         <h2>Journal d’activité</h2>

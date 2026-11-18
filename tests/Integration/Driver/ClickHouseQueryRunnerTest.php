@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Driver;
 
+use App\Core\Connection\Engine;
+use App\Core\Guard\Decision;
+use App\Core\Guard\StatementGuard;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryTimeoutException;
@@ -133,6 +136,52 @@ final class ClickHouseQueryRunnerTest extends TestCase
         } catch (QueryFailedException $e) {
             self::assertStringContainsStringIgnoringCase('syntax', $e->getMessage());
             self::assertStringNotContainsString('version', $e->getMessage());
+        }
+    }
+
+    public function testMeasuringIsNotSupported(): void
+    {
+        $this->expectException(\App\Core\Driver\Exception\UnsupportedOperationException::class);
+        $this->runner->run('SELECT 1', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 10, measure: true));
+    }
+
+    public function testOutwardTableFunctionsRunInReadWriteSoTheGuardMustRefuseThemAndReadOnlyStopsThemInTheEngine(): void
+    {
+        $guard = new StatementGuard();
+        $calls = ["filesystem('/')", "icebergLocal('/etc')", "deltaLakeLocal('/etc')", "paimonLocal('/etc')"];
+
+        foreach ($calls as $call) {
+            $sql = 'SELECT * FROM '.$call;
+            self::assertSame(Decision::Refused, $guard->check($sql, Engine::ClickHouse, QueryMode::ReadWrite)->decision, $sql);
+            self::assertSame(Decision::Refused, $guard->check($sql, Engine::ClickHouse, QueryMode::ReadOnly)->decision, $sql);
+
+            // En lecture seule, le moteur refuse l'appel lui-même (readonly = 1)...
+            try {
+                $this->runner->run($sql, StatementKind::Read, new QueryOptions());
+                self::fail($sql.' should be refused in read-only mode.');
+            } catch (QueryFailedException $e) {
+                self::assertStringContainsString('readonly', strtolower($e->getMessage()), $sql);
+            }
+            // ... mais pas en lecture-écriture : il va jusqu'au contrôle du chemin, le filtre est seul à l'arrêter avant.
+            try {
+                $this->runner->run($sql, StatementKind::Read, new QueryOptions(QueryMode::ReadWrite));
+                self::fail($sql.' should not succeed on this target.');
+            } catch (QueryFailedException $e) {
+                self::assertStringNotContainsString('readonly', strtolower($e->getMessage()), $sql);
+            }
+        }
+    }
+
+    public function testTheEngineForbidsChangingSettingsInReadOnlyModeSoSettingsMayPassTheGuard(): void
+    {
+        foreach (['SELECT 1 SETTINGS readonly = 0', 'SELECT sleep(1) SETTINGS max_execution_time = 0', 'SELECT 1 SETTINGS max_result_rows = 0'] as $sql) {
+            self::assertSame(Decision::Allowed, (new StatementGuard())->check($sql, Engine::ClickHouse, QueryMode::ReadOnly)->decision, $sql);
+            try {
+                $this->runner->run($sql, StatementKind::Read, new QueryOptions());
+                self::fail($sql.' should be refused by the engine.');
+            } catch (QueryFailedException $e) {
+                self::assertStringContainsString('readonly', strtolower($e->getMessage()), $sql);
+            }
         }
     }
 }

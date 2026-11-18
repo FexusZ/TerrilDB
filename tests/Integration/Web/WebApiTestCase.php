@@ -40,6 +40,19 @@ abstract class WebApiTestCase extends WebTestCase
         }
     }
 
+    protected function tearDown(): void
+    {
+        putenv('TERRILDB_DETAILED_ERRORS');
+        unset($_ENV['TERRILDB_DETAILED_ERRORS'], $_SERVER['TERRILDB_DETAILED_ERRORS']);
+        parent::tearDown();
+    }
+
+    /** Active les messages précis (`TERRILDB_DETAILED_ERRORS=1`) pour les requêtes suivantes du test ; défaut : le contrat générique d'origine. */
+    protected function detailedErrors(): void
+    {
+        $_ENV['TERRILDB_DETAILED_ERRORS'] = $_SERVER['TERRILDB_DETAILED_ERRORS'] = '1';
+    }
+
     /**
      * @param array<string, mixed>  $body
      * @param array<string, string> $extraServer en-têtes supplémentaires (clés de type HTTP_AUTHORIZATION)
@@ -77,6 +90,23 @@ abstract class WebApiTestCase extends WebTestCase
     protected static function arrayOf(mixed $value): array
     {
         self::assertIsArray($value);
+
+        return $value;
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    protected static function listOf(mixed $value): array
+    {
+        self::assertIsArray($value);
+
+        return array_values($value);
+    }
+
+    protected static function stringOf(mixed $value): string
+    {
+        self::assertIsString($value);
 
         return $value;
     }

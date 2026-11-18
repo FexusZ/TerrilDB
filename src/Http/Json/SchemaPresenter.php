@@ -59,6 +59,7 @@ final class SchemaPresenter
                 'default' => $c->default,
                 'autoIncrement' => $c->autoIncrement,
                 'comment' => $c->comment,
+                'lock' => $c->lock?->value,
             ], $table->columns),
             'indexes' => array_map(static fn (IndexDefinition $i): array => [
                 'name' => $i->name,
@@ -66,6 +67,7 @@ final class SchemaPresenter
                 'unique' => $i->unique,
                 'primary' => $i->primary,
                 'sizeBytes' => $i->sizeBytes,
+                'lock' => $i->lock?->value,
             ], $table->indexes),
             'foreignKeys' => array_map(static fn (ForeignKeyDefinition $f): array => [
                 'name' => $f->name,
@@ -76,5 +78,27 @@ final class SchemaPresenter
                 'onDelete' => $f->onDelete->value,
             ], $table->foreignKeys),
         ];
+    }
+
+    /**
+     * Les bases à montrer : celles du moteur (information_schema…) sont masquées sauf demande expresse.
+     *
+     * @param list<DatabaseSummary> $databases
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function databases(array $databases, bool $withSystem): array
+    {
+        return array_values(array_map(self::database(...), array_filter($databases, static fn (DatabaseSummary $database): bool => $withSystem || !$database->system)));
+    }
+
+    /**
+     * @param list<SchemaSummary> $schemas
+     *
+     * @return list<array<string, mixed>>
+     */
+    public static function schemas(array $schemas, bool $withSystem): array
+    {
+        return array_values(array_map(self::schema(...), array_filter($schemas, static fn (SchemaSummary $schema): bool => $withSystem || !$schema->system)));
     }
 }

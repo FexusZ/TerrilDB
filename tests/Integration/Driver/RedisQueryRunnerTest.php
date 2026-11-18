@@ -211,4 +211,28 @@ final class RedisQueryRunnerTest extends TestCase
 
         self::assertSame([['Alice']], $this->read('get user:1')->rows);
     }
+
+    public function testMeasuringIsNotSupported(): void
+    {
+        $this->expectException(\App\Core\Driver\Exception\UnsupportedOperationException::class);
+        $this->runner()->run('GET nothing', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 10, measure: true));
+    }
+
+    public function testCopyCanWriteInAnotherDatabaseSoTheGuardMustRefuseTheDbOption(): void
+    {
+        $guard = new RedisCommandGuard();
+        $writes = new QueryOptions(QueryMode::ReadWrite);
+        $other = RedisTarget::client();
+        $other->select(14);
+
+        self::assertSame(GuardReason::ForbiddenConstruct, $guard->check('copy user:1 guard_copy_probe DB 14', QueryMode::ReadWrite)->reason);
+        self::assertSame(GuardReason::ForbiddenConstruct, $guard->check('COPY user:1 guard_copy_probe db 14 REPLACE', QueryMode::ReadWrite)->reason);
+        try {
+            // Le serveur, lui, copie la clé dans l'autre base : hors de celle de la connexion.
+            $this->runner()->run('copy user:1 guard_copy_probe DB 14', StatementKind::Write, $writes);
+            self::assertSame('Alice', $other->get('guard_copy_probe'));
+        } finally {
+            $other->del('guard_copy_probe');
+        }
+    }
 }

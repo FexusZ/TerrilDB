@@ -1,0 +1,11 @@
+[
+    {
+        "in_recovery": true,
+        "receiver_status": "streaming",
+        "received": "0\/3004BB0",
+        "applied": "0\/3004B08",
+        "paused": true,
+        "lag_seconds": 3,
+        "replica_count": 0
+    }
+]

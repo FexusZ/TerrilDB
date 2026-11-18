@@ -1,0 +1,7 @@
+[
+    {
+        "CHANNEL_NAME": "",
+        "LAST_ERROR_NUMBER": 1062,
+        "LAST_ERROR_MESSAGE": "Worker 1 failed executing transaction 'ec71da98-deed-11f1-9c92-ee27787b0253:13' at source log bin.000003, end_log_pos 2197; Could not execute Write_rows event on table t.a; Duplicate entry '30' for key 'a.PRIMARY', Error_code: 1062; handler error HA_ERR_FOUND_DUPP_KEY; the event's source log bin.000003, end_log_pos 2197"
+    }
+]

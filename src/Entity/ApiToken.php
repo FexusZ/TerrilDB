@@ -60,6 +60,18 @@ final class ApiToken
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
     private bool $createConnections;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $diagnostic;
+
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $singleStep;
+
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $readSchema;
+
+    #[ORM\Column(name: 'export_data', type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $export;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -115,6 +127,10 @@ final class ApiToken
         $this->writeData = $permissions->writeData;
         $this->writeSchema = $permissions->writeSchema;
         $this->createConnections = $permissions->createConnections;
+        $this->diagnostic = $permissions->diagnostic;
+        $this->singleStep = $permissions->singleStep;
+        $this->readSchema = $permissions->readSchema;
+        $this->export = $permissions->export;
         $this->createdAt = $createdAt;
         $this->expiresAt = $expiresAt;
     }
@@ -186,7 +202,7 @@ final class ApiToken
 
     public function getPermissions(): TokenPermissions
     {
-        return new TokenPermissions($this->writeData, $this->writeSchema, $this->createConnections);
+        return new TokenPermissions($this->writeData, $this->writeSchema, $this->createConnections, $this->diagnostic, $this->singleStep, $this->readSchema, $this->export);
     }
 
     public function getCreatedAt(): \DateTimeImmutable

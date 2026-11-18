@@ -21,22 +21,49 @@ final class StatementGuard
     private const READ = ['SELECT', 'VALUES', 'TABLE'];
     private const INSPECT = ['SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN', 'EXISTS'];
     private const WRITE = ['INSERT', 'UPDATE', 'DELETE', 'REPLACE', 'MERGE', 'CALL', 'DO'];
-    private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'REFRESH', 'CLUSTER', 'ATTACH'];
+    private const SCHEMA_SAFE = ['CREATE', 'COMMENT', 'REFRESH', 'ATTACH'];
+    // Maintenance : elle reconstruit des tables ou des index et prend des verrous (OPTIMIZE, VACUUM…) ; MariaDB exécute
+    // d'ailleurs l'instruction qui suit ANALYZE. Une confirmation, comme pour une modification de structure.
+    private const MAINTENANCE = ['ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'CLUSTER'];
     private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE'];
-    private const WRITE_VERBS = ['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE'];
     // Lecture ou écriture de fichiers du serveur, contrôle du serveur, ouverture de connexions sortantes.
     private const DANGEROUS_FUNCTIONS = [
         'LOAD_FILE', 'PG_READ_FILE', 'PG_READ_BINARY_FILE', 'PG_LS_DIR', 'PG_STAT_FILE', 'LO_IMPORT', 'LO_EXPORT',
         'PG_TERMINATE_BACKEND', 'PG_CANCEL_BACKEND', 'PG_RELOAD_CONF', 'PG_ROTATE_LOGFILE', 'SET_CONFIG',
     ];
+    // Verrous qui survivent à l'instruction (consultatifs, nommés) : ils bloquent d'autres sessions et ne servent à rien dans
+    // une exécution isolée. Refusés dans les deux modes. Les pauses (SLEEP, pg_sleep, BENCHMARK) restent permises : le délai du
+    // moteur les interrompt. IS_FREE_LOCK / IS_USED_LOCK ne font que lire.
+    private const LOCK_FUNCTIONS = ['GET_LOCK', 'RELEASE_LOCK', 'RELEASE_ALL_LOCKS'];
+    private const LOCK_FUNCTION_PREFIXES = ['PG_ADVISORY_', 'PG_TRY_ADVISORY_'];
+    // PostgreSQL : fonctions que le moteur exécute même dans une transaction en lecture seule et qui changent l'état du serveur
+    // (un slot de réplication survit à la transaction et retient du WAL, un message ou un point de restauration est écrit dans le WAL,
+    // les statistiques se remettent à zéro) ou qui listent ses répertoires. Refusées dans les deux modes. Les vues et
+    // les fonctions de lecture voisines (pg_replication_slots, pg_current_wal_lsn…) restent permises : noms exacts ou préfixes
+    // qui ne désignent que des fonctions.
+    private const SERVER_STATE_FUNCTIONS = [
+        'PG_CREATE_PHYSICAL_REPLICATION_SLOT', 'PG_CREATE_LOGICAL_REPLICATION_SLOT', 'PG_DROP_REPLICATION_SLOT', 'PG_COPY_PHYSICAL_REPLICATION_SLOT',
+        'PG_COPY_LOGICAL_REPLICATION_SLOT', 'PG_REPLICATION_SLOT_ADVANCE', 'PG_REPLICATION_ORIGIN_CREATE', 'PG_REPLICATION_ORIGIN_DROP',
+        'PG_REPLICATION_ORIGIN_ADVANCE', 'PG_REPLICATION_ORIGIN_SESSION_SETUP', 'PG_REPLICATION_ORIGIN_SESSION_RESET', 'PG_REPLICATION_ORIGIN_XACT_SETUP',
+        'PG_REPLICATION_ORIGIN_XACT_RESET', 'PG_LOGICAL_EMIT_MESSAGE', 'PG_SWITCH_WAL', 'PG_CREATE_RESTORE_POINT', 'PG_BACKUP_START', 'PG_BACKUP_STOP',
+        'PG_START_BACKUP', 'PG_STOP_BACKUP', 'PG_PROMOTE', 'PG_LOG_STANDBY_SNAPSHOT', 'PG_LOG_BACKEND_MEMORY_CONTEXTS', 'PG_SYNC_REPLICATION_SLOTS',
+        // Statistiques du planificateur écrites dans le catalogue (validées en lecture-écriture), collations importées, compteurs de l'extension remis à zéro.
+        'PG_RESTORE_RELATION_STATS', 'PG_RESTORE_ATTRIBUTE_STATS', 'PG_CLEAR_RELATION_STATS', 'PG_CLEAR_ATTRIBUTE_STATS', 'PG_IMPORT_SYSTEM_COLLATIONS', 'PG_STAT_STATEMENTS_RESET',
+    ];
+    private const SERVER_STATE_PREFIXES = ['PG_LOGICAL_SLOT_', 'PG_STAT_RESET', 'PG_WAL_REPLAY_', 'PG_LS_'];
     // Fonctions de table ClickHouse qui lisent des fichiers du serveur ou ouvrent des connexions sortantes : elles ne
     // sont refusées que lorsqu'elles sont appelées (« file(…) »), une colonne nommée « file » reste lisible.
     private const CLICKHOUSE_TABLE_FUNCTIONS = [
         'FILE', 'FILECLUSTER', 'URL', 'URLCLUSTER', 'S3', 'S3CLUSTER', 'GCS', 'HDFS', 'HDFSCLUSTER', 'REMOTE', 'REMOTESECURE',
         'CLUSTER', 'CLUSTERALLREPLICAS', 'MYSQL', 'POSTGRESQL', 'MONGODB', 'REDIS', 'SQLITE', 'ODBC', 'JDBC', 'EXECUTABLE',
         'INPUT', 'AZUREBLOBSTORAGE', 'AZUREBLOBSTORAGECLUSTER', 'DELTALAKE', 'ICEBERG', 'HUDI', 'MERGE', 'YTSAURUS',
-        'ARROWFLIGHT', 'NATS', 'KAFKA', 'RABBITMQ',
+        'ARROWFLIGHT', 'NATS', 'KAFKA', 'RABBITMQ', 'FILESYSTEM', 'HIVE', 'OSS', 'COSN', 'BIGQUERY', 'ELASTICSEARCH', 'EVAL', 'PROMETHEUSQUERY',
+        'PROMETHEUSQUERYRANGE',
     ];
+    // Familles de fonctions de table (lacs de données : iceberg, deltaLake, paimon, hudi et leurs variantes Local/S3/HDFS/Azure/Cluster).
+    private const CLICKHOUSE_TABLE_FUNCTION_PREFIXES = ['ICEBERG', 'DELTALAKE', 'PAIMON', 'HUDI'];
+    // MySQL : indices d'optimiseur (`/*+ … */`) qui relèvent le délai du moteur ou changent une variable le temps de l'instruction.
+    private const HINTS_REFUSED = ['MAX_EXECUTION_TIME', 'SET_VAR'];
     private const LOCKING_CLAUSES = [
         ['FOR', 'UPDATE'], ['FOR', 'SHARE'], ['FOR', 'NO', 'KEY', 'UPDATE'], ['FOR', 'KEY', 'SHARE'], ['LOCK', 'IN', 'SHARE', 'MODE'],
     ];
@@ -81,6 +108,9 @@ final class StatementGuard
         }
 
         $kind = $this->kind($statement);
+        if (null !== $kind && $this->advancesSequence($statement, $kind)) {
+            $kind = StatementKind::Write;
+        }
         if (null === $kind) {
             return GuardVerdict::refused(GuardReason::UnsupportedStatement);
         }
@@ -90,22 +120,56 @@ final class StatementGuard
 
         return QueryMode::ReadOnly === $mode
             ? $this->checkReadOnly($statement, $kind)
-            : $this->checkReadWrite($statement, $kind, $writes);
+            : $this->checkReadWrite($statement, $kind, $writes, $engine);
     }
 
+    /**
+     * La nature se juge sur l'instruction EXÉCUTÉE (ScannedStatement::executedVerb) : la tête d'un WITH, l'instruction
+     * expliquée par EXPLAIN ANALYZE, l'écriture qui suit un ANALYZE. Une expression de table qui écrit (PostgreSQL :
+     * WITH d AS (DELETE … RETURNING *) SELECT …) fait d'une lecture une écriture. Un EXPLAIN ANALYZE reste une inspection
+     * tant que ce qu'il joue ne change rien.
+     */
     private function kind(ScannedStatement $statement): ?StatementKind
     {
         $first = $statement->first();
+        $verb = $statement->executedVerb();
+        if (null === $verb) {
+            return null;
+        }
 
+        $kind = $this->kindOfVerb($verb);
+        if (StatementKind::Read === $kind && ($verb !== $first || 'WITH' === $first) && $this->hasWriteVerb($statement)) {
+            $kind = StatementKind::Write;
+        }
+        if (('EXPLAIN' === $first && 'EXPLAIN' !== $verb) || ('ANALYZE' === $first && 'ANALYZE' !== $verb)) {
+            return StatementKind::Write === $kind || StatementKind::Schema === $kind ? $kind : StatementKind::Inspect;
+        }
+
+        return $kind;
+    }
+
+    private function kindOfVerb(string $verb): ?StatementKind
+    {
         return match (true) {
-            'WITH' === $first => $this->hasWriteVerb($statement) ? StatementKind::Write : StatementKind::Read,
-            'EXPLAIN' === $first => ($statement->has('ANALYZE') || $statement->has('ANALYSE')) && $this->hasWriteVerb($statement) ? StatementKind::Write : StatementKind::Inspect,
-            \in_array($first, self::READ, true) => StatementKind::Read,
-            \in_array($first, self::INSPECT, true) => StatementKind::Inspect,
-            \in_array($first, self::WRITE, true) => StatementKind::Write,
-            \in_array($first, self::SCHEMA_SAFE, true), \in_array($first, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
+            'EXPLAIN' === $verb => StatementKind::Inspect,
+            \in_array($verb, self::READ, true) => StatementKind::Read,
+            \in_array($verb, self::INSPECT, true) => StatementKind::Inspect,
+            \in_array($verb, self::WRITE, true) => StatementKind::Write,
+            \in_array($verb, self::SCHEMA_SAFE, true), \in_array($verb, self::MAINTENANCE, true), \in_array($verb, self::SCHEMA_DESTRUCTIVE, true) => StatementKind::Schema,
             default => null,
         };
+    }
+
+    /**
+     * nextval() et setval() avancent une séquence : un SELECT qui les appelle écrit (PostgreSQL les refuse d'ailleurs en
+     * lecture seule), même derrière WITH ou EXPLAIN ANALYZE ; un EXPLAIN simple n'exécute rien.
+     */
+    private function advancesSequence(ScannedStatement $statement, StatementKind $kind): bool
+    {
+        $executes = StatementKind::Read === $kind
+            || (StatementKind::Inspect === $kind && ($statement->has('ANALYZE') || $statement->has('ANALYSE')));
+
+        return $executes && ($statement->calls('NEXTVAL') || $statement->calls('SETVAL') || $statement->hasSequence('NEXT', 'VALUE', 'FOR'));
     }
 
     /**
@@ -118,14 +182,21 @@ final class StatementGuard
                 return true;
             }
         }
+        foreach ($statement->calledNames() as $name) {
+            foreach (self::CLICKHOUSE_TABLE_FUNCTION_PREFIXES as $prefix) {
+                if (str_starts_with($name, $prefix)) {
+                    return true;
+                }
+            }
+        }
 
         return $statement->hasTopLevel('FORMAT') && !$statement->calls('FORMAT');
     }
 
     private function hasWriteVerb(ScannedStatement $statement): bool
     {
-        foreach (self::WRITE_VERBS as $verb) {
-            if ($statement->has($verb)) {
+        foreach (array_keys($statement->words) as $index) {
+            if ($statement->isRowWriteAt($index)) {
                 return true;
             }
         }
@@ -145,9 +216,33 @@ final class StatementGuard
         return GuardVerdict::allowed($kind);
     }
 
-    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes): GuardVerdict
+    /**
+     * PostgreSQL : SELECT … INTO <table> (aussi derrière WITH, ou sous EXPLAIN ANALYZE qui le joue) CRÉE une table. Ailleurs
+     * INTO d'un SELECT ne reçoit que des variables (MySQL/MariaDB) ou des fichiers (refusés plus haut).
+     */
+    private function createsTableWithInto(ScannedStatement $statement, StatementKind $kind, Engine $engine): bool
     {
-        $first = $statement->first();
+        if (Engine::PostgreSql !== $engine || !$statement->has('INTO')) {
+            return false;
+        }
+        $explainsAndRuns = 'EXPLAIN' === $statement->first() && 'EXPLAIN' !== $statement->executedVerb();
+
+        return StatementKind::Read === $kind || (StatementKind::Inspect === $kind && $explainsAndRuns);
+    }
+
+    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes, Engine $engine): GuardVerdict
+    {
+        // C'est l'instruction exécutée qui compte (WITH … DROP TABLE se juge comme DROP TABLE, EXPLAIN ANALYZE CREATE … comme CREATE).
+        $first = $statement->executedVerb() ?? $statement->first();
+        $createsTable = $this->createsTableWithInto($statement, $kind, $engine);
+        if ($createsTable) {
+            $kind = StatementKind::Schema;
+        }
+
+        // Mêmes refus définitifs qu'en lecture seule : fichiers du serveur, contrôle du serveur, verrous durables.
+        if ($this->usesDangerousFunction($statement)) {
+            return GuardVerdict::refused(GuardReason::ForbiddenConstruct, $kind);
+        }
 
         // Un refus faute de droit est définitif et passe avant toute demande de confirmation. CALL et DO exécutent du
         // code opaque : ils exigent le droit sur la structure, le plus large.
@@ -159,7 +254,9 @@ final class StatementGuard
             return GuardVerdict::refused(GuardReason::WriteNotPermitted, $kind);
         }
 
-        if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true)) {
+        // CREATE OR REPLACE détruit l'objet existant.
+        $replaces = 'CREATE' === $first && $statement->hasSequence('OR', 'REPLACE');
+        if (\in_array($first, ['CALL', 'DO'], true) || \in_array($first, self::SCHEMA_DESTRUCTIVE, true) || \in_array($first, self::MAINTENANCE, true) || $replaces || $createsTable) {
             return GuardVerdict::needsConfirmation($kind, GuardReason::DestructiveStatement);
         }
         if (StatementKind::Write === $kind && $this->modifiesRowsWithoutWhere($statement)) {
@@ -170,16 +267,12 @@ final class StatementGuard
     }
 
     /**
-     * Un UPDATE ou un DELETE (éventuellement derrière WITH ou EXPLAIN ANALYZE) sans WHERE de même niveau :
-     * le WHERE d'une sous-requête ne limite pas les lignes touchées.
+     * Un UPDATE ou un DELETE sans WHERE de même niveau, où qu'il soit (derrière WITH, EXPLAIN ANALYZE, dans une expression
+     * de table qui écrit, dans un MERGE) : le WHERE d'une sous-requête ne limite pas les lignes touchées.
      */
     private function modifiesRowsWithoutWhere(ScannedStatement $statement): bool
     {
-        $first = $statement->first();
-        $modifies = \in_array($first, ['UPDATE', 'DELETE'], true)
-            || (\in_array($first, ['WITH', 'EXPLAIN'], true) && ($statement->hasTopLevel('UPDATE') || $statement->hasTopLevel('DELETE')));
-
-        return $modifies && !$statement->hasTopLevel('WHERE');
+        return $statement->hasUnboundedRowChange();
     }
 
     private function hasLockingClause(ScannedStatement $statement): bool
@@ -195,9 +288,23 @@ final class StatementGuard
 
     private function usesDangerousFunction(ScannedStatement $statement): bool
     {
-        foreach ($statement->words as $word) {
-            if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {
+        foreach ($statement->calledNames() as $name) {
+            if (\in_array($name, self::HINTS_REFUSED, true)) {
                 return true;
+            }
+        }
+        // Les noms appelés comptent aussi quand ils sont écrits entre guillemets (« "pg_read_file"(…) » : le moteur les appelle).
+        foreach ([...$statement->words, ...$statement->calledNames()] as $word) {
+            if (\in_array($word, self::DANGEROUS_FUNCTIONS, true) || \in_array($word, self::LOCK_FUNCTIONS, true) || str_starts_with($word, 'DBLINK')) {
+                return true;
+            }
+            if (\in_array($word, self::SERVER_STATE_FUNCTIONS, true)) {
+                return true;
+            }
+            foreach ([...self::LOCK_FUNCTION_PREFIXES, ...self::SERVER_STATE_PREFIXES] as $prefix) {
+                if (str_starts_with($word, $prefix)) {
+                    return true;
+                }
             }
         }
 

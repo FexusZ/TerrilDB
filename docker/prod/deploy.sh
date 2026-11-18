@@ -28,8 +28,32 @@ fi
 
 # Réglages propres à l'installation (domaine, port local) : fournis par l'environnement, puis conservés.
 if [ -n "${TERRILDB_DOMAIN:-}" ]; then
-    printf 'TERRILDB_DOMAIN=%s\nTERRILDB_PORT=%s\nTERRILDB_BIND=%s\n' "$TERRILDB_DOMAIN" "${TERRILDB_PORT:-8090}" "${TERRILDB_BIND:-127.0.0.1}" > "$dir/deploy.env"
-    chmod 600 "$dir/deploy.env"
+    # Le domaine finit dans un fichier lu par le shell : un seul mot de caractères de nom d'hôte, jamais de saut de ligne.
+    case "$TERRILDB_DOMAIN" in
+        *[!A-Za-z0-9.-]*)
+            echo "TERRILDB_DOMAIN invalide : lettres, chiffres, points et tirets seulement." >&2
+            exit 2
+            ;;
+    esac
+    # Le fichier existant est relu, pas remplacé : seul le domaine change, port, adresse, délai du proxy et toute autre ligne
+    # NOM=valeur ajoutée à la main sont conservés ; ce que l'environnement fournit ne sert qu'à l'absence d'une valeur.
+    env_file="$dir/deploy.env"
+    kept() { sed -n "s/^$1=//p" "$env_file" 2>/dev/null | head -n 1 || true; }
+    tmp_env="$(mktemp "$dir/.deploy.env.XXXXXX")"
+    trap 'rm -f "$tmp_env"' EXIT
+    port="$(kept TERRILDB_PORT)"
+    bind="$(kept TERRILDB_BIND)"
+    timeout="$(kept TERRILDB_PROXY_TIMEOUT)"
+    {
+        printf 'TERRILDB_DOMAIN=%s\nTERRILDB_PORT=%s\nTERRILDB_BIND=%s\nTERRILDB_PROXY_TIMEOUT=%s\n' \
+            "$TERRILDB_DOMAIN" "${port:-${TERRILDB_PORT:-8090}}" "${bind:-${TERRILDB_BIND:-127.0.0.1}}" "${timeout:-${TERRILDB_PROXY_TIMEOUT:-120}}"
+        if [ -e "$env_file" ]; then
+            grep -v -e '^TERRILDB_DOMAIN=' -e '^TERRILDB_PORT=' -e '^TERRILDB_BIND=' -e '^TERRILDB_PROXY_TIMEOUT=' "$env_file" || true
+        fi
+    } > "$tmp_env"
+    chmod "$(stat -c %a "$env_file" 2>/dev/null || echo 600)" "$tmp_env"
+    mv -f "$tmp_env" "$env_file"
+    trap - EXIT
 fi
 if [ ! -e "$dir/deploy.env" ]; then
     echo "TERRILDB_DOMAIN manquant : relancez avec TERRILDB_DOMAIN=<domaine> pour le premier déploiement." >&2
@@ -50,8 +74,18 @@ echo "==> Base interne"
 TERRILDB_TAG="$tag" compose up -d --wait db
 if [ -n "$previous" ]; then
     backup="$dir/backups/$(date +%Y%m%d-%H%M%S)-$previous.sql.gz"
-    TERRILDB_TAG="$tag" compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' | gzip > "$backup"
-    chmod 600 "$backup"
+    partial="$dir/backups/.partial-$$"
+    # Privé dès sa création. Le vidage va d'abord dans un fichier, PUIS gzip : dans un tube, `sh` ne verrait que le code de
+    # gzip et un pg_dump en échec laisserait une sauvegarde presque vide parmi les bonnes.
+    umask 077
+    if ! TERRILDB_TAG="$tag" compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$partial" \
+        || [ ! -s "$partial" ] || ! gzip -c "$partial" > "$backup.part" || ! mv "$backup.part" "$backup"; then
+        rm -f "$partial" "$backup.part"
+        echo "Échec de la sauvegarde de la base : déploiement arrêté avant les migrations (sauvegardes existantes intactes)." >&2
+        exit 1
+    fi
+    rm -f "$partial"
+    echo "Sauvegarde de la base : $(basename "$backup") ($(wc -c < "$backup" | tr -d ' ') octets)"
     # Sept sauvegardes au plus.
     ls -1t "$dir"/backups/*.sql.gz 2>/dev/null | tail -n +8 | while read -r old; do rm -f "$old"; done
 fi
@@ -64,6 +98,9 @@ if TERRILDB_TAG="$tag" compose up -d --wait --remove-orphans app; then
     echo "$tag" > "$dir/current-tag"
     docker image prune -f >/dev/null
     echo "Déployé : $tag"
+    # nginx et l'application doivent tirer la même limite de durée de la même valeur ; un désaccord est signalé, sans faire échouer
+    # un déploiement qu'un retour à l'image précédente ne réparerait pas.
+    sh "$root/docker/prod/proxy-timeout.sh" check "${TERRILDB_NGINX_SITE:-/etc/nginx/sites-available/terrildb}" "${TERRILDB_PROXY_TIMEOUT:-120}" || true
     exit 0
 fi
 

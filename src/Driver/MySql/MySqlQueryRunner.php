@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Driver\MySql;
 
 use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\EngineFaultException;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryTimeoutException;
@@ -12,6 +14,8 @@ use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineFaultReader;
+use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
 
@@ -26,8 +30,14 @@ use Doctrine\DBAL\Connection;
  * Délais : MAX_EXECUTION_TIME (MySQL, SELECT seulement) ou max_statement_time (MariaDB, toute instruction).
  * Limite connue : sur MySQL, une écriture n'a pas de délai côté moteur.
  *
- * Sur Vitess (détecté à l'ouverture, voir `forConnection`), la variable de session n'est pas transmise : le délai est
- * injecté dans l'instruction (`VitessTimeout`), et vtgate répond par la même erreur 3024.
+ * La transaction est AUSSI ouverte `READ ONLY`, sans condition : derrière Vitess, vtgate accepte le SET de session sans le
+ * transmettre et seule la transaction protège les écritures de données (#39) ; détecter Vitess par `@@version` laissait
+ * passer une version renommée ou illisible. Le SET reste, c'est lui qui fait refuser le DDL ailleurs.
+ *
+ * Seul le DÉLAI dépend de Vitess (`$vitess`, posé par le driver d'après la version déjà lue à l'ouverture, `ServerFlavour::Vitess`) :
+ * la variable de session n'est pas transmise par vtgate, le délai est donc injecté dans l'instruction (`VitessTimeout`) et
+ * vtgate répond par la même erreur 3024. Une version illisible ou renommée garde le délai de session (aucun effet sur Vitess, mais
+ * la lecture seule, elle, ne dépend pas de cette détection).
  */
 final readonly class MySqlQueryRunner implements QueryRunner
 {
@@ -41,24 +51,6 @@ final readonly class MySqlQueryRunner implements QueryRunner
     ) {
     }
 
-    /**
-     * Lit `@@version` une fois pour reconnaître Vitess (MySQL seulement : MariaDB n'est jamais derrière vtgate).
-     */
-    public static function forConnection(Connection $connection, Engine $engine): self
-    {
-        $vitess = false;
-        if (Engine::MySql === $engine) {
-            try {
-                $version = $connection->fetchOne('SELECT @@version');
-                $vitess = \is_string($version) && VitessTimeout::isVitessVersion($version);
-            } catch (\Throwable) {
-                // Version illisible : comportement MySQL ordinaire.
-            }
-        }
-
-        return new self($connection, $engine, $vitess);
-    }
-
     public function run(string $sql, StatementKind $kind, QueryOptions $options): QueryResult
     {
         $pdo = $this->pdo();
@@ -70,21 +62,21 @@ final readonly class MySqlQueryRunner implements QueryRunner
             if (!$this->vitess) {
                 $pdo->exec($this->timeoutStatement($options->timeoutMs));
             }
-            $pdo->exec('START TRANSACTION');
+            $pdo->exec($readOnly ? 'START TRANSACTION READ ONLY' : 'START TRANSACTION');
 
             $statement = $pdo->query($this->vitess ? VitessTimeout::inject($sql, $options->timeoutMs) : $sql);
             \assert($statement instanceof \PDOStatement);
             $result = $statement->columnCount() > 0
-                ? PdoRows::read($statement, $options->maxRows, $started)
+                ? ($options->measure && StatementKind::Read === $kind ? PdoRows::measure($statement, $options->maxRows, $started, $options->timeoutMs) : PdoRows::read($statement, $options->maxRows, $started))
                 : QueryResult::affected($statement->rowCount(), PdoRows::elapsed($started));
 
-            $pdo->exec($readOnly ? 'ROLLBACK' : 'COMMIT');
+            $pdo->exec($readOnly || $options->discard ? 'ROLLBACK' : 'COMMIT');
 
             return $result;
         } catch (\PDOException $e) {
             $this->rollBack($pdo);
 
-            throw self::translate($e, $options);
+            throw $this->translate($e, $options);
         } catch (\Throwable $e) {
             $this->rollBack($pdo);
 
@@ -115,13 +107,24 @@ final readonly class MySqlQueryRunner implements QueryRunner
         }
     }
 
-    private static function translate(\PDOException $e, QueryOptions $options): \RuntimeException
+    private function translate(\PDOException $e, QueryOptions $options): \RuntimeException
     {
         $info = \is_array($e->errorInfo) ? $e->errorInfo : [];
         if (\in_array($info[1] ?? null, self::TIMEOUT_CODES, true)) {
             return QueryTimeoutException::afterMilliseconds($options->timeoutMs, $e);
         }
 
-        return new QueryFailedException(trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage()), previous: $e);
+        $lock = EngineLockConflict::of($this->engine, $e);
+        if (null !== $lock) {
+            return new LockConflictException($lock, $e);
+        }
+
+        $message = trim(\is_string($info[2] ?? null) ? $info[2] : $e->getMessage());
+        $fault = EngineFaultReader::of($this->engine, $e);
+        if (null !== $fault) {
+            return new EngineFaultException($fault, $e, $message);
+        }
+
+        return new QueryFailedException($message, previous: $e);
     }
 }

@@ -6,9 +6,11 @@ namespace App\Core\Driver;
 
 use App\Core\Connection\Engine;
 use App\Core\Data\DataExecutor;
+use App\Core\Diagnostics\ServerDiagnostics;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\KeyValueStore;
 use App\Core\Query\QueryRunner;
+use App\Core\Query\Script\ScriptExecutor;
 use App\Core\Schema\Change\DdlExecutor;
 use App\Core\Schema\SchemaIntrospector;
 
@@ -33,6 +35,9 @@ final class TargetConnection
         private readonly ?KeyValueStore $keys = null,
         private readonly ?DdlExecutor $ddl = null,
         private readonly ?DataExecutor $data = null,
+        private readonly ?ServerDiagnostics $diagnostics = null,
+        private readonly ?ScriptExecutor $script = null,
+        private readonly ?ServerVersion $version = null,
     ) {
         $this->release = $release;
     }
@@ -67,6 +72,37 @@ final class TargetConnection
     public function data(): DataExecutor
     {
         return $this->data ?? throw UnsupportedOperationException::for($this->engine, 'data');
+    }
+
+    /**
+     * Lectures de supervision du serveur (sessions…), à part de la console et du garde.
+     *
+     * @throws UnsupportedOperationException
+     */
+    public function diagnostics(): ServerDiagnostics
+    {
+        return $this->diagnostics ?? throw UnsupportedOperationException::for($this->engine, 'diagnostics');
+    }
+
+    /**
+     * @throws UnsupportedOperationException
+     */
+    public function script(): ScriptExecutor
+    {
+        return $this->script ?? throw UnsupportedOperationException::for($this->engine, 'script');
+    }
+
+    /**
+     * La version lue à l'ouverture ; nulle si le serveur ne l'a pas donnée (ou pas de façon lisible).
+     */
+    public function version(): ?ServerVersion
+    {
+        return $this->version;
+    }
+
+    public function capabilities(): ServerCapabilities
+    {
+        return CapabilityMatrix::for($this->engine, $this->version);
     }
 
     public function runner(): QueryRunner

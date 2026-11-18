@@ -21,6 +21,7 @@ use App\Security\UserRegistrar;
 use App\Tests\Integration\Persistence\DatabaseTestCase;
 use OTPHP\TOTP;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
 use Symfony\Component\Clock\MockClock;
 
 #[Group('integration')]
@@ -77,6 +78,7 @@ final class LoginServiceTest extends DatabaseTestCase
             new SecretCipher(),
             new RecoveryCodeService(),
             $this->clock,
+            new NullLogger(),
         );
     }
 

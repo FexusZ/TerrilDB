@@ -1,0 +1,11 @@
+[
+    {
+        "in_recovery": false,
+        "receiver_status": null,
+        "received": null,
+        "applied": null,
+        "paused": null,
+        "lag_seconds": 0,
+        "replica_count": 1
+    }
+]

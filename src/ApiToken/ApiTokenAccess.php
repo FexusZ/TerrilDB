@@ -25,6 +25,56 @@ final readonly class ApiTokenAccess
     }
 
     /**
+     * Les diagnostics du serveur (sessions…) ne se lisent qu'avec le droit `diagnostic`, refusé par défaut.
+     *
+     * @throws ApiTokenPermissionException
+     */
+    public function requireDiagnostic(): void
+    {
+        if (!$this->token->getPermissions()->diagnostic) {
+            throw ApiTokenPermissionException::create();
+        }
+    }
+
+    /**
+     * Lignes qu'une lecture rend à un jeton SANS le droit `export` : l'aperçu, pas l'extraction en masse. Au-delà, le résultat est
+     * coupé et marqué `truncated`, jamais refusé. Le plafond du serveur (`QueryOptions::MAX_ROWS`) reste celui des jetons avec `export`.
+     */
+    public const ROWS_WITHOUT_EXPORT = 500;
+
+    /**
+     * Le nombre de lignes demandé à `/query`, `run_query`, `/execute` ou `execute_statement`, ramené à `ROWS_WITHOUT_EXPORT` pour un jeton sans le droit `export`.
+     */
+    public function readRowLimit(int $requested): int
+    {
+        return $this->token->getPermissions()->export ? $requested : min($requested, self::ROWS_WITHOUT_EXPORT);
+    }
+
+    /**
+     * La liste des bases et des schémas du serveur ne se lit qu'avec le droit `readSchema`, refusé par défaut.
+     *
+     * @throws ApiTokenPermissionException
+     */
+    public function requireReadSchema(): void
+    {
+        if (!$this->token->getPermissions()->readSchema) {
+            throw ApiTokenPermissionException::create();
+        }
+    }
+
+    /**
+     * L'export en masse (CSV, JSON) ne se fait qu'avec le droit `export`, refusé par défaut.
+     *
+     * @throws ApiTokenPermissionException
+     */
+    public function requireExport(): void
+    {
+        if (!$this->token->getPermissions()->export) {
+            throw ApiTokenPermissionException::create();
+        }
+    }
+
+    /**
      * Les options d'une exécution d'écriture : lecture-écriture bornée aux droits du jeton. Un jeton sans aucun
      * droit d'écriture n'exécute rien par cette voie (la lecture seule garde sa route, tenue par le moteur).
      *
@@ -37,6 +87,6 @@ final readonly class ApiTokenAccess
             throw ApiTokenPermissionException::create();
         }
 
-        return new QueryOptions(QueryMode::ReadWrite, $timeoutMs, $maxRows, $permissions->writes());
+        return new QueryOptions(QueryMode::ReadWrite, $timeoutMs, $this->readRowLimit($maxRows), $permissions->writes());
     }
 }

@@ -513,6 +513,44 @@ describe('workspace store', () => {
     })
   })
 
+  describe('lint', () => {
+    const lint = { findings: [{ rule: 'select_star', severity: 'info', message: 'SELECT *', suggestion: 'Lister les colonnes.', columns: [] }] }
+
+    it('asks for advice on the statement of the tab, without running it', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      mocked.mockResolvedValueOnce(lint)
+
+      await store.lintTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/lint', { sql: 'select * from orders' })
+      expect(store.activeTab.lint).toEqual(lint)
+      expect(store.activeTab.view).toBe('lint')
+      expect(store.activeTab.linting).toBe(false)
+    })
+
+    it('forgets the advice when the text changes', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select 1')
+      mocked.mockResolvedValueOnce(lint)
+      await store.lintTab(store.activeTab.id)
+
+      store.setSql(store.activeTab.id, 'select 2')
+
+      expect(store.activeTab.lint).toBeNull()
+      expect(store.activeTab.view).toBe('result')
+    })
+
+    it('does not ask for advice on an empty statement', async () => {
+      const store = await opened()
+
+      await store.lintTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenCalledTimes(1)
+      expect(store.activeTab.error).toBe('Saisissez une instruction.')
+    })
+  })
+
   describe('plan', () => {
     const plan: PlanResult = { plan: { totalCost: 5, root: { kind: 'full_scan', label: 'Seq Scan', relation: 'orders', index: null, rows: 3800, cost: 5, condition: null, fullScan: true, children: [] } }, findings: [{ rule: 'full_scan', relation: 'orders', rows: 3800, condition: null }] }
 
@@ -527,6 +565,61 @@ describe('workspace store', () => {
       expect(store.activeTab.plan).toEqual(plan)
       expect(store.activeTab.view).toBe('plan')
       expect(store.activeTab.planning).toBe(false)
+    })
+
+    it('measures the plan only when asked, and sends the flag', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      const measured: PlanResult = { ...plan, plan: { ...plan.plan, measured: true, executionTimeMs: 3 }, measure: { status: 'measured' } }
+      mocked.mockResolvedValueOnce(measured)
+
+      await store.measureTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/plan', { sql: 'select * from orders', measure: true })
+      expect(store.activeTab.plan).toEqual(measured)
+      expect(store.activeTab.view).toBe('plan')
+      expect(store.activeTab.measuring).toBe(false)
+    })
+
+    it('never measures while only planning', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      mocked.mockResolvedValueOnce(plan)
+
+      await store.planTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/conn-1/plan', { sql: 'select * from orders' })
+    })
+
+    it('does not measure an empty statement', async () => {
+      const store = await opened()
+
+      await store.measureTab(store.activeTab.id)
+
+      expect(mocked).toHaveBeenCalledTimes(1)
+      expect(store.activeTab.error).toBe('Saisissez une instruction.')
+    })
+
+    it('explains a measure that timed out and keeps no plan', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'select * from orders')
+      mocked.mockRejectedValueOnce(new ApiError(408, 'query_timeout', {}))
+
+      await store.measureTab(store.activeTab.id)
+
+      expect(store.activeTab.error).toContain('délai')
+      expect(store.activeTab.plan).toBeNull()
+      expect(store.activeTab.measuring).toBe(false)
+    })
+
+    it('explains a refused measure', async () => {
+      const store = await opened()
+      store.setSql(store.activeTab.id, 'delete from orders')
+      mocked.mockRejectedValueOnce(new ApiError(403, 'query_refused', { reason: 'not_read_only' }))
+
+      await store.measureTab(store.activeTab.id)
+
+      expect(store.activeTab.error).toContain('lecture seule')
     })
 
     it('shows the result again after a run', async () => {

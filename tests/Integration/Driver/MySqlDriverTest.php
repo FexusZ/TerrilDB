@@ -72,7 +72,7 @@ final class MySqlDriverTest extends TestCase
     }
 
     /**
-     * Vitess n'applique pas SET SESSION MAX_EXECUTION_TIME : le driver le détecte (@@version) et met le délai dans la requête.
+     * Vitess n'applique pas SET SESSION MAX_EXECUTION_TIME : le driver le sait par la version lue à l'ouverture et met le délai dans la requête.
      */
     public function testATimeoutIsEnforcedThroughVitess(): void
     {

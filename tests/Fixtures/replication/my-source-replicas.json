@@ -1,0 +1,9 @@
+[
+    {
+        "Server_Id": 2,
+        "Host": "",
+        "Port": 3306,
+        "Source_Id": 1,
+        "Replica_UUID": "ec8eb605-deed-11f1-8205-82acd344a367"
+    }
+]

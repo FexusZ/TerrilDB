@@ -11,8 +11,11 @@ export const ACTIVITY_FILTERS: { value: string; label: string }[] = [
   { value: 'token', label: 'Jetons' },
   { value: 'target', label: 'Adresses refusées' },
   { value: 'invitation', label: 'Invitations' },
+  { value: 'account', label: 'Comptes' },
+  { value: 'admin', label: 'Administration' },
   { value: 'query', label: 'Requêtes' },
   { value: 'schema', label: 'Structure des tables' },
+  { value: 'diagnostic', label: 'Supervision du serveur' },
 ]
 
 const tableOf = (details: Record<string, unknown>): string => (typeof details.table === 'string' ? details.table : '?')
@@ -24,6 +27,14 @@ export function describeEvent(entry: AuditEntry): string {
   switch (entry.action) {
     case 'account.registered':
       return 'Compte créé'
+    case 'account.disabled':
+      return 'Compte désactivé'
+    case 'account.enabled':
+      return 'Compte réactivé'
+    case 'admin.token_revoked':
+      return 'Jeton d’un autre compte révoqué'
+    case 'admin.administrator_token_revoked':
+      return 'Jeton d’un autre administrateur révoqué'
     case 'login.success':
       return 'Connexion'
     case 'login.failure':
@@ -72,10 +83,17 @@ export function describeEvent(entry: AuditEntry): string {
       return 'Invitation révoquée'
     case 'query.executed':
       return 'Requête exécutée'
+    case 'query.prepared':
+      return 'Écriture préparée (rien n’a été exécuté)'
     case 'query.refused':
       return 'Requête refusée'
     case 'query.failed':
       return details.reason === 'timeout' ? 'Requête arrêtée : délai dépassé' : 'Requête en erreur'
+    case 'query.linted': {
+      const count = typeof details.findings === 'number' ? details.findings : 0
+
+      return `Conseils de requête demandés (${count === 0 ? 'aucun' : String(count)})`
+    }
     case 'schema.changed': {
       const count = typeof details.statements === 'number' ? details.statements : 0
 
@@ -88,6 +106,13 @@ export function describeEvent(entry: AuditEntry): string {
         ? `Modification de la structure de « ${tableOf(details)} » interrompue : ${String(applied)} ${applied > 1 ? 'instructions déjà appliquées' : 'instruction déjà appliquée'}`
         : `Modification de la structure de « ${tableOf(details)} » refusée par la base`
     }
+    case 'diagnostic.read': {
+      const topic = typeof details.topic === 'string' ? details.topic : '?'
+
+      return entry.outcome === 'failed' ? `Lecture de la supervision en échec : ${topic}` : `Supervision lue : ${topic}`
+    }
+    case 'schema.read':
+      return details.topic === 'schemas' ? 'Liste des schémas lue' : 'Liste des bases lue'
     default:
       return entry.action
   }

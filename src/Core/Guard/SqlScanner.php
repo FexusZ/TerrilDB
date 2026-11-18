@@ -18,8 +18,13 @@ namespace App\Core\Guard;
  */
 final class SqlScanner
 {
-    public function scan(string $sql, SqlDialect $dialect): ScannedSql
+    /**
+     * @param list<array{int, int, string}> $spans si fourni, reçoit les zones (début, fin exclue, « literal » ou « comment », en octets) des
+     *                                             chaînes, nombres et commentaires lus, pour les masquer (diagnostics) ; sans effet sur le verdict
+     */
+    public function scan(string $sql, SqlDialect $dialect, array &$spans = []): ScannedSql
     {
+        $spans = [];
         $mysql = SqlDialect::MySql === $dialect;
         $clickhouse = SqlDialect::ClickHouse === $dialect;
         // MySQL et ClickHouse : antislash dans les chaînes, « # » commentaire. Le guillemet double est une chaîne en MySQL,
@@ -33,6 +38,10 @@ final class SqlScanner
         $depth = 0;
         $complete = true;
         $called = [];
+        $callFlags = [];
+        $groups = [];
+        $openGroups = [0];
+        $lastGroup = 0;
         $executableComment = false;
         $separators = [];
         $separatorInExecutableComment = false;
@@ -50,21 +59,31 @@ final class SqlScanner
             } elseif (';' === $char) {
                 $separators[] = $i;
                 $separatorInExecutableComment = $separatorInExecutableComment || $executableComment;
-                $this->flush($words, $depths, $called, $statements);
+                $this->flush($words, $depths, $called, $callFlags, $groups, $statements);
                 $depth = 0;
+                $openGroups = [0];
+                $lastGroup = 0;
                 ++$i;
             } elseif ('(' === $char) {
                 ++$depth;
+                $openGroups[] = ++$lastGroup;
                 ++$i;
             } elseif (')' === $char) {
                 $depth = max(0, $depth - 1);
+                if (\count($openGroups) > 1) {
+                    array_pop($openGroups);
+                }
                 ++$i;
             } elseif ('-' === $char && '-' === $next && (!$mysql || $this->endsOrSpaces($sql, $i + 2))) {
-                $i = $this->endOfLine($sql, $i);
+                $spans[] = [$i, $i = $this->endOfLine($sql, $i), 'comment'];
             } elseif ($backslash && '#' === $char) {
-                $i = $this->endOfLine($sql, $i);
+                $spans[] = [$i, $i = $this->endOfLine($sql, $i), 'comment'];
             } elseif ('/' === $char && '*' === $next) {
-                if ($mysql && ('!' === ($sql[$i + 2] ?? '') || ('M' === ($sql[$i + 2] ?? '') && '!' === ($sql[$i + 3] ?? '')))) {
+                if ($mysql && '+' === ($sql[$i + 2] ?? '')) {
+                    // Indice d'optimiseur (MySQL) : le moteur l'applique à l'instruction (MAX_EXECUTION_TIME, SET_VAR). Ses mots comptent.
+                    $executableComment = true;
+                    $i += 3;
+                } elseif ($mysql && ('!' === ($sql[$i + 2] ?? '') || ('M' === ($sql[$i + 2] ?? '') && '!' === ($sql[$i + 3] ?? '')))) {
                     // MySQL et MariaDB exécutent le contenu de ces commentaires.
                     $executableComment = true;
                     $i += 'M' === $sql[$i + 2] ? 4 : 3;
@@ -72,23 +91,41 @@ final class SqlScanner
                         ++$i;
                     }
                 } else {
+                    $commentStart = $i;
                     $i = $this->endOfBlockComment($sql, $i, SqlDialect::PostgreSql === $dialect);
                     if (null === $i) {
                         $complete = false;
                         break;
                     }
+                    $spans[] = [$commentStart, $i, 'comment'];
                 }
             } elseif ("'" === $char || ($mysql && '"' === $char)) {
+                $start = $i;
                 $i = $this->endOfQuoted($sql, $i, $char, $backslash);
                 if (null === $i) {
                     $complete = false;
                     break;
                 }
+                $spans[] = [$start, $i, 'literal'];
+                // Le guillemet double est un identifiant en MySQL avec ANSI_QUOTES : par prudence, suivi d'une parenthèse il est un appel.
+                if ('"' === $char && '(' === $this->nextNonSpace($sql, $i, $mysql, $backslash)) {
+                    $called[] = $this->quotedName($sql, $start, $i, $backslash);
+                }
             } elseif (($backslash && '`' === $char) || (!$mysql && '"' === $char)) {
+                $start = $i;
                 $i = $this->endOfQuoted($sql, $i, $char, $clickhouse);
                 if (null === $i) {
                     $complete = false;
                     break;
+                }
+                // Un identifiant entre guillemets suivi d'une parenthèse est un appel de fonction (le dernier élément d'un nom qualifié
+                // aussi) : son nom, déquoté, rejoint les appels sans devenir un mot (une colonne « select » n'est pas le verbe).
+                if (SqlDialect::PostgreSql === $dialect && $start >= 2 && '&' === $sql[$start - 1] && 'U' === strtoupper($sql[$start - 2])) {
+                    // U&"…" : PostgreSQL lit les échappements Unicode du nom (\0061, \+000061, UESCAPE) AVANT de chercher la fonction.
+                    // Le nom décodé est compté comme un appel, parenthèse ou non : le garde reste plus strict que le moteur.
+                    $called[] = $this->unicodeEscapedName($sql, $start, $i);
+                } elseif ('(' === $this->nextNonSpace($sql, $i, $mysql, $backslash)) {
+                    $called[] = $this->quotedName($sql, $start, $i, $clickhouse);
                 }
             } elseif ($dollarQuotes && '$' === $char && 1 === preg_match('/\G\$([A-Za-z_\x80-\xff][A-Za-z0-9_\x80-\xff]*)?\$/', $sql, $tag, 0, $i)) {
                 $end = strpos($sql, $tag[0], $i + \strlen($tag[0]));
@@ -96,6 +133,7 @@ final class SqlScanner
                     $complete = false;
                     break;
                 }
+                $spans[] = [$i, $end + \strlen($tag[0]), 'literal'];
                 $i = $end + \strlen($tag[0]);
             } elseif (ctype_alpha($char) || '_' === $char || \ord($char) >= 0x80) {
                 $start = $i;
@@ -111,23 +149,32 @@ final class SqlScanner
                         $complete = false;
                         break;
                     }
+                    $spans[] = [$start, $i, 'literal'];
                 } else {
                     $words[] = strtoupper($word);
                     $depths[] = $depth;
-                    if ('(' === $this->nextNonSpace($sql, $i)) {
+                    $groups[] = $openGroups[array_key_last($openGroups)];
+                    $isCall = '(' === $this->nextNonSpace($sql, $i, $mysql, $backslash);
+                    $callFlags[] = $isCall;
+                    if ($isCall) {
                         $called[] = strtoupper($word);
                     }
                 }
             } elseif (ctype_digit($char)) {
+                $numberStart = $i;
                 while ($i < $length && (ctype_alnum($sql[$i]) || '_' === $sql[$i] || '.' === $sql[$i])) {
                     ++$i;
+                }
+                // « $1 » est une marque de paramètre (texte normalisé de PostgreSQL), pas une valeur.
+                if ($numberStart < 1 || '$' !== $sql[$numberStart - 1]) {
+                    $spans[] = [$numberStart, $i, 'literal'];
                 }
             } else {
                 ++$i;
             }
         }
 
-        $this->flush($words, $depths, $called, $statements);
+        $this->flush($words, $depths, $called, $callFlags, $groups, $statements);
 
         return new ScannedSql($statements, $complete, $separators, $separatorInExecutableComment);
     }
@@ -136,26 +183,94 @@ final class SqlScanner
      * @param list<string>           $words
      * @param list<int>              $depths
      * @param list<string>           $called
+     * @param list<bool>             $callFlags
+     * @param list<int>              $groups
      * @param list<ScannedStatement> $statements
      */
-    private function flush(array &$words, array &$depths, array &$called, array &$statements): void
+    private function flush(array &$words, array &$depths, array &$called, array &$callFlags, array &$groups, array &$statements): void
     {
         if ([] !== $words) {
-            $statements[] = new ScannedStatement($words, $depths, $called);
+            $statements[] = new ScannedStatement($words, $depths, $called, $callFlags, $groups);
         }
         $words = [];
         $depths = [];
         $called = [];
+        $callFlags = [];
+        $groups = [];
     }
 
-    private function nextNonSpace(string $sql, int $from): string
+    /**
+     * Le premier caractère utile après `$from` : espaces et commentaires sautés (« nom /* x *\/ ( » est un appel pour le
+     * moteur). Un commentaire exécutable MySQL (`/*!`) rend « ( » : son contenu peut être l'ouverture de l'appel.
+     */
+    private function nextNonSpace(string $sql, int $from, bool $mysql, bool $hashComments): string
     {
         $length = \strlen($sql);
-        while ($from < $length && ctype_space($sql[$from])) {
-            ++$from;
+        while ($from < $length) {
+            $char = $sql[$from];
+            $next = $sql[$from + 1] ?? '';
+            if (ctype_space($char)) {
+                ++$from;
+            } elseif ('/' === $char && '*' === $next) {
+                if ($mysql && ('!' === ($sql[$from + 2] ?? '') || ('M' === ($sql[$from + 2] ?? '') && '!' === ($sql[$from + 3] ?? '')))) {
+                    return '(';
+                }
+                $end = strpos($sql, '*/', $from + 2);
+                if (false === $end) {
+                    return '';
+                }
+                $from = $end + 2;
+            } elseif (('-' === $char && '-' === $next && (!$mysql || $this->endsOrSpaces($sql, $from + 2))) || ($hashComments && '#' === $char)) {
+                $from = $this->endOfLine($sql, $from);
+            } else {
+                return $char;
+            }
         }
 
-        return $sql[$from] ?? '';
+        return '';
+    }
+
+    /**
+     * Le nom d'un identifiant entre guillemets, sans eux, guillemets doublés et échappements lus, en majuscules.
+     */
+    private function quotedName(string $sql, int $start, int $end, bool $backslashEscapes): string
+    {
+        $quote = $sql[$start];
+        $name = substr($sql, $start + 1, $end - $start - 2);
+        $name = str_replace($quote.$quote, $quote, $name);
+        if ($backslashEscapes) {
+            $name = (string) preg_replace('/\\\\(.)/s', '$1', $name);
+        }
+
+        return strtoupper($name);
+    }
+
+    /**
+     * Le nom d'un identifiant `U&"…"` de PostgreSQL une fois ses échappements Unicode lus (le caractère d'échappement est
+     * l'antislash, ou celui de `UESCAPE 'c'` qui suit), en majuscules. Un échappement mal formé est laissé tel quel.
+     */
+    private function unicodeEscapedName(string $sql, int $start, int $end): string
+    {
+        $name = str_replace('""', '"', substr($sql, $start + 1, $end - $start - 2));
+        $escape = '\\';
+        if (1 === preg_match('/\G\s*UESCAPE\s*\'([^\'\s]?)\'/i', $sql, $found, 0, $end) && '' !== $found[1]) {
+            $escape = $found[1];
+        }
+        $quoted = preg_quote($escape, '/');
+        $decoded = preg_replace_callback(
+            '/'.$quoted.'(?:'.$quoted.'|\+([0-9A-Fa-f]{6})|([0-9A-Fa-f]{4}))/',
+            static function (array $m) use ($escape): string {
+                $hex = ($m[1] ?? '') !== '' ? $m[1] : ($m[2] ?? '');
+                if ('' === $hex) {
+                    return $escape;
+                }
+
+                return (string) mb_chr(\intval($hex, 16), 'UTF-8');
+            },
+            $name,
+        );
+
+        return strtoupper($decoded ?? $name);
     }
 
     private function endsOrSpaces(string $sql, int $position): bool

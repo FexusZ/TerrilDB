@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Driver\PostgreSql;
 
+use App\Core\Connection\Engine;
+use App\Core\Driver\Exception\EngineFaultException;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Guard\StatementKind;
+use App\Core\Query\CellValue;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryTimeoutException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Core\Query\QueryResult;
 use App\Core\Query\QueryRunner;
+use App\Driver\EngineFaultReader;
+use App\Driver\EngineLockConflict;
 use App\Driver\PdoRows;
 use Doctrine\DBAL\Connection;
 
@@ -26,6 +32,7 @@ use Doctrine\DBAL\Connection;
 final readonly class PostgreSqlQueryRunner implements QueryRunner
 {
     private const CURSOR = 'terril_cursor';
+    private const MEASURE_CHUNK = 1000;
     private const TIMEOUT_SQLSTATE = '57014';
 
     public function __construct(private Connection $connection)
@@ -44,7 +51,7 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
             $result = StatementKind::Read === $kind
                 ? $this->readThroughCursor($pdo, $sql, $options, $started)
                 : $this->execute($pdo, $sql, $options, $started);
-            $pdo->exec($readOnly ? 'ROLLBACK' : 'COMMIT');
+            $pdo->exec($readOnly || $options->discard ? 'ROLLBACK' : 'COMMIT');
 
             return $result;
         } catch (\PDOException $e) {
@@ -68,10 +75,43 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
     private function readThroughCursor(\PDO $pdo, string $sql, QueryOptions $options, int $started): QueryResult
     {
         $pdo->exec(\sprintf('DECLARE %s NO SCROLL CURSOR FOR %s', self::CURSOR, $sql));
+        if ($options->measure) {
+            return $this->measureThroughCursor($pdo, $options, $started);
+        }
         $statement = $pdo->query(\sprintf('FETCH FORWARD %d FROM %s', $options->maxRows + 1, self::CURSOR));
         \assert($statement instanceof \PDOStatement);
 
         return PdoRows::read($statement, $options->maxRows, $started);
+    }
+
+    /**
+     * Le curseur est vidé par tranches : ni le client ni PHP ne tiennent tout le résultat. Le `statement_timeout`
+     * vaut pour chaque tranche, le délai total est donc vérifié entre deux.
+     */
+    private function measureThroughCursor(\PDO $pdo, QueryOptions $options, int $started): QueryResult
+    {
+        $columns = [];
+        $rows = [];
+        $total = 0;
+        do {
+            $statement = $pdo->query(\sprintf('FETCH FORWARD %d FROM %s', self::MEASURE_CHUNK, self::CURSOR));
+            \assert($statement instanceof \PDOStatement);
+            $columns = [] === $columns ? PdoRows::columns($statement) : $columns;
+            $fetched = 0;
+            while (false !== ($row = $statement->fetch(\PDO::FETCH_NUM))) {
+                ++$fetched;
+                if (\count($rows) < $options->maxRows) {
+                    $rows[] = array_map(CellValue::normalize(...), $row);
+                }
+            }
+            $statement->closeCursor();
+            $total += $fetched;
+            if (PdoRows::elapsed($started) > $options->timeoutMs) {
+                throw QueryTimeoutException::afterMilliseconds($options->timeoutMs);
+            }
+        } while (self::MEASURE_CHUNK === $fetched);
+
+        return QueryResult::rows($columns, $rows, $total > $options->maxRows, PdoRows::elapsed($started), $total);
     }
 
     private function execute(\PDO $pdo, string $sql, QueryOptions $options, int $started): QueryResult
@@ -100,8 +140,17 @@ final readonly class PostgreSqlQueryRunner implements QueryRunner
             return QueryTimeoutException::afterMilliseconds($options->timeoutMs, $e);
         }
 
-        $message = \is_string($info[2] ?? null) ? $info[2] : $e->getMessage();
+        $lock = EngineLockConflict::of(Engine::PostgreSql, $e);
+        if (null !== $lock) {
+            return new LockConflictException($lock, $e);
+        }
 
-        return new QueryFailedException(trim((string) preg_replace('/^ERROR:\s+/', '', $message)), previous: $e);
+        $message = trim((string) preg_replace('/^ERROR:\s+/', '', \is_string($info[2] ?? null) ? $info[2] : $e->getMessage()));
+        $fault = EngineFaultReader::of(Engine::PostgreSql, $e);
+        if (null !== $fault) {
+            return new EngineFaultException($fault, $e, $message);
+        }
+
+        return new QueryFailedException($message, previous: $e);
     }
 }

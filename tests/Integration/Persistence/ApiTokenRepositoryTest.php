@@ -138,4 +138,36 @@ final class ApiTokenRepositoryTest extends DatabaseTestCase
         $this->entityManager->clear();
         self::assertNotNull($this->repository->find($token->getId()), 'rien n’est écrit tant que l’appelant ne valide pas');
     }
+
+    public function testTheReadRightsComeBackAsIssued(): void
+    {
+        $token = new ApiToken(Uuid::v7(), $this->user('alice'), 'CI', self::VERIFIER, 'v1:AAAAwrapped', [Uuid::v7()->toRfc4122()], new \DateTimeImmutable('2026-11-01T10:00:00Z'), null, permissions: new \App\ApiToken\TokenPermissions(readSchema: true));
+        $this->repository->save($token);
+        $this->entityManager->clear();
+
+        $permissions = $this->repository->find($token->getId())?->getPermissions();
+
+        self::assertNotNull($permissions);
+        self::assertTrue($permissions->readSchema);
+        self::assertFalse($permissions->export);
+    }
+
+    public function testATokenIssuedBeforeTheReadRightsKeepsExactlyItsRights(): void
+    {
+        $owner = $this->user('alice');
+        $id = Uuid::v7();
+        $connection = $this->entityManager->getConnection();
+        // La ligne telle qu'une version antérieure l'écrivait : aucune des colonnes des droits de lecture.
+        $connection->executeStatement(
+            'INSERT INTO api_token (id, name, verifier, wrapped_key, connection_ids, created_at, expires_at, owner_id, write_data, write_schema, create_connections, diagnostic, single_step, all_connections) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [$id->toRfc4122(), 'Old', self::VERIFIER, 'v1:AAAAwrapped', '[]', '2026-11-01 10:00:00', '2026-12-01 10:00:00', $owner->getId()->toRfc4122(), true, false, true, true, false, true],
+            [5 => \Doctrine\DBAL\ParameterType::STRING, 8 => \Doctrine\DBAL\ParameterType::BOOLEAN, 9 => \Doctrine\DBAL\ParameterType::BOOLEAN, 10 => \Doctrine\DBAL\ParameterType::BOOLEAN, 11 => \Doctrine\DBAL\ParameterType::BOOLEAN, 12 => \Doctrine\DBAL\ParameterType::BOOLEAN, 13 => \Doctrine\DBAL\ParameterType::BOOLEAN],
+        );
+        $this->entityManager->clear();
+
+        $permissions = $this->repository->find($id)?->getPermissions();
+
+        self::assertNotNull($permissions);
+        self::assertEquals(new \App\ApiToken\TokenPermissions(writeData: true, createConnections: true, diagnostic: true), $permissions);
+    }
 }

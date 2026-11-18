@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ENGINE_HAS_PLAN } from '../api/types'
+import { ENGINE_CAN_MEASURE, ENGINE_HAS_PLAN } from '../api/types'
 import { reasonText } from '../api/errors'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import HistoryPanel from '../components/HistoryPanel.vue'
+import LintList from '../components/LintList.vue'
 import PlanTree from '../components/PlanTree.vue'
+import ScriptPanel from '../components/ScriptPanel.vue'
 import ResultTable from '../components/ResultTable.vue'
 import SqlEditor from '../components/SqlEditor.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -19,13 +21,32 @@ const exportable = computed(() => tab.value.result !== null && tab.value.result.
 const readOnly = computed(() => tab.value.mode === 'read_only')
 const dialect = computed(() => connections.byId(workspace.connectionId ?? '')?.engine ?? 'postgresql')
 const hasPlan = computed(() => ENGINE_HAS_PLAN[dialect.value])
+// Mesurer joue la requête : seulement une lecture, sur un moteur qui sait le faire, après un avertissement.
+const canMeasure = computed(() => ENGINE_CAN_MEASURE[dialect.value] && readOnly.value)
+const confirmingMeasure = ref(false)
+
+function askMeasure(): void {
+  if (tab.value.sql.trim() === '') {
+    void workspace.measureTab(tab.value.id)
+    return
+  }
+  confirmingMeasure.value = true
+}
+
+function measure(): void {
+  confirmingMeasure.value = false
+  void workspace.measureTab(tab.value.id)
+}
 // Tout ce que le serveur connaît (lecture complète des noms), complété par ce que le panneau a déjà chargé en attendant.
 const tableNames = computed(() => [...new Set([...workspace.tables.map((table) => table.name), ...workspace.completionTables])])
 
 onMounted(() => void workspace.loadCompletion())
 watch(() => [workspace.connectionId, workspace.database, workspace.schema], () => void workspace.loadCompletion())
+watch(() => tab.value.id, () => (confirmingMeasure.value = false))
 
 const showHistory = ref(false)
+const showScript = ref(false)
+const speaksSql = computed(() => dialect.value !== 'redis')
 
 async function toggleHistory(): Promise<void> {
   showHistory.value = !showHistory.value
@@ -51,6 +72,8 @@ function toggleMode(): void {
         <button type="button" role="tab" class="label" :aria-selected="item.id === tab.id" @click="workspace.select(item.id)">{{ item.title }}</button>
         <button type="button" class="close-tab" :aria-label="`Fermer ${item.title}`" @click="workspace.closeTab(item.id)">×</button>
       </div>
+      <span class="spacer" aria-hidden="true" />
+      <button v-if="speaksSql" type="button" class="script-toggle" :aria-pressed="showScript" @click="showScript = !showScript">Script</button>
       <button type="button" class="history-toggle" :aria-pressed="showHistory" @click="toggleHistory">Historique</button>
       <button type="button" class="add-tab" aria-label="Nouvel onglet" @click="workspace.addTab()">+</button>
     </div>
@@ -62,7 +85,9 @@ function toggleMode(): void {
           Exécuter
         </AppButton>
         <span class="shortcut">Ctrl + Entrée</span>
+        <AppButton v-if="hasPlan" class="lint" small :busy="tab.linting" @click="workspace.lintTab(tab.id)">Conseils</AppButton>
         <AppButton v-if="hasPlan" class="plan" small :busy="tab.planning" @click="workspace.planTab(tab.id)">Plan d’exécution</AppButton>
+        <AppButton v-if="canMeasure" class="measure" small :busy="tab.measuring" @click="askMeasure">Mesurer</AppButton>
       </div>
       <div class="export" role="group" aria-label="Exporter le résultat">
         <AppButton class="export-csv" small :disabled="!exportable" :busy="tab.exporting" @click="workspace.exportTab(tab.id, 'csv')">Exporter CSV</AppButton>
@@ -72,6 +97,14 @@ function toggleMode(): void {
         {{ readOnly ? 'Lecture seule' : 'Écriture activée' }}
       </button>
     </div>
+
+    <ScriptPanel
+      v-if="showScript && speaksSql && workspace.connectionId"
+      :connection-id="workspace.connectionId"
+      :script="tab.sql"
+      :scope="{ database: workspace.database, schema: workspace.schema }"
+      @import="workspace.setSql(tab.id, $event)"
+    />
 
     <HistoryPanel
       v-if="showHistory"
@@ -87,11 +120,21 @@ function toggleMode(): void {
       <SqlEditor :model-value="tab.sql" :dialect="dialect" :tables="tableNames" @update:model-value="workspace.setSql(tab.id, $event)" @run="workspace.run(tab.id)" />
     </div>
 
+    <div v-if="confirmingMeasure" class="measure-warning" role="group" aria-label="Avertissement avant la mesure">
+      <p>La requête sera réellement exécutée pour mesurer ses lignes et ses temps réels : en lecture seule, avec un délai de 10 secondes. Sur une grosse table, cela peut peser sur le serveur.</p>
+      <div class="measure-actions">
+        <AppButton class="measure-confirm" small variant="primary" @click="measure">Mesurer</AppButton>
+        <AppButton class="measure-cancel" small @click="confirmingMeasure = false">Annuler</AppButton>
+      </div>
+    </div>
+
     <p v-if="tab.exportNotice" class="export-notice" role="status">{{ tab.exportNotice }}</p>
 
     <div v-if="!showHistory" class="output">
       <p v-if="tab.running" class="state" role="status">Exécution…</p>
+      <p v-else-if="tab.measuring" class="state" role="status">Mesure en cours…</p>
       <p v-else-if="tab.error" class="error" role="alert">{{ tab.error }}</p>
+      <LintList v-else-if="tab.view === 'lint' && tab.lint" :result="tab.lint" />
       <PlanTree v-else-if="tab.view === 'plan' && tab.plan" :result="tab.plan" />
       <ResultTable v-else-if="tab.result" :result="tab.result" />
       <p v-else class="state">Exécutez une requête pour voir son résultat.</p>
@@ -116,13 +159,18 @@ function toggleMode(): void {
 .tab.current { background: var(--bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--acc); }
 .label { height: 38px; padding: 0 6px 0 14px; background: none; border: 0; color: inherit; font: 400 13px var(--font-ui); cursor: pointer; }
 .close-tab, .add-tab { background: none; border: 0; color: var(--mut); cursor: pointer; font-size: 16px; padding: 0 10px; height: 38px; }
-.history-toggle { margin-left: auto; background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
+.spacer { flex: 1; }
+.script-toggle { background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
+.script-toggle[aria-pressed='true'] { color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
+.history-toggle { background: none; border: 0; border-left: 1px solid var(--line); color: var(--mut); font: 400 13px var(--font-ui); padding: 0 14px; height: 38px; cursor: pointer; }
 .history-toggle[aria-pressed='true'] { color: var(--acc); box-shadow: inset 0 -2px 0 var(--acc); }
 .add-tab { border-left: 1px solid var(--line); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
 .run-group { display: flex; gap: 10px; align-items: center; }
 .shortcut { font: 400 11px var(--font-mono); color: var(--mut); }
 .export { display: flex; gap: 8px; margin-left: auto; }
+.measure-warning { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; background: var(--sec-bg); border-bottom: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
+.measure-actions { display: flex; gap: 8px; }
 .export-notice { padding: 8px 16px; background: var(--sec-bg); border-bottom: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
 .mode { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; border: 1px solid var(--sec-line); background: var(--sec-bg); color: var(--sec); font: 400 12px var(--font-ui); cursor: pointer; }
 .mode.write { border-color: var(--bad-line); background: var(--bad-bg); color: var(--bad); }

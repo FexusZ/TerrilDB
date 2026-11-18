@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Integration\Driver;
 
+use App\Core\Driver\EngineFault;
+use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryFailedException;
@@ -43,7 +45,7 @@ final class MySqlQueryRunnerTest extends TestCase
         } catch (TargetConnectionFailedException) {
             self::markTestSkipped(\sprintf('%s is unreachable (docker compose --profile targets up -d --wait).', $envVar));
         }
-        $this->runner = MySqlQueryRunner::forConnection($this->connection, $engine);
+        $this->runner = new MySqlQueryRunner($this->connection, $engine);
     }
 
     protected function tearDown(): void
@@ -237,7 +239,8 @@ final class MySqlQueryRunnerTest extends TestCase
         try {
             $this->write('insert into scratch values (1), (2), (2)');
             self::fail('Expected a duplicate key.');
-        } catch (QueryFailedException) {
+        } catch (EngineFaultException $e) {
+            self::assertSame(EngineFault::DuplicateKey, $e->fault);
         }
 
         self::assertSame([[0]], $this->write('select count(*) from scratch', StatementKind::Read)->rows);
@@ -254,5 +257,42 @@ final class MySqlQueryRunnerTest extends TestCase
         } catch (QueryFailedException) {
         }
         self::assertSame([[0]], $this->read("select count(*) from categories where name = 'sneaky'")->rows);
+    }
+
+    #[DataProvider('targets')]
+    public function testMeasuringReadsEveryRowButKeepsOnlyAPreview(string $envVar): void
+    {
+        $this->open($envVar);
+
+        $result = $this->runner->run('select * from order_items', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+        self::assertSame(100, $result->rowCount());
+        self::assertGreaterThan(5000, $result->totalRows);
+        self::assertTrue($result->truncated);
+
+        $limited = $this->runner->run('select * from order_items limit 250', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 30_000, 100, measure: true));
+        self::assertSame(250, $limited->totalRows);
+        self::assertNull($this->read('select * from order_items', 10)->totalRows);
+    }
+
+    #[DataProvider('targets')]
+    public function testMeasuringStillHonoursTheTimeout(string $envVar): void
+    {
+        $this->open($envVar);
+
+        $this->expectException(QueryTimeoutException::class);
+        $this->runner->run('select sum(a.id + b.id + c.id) from order_items a cross join order_items b cross join order_items c', StatementKind::Read, new QueryOptions(QueryMode::ReadOnly, 300, 100, measure: true));
+    }
+
+    #[DataProvider('targets')]
+    public function testADiscardedWriteLeavesNothingEvenInReadWriteMode(string $envVar): void
+    {
+        $this->open($envVar);
+        $options = new QueryOptions(QueryMode::ReadWrite, 30_000, 10, discard: true);
+        $this->runner->run('create temporary table scratch_discard (a int)', StatementKind::Schema, new QueryOptions(QueryMode::ReadWrite));
+
+        $this->runner->run('insert into scratch_discard (a) values (1)', StatementKind::Write, $options);
+
+        self::assertSame([[0]], $this->runner->run('select count(*) from scratch_discard', StatementKind::Read, new QueryOptions(QueryMode::ReadWrite))->rows);
+        $this->runner->run('drop temporary table scratch_discard', StatementKind::Schema, new QueryOptions(QueryMode::ReadWrite));
     }
 }

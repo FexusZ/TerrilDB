@@ -1,0 +1,18 @@
+[
+    {
+        "Variable_name": "binlog_format",
+        "Value": "MIXED"
+    },
+    {
+        "Variable_name": "gtid_slave_pos",
+        "Value": "0-1-5"
+    },
+    {
+        "Variable_name": "gtid_strict_mode",
+        "Value": "OFF"
+    },
+    {
+        "Variable_name": "read_only",
+        "Value": "OFF"
+    }
+]

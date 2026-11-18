@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Audit;
 
+use App\Core\Driver\DetailedErrors;
+use App\Core\Driver\Exception\EngineFaultException;
+use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\Exception\QueryNeedsConfirmationException;
@@ -26,14 +29,16 @@ final readonly class AuditedQueries
     public function __construct(
         private QueryService $queries,
         private AuditLog $audit,
+        private DetailedErrors $detailed = new DetailedErrors(),
     ) {
     }
 
     /**
-     * @param array<string, bool|int|string> $extra       détails ajoutés à l'événement (par exemple la nature d'un export)
-     * @param string|null                    $recordedSql texte à journaliser à la place de l'instruction exécutée (le SQL de l'utilisateur, pas l'EXPLAIN construit)
+     * @param array<string, bool|int|string> $extra             détails ajoutés à l'événement (par exemple la nature d'un export)
+     * @param string|null                    $recordedSql       texte à journaliser à la place de l'instruction exécutée (le SQL de l'utilisateur, pas l'EXPLAIN construit)
+     * @param bool                           $recordEngineError faux : l'échec est journalisé sans le message du moteur (qui peut citer un extrait du texte, donc ses valeurs)
      */
-    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $sql, QueryOptions $options, bool $confirmed = false, array $extra = [], ?string $recordedSql = null): QueryResult
+    public function execute(AuditContext $context, Uuid $connectionId, TargetConnection $target, string $sql, QueryOptions $options, bool $confirmed = false, array $extra = [], ?string $recordedSql = null, bool $recordEngineError = true): QueryResult
     {
         $base = ['sql' => $recordedSql ?? $sql, 'mode' => $options->mode->value, 'engine' => $target->engine->value, 'confirmed' => $confirmed] + $extra;
 
@@ -49,8 +54,18 @@ final readonly class AuditedQueries
             $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => 'timeout', 'timeoutMs' => $options->timeoutMs]);
 
             throw $e;
+        } catch (LockConflictException $e) {
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => $e->conflict->code()]);
+
+            throw $e;
+        } catch (EngineFaultException $e) {
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ($this->detailed->enabled
+                ? ['reason' => $e->fault->code()]
+                : ['reason' => 'engine_error', 'error' => mb_substr($e->engineMessage, 0, self::MAX_ERROR_LENGTH)]));
+
+            throw $e;
         } catch (QueryFailedException $e) {
-            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => 'engine_error', 'error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH)]);
+            $this->audit->record($context, AuditAction::QueryFailed, AuditOutcome::Failed, $connectionId, $base + ['reason' => 'engine_error'] + ($recordEngineError ? ['error' => mb_substr($e->getMessage(), 0, self::MAX_ERROR_LENGTH)] : []));
 
             throw $e;
         }

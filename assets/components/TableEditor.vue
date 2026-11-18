@@ -2,9 +2,11 @@
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { ApiError } from '../api/client'
 import { messageFor } from '../api/errors'
+import { describeHolder, describeStatus } from '../utils/diagnostics'
 import { formatBytes } from '../utils/format'
+import { lockShort } from '../utils/lock'
 import { applyStructure, previewStructure, type StructureScope } from '../api/structure'
-import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructurePreview, type TableDetail } from '../api/types'
+import { COLUMN_TYPES, ENGINE_STRUCTURE, type Engine, type ReferentialActionName, type StructureLockCheck, type StructurePreview, type TableDetail, type TableHolder } from '../api/types'
 import { useWorkspaceStore } from '../stores/workspace'
 import {
   addColumn,
@@ -217,11 +219,13 @@ const incomplete = computed(() => {
 const preview = ref<StructurePreview | null>(null)
 const previewing = ref(false)
 const problem = ref<string | null>(null)
-const failure = ref<{ message: string; applied: string[] } | null>(null)
+const failure = ref<{ message: string; applied: string[]; holders: TableHolder[] | null } | null>(null)
 const applying = ref(false)
 const confirming = ref(false)
 const dropping = ref<StructurePreview | null>(null)
 const stale = ref(false)
+const typedName = ref('')
+const dropTypedName = ref('')
 let ticket = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -255,6 +259,7 @@ watch([payload, dirty, incomplete], () => {
   clearTimeout(timer)
   ticket++
   preview.value = null
+  typedName.value = ''
   problem.value = null
   failure.value = null
   previewing.value = false
@@ -279,7 +284,7 @@ function cancel(): void {
 }
 
 async function validate(): Promise<void> {
-  if (preview.value === null || preview.value.stale || applying.value) {
+  if (preview.value === null || preview.value.stale || applying.value || (needsName.value && !nameTyped.value)) {
     return
   }
   if (preview.value.destructive) {
@@ -290,11 +295,29 @@ async function validate(): Promise<void> {
   await apply(false)
 }
 
+const needsName = computed(() => preview.value?.bigTable.level === 'confirm_name')
+const nameTyped = computed(() => typedName.value === props.table.name)
+const bigTableNote = computed(() => {
+  const big = preview.value?.bigTable
+  if (preview.value === null || big === undefined || preview.value.statements.length === 0) {
+    return null
+  }
+  if (big.estimatedRows === null) {
+    return big.warnAt > 0 || big.confirmAt > 0 ? 'Taille de la table inconnue : le moteur n’en donne pas d’estimation, aucun avertissement de volume n’est possible.' : null
+  }
+
+  return big.level === 'none' ? null : bigTableText(big.estimatedRows)
+})
+
+function bigTableText(rows: number): string {
+  return `Table volumineuse : environ ${rows.toLocaleString('fr-FR')} lignes (estimation du moteur). La modification peut être longue et bloquer les accès à la table pendant ce temps.`
+}
+
 async function apply(confirmed: boolean): Promise<void> {
   applying.value = true
   failure.value = null
   try {
-    const result = await applyStructure(props.connectionId, props.table.name, { draft: payload.value, fingerprint: props.table.fingerprint, confirmed }, props.scope)
+    const result = await applyStructure(props.connectionId, props.table.name, { draft: payload.value, fingerprint: props.table.fingerprint, confirmed, ...(needsName.value ? { confirmedTableName: typedName.value } : {}) }, props.scope)
     confirming.value = false
     emit('applied', result.table, props.table.name)
   } catch (error) {
@@ -312,9 +335,14 @@ function handleFailure(error: unknown): void {
 
     return
   }
-  if (error instanceof ApiError && error.code === 'schema_change_failed') {
+  if (error instanceof ApiError && ['schema_change_failed', 'lock_timeout', 'deadlock', 'serialization_failure', 'too_many_connections', 'engine_permission_denied', 'duplicate_key'].includes(error.code)) {
     const applied = Array.isArray(error.details.applied) ? (error.details.applied as { operation: string; subject: string }[]).map((s) => describeStatement(s.operation, s.subject)) : []
-    failure.value = { message: messageFor(error), applied }
+    const check = error.details.lockCheck as StructureLockCheck | null | undefined
+    failure.value = {
+      message: error.details.lockTimeout === true ? 'Une transaction ouverte retient cette table : la modification a attendu son verrou jusqu’au délai maximum.' : messageFor(error),
+      applied,
+      holders: error.details.lockTimeout === true && check?.status.availability === 'available' ? check.holders : null,
+    }
     if (applied.length > 0) {
       // Une partie est déjà en place (MySQL, MariaDB, ClickHouse) : la table affichée n'est plus la vraie.
       stale.value = true
@@ -328,6 +356,7 @@ function handleFailure(error: unknown): void {
 async function askDrop(): Promise<void> {
   problem.value = null
   try {
+    dropTypedName.value = ''
     dropping.value = await previewStructure(props.connectionId, props.table.name, { drop: true, fingerprint: props.table.fingerprint }, props.scope)
   } catch (error) {
     problem.value = detailOf(error)
@@ -337,7 +366,7 @@ async function askDrop(): Promise<void> {
 async function confirmDrop(): Promise<void> {
   applying.value = true
   try {
-    await applyStructure(props.connectionId, props.table.name, { drop: true, fingerprint: props.table.fingerprint, confirmed: true }, props.scope)
+    await applyStructure(props.connectionId, props.table.name, { drop: true, fingerprint: props.table.fingerprint, confirmed: true, ...(dropping.value?.bigTable.level === 'confirm_name' ? { confirmedTableName: dropTypedName.value } : {}) }, props.scope)
     dropping.value = null
     emit('applied', null, props.table.name)
   } catch (error) {
@@ -348,6 +377,7 @@ async function confirmDrop(): Promise<void> {
   }
 }
 
+const lockUnreadable = computed(() => (preview.value?.lockCheck ? describeStatus(preview.value.lockCheck.status, 'les verrous') : null))
 const destructive = computed(() => preview.value?.statements.filter((statement) => statement.destructive) ?? [])
 </script>
 
@@ -367,10 +397,26 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
         </li>
       </ul>
       <p v-else-if="preview" class="hint" role="status">Ces modifications ne changent rien dans la base.</p>
+      <div v-if="preview?.lockCheck" class="lock-check" role="status" data-test="lock-check" :class="{ held: preview.lockCheck.holders.length > 0 }">
+        <template v-if="lockUnreadable">
+          <p>Verrous : non vérifiable. {{ lockUnreadable }}</p>
+        </template>
+        <template v-else-if="preview.lockCheck.holders.length > 0">
+          <p>{{ preview.lockCheck.holders.length }} session{{ preview.lockCheck.holders.length > 1 ? 's' : '' }} tien{{ preview.lockCheck.holders.length > 1 ? 'nent' : 't' }} cette table dans une transaction ouverte : l’application attendrait leur fin (au plus 10 s) et ferait attendre derrière elle les requêtes suivantes sur la table. Rien ne vous empêche de continuer.</p>
+          <ul><li v-for="holder in preview.lockCheck.holders" :key="holder.session">{{ describeHolder(holder) }}</li></ul>
+        </template>
+        <p v-else>Aucune transaction ouverte ne tient cette table.</p>
+      </div>
+      <p v-if="bigTableNote" class="warn" :class="{ danger: needsName }" role="status" data-test="big-table">{{ bigTableNote }}</p>
+      <label v-if="needsName" class="retype">
+        <span>Retapez le nom de la table pour confirmer</span>
+        <input v-model="typedName" class="field mono" aria-label="Retapez le nom de la table pour confirmer" spellcheck="false" autocomplete="off">
+      </label>
       <p v-if="stale && !failure" class="alert" role="alert">La table a changé depuis son chargement. <button type="button" class="link" @click="emit('reload')">Recharger la table</button></p>
       <p v-if="problem && !(stale && !failure)" class="alert" role="alert">{{ problem }}</p>
-      <div v-if="failure" class="alert" role="alert">
+      <div v-if="failure" class="alert" role="alert" :data-test="failure.holders === null ? undefined : 'lock-timeout'">
         <p>{{ failure.message }}</p>
+        <ul v-if="failure.holders !== null && failure.holders.length > 0"><li v-for="holder in failure.holders" :key="holder.session">{{ describeHolder(holder) }}</li></ul>
         <template v-if="failure.applied.length > 0">
           <p>Déjà appliqué avant l’erreur :</p>
           <ul><li v-for="line in failure.applied" :key="line">{{ line }}</li></ul>
@@ -380,7 +426,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       </div>
       <div class="buttons">
         <AppButton variant="ghost" small :disabled="applying" @click="cancel">Annuler</AppButton>
-        <AppButton variant="primary" small :busy="applying" :disabled="preview === null || preview.statements.length === 0 || stale" @click="validate">Valider les changements</AppButton>
+        <AppButton variant="primary" small :busy="applying" :disabled="preview === null || preview.statements.length === 0 || stale || (needsName && !nameTyped)" @click="validate">Valider les changements</AppButton>
       </div>
     </aside>
     <p v-else-if="problem" class="alert" role="alert">{{ problem }}</p>
@@ -401,11 +447,14 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
           </thead>
           <tbody>
             <tr v-for="column in draft.columns" :key="column.uid" :data-status="markOf(column).status">
-              <td><input v-model="column.name" class="field mono" :class="{ edited: edited(markOf(column), 'name') }" :disabled="column.removed" aria-label="Nom de la colonne" spellcheck="false" autocomplete="off"></td>
-              <td><input v-model="column.type" class="field mono" :class="{ edited: edited(markOf(column), 'type') }" :list="typeListId" :disabled="column.removed" aria-label="Type de la colonne" spellcheck="false" autocomplete="off"></td>
-              <td><input v-model="column.nullable" type="checkbox" :class="{ edited: edited(markOf(column), 'nullable') }" :disabled="column.removed" aria-label="Accepte NULL"></td>
-              <td><input v-model="column.default" class="field mono" :class="{ edited: edited(markOf(column), 'default') }" :disabled="column.removed || column.autoIncrement" placeholder="aucun" aria-label="Valeur par défaut" spellcheck="false" autocomplete="off"></td>
-              <td v-if="features.autoIncrement"><input v-model="column.autoIncrement" type="checkbox" :class="{ edited: edited(markOf(column), 'autoIncrement') }" :disabled="column.removed" aria-label="Auto-incrément"></td>
+              <td>
+                <input v-model="column.name" class="field mono" :class="{ edited: edited(markOf(column), 'name') }" :disabled="column.removed" aria-label="Nom de la colonne" spellcheck="false" autocomplete="off">
+                <span v-if="column.lock" class="tag" :title="`${lockShort(column.lock)} : TerrilDB la redirait sans cette particularité, donc il ne la redéfinit pas`">{{ lockShort(column.lock) }} : lecture seule</span>
+              </td>
+              <td><input v-model="column.type" class="field mono" :class="{ edited: edited(markOf(column), 'type') }" :list="typeListId" :disabled="column.removed || !!column.lock" aria-label="Type de la colonne" spellcheck="false" autocomplete="off"></td>
+              <td><input v-model="column.nullable" type="checkbox" :class="{ edited: edited(markOf(column), 'nullable') }" :disabled="column.removed || !!column.lock" aria-label="Accepte NULL"></td>
+              <td><input v-model="column.default" class="field mono" :class="{ edited: edited(markOf(column), 'default') }" :disabled="column.removed || column.autoIncrement || !!column.lock" placeholder="aucun" aria-label="Valeur par défaut" spellcheck="false" autocomplete="off"></td>
+              <td v-if="features.autoIncrement"><input v-model="column.autoIncrement" type="checkbox" :class="{ edited: edited(markOf(column), 'autoIncrement') }" :disabled="column.removed || !!column.lock" aria-label="Auto-incrément"></td>
               <td v-if="features.primaryKey"><input type="checkbox" :checked="isPrimary(column)" :class="{ edited: edited(markOf(column), 'primary') }" :disabled="column.removed" aria-label="Dans la clé primaire" @change="togglePrimary(draft, column)"></td>
               <td class="act">
                 <AppButton v-if="column.removed" variant="ghost" small @click="restore(column)">Restaurer</AppButton>
@@ -431,7 +480,7 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
             <template v-if="row.kind === 'locked'">
               <tr class="col-row">
                 <td class="mono">{{ row.name }}</td>
-                <td class="type"><span class="tag">clé de tri : lecture seule</span></td>
+                <td class="type"><span class="tag">{{ row.item?.lock ? lockShort(row.item.lock) : 'clé de tri' }} : lecture seule</span></td>
                 <td v-if="features.uniqueIndex" />
                 <td v-if="showSize" class="size-cell">{{ sizeOf(row) }}</td>
                 <td colspan="3" class="mono dim">{{ row.locked.join(', ') }}</td>
@@ -600,10 +649,16 @@ const destructive = computed(() => preview.value?.statements.filter((statement) 
       confirm-label="Supprimer la table"
       danger
       :busy="applying"
+      :confirm-disabled="dropping.bigTable.level === 'confirm_name' && dropTypedName !== table.name"
       @confirm="confirmDrop"
       @cancel="dropping = null"
     >
       <ul class="sql"><li v-for="statement in dropping.statements" :key="statement.sql" class="destructive"><code>{{ statement.sql }};</code></li></ul>
+      <p v-if="dropping.bigTable.level !== 'none' && dropping.bigTable.estimatedRows !== null" class="warn" role="status" data-test="big-table">{{ bigTableText(dropping.bigTable.estimatedRows) }}</p>
+      <label v-if="dropping.bigTable.level === 'confirm_name'" class="retype">
+        <span>Retapez le nom de la table pour confirmer</span>
+        <input v-model="dropTypedName" class="field mono" aria-label="Retapez le nom de la table pour confirmer" spellcheck="false" autocomplete="off">
+      </label>
     </ConfirmDialog>
   </div>
 </template>
@@ -624,6 +679,13 @@ h2 { font-size: 22px; font-weight: 600; }
 .buttons { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
 .alert { padding: 8px 10px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
 .alert p { margin: 0 0 4px; }
+.lock-check { padding: 8px 10px; border-radius: var(--radius); border: 1px solid var(--line); color: var(--mut); font-size: 13px; }
+.lock-check.held { border-color: var(--sec-line); background: var(--sec-bg); color: var(--sec-ink); }
+.lock-check p { margin: 0 0 4px; }
+.lock-check ul { margin: 0 0 4px 18px; padding: 0; }
+.warn { padding: 8px 10px; border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
+.warn.danger { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); }
+.retype { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .alert ul { margin: 0 0 4px 18px; padding: 0; }
 .link { background: none; border: 0; padding: 0; color: var(--acc); text-decoration: underline; cursor: pointer; font: inherit; }
 .name { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 10px; }

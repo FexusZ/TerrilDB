@@ -1,3 +1,4 @@
+import { lockSentence } from '../utils/lock'
 import { ApiError } from './client'
 
 const REASONS: Record<string, string> = {
@@ -10,6 +11,9 @@ const REASONS: Record<string, string> = {
   unsupported_statement: 'Cette instruction n’est pas prise en charge (transaction, session, verrou…).',
   destructive_without_where: 'UPDATE ou DELETE sans clause WHERE : toutes les lignes seraient touchées.',
   destructive_statement: 'Cette instruction est destructive (suppression, modification de structure ou de droits).',
+  destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
+  big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
+  other_administrator_token: 'Ce jeton appartient à un autre administrateur : sa révocation demande une confirmation explicite.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -21,6 +25,16 @@ export function reasonText(reason: unknown): string {
 }
 
 /** Message à montrer à l'utilisateur pour une erreur de l'API. */
+const PARTLY_APPLIED =
+  'Un verrou a interrompu la modification : certaines instructions sont déjà appliquées (voir la liste). Ne la rejouez pas telle quelle : relisez la table, puis refaites ce qui manque.'
+
+const FAULT_PARTLY_APPLIED =
+  'La base a refusé une instruction : certaines sont déjà appliquées (voir la liste). Ne rejouez pas la modification telle quelle : relisez la table, puis refaites ce qui manque.'
+
+function partlyApplied(error: ApiError): boolean {
+  return error.details.retryable === false && Array.isArray(error.details.applied) && error.details.applied.length > 0
+}
+
 export function messageFor(error: unknown): string {
   if (!(error instanceof ApiError)) {
     return GENERIC
@@ -43,6 +57,10 @@ export function messageFor(error: unknown): string {
       return 'Les inscriptions sont fermées : il faut une invitation.'
     case 'invalid_invitation':
       return 'Cette invitation n’est pas valable : elle a peut-être déjà servi, expiré ou été révoquée.'
+    case 'cannot_disable_self':
+      return 'Vous ne pouvez pas désactiver votre propre compte.'
+    case 'last_administrator':
+      return 'Impossible : ce compte est le dernier administrateur actif.'
     case 'invalid_recovery':
       return 'La phrase de récupération n’est pas valable, ou ce compte n’en a pas.'
     case 'mail_disabled':
@@ -68,15 +86,41 @@ export function messageFor(error: unknown): string {
       return 'Cette adresse désigne le serveur de TerrilDB lui-même : seul un administrateur peut la viser.'
     case 'unsupported_operation':
       return 'Cette opération n’existe pas pour ce moteur.'
+    case 'diagnostics_failed':
+      return 'La lecture de l’activité du serveur a échoué. Réessayez.'
     case 'plan_unavailable':
       return 'Le plan d’exécution n’est pas disponible pour ce moteur.'
     case 'query_refused':
     case 'confirmation_required':
       return reasonText(error.details.reason)
+    case 'script_refused': {
+      const rank = typeof error.details.statement === 'number' ? error.details.statement + 1 : 0
+      return `L’instruction ${String(rank)} est refusée : ${reasonText(error.details.reason)} Rien n’a été exécuté.`
+    }
+    case 'invalid_script':
+      if (error.details.reason === 'delimiter_directive') {
+        return 'La directive DELIMITER (une commande du client mysql, pas du moteur) n’est pas prise en charge : envoyez le corps de la procédure ou du déclencheur comme une seule instruction, sans DELIMITER. Rien n’a été exécuté.'
+      }
+      return 'Le script ne peut pas être découpé avec certitude : une chaîne, un commentaire ou un nom entre guillemets n’est pas refermé. Rien n’a été exécuté.'
+    case 'script_too_large':
+      return 'Le script est trop long (500 instructions et 1 Mo au plus).'
+    case 'dry_run_unavailable':
+      if (error.details.reason === 'non_transactional_tables') {
+        return 'Ce script écrit dans une table sans transaction (MyISAM, MEMORY…) : rien ne s’y annule, il ne peut pas être testé sans valider.'
+      }
+      return error.details.reason === 'implicit_commit'
+        ? 'Ce moteur valide la transaction à chaque instruction de structure : ce script ne peut pas être testé sans valider.'
+        : 'Ce moteur n’a pas de transaction : un script ne peut pas être testé sans valider.'
     case 'query_failed':
       return typeof error.details.message === 'string' ? error.details.message : GENERIC
     case 'invalid_schema_change':
       return 'Cette modification de la structure est invalide.'
+    case 'unsupported_schema_change': {
+      const why = lockSentence(error.details.reason)
+      const subject = typeof error.details.subject === 'string' ? `« ${error.details.subject} » : ` : ''
+
+      return why === null ? 'Cette modification n’est pas prise en charge pour une colonne ou un index à la définition particulière.' : `${subject}${why}, sa modification n’est pas prise en charge.`
+    }
     case 'schema_changed':
       return 'La table a été modifiée par ailleurs depuis son chargement. Rechargez-la avant de continuer.'
     case 'schema_change_failed':
@@ -87,6 +131,28 @@ export function messageFor(error: unknown): string {
       return typeof error.details.message === 'string' && error.details.message !== '' ? error.details.message : 'La base a refusé la modification des données.'
     case 'invalid_data_change':
       return 'Cette modification de données est invalide.'
+    case 'deadlock':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'La base a détecté un interblocage avec une autre transaction et a annulé cette opération. Relancez-la telle quelle.'
+    case 'serialization_failure':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'La base a annulé cette opération parce qu’une modification simultanée l’empêchait de rester cohérente. Relancez-la telle quelle.'
+    case 'lock_timeout':
+      if (partlyApplied(error)) return PARTLY_APPLIED
+      return 'Une autre transaction retient un verrou depuis trop longtemps et l’opération a cessé d’attendre. Laissez-la se terminer, puis relancez.'
+    case 'too_many_connections':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return `Le serveur de base de données (ou ce compte) a atteint sa limite de connexions. Réessayez dans ${typeof error.details.retryAfter === 'number' ? `${String(error.details.retryAfter)} s` : 'quelques secondes'} ; si cela dure, fermez des sessions inutiles ou faites relever la limite.`
+    case 'engine_permission_denied':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return 'Le compte de cette connexion n’a pas le droit d’effectuer cette opération sur la base. Demandez le droit à son administrateur ou utilisez un autre compte.'
+    case 'duplicate_key':
+      if (partlyApplied(error)) return FAULT_PARTLY_APPLIED
+      return 'Une ligne avec la même valeur de clé ou d’index unique existe déjà : rien n’a été écrit. Changez la valeur ou modifiez la ligne existante.'
+    case 'auth_requires_tls':
+      return 'Le serveur exige une connexion chiffrée (TLS) et refuse celle-ci. Faites autoriser les connexions non chiffrées depuis TerrilDB ou utilisez le port TLS du serveur.'
+    case 'auth_failed':
+      return 'Le serveur a refusé les identifiants de cette connexion. Vérifiez l’identifiant et le mot de passe.'
     case 'query_timeout':
       return 'La requête a dépassé le délai autorisé.'
     case 'invalid_input':

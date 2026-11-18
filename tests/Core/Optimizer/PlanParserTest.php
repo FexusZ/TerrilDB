@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Core\Optimizer;
 
 use App\Core\Optimizer\ClickHousePlanParser;
+use App\Core\Optimizer\Exception\PlanNotAvailableException;
 use App\Core\Optimizer\Exception\UnreadablePlanException;
 use App\Core\Optimizer\MySqlPlanParser;
 use App\Core\Optimizer\PlanKind;
 use App\Core\Optimizer\PlanNode;
 use App\Core\Optimizer\PostgreSqlPlanParser;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class PlanParserTest extends TestCase
@@ -76,9 +78,10 @@ final class PlanParserTest extends TestCase
 
         self::assertSame(PlanKind::Other, $plan->root->kind);
         self::assertEqualsWithDelta(1.15, $plan->totalCost, 0.001);
-        $sort = $plan->root->children[0];
-        self::assertSame(PlanKind::Sort, $sort->kind);
-        $join = $sort->children[0];
+        $ordering = $plan->root->children[0];
+        self::assertSame(PlanKind::Other, $ordering->kind, 'using_filesort: false, l\'index donne déjà l\'ordre : ce n\'est pas un tri');
+        self::assertSame('Ordering', $ordering->label);
+        $join = $ordering->children[0];
         self::assertSame(PlanKind::Join, $join->kind);
         self::assertSame(['index_full_scan', 'index_scan'], self::kinds($join->children));
 
@@ -115,6 +118,46 @@ final class PlanParserTest extends TestCase
         self::assertSame(2, $scan->rows);
         self::assertSame('(i.q > 3)', $scan->condition);
         self::assertSame([], $scan->children);
+    }
+
+    public function testMySqlFilesortTakesTheRowsOfItsInput(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql-sort'));
+
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        self::assertSame(7000, $sort->rows);
+        self::assertSame(['full_scan'], self::kinds($sort->children));
+    }
+
+    public function testMySql26SortKeepsItsOwnRows(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mysql26-sort'));
+
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        self::assertSame(7000, $sort->rows);
+        self::assertSame(['full_scan'], self::kinds($sort->children));
+    }
+
+    public function testMariaDbFilesortIsASortOverTheScan(): void
+    {
+        $plan = (new MySqlPlanParser())->parse($this->fixture('mariadb-sort'));
+
+        $sort = $plan->root->children[0];
+        self::assertSame(PlanKind::Sort, $sort->kind);
+        self::assertSame('Filesort', $sort->label);
+        self::assertSame(7000, $sort->rows);
+        self::assertSame(['full_scan'], self::kinds($sort->children));
+        self::assertSame('order_items', $sort->children[0]->relation);
+    }
+
+    public function testPostgreSqlSortKeepsItsRows(): void
+    {
+        $plan = (new PostgreSqlPlanParser())->parse($this->fixture('postgres-sort'));
+
+        self::assertSame(PlanKind::Sort, $plan->root->kind);
+        self::assertSame(7000, $plan->root->rows);
     }
 
     public function testMySql26JoinInJsonFormatV2(): void
@@ -276,5 +319,109 @@ final class PlanParserTest extends TestCase
         $this->expectException(UnreadablePlanException::class);
 
         (new ClickHousePlanParser())->parse('[{"Nope": 1}]');
+    }
+
+    /**
+     * @return iterable<string, array{string, string, string}>
+     */
+    public static function writePlans(): iterable
+    {
+        yield 'MySQL delete' => ['mysql-write-delete-scan', 'delete', 'order_items'];
+        yield 'MySQL update' => ['mysql-write-update-key', 'update', 'orders'];
+        yield 'MariaDB delete' => ['mariadb-write-delete-scan', 'delete', 'order_items'];
+        yield 'MariaDB update' => ['mariadb-write-update-key', 'update', 'orders'];
+        yield 'PostgreSQL delete' => ['postgres-write-delete-scan', 'delete', 'order_items'];
+        yield 'PostgreSQL update' => ['postgres-write-update-key', 'update', 'orders'];
+        yield 'MySQL insert' => ['mysql-write-insert-select', 'insert', 'categories'];
+        yield 'MySQL 26 insert' => ['mysql26-write-insert-select', 'insert', 'categories'];
+        yield 'PostgreSQL insert' => ['postgres-write-insert-select', 'insert', 'categories'];
+    }
+
+    #[DataProvider('writePlans')]
+    public function testAWritePlanMarksItsWriteNode(string $fixture, string $operation, string $relation): void
+    {
+        $parser = str_starts_with($fixture, 'postgres') ? new PostgreSqlPlanParser() : new MySqlPlanParser();
+
+        $nodes = self::writeNodes($parser->parse($this->fixture($fixture))->root);
+
+        self::assertCount(1, $nodes);
+        self::assertSame($operation, $nodes[0]->writes);
+        self::assertSame($relation, $nodes[0]->relation);
+    }
+
+    /**
+     * @return list<PlanNode>
+     */
+    private static function writeNodes(PlanNode $node): array
+    {
+        $found = null === $node->writes ? [] : [$node];
+        foreach ($node->children as $child) {
+            array_push($found, ...self::writeNodes($child));
+        }
+
+        return $found;
+    }
+
+    public function testReadsAreNotWrites(): void
+    {
+        foreach (['mysql-scan', 'mysql26-scan', 'mariadb-scan', 'mysql-join', 'mysql26-join'] as $name) {
+            self::assertSame([], self::writeNodes((new MySqlPlanParser())->parse($this->fixture($name))->root), $name);
+        }
+        self::assertSame([], self::writeNodes((new PostgreSqlPlanParser())->parse($this->fixture('postgres-join'))->root));
+    }
+
+    public function testMySqlDeleteIsAFullScanOfTheWrittenTable(): void
+    {
+        $node = self::writeNodes((new MySqlPlanParser())->parse($this->fixture('mysql-write-delete-scan'))->root)[0];
+
+        self::assertSame(PlanKind::FullScan, $node->kind);
+        self::assertTrue($node->fullScan);
+        self::assertSame(7000, $node->rows);
+        self::assertSame('(`shop`.`order_items`.`quantity` = 3)', $node->condition);
+    }
+
+    public function testMariaDbUpdateByKeyUsesThePrimaryKey(): void
+    {
+        $node = self::writeNodes((new MySqlPlanParser())->parse($this->fixture('mariadb-write-update-key'))->root)[0];
+
+        self::assertSame(PlanKind::IndexScan, $node->kind);
+        self::assertFalse($node->fullScan);
+        self::assertSame('PRIMARY', $node->index);
+        self::assertSame(1, $node->rows);
+    }
+
+    public function testAnInsertSelectKeepsItsSourceUnderTheWriteNode(): void
+    {
+        foreach (['mysql-write-insert-select', 'mysql26-write-insert-select'] as $name) {
+            $node = self::writeNodes((new MySqlPlanParser())->parse($this->fixture($name))->root)[0];
+
+            self::assertSame(PlanKind::Other, $node->kind, $name);
+            self::assertFalse($node->fullScan, $name);
+            self::assertCount(1, $node->children, $name);
+            self::assertSame('products', $node->children[0]->relation, $name);
+            self::assertSame(400, $node->children[0]->rows, $name);
+        }
+    }
+
+    public function testPostgreSqlModifyTableHasNoRowEstimateOfItsOwn(): void
+    {
+        $node = self::writeNodes((new PostgreSqlPlanParser())->parse($this->fixture('postgres-write-delete-scan'))->root)[0];
+
+        self::assertNull($node->rows);
+        self::assertSame('ModifyTable', $node->label);
+        self::assertSame('Seq Scan', $node->children[0]->label);
+        self::assertSame(1400, $node->children[0]->rows);
+    }
+
+    public function testMySqlIteratorPlanCannotExplainAnUpdateOrDelete(): void
+    {
+        foreach (['mysql26-write-delete-scan', 'mysql26-write-update-key'] as $name) {
+            try {
+                (new MySqlPlanParser())->parse($this->fixture($name));
+                self::fail('Expected no plan.');
+            } catch (PlanNotAvailableException) {
+            }
+        }
+        $this->addToAssertionCount(1);
     }
 }

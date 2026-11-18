@@ -89,6 +89,27 @@ final class TableDataWebTest extends WebApiTestCase
         self::assertSame([[1, 'alpha', null], [2, 'beta', 'b']], $this->rows($table));
     }
 
+    public function testPreviewWarnsAboutTheTriggersOfTheTableAndOtherwiseSaysNothing(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+        $payload = ['updates' => [['original' => ['id' => 1, 'name' => 'alpha', 'note' => null], 'changes' => ['name' => 'one']]]];
+
+        $quiet = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/preview', $payload);
+        self::assertSame([], $quiet['warnings']);
+
+        $this->target()->executeStatement(\sprintf('CREATE FUNCTION "%s_f"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$', $table));
+        $this->target()->executeStatement(\sprintf('CREATE TRIGGER "%1$s_t" BEFORE UPDATE ON "%1$s" FOR EACH ROW EXECUTE FUNCTION "%1$s_f"()', $table));
+        try {
+            $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/preview', $payload);
+            self::assertSame([['code' => 'triggers', 'value' => 1]], $body['warnings']);
+        } finally {
+            $this->target()->executeStatement(\sprintf('DROP TABLE IF EXISTS "%s"', $table));
+            $this->target()->executeStatement(\sprintf('DROP FUNCTION IF EXISTS "%s_f"()', $table));
+        }
+    }
+
     public function testPreviewFlagsARowThatIsNoLongerThere(): void
     {
         $this->seedAndLogin();
@@ -145,6 +166,7 @@ final class TableDataWebTest extends WebApiTestCase
 
     public function testAnEngineRefusalIsAuditedWithoutTheEngineMessage(): void
     {
+        $this->detailedErrors();
         $user = $this->seedAndLogin();
         $id = $this->saveTarget();
         $table = $this->scratch();
@@ -153,6 +175,7 @@ final class TableDataWebTest extends WebApiTestCase
 
         $details = $this->auditEvents($user, 'data')[0]->getDetails();
         self::assertSame('engine_refused', $details['error']);
+        self::assertSame('duplicate_key', $details['reason']);
         self::assertStringNotContainsString('dup-secret', json_encode($details, \JSON_THROW_ON_ERROR));
         self::assertStringNotContainsString('(id)=(1)', json_encode($details, \JSON_THROW_ON_ERROR));
     }
@@ -204,6 +227,7 @@ final class TableDataWebTest extends WebApiTestCase
 
     public function testTheEngineRefusalIsReported(): void
     {
+        $this->detailedErrors();
         $this->seedAndLogin();
         $id = $this->saveTarget();
         $table = $this->scratch();
@@ -211,7 +235,40 @@ final class TableDataWebTest extends WebApiTestCase
         $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/apply', ['inserts' => [['values' => ['id' => 1, 'name' => 'dup']]]]);
 
         self::assertSame(409, $this->statusCode());
-        self::assertSame('data_change_failed', $body['error'] ?? null);
+        self::assertSame('duplicate_key', $body['error'] ?? null);
+        self::assertFalse($body['retryable'] ?? null);
+        self::assertArrayNotHasKey('message', $body);
         self::assertCount(2, $this->rows($table));
+    }
+
+    public function testTheEngineRefusalKeepsTheGenericErrorByDefault(): void
+    {
+        $user = $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/apply', ['inserts' => [['values' => ['id' => 1, 'name' => 'dup']]]]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('data_change_failed', $body['error'] ?? null);
+        self::assertFalse($body['retryable'] ?? null);
+        self::assertArrayHasKey('message', $body);
+        $details = $this->auditEvents($user, 'data')[0]->getDetails();
+        self::assertSame('engine_refused', $details['error']);
+        self::assertArrayNotHasKey('reason', $details);
+    }
+
+    public function testAnEngineRefusalWithoutAStableCodeKeepsTheGenericError(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        // Colonne NOT NULL sans valeur : SQLSTATE 23502, pas dans la liste des codes stables.
+        $body = $this->call('POST', '/web/connections/'.$id.'/tables/'.$table.'/data/apply', ['inserts' => [['values' => ['id' => 3, 'name' => null]]]]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('data_change_failed', $body['error'] ?? null);
+        self::assertFalse($body['retryable'] ?? null);
     }
 }

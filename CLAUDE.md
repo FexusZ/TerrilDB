@@ -72,304 +72,32 @@ MariaDB, Redis…) ne sont que des services joints par le réseau, jamais embarq
 de force) : tout clone antérieur est à recloner. Aucune référence à un employeur, un client ou une organisation tiers dans
 le dépôt, y compris pour ces sujets.
 
-## Crypto (src/Crypto)
+## Invariants par domaine (le détail est dans `docs/architecture/`, à lire AVANT de toucher au domaine)
 
-Zero-knowledge, sans dépendance web/Doctrine. Flux : mot de passe → `KeyDerivation` (Argon2id, paramètres
-`KdfParameters` versionnés et stockés par utilisateur) → `DerivedKey` (en mémoire seulement, effaçable,
-non sérialisable) → `SecretCipher` (XChaCha20-Poly1305, format `v1:`…, l'identifiant de la ligne sert de
-contexte authentifié). `SessionKeyVault` garde la clé le temps de la session (implémentation en mémoire
-pour l'instant ; le stockage réel est à trancher). `SecretRotator` rechiffre tout-ou-rien au changement de
-mot de passe. Toutes les erreurs héritent de `CryptoException`. Le hash d'authentification du mot de passe
-est distinct (sel propre) et vit dans `Security/`, pas ici.
+Chaque fichier garde le détail livré par thème (sources par moteur, routes, états, tests). Ne pas y ajouter une section par PR : mettre à jour
+le fichier du thème, et ne remonter ici qu'un invariant nouveau.
 
-### Phrase de récupération (facultative, `RecoveryPhrase`, `RecoveryPhraseService`)
-
-160 bits aléatoires en base 32 de Crockford (8 groupes de 4, lecture tolérante : casse, espaces, tirets, O/I/L). Le serveur
-ne garde que `User::recoveryKey` : la clé de chiffrement enveloppée par un secret tiré de la phrase (`SessionKeyWrapper`,
-contexte `recovery:<id>`), jamais la phrase. Elle sert à un seul geste, choisir un nouveau mot de passe sans connaître l'ancien
-(`PasswordChanger::resetWithKey` + `SecretRotator::rotateWithKey`, même rotation tout-ou-rien du TOTP et des connexions,
-jetons d'API révoqués). Elle est supprimée dès que la clé change (réinitialisation OU changement de mot de passe ordinaire,
-`User::changePassword`) : il faut alors en générer une nouvelle. Création et retrait exigent session ET mot de passe ;
-`POST /web/recover` (public, plafonné comme la connexion, réponse unique `invalid_recovery` pour phrase fausse, compte sans
-phrase ou compte inconnu) n'ouvre AUCUNE session : le second facteur reste exigé à la connexion suivante. Une phrase
-perdue = pas de récupération (comportement par défaut inchangé tant qu'on n'en a pas généré).
-
-## Connexions (src/Connection, src/Core/Connection)
-
-Une `DatabaseConnection` garde en clair son nom et son moteur (`Engine`) ; hôte, port, base, identifiant et mot
-de passe forment un `ConnectionParameters` (JSON versionné) chiffré d'un bloc avec la clé de l'utilisateur,
-contexte authentifié `connection:<uuid>`. L'entité refuse tout ce qui n'a pas la forme d'un chiffré. Les lectures
-sont toujours cloisonnées par propriétaire (`findOwned`), une connexion d'autrui est indiscernable d'une
-connexion inexistante. `TargetHostPolicy` (+ `HostResolver`) : seul un administrateur peut viser le serveur lui-même (boucle locale
-127.x/::1, lien local 169.254.x/fe80::, 0.0.0.0, `localhost`, et la base interne repérée par l'hôte de `DATABASE_URL`, par nom OU par
-adresse) ; un membre garde les autres machines, réseaux privés compris. Contrôle à la création, à la modification, à l'essai et à
-l'OUVERTURE (`TargetOpener`, donc aussi pour une connexion enregistrée avant la règle), pour l'interface comme pour les jetons ;
-erreur 403 `forbidden_target` sans jamais dire ce que le nom a donné ; tout refus est journalisé (`AuditedTargetHosts`, action `target.forbidden`, adresse saisie et port seulement, porte et jeton attribués). Le nom n'est résolu qu'UNE fois (`TargetHostPolicy::pinnedAddress`, IPv4 d'abord) et le driver reçoit
-l'adresse contrôlée (`ConnectionParameters::withAddress`, jamais dans le JSON chiffré ; `AuditedTargetHosts::pinned`) : une réponse DNS qui change
-ensuite n'a plus d'effet. L'hôte reste le nom pour l'identité : en-tête Host et TLS ClickHouse (option `resolve` du client HTTP), `peer_name` Redis TLS ;
-PDO MySQL/PostgreSQL se connectent à l'adresse (aucune vérification de nom TLS n'y est configurée). Un nom à plusieurs adresses n'a pas de repli
-sur la suivante (la première est épinglée). `PasswordChanger` rechiffre TOTP et connexions ensemble, tout-ou-rien : une connexion
-illisible bloque le changement.
-Ordre et couleur (en clair, rien de secret) : colonnes `position` (rang dans la liste du propriétaire ; une connexion créée va à la fin, `ConnectionManager::reorder` met les identifiants cités en tête et garde les autres derrière, un identifiant inconnu, répété ou d'autrui = 422 `invalid_input` sans dire lequel) et `color` (`ConnectionColor`, huit noms, jamais une valeur CSS libre ; jetons `--conn-*` clairs et sombres). `PUT /web/connections/order` `{ids}` ; `color` dans la création et la modification (absente = aucune). Front : glisser-déposer ou Alt+flèche dans l'arbre (`connections.reorder|move|moveOnto`, affichage immédiat puis rechargement si le serveur refuse).
-
-## Introspection (src/Core/Driver, src/Core/Schema, src/Driver)
-
-Un `Driver` (tagué `app.driver`, rassemblés dans `DriverRegistry`) sert un ou plusieurs `Engine` : il ouvre une
-`TargetConnection` (DBAL + `SchemaIntrospector`). `DbalConnector` borne le délai de connexion et vérifie par un
-`SELECT 1` ; un échec rend toujours `TargetConnectionFailedException` au message générique (le détail du moteur
-reste dans l'exception précédente, jamais montré à l'utilisateur). Drivers : `MySql` (MySQL + MariaDB, information_schema),
-`PostgreSql` (pg_catalog), `ClickHouse` et `Redis` (voir plus bas). `TargetConnection` ne dépend d'aucune bibliothèque
-d'accès : le driver lui donne l'exécuteur, la façon de se libérer, et selon le moteur un introspecteur (SQL) et/ou une
-navigation par clés (`keys()`). Ce qui manque lève `UnsupportedOperationException` (501 `unsupported_operation`). Les introspecteurs rendent le modèle `Core/Schema` (types natifs du moteur, index
-primaire d'abord puis par nom, tri à l'octet car l'ordre du moteur dépend de la collation) ; périmètre = base de la
-connexion (MySQL) ou schéma courant (PostgreSQL). Nombres de lignes = estimations du moteur, jamais un COUNT. Les noms
-de tables passent toujours en paramètres liés. `TargetOpener` relie le tout : connexion enregistrée + clé -> cible ouverte.
-Bases du serveur : `SchemaIntrospector::listDatabases()` (MySQL/MariaDB `information_schema.SCHEMATA` = seulement celles où le compte a un droit ; PostgreSQL `pg_database` sans modèles et avec `CONNECT` ; ClickHouse `system.databases` ; tri à l'octet ; `DatabaseSummary::system` pour information_schema/mysql/performance_schema/sys/system, masquées sauf `?system=1`). `GET /web/connections/{id}/databases` ; une autre base s'explore en OUVRANT la connexion sur elle (`TargetOpener::open(…, $database)` -> `ConnectionParameters::withDatabase`, adresse épinglée conservée) : une connexion reste une base, y compris sur PostgreSQL. Routes tables, structure, diagramme, audit et console acceptent `?database=` (corps `database` pour la console). Une base inconnue = échec de connexion générique (502). Redis : pas de liste (501). Tables paginées : `SchemaIntrospector::listTablesPage(TablePageRequest)` -> `TablePage` (`nextCursor` = nom de la dernière table, `total` seulement sur la première page, lu dans le catalogue). Pagination PAR CLÉ côté moteur, jamais en tranchant une liste complète : MySQL/MariaDB `ORDER BY BINARY TABLE_NAME` + `BINARY TABLE_NAME > BINARY ?`, PostgreSQL `COLLATE "C"`, ClickHouse `name > {after}` ; limite 1 à 500 (100 par défaut) ; recherche `q` = sous-chaîne sans casse en paramètre lié (`INSTR`/`strpos`/`positionCaseInsensitive`, donc `_` et `%` littéraux). `GET /web/connections/{id}/tables?limit=&cursor=&q=&database=` : sans `limit`/`cursor`/`q` la liste COMPLÈTE reste servie (compatibilité). Front : `workspace.tables` = tables chargées (cent par cent, `loadMoreTables`, `searchTables` côté serveur, réponse périmée ignorée) ; l'autocomplétion de l'éditeur SQL ne connaît donc que les tables chargées. Front : base et schéma se choisissent dans l'arbre des connexions (plus de sélecteur dans l'éditeur ; `?database=` / `?schema=` de l'adresse pilotent `workspace.database` / `workspace.schema`, et `WorkspaceView` ouvre la première base d'une connexion qui n'en nomme aucune). L'autocomplétion de l'éditeur connaît TOUTES les tables : `workspace.loadCompletion()` lit la liste complète des noms (route sans pagination), une fois par connexion/base/schéma.
-La base d'une connexion est FACULTATIVE (`database` vide) : sans elle on joint le serveur (PostgreSQL ouvre la base `postgres`, ClickHouse `default`, Redis le numéro 0), `GET .../databases` rend `default` (null si aucune) et l'interface ouvre alors la première base de la liste. Schémas PostgreSQL : `SchemaIntrospector::listSchemas()` (501 ailleurs ; pg_catalog/information_schema masqués sauf `?system=1`, TOAST et temporaires jamais), `GET .../schemas?database=`, paramètre `?schema=` (corps `schema` pour la console) sur les mêmes routes : le schéma s'applique à l'OUVERTURE par `search_path` (`ConnectionParameters::withSchema`, éphémère comme l'adresse épinglée, jamais dans le JSON chiffré ; `set_config` + `quote_ident`, le nom est une donnée). Front : niveau schéma dans l'arbre, `workspace.schema`.
-
-## Exécution et garde-fous (src/Core/Guard, src/Core/Query, src/Driver/*/…QueryRunner)
-
-`QueryService` est le point d'entrée unique (web, API, MCP) : `StatementGuard` examine, `QueryRunner` du moteur exécute.
-Le garde (lexical, `SqlScanner` par dialecte) n'accepte qu'UNE instruction, refuse les constructs hors transaction
-(INTO OUTFILE, FOR UPDATE, fonctions de fichiers, LOAD/COPY, SET/BEGIN/COMMIT…) et demande confirmation pour ce qui
-détruit (UPDATE/DELETE sans WHERE de même niveau, DROP, TRUNCATE, ALTER, GRANT, CALL). Un refus est définitif, aucune
-confirmation ne le lève. `QueryMode::ReadOnly` par défaut ; l'API et le MCP ne passent en lecture-écriture que par `ApiTokenAccess::writeOptions` (jeton avec droit d'écriture, `QueryOptions::$writes` = `WritePermissions` données/structure, refus définitif `write_not_permitted` du garde, avant toute confirmation ; CALL/DO exigent le droit structure). Le filtre peut se
-tromper : le moteur fait foi. PostgreSQL : `BEGIN READ ONLY` + `statement_timeout` local + curseur serveur (limite de
-lignes). MySQL/MariaDB : `SET SESSION TRANSACTION READ ONLY` (et non `START TRANSACTION READ ONLY`, qui laisse passer
-le DDL), `MAX_EXECUTION_TIME` / `max_statement_time`, lecture non tamponnée, instructions multiples désactivées. Une
-lecture est toujours annulée ; une écriture est validée si tout réussit. Limites connues : MySQL n'a pas de délai moteur
-pour une écriture ; un DDL MySQL en lecture-écriture valide implicitement ; l'opérateur `?` de jsonb ne passe pas dans
-EXPLAIN/SHOW sur PostgreSQL (il passe dans les SELECT). Vitess (`@@version` en `-Vitess`, détecté à l'ouverture par `MySqlQueryRunner::forConnection`) ne transmet pas `SET SESSION MAX_EXECUTION_TIME` : le délai passe par la directive `/*vt+ QUERY_TIMEOUT_MS=n */` (`VitessTimeout`, après SELECT/INSERT/UPDATE/DELETE/REPLACE, écritures comprises ; sans effet sur SHOW/WITH), erreur 3024 = `query_timeout`. Cible de test `target-vitess` hors CI (`docs/vitess-tests.md`).
-
-## Couche web (src/Http/Web)
-
-API JSON de la SPA, routes `/web/*` (l'API REST à jetons sera `/api/v1/*`). Contrôleurs minces : `AccountController`
-(inscription, connexion, `/web/me`), `AccountSecurityController` (mot de passe, TOTP, codes de récupération),
-`ConnectionController`, `SchemaController`, `QueryController`. La connexion n'est pas faite par un authentificateur
-Symfony mais par `LoginService` (qui dérive la clé) ; `WebSession::open` démarre la session, renouvelle son identifiant,
-ouvre la session Symfony (`ProgrammaticAuthenticator`) et confie la clé au coffre : toujours démarrer la session AVANT de
-lire son identifiant. Une session perd sa reconnaissance quand le hash du mot de passe change (`SecurityUser::isEqualTo`).
-Protections : en-tête `X-TerrilDB-Request: 1` obligatoire sur toute requête non sûre (CSRF), plafond de tentatives
-(`LoginThrottle` : 30/15 min par adresse ; 8/15 min par compte seulement sur les actions qui vérifient le mot de passe d'une session ouverte ; connexion et récupération par phrase passent par `LoginLockout`, blocage À PALIERS du COUPLE adresse + compte : 5 échecs de suite -> 15 min, puis 1 h, 3 h, 6 h, 12 h à chaque nouveau blocage (palier oublié après un jour calme, réussite = échecs remis à zéro), le compte n'est jamais verrouillé pour tous ; une adresse dont les blocages touchent 3 comptes différents est bannie 24 h, puis 3 jours, puis 7 jours ; compte inconnu = compte connu ; état dans le cache `cache.rate_limiter`, blocage ou ban déclenché = une ligne d'audit `login.throttled` avec `kind` et `seconds` ; levée manuelle d'un ban : `app:ban:lift <ip>`, le palier est conservé),
-erreurs du domaine traduites en codes stables par `ErrorMapper` (jamais le message du moteur d'une cible injoignable).
-Inscription : `APP_REGISTRATION=first_only` (défaut, seulement le premier compte) ou `open`. Le premier compte peut aussi naître en console : `app:user:create-first <e-mail> <utilisateur>` (`CreateFirstAccountCommand`, mot de passe saisi deux fois sans écho, jamais en argument ; refusé sans terminal et dès qu'un compte existe).
-Tests fonctionnels : `tests/Integration/Web/WebApiTestCase` (conteneur redémarré à chaque requête, écritures annulées par DAMA).
-
-## API REST à jetons (src/ApiToken, src/Http/Api, docs/api.md)
-
-Le serveur ne détient jamais la clé de l'utilisateur ; un jeton d'API (`tdb_<id>_<secret>`) emporte donc une copie de
-la clé enveloppée par son propre secret (`SessionKeyWrapper`, contexte = id du jeton). Le serveur ne garde que
-l'empreinte du secret (`ApiTokenSecret::verifier`) et l'enveloppe : sans le jeton, rien n'est lisible. Lecture seule
-par défaut, connexions listées (au moins une, sauf jeton « toutes » ou autorisé à en créer), expiration de 365 jours au plus OU aucune (`neverExpires: true`, `expires_at` nul : choix du propriétaire, la révocation reste possible à tout moment), supprimé à tout changement
-de mot de passe (`PasswordChanger` → `ApiTokenService::revokeAll`, même transaction). Pare-feu `api` sans session
-(`BearerTokenAuthenticator`) ; échecs plafonnés par adresse, requêtes plafonnées par jeton (`ApiThrottle`). Les
-assistants JSON partagés avec l'interface web sont dans `App\Http\Json`.
-Droits d'un jeton (`TokenPermissions`, fixés à la création, tous refusés par défaut) : `writeData` (INSERT/UPDATE/DELETE),
-`writeSchema` (CREATE/ALTER/DROP/TRUNCATE/GRANT/CALL), `createConnections`. Écrire passe par `POST /api/v1/connections/{id}/execute`
-(et l'outil MCP `execute_statement`, visible des seuls jetons qui écrivent) ; `/query` et `run_query` restent en lecture seule pour
-tous. Un destructif (UPDATE/DELETE sans WHERE, DROP, TRUNCATE…) répond 409 `confirmation_required` tant que `confirmed: true` manque ;
-sans aucun droit d'écriture, 403 `permission_denied`. Limite connue : seul le filtre lexical sépare données et structure
-(un SELECT d'une fonction qui écrit n'est pas retenu en lecture-écriture ; les droits du compte de la base cible restent le dernier rempart).
-`POST /api/v1/connections` (outil MCP `create_connection`, `TokenConnections`) enregistre une connexion chiffrée par la clé du jeton,
-sous la même règle d'adresses que l'interface web (`TargetHostPolicy`), l'ajoute à la liste du jeton et journalise `connection.created` (acteur api/mcp).
-Un jeton peut naître sans connexion s'il est « toutes » ou autorisé à en créer. Créations plafonnées à 20 par heure et par jeton (limiteur `api_connection_creation`), tentatives refusées comprises : 429 `too_many_attempts`.
-Un jeton peut être émis pour « toutes mes connexions » (`allConnections: true` à la création, colonne `all_connections`) : la
-liste est celle du compte à cet instant, puis ne bouge que par `POST /web/tokens/{id}/refresh` (`ApiTokenService::refresh`,
-session requise, texte du jeton inchangé, connexions supprimées retirées, pas de plafond de connexions, refusé 422
-pour un jeton à liste fixe ; l'actualisation ne prolonge pas l'expiration). Jamais automatique : le propriétaire décide quand les nouvelles connexions deviennent lisibles (audit `token.refreshed`).
-
-## ClickHouse (src/Driver/ClickHouse)
-
-Pas de pilote DBAL pour ClickHouse : `ClickHouseHttp` parle son interface HTTP (`symfony/http-client`), port 8123 par défaut
-(8443 et 443 = TLS, déduit du port faute d'option dédiée). L'instruction part dans le corps d'un POST, les réglages et les
-paramètres liés (`{nom:Type}`) dans l'adresse, les identifiants dans les en-têtes `X-ClickHouse-User/Key` (jamais dans une
-URL). Réponse `JSONCompact` ; `JSON_BIGINT_AS_STRING` garde les UInt64 démesurés en texte. Erreurs normalisées
-(`ClickHouseException` : code du moteur, message nettoyé du « Code: … (version …) », jamais d'adresse).
-`ClickHouseQueryRunner` : lecture seule = réglage `readonly=1` imposé par le moteur (refuse écritures, DDL, `SETTINGS`,
-fonctions de table sortantes comme `url()`/`remote()`) ; délai = `max_execution_time` (secondes fractionnaires, code 159 ->
-`QueryTimeoutException`) ; limite de lignes = `max_result_rows=maxRows+1` + `result_overflow_mode=break` + `max_block_size`
-ramené à la limite, le surplus est écarté ici. Pas de transaction : une écriture est immédiate. Les fonctions de table qui
-sortent du serveur (`file`, `url`, `s3`, `remote`, `mysql`…) sont refusées par le garde seulement quand elles sont APPELÉES
-(`calls()` du scanner), et la clause `FORMAT` aussi (le runner impose son format). Le dialecte du scanner (`SqlDialect::ClickHouse`) :
-antislash dans chaînes ET identifiants, `--` sans espace, `#` commentaire, pas de commentaire exécutable, guillemets dollar ;
-les commentaires `/* */` sont lus sans imbrication (ClickHouse les imbrique : la lecture est plus stricte, jamais plus laxiste).
-`ClickHouseIntrospector` : `system.tables/columns/data_skipping_indices` ; pas de clé étrangère, et la clé de tri est un index
-non unique nommé « ORDER BY » (« PRIMARY KEY » si différente), jamais une clé primaire relationnelle ; lignes = `total_rows`.
-Plan d'exécution par `EXPLAIN json=1, indexes=1` lu par `ClickHousePlanParser` (ni coût ni lignes dans ce format : `PlanAnalyzer` ne
-signale donc rien ; une lecture dont la clé de tri ne restreint rien est un parcours complet, sinon « PRIMARY KEY » + condition) ; pas de
-règle d'audit (relationnelles). Redis garde le 501 `plan_unavailable` (bouton masqué par `ENGINE_HAS_PLAN`). Cible de test `target-clickhouse` (`TARGET_CLICKHOUSE_URL`, port hôte 18123) dans le profil `targets`.
-
-## Redis (src/Driver/Redis, src/Core/KeyValue, src/Core/Guard/Redis*)
-
-Pas un moteur SQL (`Engine::speaksSql()` est faux) : une commande Redis est une « instruction » du même pipeline (garde ->
-exécuteur -> audit), donc console, API à jetons et MCP fonctionnent sans plomberie propre ; seul le schéma de tables manque
-(introspecteur absent : /tables, /diagram, /audit, /plan rendent 501). Client `predis/predis` (pur PHP, l'image n'a pas
-ext-redis) ; PHPStan veut `--memory-limit=512M`. Paramètres de connexion : « base » = numéro de base (0-255, vérifié à
-l'ouverture), « identifiant » = utilisateur ACL (`default` sans ACL), port 6380 = TLS. `RedisCommandLine` découpe le texte
-comme redis-cli (guillemets, `\xHH`, une commande par ligne) : le garde juge les ARGUMENTS qui partiront, pas le texte.
-`RedisCommandGuard` = LISTE BLANCHE (lectures, puis écritures en mode lecture-écriture) ; refus nets : KEYS (SCAN le remplace),
-commandes bloquantes ou de flux (dont XREAD : le serveur le classe bloquant), scripts, modules, CONFIG/ACL/CLIENT/DEBUG,
-réplication, AUTH, FLUSHALL ; FLUSHDB demande confirmation. `RedisQueryRunner` : avant d'envoyer en lecture seule, interroge
-`COMMAND INFO commande` et `commande|sous-commande` et refuse ce que le SERVEUR marque write/admin/blocking/pubsub (le serveur
-fait foi ; un test vérifie que toute lecture de la liste blanche passe ce contrôle). Un client Predis NEUF par commande :
-le délai de lecture (`read_write_timeout`) n'est pas modifiable sur une connexion ouverte ; `Predis\TimeoutException` ->
-`QueryTimeoutException`. Réponse -> tableau (`value` ; HGETALL = field/value ; INFO = section/key/value ; imbriqué = JSON).
-`RedisKeyValueStore` : SCAN (jamais KEYS, tranches <= 1000), TYPE + TTL en pipeline, lectures bornées par type (HSCAN/SSCAN,
-LRANGE, ZRANGE, XRANGE COUNT, GETRANGE 64 Kio), noms de clés non UTF-8 laissés de côté. Web : `GET /web/connections/{id}/keys`
-(`pattern`, `cursor`, `count` <= 1000) et `GET .../key?name=&limit=` (nom en paramètre de requête : il peut contenir `/`, `?`,
-de l'unicode). Front : `KeyPane` (les clés se parcourent dans l'arbre de la barre latérale), la console réutilise `QueryPane` (pas de plan : `ENGINE_HAS_PLAN`).
-Cible de test `target-redis` (`TARGET_REDIS_URL`, base 15, hôte 63791) : `RedisTarget::seeded()` vide et remplit la base 15
-(refuse toute autre base).
-
-## Optimiseur local (src/Core/Optimizer)
-
-Sans PMM ni service externe : tout part de l'introspection et de `EXPLAIN`. `SchemaAuditor` (règles pures : table sans
-clé primaire, clé étrangère sans index couvrant — colonnes en tête de l'index, ordre indifférent —, index redondant ;
-jamais un index unique ; clé étrangère dont la colonne doit être CONVERTIE pour être comparée à la colonne référencée, donc sans usage de son index : PostgreSQL seulement, entier vers numeric ou flottant, char(n) vers text — entier vers bigint ou varchar vers text gardent l'index et ne sont pas signalés, mesuré) rend des `Finding` avec une suggestion SQL à relire, jamais exécutée par TerrilDB
-(`GET /web/connections/{id}/audit`, 300 tables au plus). `PlanService` ne construit l'EXPLAIN que d'une lecture simple
-(garde d'abord) et lit le JSON de PostgreSQL / MySQL / MariaDB / ClickHouse (`PostgreSqlPlanParser`, `MySqlPlanParser`, `ClickHousePlanParser`, fixtures
-réelles dans `tests/Fixtures/plans`) vers un arbre commun `PlanNode` ; `PlanAnalyzer` ne signale qu'un parcours complet
-d'une table estimée à 1000 lignes ou plus. EXPLAIN n'exécute pas la requête. `POST /web/connections/{id}/plan`, journalisé
-avec l'instruction de l'utilisateur (`purpose: plan`). Les statistiques d'un moteur peuvent être périmées (MySQL annonce
-1 ligne tant que la table n'est pas analysée) : on rapporte ce que le moteur dit.
-
-## Diagramme ER (SchemaDiagramController, assets/utils/erLayout.ts, DiagramPane)
-
-`GET /web/connections/{id}/diagram` : tables (pas les vues, 300 au plus) avec colonnes (type, nullable, clé primaire) et
-relations = clés étrangères, tirées de l'introspection. La mise en page est côté front, sans bibliothèque : `layoutDiagram`
-range les tables sur une grille dans l'ordre d'un parcours en profondeur des clés étrangères (tables liées côte à côte,
-isolées en dernier, indépendant de l'ordre d'entrée) et trace chaque relation de la ligne de la clé étrangère à celle de
-la colonne référencée (auto-référence = boucle à droite). `DiagramPane` dessine le tout en SVG (route `diagram`).
-
-## Comptes multiples et invitations (src/Invitation, Entity/Invitation, Entity/Role)
-
-Deux rôles : `admin` (le premier compte d'une installation, et le plus ancien à la migration) et `member`. Le rôle ne
-change que la gestion des invitations ; chacun garde ses connexions, chiffrées par sa propre clé, donc invisibles aux
-autres (y compris à l'administrateur). Une invitation est un lien à usage unique `inv_<id>_<secret>` : le serveur n'en
-garde que l'empreinte, elle expire (7 jours par défaut, 30 au plus) et se révoque. Le serveur n'envoie aucun e-mail : la
-note est un simple repère, l'administrateur transmet le lien. `InvitationService::register` crée le compte (toujours
-membre) et consomme l'invitation dans une seule transaction manuelle (`wrapInTransaction` fermerait l'EntityManager à la
-première exception du domaine) ; une inscription refusée ne brûle pas l'invitation ; inconnue, utilisée, expirée ou
-révoquée rendent la même erreur `invalid_invitation`. Routes : `GET|POST /web/invitations`, `DELETE /web/invitations/{id}`
-(403 `forbidden` pour un membre), `POST /web/register` accepte `invitation` même quand l'inscription libre est fermée.
-Front : `/security/invitations` (`InvitationsView`), `/register?invitation=…`.
-Envoi par e-mail facultatif (`InvitationMailer`, `symfony/mailer`) : actif seulement si `TERRILDB_MAIL_FROM` ET `TERRILDB_PUBLIC_URL`
-sont renseignés (avec `MAILER_DSN`) ; le lien vient de l'adresse publique configurée, jamais de l'en-tête Host. `POST
-/web/invitations` accepte `email` : l'adresse est validée AVANT d'émettre (rien d'orphelin), sert à l'envoi puis n'est
-conservée nulle part (ni base, ni audit, ni journal) ; un échec de transport garde l'invitation (`emailSent: false`, le lien
-reste à transmettre à la main) ; envoi non configuré = 409 `mail_disabled`. `GET /web/invitations` dit `emailEnabled`.
-
-## Édition de structure (src/Core/Schema/Change, TableStructureController)
-
-Modifier colonnes, index, clé primaire, clés étrangères, nom ou suppression d'une table SQL. Le client n'envoie JAMAIS de SQL : il envoie
-la table telle qu'on la veut (`TableDraft` : chaque colonne, index ou clé étrangère garde son `originalName`, ce qui reconnaît un
-renommage) ; le serveur relit la table réelle, `SchemaDiffer` déduit les opérations, un `DdlDialect` par moteur (PostgreSQL, MySQL +
-MariaDB, ClickHouse) les écrit, `SchemaChangePlanner` rend le `ChangePlan` (instructions ordonnées : on retire d'abord clés
-étrangères, index, clé primaire puis colonnes, on remet ensuite clé primaire, index, clés étrangères, le renommage de la table vient
-en dernier). Le texte libre est borné : `ColumnType::validated` n'accepte que la FORME d'un type (mots, nombres, chaînes fermées,
-parenthèses équilibrées, aucun mot de contrainte), `DefaultValue::parse` lit NULL, un nombre, une chaîne ou une courte liste
-d'expressions (now(), uuid(), true…) et traite tout le reste comme une CHAÎNE échappée, jamais comme du SQL ; les noms passent par
-`NameRule` puis sont échappés par le dialecte. Deux routes : `POST /web/connections/{id}/tables/{name}/structure/preview` (n'écrit rien :
-instructions, `transactional`, `destructive`, `stale`) et `.../apply` (`fingerprint` obligatoire : empreinte de la structure rendue par la
-lecture de la table, 409 `schema_changed` si la table a bougé entre-temps ; 409 `confirmation_required` + liste tant que `confirmed` manque
-pour ce qui détruit : retirer colonne, index, clé, changer un type, supprimer la table ; 409 `schema_change_failed` avec `applied` et
-`failed` ; 422 `invalid_schema_change`). `drop: true` à la place de `draft` supprime la table. Exécution par `TargetConnection::ddl()`
-(`DbalDdlExecutor`, `ClickHouseDdlExecutor`) : PostgreSQL en UNE transaction (tout ou rien, `lock_timeout` 10 s), MySQL/MariaDB et
-ClickHouse instruction par instruction (un échec laisse les précédentes appliquées, rapportées dans `applied`). Audit `schema.changed` /
-`schema.failed` avec le SQL exact. Particularités : MySQL `MODIFY COLUMN` redit la définition (commentaire gardé, jeu de caractères
-remis à celui de la table), colonne AUTO_INCREMENT nouvelle et sa clé dans un seul ALTER ; ClickHouse : nullabilité dans le type,
-clé de tri en lecture seule, ni clé primaire ni clé étrangère ni auto-incrément ni renommage d'index, index de saut matérialisés ;
-passer de Nullable à non-Nullable y exige une valeur par défaut. Seules les tables sont éditables (pas les vues), pas Redis.
-Front : `TableEditor` (colonnes, index, clés étrangères modifiables sur place ; brouillon `utils/structureDraft` où colonnes, clé primaire, index et clés étrangères se réfèrent par identifiant donc un renommage les suit ; lignes nouvelle / modifiée / retirée surlignées ; barre collante en haut avec le SQL calculé par `preview`, boutons Valider / Annuler, confirmation qui liste ce qui sera perdu ; « Supprimer la table » avec le SQL montré), seulement pour les tables (une vue reste en lecture seule), la section Index est un tableau façon phpMyAdmin (une ligne par colonne avec son rang, nom / type / unique en cellules fusionnées, monter, descendre, ôter, ajouter une colonne ; la clé primaire en est la première ligne, la clé de tri ClickHouse une ligne verrouillée) ; le menu « Vues de la connexion » garde une entrée « Structure » vers la dernière table ouverte (base et schéma compris) ; `TablePane` rafraîchit les listes de tables et l'arbre après application. Tailles : `IndexDefinition::$sizeBytes` et `TableDefinition::$dataBytes/$indexBytes` (octets sur disque, nuls si le moteur ne les donne pas ; HORS de l'empreinte, ils bougent sans que la structure change) : PostgreSQL `pg_relation_size` / `pg_table_size` / `pg_indexes_size` ; MySQL/MariaDB `information_schema.TABLES` pour les totaux et `mysql.innodb_index_stats` pour les index secondaires (lecture facultative, la clé primaire InnoDB est la table : pas de taille propre) ; ClickHouse `system.parts` (`bytes_on_disk`, `primary_key_size`) et `system.data_skipping_indices`. Le front montre une colonne « Taille » des index et « Données / Index / Total » sous le titre de la table. Tests : `tests/Core/Schema/Change` (générateurs), `tests/Integration/Driver/SchemaChangeTest` (rejoués contre les vrais moteurs),
-`tests/Integration/Web/TableStructureWebTest`.
-
-## Export (src/Core/Export, ExportController)
-
-`CsvExporter` (RFC 4180, CRLF, UTF-8, BOM optionnel) et `JsonExporter` (tableau d'objets, colonnes dupliquées suffixées).
-Le CSV neutralise les cellules qu'un tableur lirait comme une formule (`=`, `+`, `-`, `@`, tab, CR en tête) par une
-apostrophe, sauf les nombres. `POST /web/connections/{id}/export` : lecture seule, mêmes garde-fous et même audit qu'une
-exécution (`purpose: export`), 10 000 lignes par défaut, 100 000 au plus, en-tête `X-TerrilDB-Truncated` si coupé.
-
-## Édition de données (src/Core/Data, TableDataController)
-
-Même schéma que la structure : le client envoie des LIGNES (`updates` = valeurs d'origine + colonnes changées, `inserts` = valeurs,
-`deletes` = valeurs d'origine), jamais du SQL. `DataChangePlanner` écrit les instructions du moteur avec des paramètres liés (`?`,
-ou `{pN:Type}` pour ClickHouse) ; le texte montré (`display`) a les valeurs en clair mais n'est jamais exécuté. Une ligne se retrouve
-par sa clé primaire PLUS les valeurs d'origine des colonnes modifiées (une ligne changée entre-temps n'est plus retrouvée) ; sans clé
-(ClickHouse n'en a pas), par toutes ses colonnes comparables (JSON, binaire, tableaux exclus). Une valeur remise telle qu'elle était n'est
-pas un changement (pour une colonne numérique, « 5.00 », « 5.0 » et « +5 » sont la même valeur, comparée en texte sans passer par un
-flottant) ; si le moteur range la même valeur sous une autre écriture (MySQL annonce 0 ligne touchée), la ligne est recomptée dans la
-transaction avant de parler de conflit. 500 changements au plus. `DataChangeService::preview` compte les lignes que chaque WHERE retrouve (il en faut
-exactement UNE : sinon `ok: false`) ; `apply` refuse (409 `data_changed`) si ce n'est plus le cas, demande confirmation pour toute
-suppression (409 `confirmation_required`, `reason: delete_rows`) puis exécute. PostgreSQL / MySQL / MariaDB : une transaction
-(`DbalDataExecutor`), une modification ou suppression qui ne touche pas exactement une ligne annule tout. ClickHouse : pas de transaction,
-instruction par instruction, et modifications / suppressions sont des MUTATIONS asynchrones (`ALTER TABLE … UPDATE/DELETE`) : elles ne se
-voient pas tout de suite (`asynchronous: true`, l'interface le dit) ; un ajout est immédiat. Routes web seulement :
-`POST /web/connections/{id}/tables/{name}/data/preview` et `.../apply` (ni API à jetons, ni MCP). Audit : `data.changed` (nombre de
-modifications / ajouts / suppressions, colonnes touchées, SQL AVEC ses paramètres mais jamais les valeurs : une colonne secrète ne se
-retrouve pas recopiée dans le journal) et `data.failed` (`row_changed` ou `engine_refused`, sans le message du moteur qui peut citer la valeur). Erreurs : 422 `invalid_data_change`, 409 `data_changed`,
-409 `data_change_failed` (message du moteur). Front : vue « Données » (`TableDataPane`, route `data/:name`) = SQL modifiable + `DataGrid` ;
-un onglet de requête par table (`QueryTab::table`), grille éditable seulement si la requête renvoie les colonnes de la table telles quelles
-(clé primaire sélectionnée, ou toutes les colonnes sans clé) ET si l'instruction exécutée est une lecture simple de cette table (`isPlainReadOf` : SELECT … FROM table [alias] avec WHERE / ORDER BY / LIMIT, sans jointure, agrégat, DISTINCT, UNION ni sous-requête ; `QueryTab::lastSql` = ce dont le résultat est la réponse) ; brouillon `utils/dataDraft` ; bandeau « N changements en attente » avec
-Vérifier (aperçu SQL) puis Appliquer ; relecture après application ; relancer la requête est bloqué tant que des changements attendent.
-Tests : `tests/Core/Data`, `tests/Integration/Driver/DataChangeTest` (4 moteurs), `tests/Integration/Web/TableDataWebTest`.
-
-## Audit (src/Audit, Entity/AuditEvent)
-
-Journal d'événements immuables (table `audit_event`, insertion par DBAL hors unité de travail ORM). `AuditLog::record`
-ne fait jamais échouer l'action en cours si l'écriture échoue (erreur consignée), mais refuse un détail qui ressemble
-à un secret (`password`, `secret`, `token`, `code`, `key`) ou qui n'est pas un scalaire / une courte liste de chaînes.
-`AuditedQueries` enveloppe `QueryService` pour les trois portes (web, API, MCP) : exécution, refus et échec sont
-journalisés avec le texte de l'instruction ; une simple demande de confirmation ne l'est pas. Les connexions échouées
-sont attribuées au compte visé, les blocages une fois par minute. Lecture : `/web/activity` (pagination par curseur,
-filtre par catégorie) et `/web/connections/{id}/history`. Purge : `app:audit:purge [--days]`, conservation
-`TERRILDB_AUDIT_RETENTION_DAYS` (365).
-
-## Serveur MCP (src/Http/Mcp, docs/mcp.md)
-
-SDK officiel `mcp/sdk` (0.9, expérimental : les révisions du protocole sont gérées par lui), confiné à `Http/Mcp`.
-`POST|DELETE /mcp` derrière le même pare-feu `api` que l'API REST (jeton porteur) ; `McpServerFactory` rebâtit le serveur
-à chaque requête (quatre outils de lecture déclarés explicitement, plus `execute_statement` et `create_connection` selon les droits du jeton, sessions du protocole sur fichiers dans le cache) ; `McpTools`
-réutilise `TargetSession`/`QueryService` (lecture seule sauf `execute_statement`) ; `McpSessionBinding` lie une session MCP au jeton qui l'a ouverte.
-Pas de flux serveur (GET → 405). Hôtes acceptés : `TERRILDB_ALLOWED_HOSTS`. Les arguments d'outil portent le nom exact du
-paramètre PHP (camelCase : `maxRows`, `timeoutMs`).
-
-## Front (assets/, Vue 3 + TypeScript + Vite + Pinia + CodeMirror 6)
-
-SPA servie sous `/app/` : Vite compile dans `public/app/` (ignoré par git) et l'index sort sous le nom `spa.html`
-(voir `vite.config.ts` : le serveur PHP intégré servirait un `index.html` sans passer par Symfony, donc sans en-têtes
-de sécurité) ; `SpaController` le sert pour toute adresse `/app/…`, `SecurityHeadersListener` pose la CSP (scripts
-`'self'` seulement, pas de script en ligne). `docker/php/router.php` est le routeur du serveur de développement.
-Structure : `api/` (client `fetch` + en-tête CSRF, `ApiError` à code stable, `errors.ts` = messages français),
-`stores/` (Pinia : session, connexions, espace de travail à onglets), `components/`, `views/`, `utils/`,
-`styles/tokens.css` (jetons de design, direction « Atelier » : bleu encre = action, ambre = secret/chiffré ; thème sombre par défaut et thème clair sous `:root[data-theme='light']` ; aucune couleur en dur dans les composants, tout passe par les variables, y compris la coloration de CodeMirror). `stores/theme.ts` : automatique (suit le système) / clair / sombre, choix gardé dans `localStorage` (tolérant au refus), bouton dans `AppHeader`.
-Barre latérale permanente À DROITE (`WorkbenchSidebar`, seule navigation : plus de panneau de tables à gauche, repliable, choix gardé dans `localStorage` tolérant au refus) sur toute l'espace de travail : `ConnectionTree` = arbre ARIA `tree`/`treeitem` (connexion > bases > tables cent par cent, clés pour Redis ; flèches, Début, Fin, Entrée, Espace ; actions par connexion au clic et au clavier `n`/`e`/Suppr) alimenté par le store `tree` (déplié et lu gardés pendant la session, pastille fermée/ouverte/injoignable, réponses périmées ignorées, `reset()` à la déconnexion). Page d'accueil `/workspace` (`workspace-home`) ; `/connections` reste l'écran de gestion. Une table d'une autre base s'ouvre avec `?database=` et `WorkspaceView` explore alors cette base. `SchemaTree`, `KeyBrowser` et `DatabasePicker` ont été supprimés (doublon avec l'arbre) ; une cible injoignable s'annonce en bandeau au-dessus du contenu. La page « Mes connexions » montre la couleur d'une connexion (pastille devant le nom) ; `WorkspaceView` porte un menu « Vues de la connexion » (Console, Diagramme, Audit du schéma ; absent sur Redis) qui garde `?database=`/`?schema=`, et diagramme comme audit lisent la base et le schéma explorés (`workspace.scopeSuffix()`) ; le diagramme se zoome (paliers 25 à 300 %, boutons, Ajuster, Ctrl + molette) et élargit toutes ses boîtes à la ligne « nom + type » la plus longue. Les bases vides sont masquées dans l'arbre (store `tree.probeDatabases` : à l'ouverture d'une connexion de plus d'une base, au plus 25 bases non système sont sondées une à une, une table demandée ou, sur PostgreSQL, la liste des schémas ; une sonde en échec ne cache rien ; ligne « Afficher n bases vides » pour les voir, une base ouverte reste visible). La recherche de tables/clés par motif n'existe plus (seule l'autocomplétion de l'éditeur connaît toutes les tables).
-L'éditeur a un onglet « Historique » (`HistoryPanel`, alimenté par `/web/connections/{id}/history` et rafraîchi après chaque exécution une fois ouvert) ; `/security/activity` affiche le journal du compte (`utils/audit.ts` = libellés français). Une réponse `unauthenticated`/`locked` ramène à la connexion (`onSessionLost`). Une redirection `?redirect=` n'est suivie
-que si elle est interne. Polices auto-hébergées (@fontsource : Fraunces pour les titres, Inter pour l'interface, JetBrains Mono pour le code), rien n'est chargé d'un tiers. Navigation d'une connexion : une ligne « Console / Diagramme / Audit du schéma », puis une ligne d'ONGLETS DE TABLES façon navigateur (`workspace.tableTabs`, gardés en mémoire seulement, une table = un onglet par base/schéma, × pour fermer, la vue où on l'a laissée est retenue), puis pour la table active une ligne « Structure / Données ». La page d'accueil est la liste des connexions (`/connections`, `/` et `/workspace` y redirigent). Tests Vitest à côté du code
-(`*.test.ts`) ; les rejets simulés se font avec `mockRejectedValueOnce` (un `mockRejectedValue` persistant déclenche un
-« unhandled rejection »).
-
-## Déploiement (docker/prod, compose.prod.yaml, .github/workflows/ci.yml, docs/deploy.md)
-
-CI sur les serveurs GitHub (php, front, integration) puis, sur `push` vers `main` seulement, un runner auto-hébergé dédié
-(étiquette `terrildb`) lance `docker/prod/deploy.sh` : build de l'image (FrankenPHP, interface compilée, sans root),
-`pg_dump`, migrations, relance avec contrôle de santé et retour à l'image précédente si KO. Secrets et domaine hors dépôt
-(`~/.config/terrildb`, secret GitHub `TERRILDB_DOMAIN`) : ne jamais écrire le domaine ni un secret dans le dépôt, qui est
-public. La base interne est seule sur le réseau Docker `backend` (`internal`, partagé avec l'application, aucune sortie) ; les règles de sortie du pare-feu de l'hôte sont documentées dans `docs/deploy.md` mais jamais appliquées par le script (elles dépendent des bases cibles). L'application n'écoute que sur 127.0.0.1 (port 8090) derrière le nginx de la machine (`setup-host.sh`, une fois,
-sudo). Dépôt public + runner : les workflows de PR externes exigent une approbation, ne jamais approuver une PR qui touche
-`.github/` ou `docker/` (règle pour les contributeurs extérieurs ; les PR de Dependabot, dont l'auteur est de confiance, se relisent : le diff ne doit toucher que des versions ou des empreintes d'actions).
-Dependabot (`.github/dependabot.yml`) : mineures et correctifs groupés par écosystème, chaque MAJEURE a son PR ; les majeures de `postgres` (base interne de production) sont ignorées : un changement de version majeure demande un dump et une restauration à la main. Le bilan du lundi (`dependency-digest.yml`) crée la nouvelle issue AVANT de refermer l'ancienne. CI : l'image PHP (`terrildb-php`, nom fixé dans `compose.yaml`) est gardée d'un run à l'autre (`actions/cache` + `docker save`/`load`, clé = Dockerfile + semaine ISO) ; ClickHouse de test est épinglé sur une version (`26.10`), pas `latest`. Le job `changes` trie les fichiers modifiés (`.github/scripts/changes.sh`, essayé par `changes-test.sh`) : documentation seule = aucun contrôle ni déploiement ; `assets/` et fichiers npm = interface seulement ; `src/`, `tests/`, `config/`, `migrations/`, composer = back seulement (style, analyse, tests unitaires ET d'intégration) ; tout le reste (docker, compose, `.github`, fichier inconnu) = tout. Dans le doute tout tourne, y compris quand le dernier run de `main` n'était pas vert ou qu'un autre run de `main` est encore en cours (il peut finir rouge) ; le déploiement n'attend que les contrôles qui ont tourné (un contrôle sauté ne le bloque pas, un échec oui). Réglages GitHub du dépôt (hors fichiers, à refaire si on le recrée) : approbation obligatoire pour TOUT contributeur
-extérieur (`all_external_contributors`), actions limitées à celles de GitHub et figées par empreinte, règle `main-protegee` (ni suppression
-ni push forcé de `main` : la désactiver le temps d'une réécriture d'historique voulue), alertes de vulnérabilités, correctifs de sécurité
-Dependabot, secret scanning et protection des pushs, signalement privé des failles. Les journaux d'Actions d'un dépôt public sont lisibles de
-tous : le job de déploiement masque le compte et les chemins de la machine (`add-mask`), mais l'en-tête du job imprime le nom de la machine
-(`Machine name`) AVANT toute étape : ce nom doit rester neutre (nom d'hôte et dossier du runner sans rapport avec un projet ou une personne).
-Chaque job a un délai maximum (le déploiement occupe l'unique runner de production).
+- **Secrets et connexions** (`secrets-connexions-introspection.md`) : la clé vient du mot de passe (Argon2id), jamais stockée en clair ; les paramètres de
+  connexion sont chiffrés d'un bloc, cloisonnés par propriétaire ; `TargetHostPolicy` borne les hôtes visés, le nom n'est résolu qu'une fois (adresse épinglée) ;
+  une erreur de connexion reste générique (le détail du moteur n'est jamais montré). `CapabilityMatrix` est la seule source de ce qu'un serveur sait faire.
+- **Garde SQL et exécution** (`garde-et-scripts.md`) : `QueryService` est l'entrée unique ; lecture seule par défaut, filtre lexical ET transaction du moteur
+  (le moteur fait foi) ; un refus du garde est définitif ; une seule instruction ; les scripts sont jugés en entier avant la première exécution.
+- **Web, API à jetons, MCP, comptes, audit** (`web-api-mcp-comptes.md`) : adaptateurs fins autour du cœur ; CSRF par en-tête, plafonds de tentatives ;
+  jeton d'API = copie de clé enveloppée par son secret, droits refusés par défaut, écriture en deux temps ; l'audit n'enregistre jamais un secret et ne fait pas échouer l'action.
+- **Moteurs** (`moteurs.md`) : ClickHouse (HTTP, `readonly=1`) et Redis (liste blanche de commandes, `COMMAND INFO` du serveur) passent par le même pipeline garde -> exécuteur -> audit ; différences MySQL/MariaDB mesurées.
+- **Diagnostics** (`diagnostics-et-noms.md`) : requêtes de catalogue fixes, lecture seule, bornées ; un droit manquant est un ÉTAT, jamais une erreur ni une liste vide ;
+  jamais de KILL/SET ; les textes d'instruction sont masqués par `QueryText::of` ; aucune empreinte de mot de passe lue. Tout nom lu dans une cible est hostile :
+  le citer dans du SQL passe TOUJOURS par `SqlText::quoteIdentifier` (et `commentSafe` en commentaire), jamais par `sprintf`.
+- **Optimiseur** (`optimiseur-et-diagramme.md`) : règles pures sur le modèle d'introspection ; jamais d'`ANALYZE` ni d'exécution d'une suggestion ; une source illisible est « non vérifié », pas une erreur ; le linter ne juge que le texte, zéro faux positif plutôt que couverture.
+- **Structure, données, export** (`structure-donnees-export.md`) : le client n'envoie jamais de SQL, seulement la table ou les lignes voulues ; aperçu puis application avec empreinte ;
+  confirmation pour tout ce qui détruit ; texte libre borné (`ColumnType`, `DefaultValue`, `NameRule`) ; ce que le modèle ne sait pas redire est verrouillé, jamais perdu en silence.
+- **Front et déploiement** (`front-et-deploiement.md`) : aucune couleur en dur (jetons CSS), CSP sans script en ligne ; la fusion sur `main` déploie en production (runner dédié) :
+  ni domaine ni secret dans le dépôt public, ne jamais approuver une PR externe qui touche `.github/` ou `docker/`.
 
 ## Commandes (PHP/Composer/Node absents de l'hôte : tout passe par Docker)
 
 ```bash
-sh docker/init-env.sh                                     # une fois : mots de passe locaux aléatoires (docker/dev/, ignoré)
+sh docker/init-env.sh                                     # une fois : mots de passe locaux et APP_SECRET aléatoires (docker/dev/, ignoré)
 docker compose up -d db                                   # base interne
 docker compose --profile targets up -d                    # MySQL 8.4+26 / MariaDB 11.8+13 / PG 18 / ClickHouse / Redis de test
 R="docker compose run --rm --no-deps php"
@@ -393,7 +121,7 @@ $R php bin/console doctrine:migrations:migrate --env=test # schéma de test (tes
 $R php bin/console doctrine:migrations:diff               # nouvelle migration après un changement d'entité
 ```
 
-Les mots de passe des bases locales ne sont dans aucun fichier versionné : `sh docker/init-env.sh` (une fois après le clonage) les tire au hasard dans `docker/dev/*.env` (ignoré par git, lu par `compose.yaml` via `env_file`). L'URL de la base interne (`DATABASE_URL`) vient de là, jamais de `.env`. Changer ces fichiers après un premier démarrage impose `docker compose down -v` (les volumes gardent l'ancien mot de passe). Les tests d'intégration de
+Les mots de passe des bases locales et l'`APP_SECRET` de développement ne sont dans aucun fichier versionné (plus de `.env.dev` ; `.env.test` garde une valeur de test non secrète) : `sh docker/init-env.sh` (une fois après le clonage) les tire au hasard (`APP_SECRET` = 64 caractères hexadécimaux dans `docker/dev/php.env`, ajouté sans rien changer à une installation existante qui n'en a pas, jamais réécrit ; `tests/InitEnvScriptTest`) dans `docker/dev/*.env` (ignoré par git, lu par `compose.yaml` via `env_file`). L'URL de la base interne (`DATABASE_URL`) vient de là, jamais de `.env`. Changer ces fichiers après un premier démarrage impose `docker compose down -v` (les volumes gardent l'ancien mot de passe). Les tests d'intégration de
 persistance (`tests/Integration/Persistence`) tournent dans une transaction annulée à chaque test.
 
 ## Bases cibles de test
@@ -409,10 +137,19 @@ série à support long, que des installations gardent des années, et la plus r�
 par moteur (`TargetDatabase::all()`/`relational()`) les parcourent toutes, et `TargetVersionTest` garde chaque cible à sa série
 (`SELECT VERSION()`). Dependabot ignore les majeures de `mysql` et `mariadb` : changer de série se fait à la main. Le pilote est le
 même pour toutes les versions (un seul `MySqlDriver` ; les variantes se lisent à la forme des réponses, ex. plan JSON v1/v2) ;
-`docker/init-env.sh` complète un `docker/dev/php.env` existant avec les variables ajoutées depuis. Cible Vitess facultative (`target-vitess`, profil `vitess`, primaire + réplica, `TARGET_VITESS_URL`) : `docs/vitess-tests.md`.
+`docker/init-env.sh` complète un `docker/dev/php.env` existant avec les variables ajoutées depuis. Cible Vitess facultative (`target-vitess`, profil `vitess`, un seul `mysqld` derrière des tablets primaire/réplica/lecture seule : pas de vraie réplication, `TARGET_VITESS_URL`, seule cible de test SANS mot de passe : `vttestserver` n'a pas d'authentification réglable, `TargetDatabase` la nomme ; toute autre cible exige un mot de passe) : `docs/vitess-tests.md`. Vrai cluster (profil `vitess-cluster`, etcd + vtctld + deux tablets avec chacun leur `mysqld` répliqué + vtgate, `TARGET_VITESS_CLUSTER_URL`, vtgate à authentification statique, mot de passe de `docker/dev/target-vitess.env` tiré par `init-env.sh`, `TargetVitessClusterTest`, hors CI) : mêmes notes.
+
+Vitess, lecture seule (#39, #40) : la correction vit dans `MySqlQueryRunner` (groupe A : `START TRANSACTION READ ONLY` TOUJOURS ouvert en lecture seule, sans détection de version ; voir « Exécution et garde-fous »). Ce dépôt la mesure sur le vrai cluster, `tests/Integration/Driver/VitessReadOnlyTest` : vtgate accepte `SET SESSION TRANSACTION READ ONLY` SANS le transmettre (`@@session.transaction_read_only` reste 0), le tablet refuse alors les écritures de DONNÉES (25006 / 1792) sur `shop` et `shop@primary`, mais un DDL s'exécute quand même : sur le primaire le garde est la SEULE barrière du DDL (un test verrouille cette limite) ; un `shop@replica` refuse tout par lui-même. `SET SESSION MAX_EXECUTION_TIME` : accepté, non appliqué ; `SET GLOBAL read_only` : accepté sans effet ; `GET_LOCK` mêlé à d'autres colonnes : refusé par vtgate. Coût : transaction coupée à 30 s (`--queryserver-config-transaction-timeout`). Piste non faite (#40) : lecture seule sur `@replica`. Analyse d'un `Engine::Vitess` distinct et découpage en PR : `docs/vitess-tests.md`.
 Tous les ports de `compose.yaml` ne sont publiés que sur `127.0.0.1` (HTTP clair, bases aux mots de passe jetables ; `tests/ComposePortsTest`
 le vérifie, donc une cible ajoutée doit suivre). Pour les ouvrir au réseau : `compose.override.yaml` (ignoré par git, propre à chaque machine) avec
 `ports: !override ["8000:8000"]` : sans `!override`, ses ports s'ajoutent à ceux de base au lieu de les remplacer.
+
+## Jeux de données de test (tests/Integration/Support, issue #88)
+
+Principe : SQL pur, déterministe (calculs sur `n`, jamais d'aléatoire), CRÉÉ par le test dans la base des cibles partagées puis supprimé dans un `finally`, jamais par les scripts d'init (qui ne bougent pas : `shop` et ses comptes de lignes restent ceux attendus). Tout objet porte le préfixe `tdb_ds_<8 hex>` (`DatasetSession::name()`) ; `DatasetSession` (DBAL, ou HTTP pour ClickHouse) exécute, lit, décrit, et `leftovers()` liste tables, fonctions et déclencheurs `tdb_ds_*` restants (les tests l'exigent vide après `drop()`). À vérifier à la main après un run : aucun `tdb_*` dans `information_schema` / `pg_proc` des cibles.
+`SkewedTable` : grande table de 200 000 lignes (état `done` 60 % / `pending` 35 % / `flagged` 5 %, 365 dates, renvoi vers une table de 2 000 lignes SANS clé étrangère déclarée, car MySQL lui créerait un index, aucun index secondaire), CTE récursive (MySQL `cte_max_recursion_depth`, MariaDB `max_recursive_iterations`), `generate_series`, `numbers()`. Chargement mesuré : 0,3 à 0,7 s par cible relationnelle (ClickHouse 0,03 s), donc aucun groupe `slow` : tout tourne avec `--group integration`. Le test d'usage lit l'EXPLAIN par `PlanService` avant (parcours complet) et après `CREATE INDEX` (lecture par l'index).
+`FaultySchema` : une quinzaine de tables fautives. Jugées par l'audit : sans clé primaire (jonction, copie `CREATE TABLE … AS`), UUID en texte comme clé, index en double et index préfixe, somme en flottant, compteur proche de sa limite, et sur PostgreSQL clé étrangère sans index et type à convertir. Sans règle (vues par l'introspection seulement) : clé étrangère sous-entendue par le nom, tables jumelles, collations différentes, MyISAM. Constats mesurés : un `REFERENCES` écrit dans la colonne est CRÉÉ par MySQL 8.4/26 et MariaDB 11.8/13 (plus ignoré), et MySQL/MariaDB refusent de retirer l'index d'une clé étrangère (1553) : « clé sans index » n'existe que sur PostgreSQL. Cas négatif : l'audit du schéma partagé est identique avant et après.
+`WorkQueue` (1 000 tâches `todo` indexées sur l'état, 50 produits de 100 unités, colonne `version`) et `ConcurrencyScenariosTest` : un scénario par famille avec `BlockingSession` / `BlockedStatement` (mise à jour perdue et verrou optimiste, `SKIP LOCKED` / `NOWAIT`, interblocage en quatre étapes avec exactement une victime, DDL en attente derrière un SELECT en transaction). `ProgrammableObjects` : déclencheur qui recopie vers une table de synchronisation, fonction déterministe qui rend 2^63-1, 2^63, -2^63-1 et 38 chiffres 9. Pas encore : verrou de plage, tables riches / partitionnées, journal binaire, profil de réplication, `pg_stat_statements`.
 
 ## Conventions PHP
 
