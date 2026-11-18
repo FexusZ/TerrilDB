@@ -37,8 +37,8 @@ use App\Http\Json\SchemaPresenter;
 use App\Http\Json\ScriptPresenter;
 use App\Http\Json\TargetSession;
 use App\Http\Json\VariableQueryParser;
-use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Result\CallToolResult;
+use Mcp\Server\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
 
 /**

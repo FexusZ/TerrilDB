@@ -12,7 +12,7 @@ use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\ErrorMapper;
 use App\Http\Json\LintPresenter;
 use App\Http\Json\TargetSession;
-use Mcp\Exception\ToolCallException;
+use Mcp\Server\Exception\ToolCallException;
 use Symfony\Component\Uid\Uuid;
 
 /**

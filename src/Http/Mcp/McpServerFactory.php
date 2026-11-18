@@ -8,7 +8,7 @@ use App\Core\Connection\Engine;
 use App\Http\Api\ApiRequestAccess;
 use App\Http\Json\RequestTimeLimit;
 use Mcp\Schema\ToolAnnotations;
-use Mcp\Server;
+use Mcp\Server\Server;
 use Mcp\Server\Session\FileSessionStore;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 

@@ -75,7 +75,7 @@ filtre par catégorie) et `/web/connections/{id}/history`. Purge : `app:audit:pu
 
 ## Serveur MCP (src/Http/Mcp, docs/mcp.md)
 
-SDK officiel `mcp/sdk` (0.9, expérimental : les révisions du protocole sont gérées par lui), confiné à `Http/Mcp`.
+SDK officiel `mcp/sdk` (0.10, expérimental : les révisions du protocole sont gérées par lui ; depuis la 0.10 les classes vivent sous `Mcp\Server\…`, le texte d’une réponse est du JSON compact, et sans `setSession` un serveur HTTP n’a plus de session, d’où le `FileSessionStore` explicite de `McpServerFactory`), confiné à `Http/Mcp`.
 `POST|DELETE /mcp` derrière le même pare-feu `api` que l'API REST (jeton porteur) ; `McpServerFactory` rebâtit le serveur
 à chaque requête (quatre outils de lecture déclarés explicitement, plus `lint_query` (`McpLintTool`) avec `readSchema`, plus `execute_statement` et `create_connection` selon les droits du jeton, sessions du protocole sur fichiers dans le cache) ; `McpTools`
 réutilise `TargetSession`/`QueryService` (lecture seule sauf `execute_statement`) ; `McpSessionBinding` lie une session MCP au jeton qui l'a ouverte.
