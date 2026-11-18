@@ -7,6 +7,7 @@ namespace App\Http\Json;
 use App\Core\Schema\Change\BigTableAssessment;
 use App\Core\Schema\Change\ChangePlan;
 use App\Core\Schema\Change\DdlStatement;
+use App\Core\Schema\Change\PlanLoss;
 
 /**
  * Un plan de modification de structure tel que l'interface l'affiche : le SQL, ce qu'il fait, sur quoi, et s'il détruit.
@@ -14,7 +15,7 @@ use App\Core\Schema\Change\DdlStatement;
 final class ChangePlanPresenter
 {
     /**
-     * @return array{statements: list<array{sql: string, operation: string, subject: string, destructive: bool}>, transactional: bool, destructive: bool}
+     * @return array{statements: list<array{sql: string, operation: string, subject: string, destructive: bool}>, transactional: bool, destructive: bool, losses: list<array{code: string, subject: string, values: list<string>}>}
      */
     public static function plan(ChangePlan $plan): array
     {
@@ -22,6 +23,7 @@ final class ChangePlanPresenter
             'statements' => array_map(self::statement(...), $plan->statements),
             'transactional' => $plan->transactional,
             'destructive' => $plan->hasDestructive(),
+            'losses' => array_map(static fn (PlanLoss $l): array => ['code' => $l->code, 'subject' => $l->subject, 'values' => $l->values], $plan->losses),
         ];
     }
 

@@ -51,6 +51,7 @@ use App\Core\Schema\Change\Exception\InvalidSchemaChangeException;
 use App\Core\Schema\Change\Exception\SchemaChangeFailedException;
 use App\Core\Schema\Change\Exception\SchemaChangeNeedsConfirmationException;
 use App\Core\Schema\Change\Exception\StaleSchemaException;
+use App\Core\Schema\Change\Exception\UnsupportedPartitionChangeException;
 use App\Core\Schema\Change\Exception\UnsupportedSchemaChangeException;
 use App\Core\Schema\Exception\TableNotFoundException;
 use App\Crypto\Exception\CryptoException;
@@ -150,6 +151,7 @@ final class ErrorMapper
                     'failed' => DataPlanPresenter::statement($error->failed, null),
                 ]),
             $error instanceof InvalidSchemaChangeException => new ErrorResponse(422, 'invalid_schema_change', ['detail' => $error->getMessage()]),
+            $error instanceof UnsupportedPartitionChangeException => new ErrorResponse(422, 'unsupported_partition_change', ['reason' => $error->reason, 'subject' => $error->subject]),
             $error instanceof UnsupportedSchemaChangeException => new ErrorResponse(422, 'unsupported_schema_change', ['reason' => $error->reason->value, 'subject' => $error->subject]),
             $error instanceof StaleSchemaException => new ErrorResponse(409, 'schema_changed'),
             $error instanceof BigTableNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => 'big_table_name', 'bigTable' => ChangePlanPresenter::bigTable($error->assessment)]),

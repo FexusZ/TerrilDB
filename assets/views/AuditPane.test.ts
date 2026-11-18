@@ -126,6 +126,13 @@ describe('AuditPane', () => {
     expect(wrapper.get('.clean').text()).toContain('Rien à signaler')
   })
 
+  it('lists the operations checks that could not judge, so a quiet audit is not mistaken for a verified one', async () => {
+    const { wrapper } = await mountPane({ tablesAudited: 5, truncated: false, findings: [], checks: [{ rule: 'orphan_definer', state: 'unavailable', reason: 'permission_denied', detail: null }] })
+
+    expect(wrapper.get('.checks').text()).toContain('Non vérifié')
+    expect(wrapper.get('.checks').text()).toContain('Créateurs d’objets : non vérifiable')
+  })
+
   it('lists the checks that could not judge, so a quiet audit is not mistaken for a verified one', async () => {
     const { wrapper } = await mountPane({ tablesAudited: 5, truncated: false, findings: [], checks: [{ rule: 'unused_index', state: 'unavailable', reason: 'performance_schema_off', detail: null }] })
 

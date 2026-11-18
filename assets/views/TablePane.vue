@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import type { TableDetail } from '../api/types'
 import AppButton from '../components/AppButton.vue'
+import PartitionsSection from '../components/PartitionsSection.vue'
 import TableEditor from '../components/TableEditor.vue'
 import TableStructure from '../components/TableStructure.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -99,6 +100,7 @@ async function preview(): Promise<void> {
       <div class="body">
         <TableEditor v-if="table.kind === 'table'" :connection-id="id" :engine="engine" :table="table" :scope="scope" @applied="onApplied" @reload="reload" />
         <TableStructure v-else :connection-id="id" :table="table" />
+        <PartitionsSection v-if="table.partitioning" :partitioning="table.partitioning" />
       </div>
     </template>
     <p v-else class="loading" role="status">Chargement…</p>

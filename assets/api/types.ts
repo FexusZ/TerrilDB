@@ -116,11 +116,43 @@ export interface ForeignKeyInfo {
   onDelete: string
 }
 
+export type PartitionMethod = 'range' | 'list' | 'hash' | 'key'
+
+export interface SubpartitionInfo {
+  name: string
+  estimatedRows: number | null
+  dataBytes: number | null
+}
+
+export interface PartitionInfo {
+  name: string
+  /** Borne ou valeurs telles que le moteur les écrit (affichage seulement). */
+  bound: string | null
+  /** MAXVALUE ou DEFAULT : reçoit tout ce que les autres refusent. */
+  catchAll: boolean
+  estimatedRows: number | null
+  dataBytes: number | null
+  subpartitions: SubpartitionInfo[]
+}
+
+/** Le découpage d’une table en partitions (lecture seule). */
+export interface PartitioningInfo {
+  method: PartitionMethod
+  expression: string
+  subMethod: PartitionMethod | null
+  subExpression: string | null
+  estimatedRows: number | null
+  dataBytes: number | null
+  partitions: PartitionInfo[]
+}
+
 export interface TableDetail {
   name: string
   /** Empreinte de la structure : renvoyée à l’API pour refuser un brouillon bâti sur une table qui a changé. */
   fingerprint: string
   kind: TableKind
+  /** Table à versionnement système (MariaDB) : elle garde l’historique de ses lignes. */
+  versioned?: boolean
   estimatedRows: number | null
   viewDefinition: string | null
   /** Place sur disque des données et de tous les index, quand le moteur la donne. */
@@ -129,6 +161,8 @@ export interface TableDetail {
   columns: ColumnInfo[]
   indexes: IndexInfo[]
   foreignKeys: ForeignKeyInfo[]
+  /** Partitions de la table (lecture seule) ; nul ou absent sans partition. */
+  partitioning?: PartitioningInfo | null
 }
 
 export type KeyType = 'string' | 'hash' | 'list' | 'set' | 'zset' | 'stream' | 'other'
@@ -574,6 +608,9 @@ export interface PlanResult {
   measure?: { status: 'measured' | 'unsupported'; reason?: string }
 }
 
+/** Les règles de conception de l'audit (voir `designWording.ts`). */
+export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key' | 'collation_mismatch' | 'twin_table' | 'copy_without_indexes' | 'timestamp_deadline' | 'date_as_text'
+
 export interface LintFindingInfo {
   rule: string
   severity: 'warning' | 'info'
@@ -587,7 +624,7 @@ export interface LintResult {
 }
 
 export interface SchemaFinding {
-  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit'
+  rule: 'missing_primary_key' | 'foreign_key_without_index' | 'redundant_index' | 'foreign_key_type_mismatch' | 'text_primary_key' | 'float_amount' | 'unused_index' | 'counter_near_limit' | OperationsRule | DesignRule | 'partition_range_exhausted' | 'too_many_partitions'
   severity: 'critical' | 'warning' | 'info'
   table: string
   columns: string[]
@@ -597,9 +634,12 @@ export interface SchemaFinding {
   detail: string | null
 }
 
+/** Les règles d'exploitation : lues dans les compteurs et le catalogue du moteur. */
+export type OperationsRule = 'stale_statistics' | 'dead_tuples' | 'reclaimable_space' | 'orphan_definer'
+
 /** Une règle d'exploitation qui n'a pas pu juger : une raison, jamais un constat. */
 export interface AuditCheck {
-  rule: 'unused_index'
+  rule: 'unused_index' | OperationsRule
   state: 'unavailable' | 'too_short'
   reason: string | null
   detail: string | null
@@ -665,10 +705,30 @@ export interface StructureStatement {
   operation: string
   subject: string
   destructive: boolean
+  /** Seulement dans l’aperçu : l’algorithme probable du moteur d’après une table de règles vérifiée (rien n’est essayé). */
+  algorithm?: AlterAlgorithmName
+  /** Bloque les écritures pendant l’instruction ; nul : non vérifié. */
+  blocksWrites?: boolean | null
+  /** Recopie toute la table ; nul : non vérifié. */
+  copiesTable?: boolean | null
+  /** Place disque en plus pour une copie ou une réécriture (données + index). */
+  estimatedExtraBytes?: number | null
+  /** Pourquoi l’algorithme est inconnu (code stable), nul sinon. */
+  algorithmReason?: string | null
 }
+
+/** Ce qu'un plan fait perdre au-delà de son SQL (historique d'une table versionnée, valeurs retirées d'un ENUM/SET). */
+export interface StructureLoss {
+  code: string
+  subject: string
+  values: string[]
+}
+
+export type AlterAlgorithmName = 'instant' | 'inplace' | 'copy' | 'rewrite' | 'unknown'
 
 export interface StructurePlan {
   statements: StructureStatement[]
+  losses?: StructureLoss[]
   /** Tout ou rien (une transaction) ; sinon chaque instruction est validée seule. */
   transactional: boolean
   destructive: boolean
