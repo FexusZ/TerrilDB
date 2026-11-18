@@ -9,9 +9,11 @@ use App\Core\Driver\TargetConnection;
 use App\Core\Guard\ScriptAnalyzer;
 use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\ScriptOptions;
+use App\Core\Query\Script\ScriptProgress;
 use App\Core\Query\Script\ScriptResult;
 use App\Core\Query\Script\ScriptService;
 use App\Core\Query\Script\ScriptStatus;
+use App\Core\Query\Script\ScriptStepResult;
 use App\Core\Query\Script\ScriptStepStatus;
 use App\Core\Query\WritePermissions;
 use App\Driver\ClickHouse\ClickHouseDriver;
@@ -110,6 +112,13 @@ final class ScriptExecutorTest extends TestCase
         return (new ScriptService(new ScriptAnalyzer()))->execute($this->target, $script, new ScriptOptions(WritePermissions::all(), $timeoutMs, $dryRun), true);
     }
 
+    private function scriptWithProgress(string $script, ScriptProgress $progress, int $timeoutMs = 60_000): ScriptResult
+    {
+        \assert(null !== $this->target);
+
+        return (new ScriptService(new ScriptAnalyzer()))->execute($this->target, $script, new ScriptOptions(WritePermissions::all(), $timeoutMs, false, $progress), true);
+    }
+
     /** @return list<int> */
     private function ids(string $table): array
     {
@@ -138,6 +147,81 @@ final class ScriptExecutorTest extends TestCase
     private static function statuses(ScriptResult $result): array
     {
         return array_map(static fn ($step): string => $step->status->value, $result->steps);
+    }
+
+    #[DataProvider('relational')]
+    public function testTheObserverSeesEveryExecutedStatementInOrderAndIsAskedBeforeEach(string $envVar): void
+    {
+        $this->open($envVar);
+        $table = $this->table('seen');
+        $observer = new RecordingScriptProgress();
+
+        $result = $this->scriptWithProgress(\sprintf("INSERT INTO %1\$s VALUES (1, 'a'); INSERT INTO %1\$s VALUES (2, 'b'); SELECT * FROM %1\$s", $table), $observer);
+
+        self::assertSame(ScriptStatus::Committed, $result->status);
+        self::assertSame([0, 1, 2], array_map(static fn (ScriptStepResult $s): int => $s->index, $observer->executed));
+        self::assertSame(3, $observer->asked);
+        self::assertSame([1, 2], $this->ids($table));
+    }
+
+    #[DataProvider('relational')]
+    public function testTheObserverSeesTheStatementThatFailedAndNothingAfterIt(string $envVar): void
+    {
+        $this->open($envVar);
+        $table = $this->table('seenfail', true);
+        $observer = new RecordingScriptProgress();
+
+        $result = $this->scriptWithProgress(\sprintf("INSERT INTO %1\$s VALUES (2, 'b'); INSERT INTO %1\$s VALUES (1, 'dup'); INSERT INTO %1\$s VALUES (3, 'c');", $table), $observer);
+
+        self::assertSame('engine_error', $result->failureReason);
+        self::assertSame(['applied', 'failed'], array_map(static fn (ScriptStepResult $s): string => $s->status->value, $observer->executed));
+        self::assertSame([1], $this->ids($table));
+    }
+
+    #[DataProvider('relational')]
+    public function testAStopAskedBetweenTwoStatementsCancelsWhatTheTransactionCan(string $envVar): void
+    {
+        $this->open($envVar);
+        $table = $this->table('stop');
+        $observer = new RecordingScriptProgress(2);
+
+        $result = $this->scriptWithProgress(\sprintf("INSERT INTO %1\$s VALUES (1, 'a'); INSERT INTO %1\$s VALUES (2, 'b'); INSERT INTO %1\$s VALUES (3, 'c'); INSERT INTO %1\$s VALUES (4, 'd');", $table), $observer);
+
+        self::assertSame(ScriptStatus::RolledBack, $result->status);
+        self::assertSame('cancelled', $result->failureReason);
+        self::assertSame(['rolled_back', 'rolled_back', 'not_run', 'not_run'], self::statuses($result));
+        self::assertSame([], $this->ids($table));
+        self::assertCount(2, $observer->executed);
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testAStopAfterADdlKeepsWhatTheDdlCommittedAndSaysSo(string $envVar): void
+    {
+        $this->open($envVar);
+        $table = $this->table('stopddl');
+        $observer = new RecordingScriptProgress(2);
+
+        $result = $this->scriptWithProgress(\sprintf("INSERT INTO %1\$s VALUES (1, 'a'); ALTER TABLE %1\$s ADD COLUMN w int; INSERT INTO %1\$s VALUES (2, 'b', 1);", $table), $observer);
+
+        // Le DDL a validé l'insertion qui le précédait : le script est partiel, jamais un faux « tout annulé ».
+        self::assertSame(ScriptStatus::Partial, $result->status);
+        self::assertSame('cancelled', $result->failureReason);
+        self::assertSame(['applied', 'applied', 'not_run'], self::statuses($result));
+        self::assertSame([1], $this->ids($table));
+    }
+
+    public function testClickHouseStopsBetweenTwoStatementsWithoutAnyRollback(): void
+    {
+        $this->open('TARGET_CLICKHOUSE_URL');
+        $table = $this->table('chstop');
+        $observer = new RecordingScriptProgress(2);
+
+        $result = $this->scriptWithProgress(\sprintf("INSERT INTO %1\$s VALUES (1, 'a'); INSERT INTO %1\$s VALUES (2, 'b'); INSERT INTO %1\$s VALUES (3, 'c');", $table), $observer);
+
+        self::assertSame(ScriptStatus::Partial, $result->status);
+        self::assertSame('cancelled', $result->failureReason);
+        self::assertSame(['applied', 'applied', 'not_run'], self::statuses($result));
+        self::assertSame([1, 2], $this->ids($table));
     }
 
     #[DataProvider('relational')]

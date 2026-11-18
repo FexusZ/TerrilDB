@@ -36,7 +36,7 @@ final class AuditedScriptsTest extends DatabaseTestCase
                 return [];
             }
 
-            public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult
+            public function execute(array $statements, int $timeoutMs, bool $dryRun, ?\App\Core\Query\Script\ScriptProgress $progress = null): ScriptResult
             {
                 throw new \RuntimeException('secret value 4242');
             }

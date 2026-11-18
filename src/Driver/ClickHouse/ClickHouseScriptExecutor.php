@@ -6,6 +6,7 @@ namespace App\Driver\ClickHouse;
 
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Script\ScriptExecutor;
+use App\Core\Query\Script\ScriptProgress;
 use App\Core\Query\Script\ScriptResult;
 use App\Core\Query\Script\ScriptStatus;
 use App\Core\Query\Script\ScriptStepResult;
@@ -30,7 +31,7 @@ final readonly class ClickHouseScriptExecutor implements ScriptExecutor
         return [];
     }
 
-    public function execute(array $statements, int $timeoutMs, bool $dryRun): ScriptResult
+    public function execute(array $statements, int $timeoutMs, bool $dryRun, ?ScriptProgress $progress = null): ScriptResult
     {
         if ($dryRun) {
             throw new \LogicException('ClickHouse has no transaction: a dry run cannot be done.');
@@ -44,9 +45,15 @@ final readonly class ClickHouseScriptExecutor implements ScriptExecutor
                 $steps[] = new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::NotRun);
                 continue;
             }
+            if (true === $progress?->shouldStop()) {
+                $steps[] = new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::NotRun);
+                $failure = 'cancelled';
+                continue;
+            }
             $remaining = intdiv($deadline - hrtime(true), 1_000_000);
             if ($remaining < 1) {
                 $steps[] = new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::Failed, error: 'The time limit of the script is reached.');
+                $progress?->executed($steps[array_key_last($steps)]);
                 $failure = 'timeout';
                 continue;
             }
@@ -61,12 +68,14 @@ final readonly class ClickHouseScriptExecutor implements ScriptExecutor
                 $response = $this->http->query($statement->sql, $settings, timeoutSeconds: $remaining / 1000);
             } catch (ClickHouseException $e) {
                 $steps[] = new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::Failed, error: $e->getMessage(), durationMs: PdoRows::elapsed($started));
+                $progress?->executed($steps[array_key_last($steps)]);
                 $failure = self::TIMEOUT_CODE === $e->engineCode ? 'timeout' : 'engine_error';
                 continue;
             }
             $steps[] = [] !== $response->columns
                 ? new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::Applied, returnedRows: min(\count($response->rows), self::READ_ROW_LIMIT), durationMs: PdoRows::elapsed($started))
                 : new ScriptStepResult($statement->index, $statement->sql, ScriptStepStatus::Applied, affectedRows: $response->writtenRows, durationMs: PdoRows::elapsed($started));
+            $progress?->executed($steps[array_key_last($steps)]);
         }
 
         if (null === $failure) {
