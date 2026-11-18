@@ -95,6 +95,36 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 - Après la pose, vérifier depuis le conteneur qu'une adresse non listée est bien injoignable (`docker compose -f compose.prod.yaml exec app php -r 'var_dump(@fsockopen("1.1.1.1", 443, $e, $m, 3));'` doit rendre `false`) et qu'une base listée l'est toujours, avant de fermer la session.
 - Ces règles ne sont pas testées par l'intégration continue : à valider sur votre machine.
 
+## Tunnel SSH (rebond par un bastion), facultatif
+
+Éteint par défaut : tant que `TERRILDB_SSH_ALLOWED_BASTIONS` est vide dans `deploy.env`, aucun conteneur supplémentaire ne tourne et toute
+connexion à rebond est refusée (403 `forbidden_bastion`). Pour l'activer, ajouter la ligne (par exemple
+`TERRILDB_SSH_ALLOWED_BASTIONS=bastion.exemple:22`) puis relancer un déploiement : `deploy.sh` construit l'image `terrildb-tunnel`, démarre
+`tunnel-init` (dossier des sockets en 0700) et `tunnel`. Vider la ligne arrête le conteneur au déploiement suivant. Un échec du tunnel
+n'annule JAMAIS le déploiement de l'application : le journal dit « Tunnel SSH non démarré » et les connexions à rebond répondent `tunnel_failed`.
+
+- Le conteneur `tunnel` est seul à embarquer `ssh` : utilisateur non root (uid 33, celui de l'application), système de fichiers en lecture
+  seule, aucune capacité, aucun port publié, clés privées dans un tmpfs seulement. Il parle à l'application par un socket Unix (volume
+  `tunnel-sockets`), pas par le réseau.
+- Réseau dédié `terrildb-prod_tunnel` : le seul AVEC sortie en dehors de `default`. L'application n'y est pas, la base interne reste sur
+  `backend` (aucune sortie).
+- **Règles de sortie du tunnel (à poser à la main, sur l'hôte : `deploy.sh` ne touche jamais au pare-feu).** Même principe que ci-dessus,
+  sur le sous-réseau du réseau `tunnel`, en ne laissant passer que les bastions déclarés :
+
+```bash
+SUBNET=$(docker network inspect terrildb-prod_tunnel --format '{{(index .IPAM.Config 0).Subnet}}')   # le réseau existe une fois le tunnel démarré
+
+sudo iptables -N TERRILDB-TUNNEL-EGRESS
+sudo iptables -A TERRILDB-TUNNEL-EGRESS -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+sudo iptables -A TERRILDB-TUNNEL-EGRESS -p udp --dport 53 -j RETURN                                   # DNS
+sudo iptables -A TERRILDB-TUNNEL-EGRESS -d <adresse du bastion> -p tcp --dport <port> -j RETURN       # une ligne par bastion
+sudo iptables -A TERRILDB-TUNNEL-EGRESS -j DROP
+sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-TUNNEL-EGRESS
+```
+
+Mêmes réserves que pour l'application (chaîne `DOCKER-USER`, persistance, IPv6 par `ip6tables`, règles non testées par la CI), et le sous-réseau
+est recréé avec le réseau : revérifier la règle après un `down`. Le détail de l'architecture et des limites : `docs/ssh-tunnel.md`.
+
 ## Durcissement du conteneur applicatif
 
 - **Système de fichiers en lecture seule** (`read_only: true` dans `compose.prod.yaml`). L'application n'écrit que dans quatre endroits :
@@ -141,6 +171,7 @@ redémarrage du conteneur concerné (`docker compose -f compose.prod.yaml up -d 
 | `TERRILDB_PORT` | `8090` | port local publié (nginx y pointe) | `deploy.env` (conservé, voir ci-dessous) |
 | `TERRILDB_BIND` | `127.0.0.1` | adresse d'écoute ; autre chose que la boucle locale = quelques minutes, pour créer le premier compte | `deploy.env` |
 | `TERRILDB_PROXY_TIMEOUT` | `120` (30 à 3600) | délai de nginx ET limite de durée d'une requête (moins 20 s) ; voir plus haut | `deploy.env` |
+| `TERRILDB_SSH_ALLOWED_BASTIONS` | vide (tunnel éteint, tout rebond refusé) | bastions SSH autorisés (`hôte` ou `hôte:port`, séparés par des virgules) ; non vide : `deploy.sh` construit et démarre le conteneur `tunnel` ; lue dans `deploy.env` SEULEMENT (une variable du shell est ignorée) ; voir « Tunnel SSH » | `deploy.env` |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | `terrildb`, `terrildb`, tirée au hasard | initialisation de la base interne (le mot de passe ne sert qu'à la CRÉATION du volume) | `db.env` |
 
 `deploy.sh` relit `deploy.env` à chaque déploiement au lieu de le remplacer : seul `TERRILDB_DOMAIN` (toujours fourni par le secret) est mis à jour,
