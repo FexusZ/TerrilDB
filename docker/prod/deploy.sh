@@ -14,6 +14,11 @@ dir="$TERRILDB_DEPLOY_DIR"
 mkdir -p "$dir/backups"
 chmod 700 "$dir"
 
+# Restes d'un déploiement interrompu (fichier temporaire de deploy.env, sauvegarde commencée) : ceux de plus d'un jour ne
+# peuvent plus appartenir à un déploiement en cours. Seuls ces noms-là sont touchés, jamais une sauvegarde `*.sql.gz`.
+find "$dir" -maxdepth 1 -type f -name '.deploy.env.*' -mtime +0 -delete 2>/dev/null || true
+find "$dir/backups" -maxdepth 1 -type f \( -name '.partial-*' -o -name '*.part' \) -mtime +0 -delete 2>/dev/null || true
+
 secret() { head -c 48 /dev/urandom | base64 | tr -d '/+=\n' | cut -c1-40; }
 
 # Secrets : générés une seule fois, jamais réécrits (changer le mot de passe de la base casserait le volume existant).
@@ -28,10 +33,12 @@ fi
 
 # Réglages propres à l'installation (domaine, port local) : fournis par l'environnement, puis conservés.
 if [ -n "${TERRILDB_DOMAIN:-}" ]; then
-    # Le domaine finit dans un fichier lu par le shell : un seul mot de caractères de nom d'hôte, jamais de saut de ligne.
+    # Le domaine finit dans un fichier lu par le shell : un seul mot de caractères de nom d'hôte, jamais de saut de ligne ;
+    # et une forme de nom d'hôte : ni point ni tiret en tête ou en queue, ni points de suite, ni étiquette qui commence ou finit
+    # par un tiret.
     case "$TERRILDB_DOMAIN" in
-        *[!A-Za-z0-9.-]*)
-            echo "TERRILDB_DOMAIN invalide : lettres, chiffres, points et tirets seulement." >&2
+        *[!A-Za-z0-9.-]*|.*|-*|*.|*-|*..*|*.-*|*-.*)
+            echo "TERRILDB_DOMAIN invalide : un nom d'hôte (lettres, chiffres, points et tirets, sans point ni tiret en bout d'étiquette)." >&2
             exit 2
             ;;
     esac

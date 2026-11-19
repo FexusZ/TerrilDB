@@ -15,7 +15,7 @@ navigateur ─► nginx (HTTPS, certbot) ─► 127.0.0.1:8090 ─► conteneur 
 ## Ce qui n'est PAS dans le dépôt
 
 Tout vit dans `$TERRILDB_DEPLOY_DIR` (défaut `~/.config/terrildb`, droits 700) : `app.env` (APP_SECRET, URL de la base),
-`db.env` (mot de passe PostgreSQL), `deploy.env` (domaine, port local) et `backups/`. `deploy.env` n'est jamais écrasé : à chaque déploiement seul `TERRILDB_DOMAIN` est mis à jour (écriture atomique, droits inchangés), `TERRILDB_PORT`, `TERRILDB_BIND`, `TERRILDB_PROXY_TIMEOUT` et toute autre ligne `NOM=valeur` ajoutée à la main sont conservés (l'environnement ne fournit une valeur que si elle manque au fichier). Les secrets sont tirés au hasard
+`db.env` (mot de passe PostgreSQL), `deploy.env` (domaine, port local) et `backups/`. `deploy.env` n'est jamais écrasé : à chaque déploiement seul `TERRILDB_DOMAIN` est mis à jour (écriture atomique, droits inchangés), `TERRILDB_PORT`, `TERRILDB_BIND`, `TERRILDB_PROXY_TIMEOUT` et toute autre ligne `NOM=valeur` ajoutée à la main sont conservés (l'environnement ne fournit une valeur que si elle manque au fichier). Le domaine doit avoir la forme d'un nom d'hôte (sinon le script s'arrête, code 2, avant d'écrire) et les restes de plus d'un jour d'un déploiement interrompu (`.deploy.env.*`, `backups/.partial-*`, `*.part`) sont effacés au lancement ; les sauvegardes `*.sql.gz` ne sont jamais touchées par ce nettoyage. Les secrets sont tirés au hasard
 au premier déploiement et jamais réécrits. Le domaine arrive par le secret GitHub `TERRILDB_DOMAIN` (masqué dans les journaux, publics sur un dépôt public ; Settings →
 Secrets and variables → Actions).
 
