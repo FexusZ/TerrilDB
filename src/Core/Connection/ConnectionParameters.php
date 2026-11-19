@@ -31,6 +31,7 @@ final readonly class ConnectionParameters
         public ?string $schema = null,
         public ?Transport $transport = null,
         private ?string $socketPath = null,
+        public bool $readReplica = false,
     ) {
         if ('' === $host || \strlen($host) > self::HOST_MAX_LENGTH || 1 !== preg_match('/^[^\s\p{Cc}]+$/uD', $host)) {
             throw new InvalidConnectionParametersException('The host is not valid.');
@@ -64,7 +65,7 @@ final readonly class ConnectionParameters
 
     public function withPassword(#[\SensitiveParameter] string $password): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath);
+        return new self($this->host, $this->port, $this->database, $this->username, $password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath, $this->readReplica);
     }
 
     /**
@@ -82,7 +83,7 @@ final readonly class ConnectionParameters
      */
     public function withAddress(string $address): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema, $this->transport, $this->socketPath);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $address, $this->schema, $this->transport, $this->socketPath, $this->readReplica);
     }
 
     /**
@@ -90,7 +91,7 @@ final readonly class ConnectionParameters
      */
     public function withDatabase(string $database): self
     {
-        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath);
+        return new self($this->host, $this->port, $database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath, $this->readReplica);
     }
 
     /**
@@ -99,7 +100,7 @@ final readonly class ConnectionParameters
      */
     public function withSchema(?string $schema): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema, $this->transport, $this->socketPath);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, '' === $schema ? null : $schema, $this->transport, $this->socketPath, $this->readReplica);
     }
 
     /**
@@ -108,7 +109,7 @@ final readonly class ConnectionParameters
      */
     public function withSocket(string $socketPath): self
     {
-        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $socketPath);
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $socketPath, $this->readReplica);
     }
 
     public function socketPath(): ?string
@@ -139,6 +140,9 @@ final readonly class ConnectionParameters
         if (null !== $this->transport) {
             $data['transport'] = $this->transport->toArray();
         }
+        if ($this->readReplica) {
+            $data['replica'] = true;
+        }
 
         return json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_UNICODE);
     }
@@ -167,7 +171,7 @@ final readonly class ConnectionParameters
         // Le format 2 existe pour porter un transport : sans lui, il est illisible.
         $transport = self::FORMAT_VERSION_TRANSPORT === $data['v'] ? self::transportFrom($data['transport'] ?? null) : null;
 
-        return new self($host, $port, $database, $username, $password, transport: $transport);
+        return new self($host, $port, $database, $username, $password, transport: $transport, readReplica: true === ($data['replica'] ?? null));
     }
 
     private static function transportFrom(#[\SensitiveParameter] mixed $data): Transport
@@ -198,6 +202,7 @@ final readonly class ConnectionParameters
             'address' => $this->address(),
             'password' => '***',
             'transport' => null === $this->transport ? '' : \sprintf('ssh %s:%d', $this->transport->host, $this->transport->port),
+            'replica' => $this->readReplica ? 'oui' : '',
         ];
     }
 

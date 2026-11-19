@@ -16,6 +16,7 @@ const router = useRouter()
 
 const editing = computed(() => props.id !== undefined)
 const form = reactive({ engine: 'postgresql' as Engine, name: '', host: '', port: '', database: '', username: '', password: '', color: '' as ConnectionColor | '' })
+const readReplica = ref(false)
 const original = ref<string | null>(null)
 const error = ref<string | null>(null)
 const testOk = ref<string | null>(null)
@@ -32,6 +33,8 @@ const engines = Object.keys(ENGINE_LABELS) as Engine[]
 // Le tunnel n'offre qu'un socket Unix : seuls les pilotes MySQL, MariaDB et PostgreSQL savent s'y connecter.
 const canJump = computed(() => form.engine === 'postgresql' || form.engine === 'mysql' || form.engine === 'mariadb')
 const jumpActive = computed(() => canJump.value && jump.enabled)
+// Vitess se joint par le protocole MySQL : la cible `@replica` n'a de sens que pour ce moteur.
+const canReplica = computed(() => form.engine === 'mysql')
 // Une empreinte ne vaut que pour le bastion qui l'a donnée : si l'adresse change, on l'oublie.
 const jumpMoved = computed(() => jump.host.trim() !== jump.storedHost || jump.port.trim() !== jump.storedPort)
 const shownFingerprint = computed(() => (jump.read !== '' ? jump.read : jumpMoved.value ? '' : jump.stored))
@@ -43,7 +46,7 @@ const usernamePlaceholder = computed(() => (form.engine === 'redis' ? 'default' 
 
 /** Empreinte des paramètres de connexion (hors nom), pour savoir si le formulaire diffère de ce qui est enregistré. */
 function signature(): string {
-  return JSON.stringify([form.engine, form.host, form.port, form.database, form.username, jumpActive.value, jump.host, jump.port, jump.username, jump.read])
+  return JSON.stringify([form.engine, form.host, form.port, form.database, form.username, canReplica.value && readReplica.value, jumpActive.value, jump.host, jump.port, jump.username, jump.read])
 }
 
 watch(() => [jump.host, jump.port], () => {
@@ -64,6 +67,7 @@ onMounted(async () => {
     form.port = String(parameters.port)
     form.database = parameters.database
     form.username = parameters.username
+    readReplica.value = parameters.readReplica === true
     if (parameters.transport !== undefined) {
       jump.enabled = true
       jump.host = parameters.transport.host
@@ -165,6 +169,9 @@ function toInput(): ConnectionInput | null {
   // À la modification, un mot de passe vide conserve celui qui est enregistré.
   if (form.password !== '' || !editing.value) {
     input.password = form.password
+  }
+  if (canReplica.value && (readReplica.value || editing.value)) {
+    input.readReplica = readReplica.value
   }
   const transport = jumpInput()
   if (transport === null && jumpActive.value) {
@@ -282,6 +289,11 @@ async function test(): Promise<void> {
         :placeholder="editing ? 'Laisser vide pour conserver le mot de passe enregistré' : undefined"
         hint="Un compte en lecture seule suffit pour parcourir et interroger."
       />
+
+      <label v-if="canReplica" class="check">
+        <input id="read-replica" v-model="readReplica" type="checkbox">
+        <span>Lire sur les réplicas (Vitess, <code>@replica</code>) : les lectures n'atteignent pas le primaire. Sans réplica disponible, la connexion échoue.</span>
+      </label>
 
       <fieldset v-if="canJump" class="jump">
         <legend>Rebond SSH (facultatif)</legend>

@@ -57,6 +57,8 @@ export interface ConnectionParams {
   database: string
   username: string
   hasPassword: boolean
+  /** Vitess : les lectures vont aux tablets réplica (`@replica`). Absent : non. */
+  readReplica?: boolean
   /** Rebond SSH : jamais la clé privée, seulement qu'il y en a une. */
   transport?: JumpParams
 }
@@ -101,6 +103,8 @@ export interface ConnectionInput {
   password?: string
   /** Absent : rien ne change (à la modification, le rebond enregistré est conservé) ; `null` : on le retire. */
   transport?: JumpInput | null
+  /** Absent à la modification : le choix enregistré est conservé ; `false` : on le retire. MySQL seulement (Vitess). */
+  readReplica?: boolean
 }
 
 export type TableKind = 'table' | 'view' | 'materialized_view' | 'sequence'

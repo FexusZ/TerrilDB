@@ -406,4 +406,47 @@ describe('ConnectionFormView', () => {
       expect(wrapper.get('[role="status"]').text()).toContain('40 ms')
     })
   })
+
+  describe('read on a Vitess replica', () => {
+    it('is only offered to MySQL connections and off by default', async () => {
+      const { wrapper } = await mountForm()
+
+      expect(wrapper.find('#read-replica').exists()).toBe(false)
+      await wrapper.get('input[value="mysql"]').setValue(true)
+      expect(wrapper.find('#read-replica').exists()).toBe(true)
+      expect((wrapper.get('#read-replica').element as HTMLInputElement).checked).toBe(false)
+      await wrapper.get('input[value="mariadb"]').setValue(true)
+      expect(wrapper.find('#read-replica').exists()).toBe(false)
+    })
+
+    it('sends readReplica only when it is ticked', async () => {
+      const { wrapper } = await mountForm()
+      await wrapper.get('input[value="mysql"]').setValue(true)
+      await fill(wrapper, { name: 'V', host: 'h', database: 'shop', username: 'u', password: 'p' })
+      mocked.mockResolvedValueOnce({ connection: summary })
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(mocked.mock.calls[0]?.[2]).not.toHaveProperty('readReplica')
+
+      mocked.mockReset()
+      mocked.mockResolvedValueOnce({ connection: summary })
+      await wrapper.get('#read-replica').setValue(true)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+      expect(mocked.mock.calls[0]?.[2]).toMatchObject({ readReplica: true })
+    })
+
+    it('reads the stored choice and removes it explicitly when unticked', async () => {
+      mocked.mockResolvedValueOnce({ connection: { ...summary, engine: 'mysql' }, parameters: { host: 'h', port: 3306, database: 'shop', username: 'u', hasPassword: true, readReplica: true } })
+      const { wrapper } = await mountForm('abc')
+      expect((wrapper.get('#read-replica').element as HTMLInputElement).checked).toBe(true)
+
+      mocked.mockResolvedValueOnce({ connection: summary })
+      await wrapper.get('#read-replica').setValue(false)
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(mocked.mock.calls[1]?.[2]).toMatchObject({ readReplica: false })
+    })
+  })
 })

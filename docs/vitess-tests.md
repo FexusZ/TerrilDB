@@ -151,3 +151,16 @@ Découpage proposé en PR (chacune : tests d'abord, sur le vrai cluster) :
 4. Diagnostics : thèmes `unsupported` (ou lus par tablet) pour Vitess, testés sur le cluster.
 5. Garde et DDL : verbes `VITESS_MIGRATION` / `SHOW VITESS_*` (liste blanche en lecture), stratégie en ligne dans l'éditeur de structure.
 6. Plan : `EXPLAIN FORMAT=vitess` en complément (mesure préalable), avertissement `Materialize`.
+
+# Lire sur les réplicas (option de connexion, #40)
+
+`readReplica` (formulaire « Lire sur les réplicas », champ `readReplica` de la création et de la modification, MySQL seulement) est
+éteinte par défaut. Allumée, la cible `@replica` est ajoutée au nom de la base À L'OUVERTURE (`shop` devient `shop@replica`, une
+base vide devient `@replica`, un nom qui porte déjà `@replica` n'est pas doublé) : le nom de la base enregistré ne change pas, et
+chaque base ouverte depuis l'arbre est lue sur les réplicas. Le choix vit dans le JSON chiffré de la connexion (clé `replica`, écrite
+seulement quand elle est vraie : le format d'une connexion sans l'option est inchangé). Une modification qui n'en parle pas la conserve.
+
+Tous les Vitess n'ont pas de réplica : sans tablet réplica en service, vtgate refuse l'ouverture et la connexion échoue comme une cible
+injoignable (message générique, jamais un repli silencieux sur le primaire). Le garde et la transaction en lecture seule ne changent pas ;
+un `@replica` refuse en plus toute écriture de données (1105). Éprouvé sur `target-vitess` : `tests/Integration/Driver/VitessReplicaTest`
+(un seul `mysqld` : l'étiquette de routage est prouvée, pas la réplication).

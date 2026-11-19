@@ -41,6 +41,9 @@ final class ConnectionPresenter
             'username' => $parameters->username,
             'hasPassword' => '' !== $parameters->password(),
         ];
+        if ($parameters->readReplica) {
+            $shown['readReplica'] = true;
+        }
         if ($parameters->transport instanceof SshJump) {
             // Jamais la clé privée : seulement qu'il y en a une. L'empreinte est publique.
             $shown['transport'] = [

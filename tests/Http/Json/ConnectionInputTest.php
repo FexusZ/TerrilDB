@@ -24,7 +24,7 @@ final class ConnectionInputTest extends TestCase
      */
     private function input(array $extra = []): JsonInput
     {
-        $body = ['name' => 'Via', 'engine' => 'postgresql', 'host' => 'db.behind', 'port' => 5432, 'database' => 'shop', 'username' => 'reader', 'password' => 'secret'] + $extra;
+        $body = $extra + ['name' => 'Via', 'engine' => 'postgresql', 'host' => 'db.behind', 'port' => 5432, 'database' => 'shop', 'username' => 'reader', 'password' => 'secret'];
 
         return JsonInput::fromRequest(Request::create('/x', 'POST', content: json_encode($body, \JSON_THROW_ON_ERROR), server: ['CONTENT_TYPE' => 'application/json']));
     }
@@ -151,5 +151,33 @@ final class ConnectionInputTest extends TestCase
         $this->expectException(InvalidConnectionParametersException::class);
 
         ConnectionInput::read($this->input(['transport' => $this->jump($override)]), null);
+    }
+
+    public function testTheReplicaOptionIsReadAndOffByDefault(): void
+    {
+        [, , $off] = ConnectionInput::read($this->input(['engine' => 'mysql', 'port' => 3306]), null);
+        [, , $on] = ConnectionInput::read($this->input(['engine' => 'mysql', 'port' => 3306, 'readReplica' => true]), null);
+
+        self::assertFalse($off->readReplica);
+        self::assertTrue($on->readReplica);
+    }
+
+    public function testAnAbsentReplicaFieldKeepsTheStoredChoiceAndFalseRemovesIt(): void
+    {
+        $current = new ConnectionParameters('db.behind', 3306, 'shop', 'reader', 'secret', readReplica: true);
+        $mysql = ['engine' => 'mysql', 'port' => 3306];
+
+        [, , $kept] = ConnectionInput::read($this->input($mysql), $current);
+        [, , $removed] = ConnectionInput::read($this->input($mysql + ['readReplica' => false]), $current);
+
+        self::assertTrue($kept->readReplica);
+        self::assertFalse($removed->readReplica);
+    }
+
+    public function testTheReplicaOptionIsRefusedOutsideMySql(): void
+    {
+        $this->expectException(InvalidConnectionParametersException::class);
+
+        ConnectionInput::read($this->input(['readReplica' => true]), null);
     }
 }

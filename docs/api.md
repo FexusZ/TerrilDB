@@ -40,7 +40,7 @@ l'arrivée d'un droit ne l'a pas (aucun élargissement implicite) et un jeton ne
 | GET | `/api/v1/connections/{id}/diagnostics/config-audit` | (droit `diagnostic`) audit de la configuration : constats sur les variables lues, lecture seule, rien n'est exécuté |
 | GET | `/api/v1/connections/{id}/diagnostics/logs` | (droit `diagnostic`) journal d'erreurs (MySQL) et requêtes lentes en table (MySQL, MariaDB), 200 lignes les plus récentes, textes masqués, lecture seule |
 | GET | `/api/v1/connections/{id}/diagnostics/health?seconds=5` | (droit `diagnostic`) santé du serveur sur un intervalle de 1 à 30 s (5 par défaut) : la requête dure l'intervalle, lecture seule |
-| POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password`, `transport?` (rebond SSH : `{type: "ssh", host, port?, username, privateKey, hostKeyFingerprint}` ; bastion déclaré par l'administrateur, empreinte à fournir, MySQL/MariaDB/PostgreSQL seulement) |
+| POST | `/api/v1/connections` | enregistre une connexion (droit `createConnections`) : `name`, `engine`, `host`, `port?`, `database`, `username`, `password`, `transport?` (rebond SSH : `{type: "ssh", host, port?, username, privateKey, hostKeyFingerprint}` ; bastion déclaré par l'administrateur, empreinte à fournir, MySQL/MariaDB/PostgreSQL seulement), `readReplica?` (booléen, faux par défaut, MySQL seulement : Vitess, les lectures vont aux tablets réplica) |
 
 Résultat d'une requête : `columns`, `rows`, `rowCount`, `truncated` (d'autres lignes existaient), `affectedRows`
 (`null` pour une lecture), `durationMs`. Les entiers au-delà de 2^53 sont rendus en chaînes.
