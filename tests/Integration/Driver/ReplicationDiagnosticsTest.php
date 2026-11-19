@@ -486,10 +486,11 @@ final class ReplicationDiagnosticsTest extends TestCase
     }
 
     /**
-     * La cible Vitess (profil `vitess`, hors CI) : le vtgate parle le protocole MySQL et ne relaie pas la réplication des
-     * tablets ; il répond comme un serveur sans réplication. Sauté sans TARGET_VITESS_URL ou si elle est injoignable.
+     * La cible Vitess (profil `vitess`, hors CI) : le vtgate parle le protocole MySQL mais envoie chaque lecture à UN tablet ; la
+     * réplication d'un tablet passerait pour celle du cluster (elle disait « aucune »), le thème n'est donc pas servi (#40). Sauté sans
+     * TARGET_VITESS_URL ou si elle est injoignable.
      */
-    public function testVitessGatewayAnswersAsAServerWithoutReplication(): void
+    public function testVitessGatewayDoesNotServeTheReplicationOfASingleTablet(): void
     {
         try {
             $target = (new MySqlDriver(new DbalConnector()))->connect(Engine::MySql, TargetDatabase::parameters('TARGET_VITESS_URL'));
@@ -497,11 +498,13 @@ final class ReplicationDiagnosticsTest extends TestCase
             self::markTestSkipped('TARGET_VITESS_URL is unreachable.');
         }
 
-        $report = $target->diagnostics()->replication()->replication();
-        $target->close();
+        try {
+            $status = $target->diagnostics()->capabilities()['replication'];
+        } finally {
+            $target->close();
+        }
 
-        self::assertSame(Availability::Available, $report->status->availability);
-        self::assertSame(ReplicationRole::None, $report->role);
-        self::assertSame([], $report->alerts());
+        self::assertSame(Availability::Unsupported, $status->availability);
+        self::assertSame('vitess_tablet_scope', $status->reason);
     }
 }

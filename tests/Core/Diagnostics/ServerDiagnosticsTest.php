@@ -66,6 +66,17 @@ final class ServerDiagnosticsTest extends TestCase
         self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'statements' => 'unsupported', 'variables' => 'unsupported', 'accounts' => 'unsupported', 'encryption' => 'unsupported', 'health' => 'unsupported', 'replication' => 'unsupported', 'logs' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
     }
 
+    public function testAnEngineCanGiveTheReasonWhyNoThemeIsServed(): void
+    {
+        $diagnostics = new ServerDiagnostics(Engine::MySql, unsupportedReason: 'vitess_tablet_scope');
+
+        foreach ($diagnostics->capabilities() as $theme => $status) {
+            self::assertSame('unsupported', $status->availability->value, $theme);
+            self::assertSame('vitess_tablet_scope', $status->reason, $theme);
+        }
+        self::assertSame('not_supported', (new ServerDiagnostics(Engine::MySql))->capabilities()['sessions']->reason, 'sans raison donnée, la raison d\'avant');
+    }
+
     public function testCapabilitiesAskTheThemeForItsStatus(): void
     {
         $sessions = new class implements SessionDiagnostics {

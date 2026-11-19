@@ -13,6 +13,14 @@ describe('describeStatus', () => {
     expect(describeStatus(status('available'), 'les verrous')).toBeNull()
   })
 
+  it('explains why Vitess shows no diagnostics and what to do instead', () => {
+    const text = describeStatus(status('unsupported', { reason: 'vitess_tablet_scope' }), 'les sessions')
+
+    expect(text).toContain('un seul tablet')
+    expect(text).toContain('connexion directe')
+    expect(text).not.toContain('Ce moteur ne fournit pas')
+  })
+
   it('names the missing privilege', () => {
     expect(describeStatus(status('permission_denied', { reason: 'insufficient_privilege', privilege: 'PROCESS' }), 'les verrous')).toBe('Le compte de la connexion n’a pas le droit de lire les verrous : il lui manque PROCESS.')
   })

@@ -38,8 +38,11 @@ final readonly class MySqlDriver implements Driver
 
         $connection = $this->connector->connect($engine, $parameters);
         $version = self::version($connection);
+        // Un vtgate envoie chaque lecture du catalogue à UN tablet : sessions, verrous, comptes, variables ou réplication d'un seul tablet
+        // passeraient pour ceux du cluster (mesuré sur target-vitess). Aucun thème n'est servi, l'état dit pourquoi.
+        $vitess = ServerFlavour::Vitess === $version?->flavour;
 
-        return new TargetConnection($engine, new MySqlIntrospector($connection, ServerFlavour::Vitess === $version?->flavour), new MySqlQueryRunner($connection, $engine, ServerFlavour::Vitess === $version?->flavour), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection, $engine), diagnostics: new ServerDiagnostics($engine, new MySqlSessionDiagnostics($connection, $engine), new MySqlLockDiagnostics($connection, $engine), new MySqlStatementDiagnostics($connection), variables: new MySqlVariableDiagnostics($connection, $engine), accounts: new MySqlAccountDiagnostics($connection, $engine), encryption: new MySqlEncryptionDiagnostics($connection), health: new MySqlHealthDiagnostics($connection), replication: new MySqlReplicationDiagnostics($connection, $engine), logs: new MySqlLogDiagnostics($connection, $engine)), script: new MySqlScriptExecutor($connection, $engine), version: $version);
+        return new TargetConnection($engine, new MySqlIntrospector($connection, $vitess), new MySqlQueryRunner($connection, $engine, $vitess), $connection->close(...), ddl: new DbalDdlExecutor($connection, $engine), data: new DbalDataExecutor($connection, $engine), diagnostics: $vitess ? new ServerDiagnostics($engine, unsupportedReason: 'vitess_tablet_scope') : new ServerDiagnostics($engine, new MySqlSessionDiagnostics($connection, $engine), new MySqlLockDiagnostics($connection, $engine), new MySqlStatementDiagnostics($connection), variables: new MySqlVariableDiagnostics($connection, $engine), accounts: new MySqlAccountDiagnostics($connection, $engine), encryption: new MySqlEncryptionDiagnostics($connection), health: new MySqlHealthDiagnostics($connection), replication: new MySqlReplicationDiagnostics($connection, $engine), logs: new MySqlLogDiagnostics($connection, $engine)), script: new MySqlScriptExecutor($connection, $engine), version: $version);
     }
 
     /**

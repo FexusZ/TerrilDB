@@ -25,6 +25,8 @@ final readonly class ServerDiagnostics
         private ?EncryptionDiagnostics $encryption = null,
         private ?ReplicationDiagnostics $replication = null,
         private ?LogDiagnostics $logs = null,
+        /** Pourquoi aucun thème n'est servi, quand le moteur le sait (code stable, ex. `vitess_tablet_scope`) ; sinon `not_supported`. */
+        private ?string $unsupportedReason = null,
     ) {
     }
 
@@ -114,7 +116,7 @@ final readonly class ServerDiagnostics
         $capabilities = [];
         foreach ($themes as $name => $theme) {
             if (null === $theme) {
-                $capabilities[$name] = DiagnosticStatus::unsupported();
+                $capabilities[$name] = DiagnosticStatus::unsupported($this->unsupportedReason ?? 'not_supported');
 
                 continue;
             }
