@@ -138,11 +138,26 @@ final class ScriptRunWebTest extends WebApiTestCase
         $this->seedAndLogin();
         $id = $this->saveTarget();
 
-        $body = $this->start($id, "SELECT 1;\nCOPY t TO '/tmp/x'");
+        $body = $this->start($id, "SELECT 1;\nCOMMIT");
 
         self::assertSame(403, $this->statusCode());
         self::assertSame('script_refused', $body['error']);
         self::assertSame([], RecordingScriptRunLauncher::$requests);
+    }
+
+    public function testAConstructOutsideTheUsualFrameNeedsConfirmationThenStartsAndTheWorkerJudgesItTheSameWay(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+
+        $body = $this->start($id, "SELECT 1;\nCOPY t TO '/tmp/x'");
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $body['error']);
+        self::assertSame([], RecordingScriptRunLauncher::$requests);
+
+        $this->start($id, "SELECT 1;\nCOPY t TO '/tmp/x'", ['confirmed' => true]);
+        self::assertSame(202, $this->statusCode());
+        self::assertTrue(RecordingScriptRunLauncher::last()->lenient);
     }
 
     public function testADestructiveScriptNeedsConfirmationThenStarts(): void

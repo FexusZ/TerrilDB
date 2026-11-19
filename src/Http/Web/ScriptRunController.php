@@ -46,6 +46,7 @@ final readonly class ScriptRunController
             $input->optionalInt('timeoutMs') ?? self::DEFAULT_TIMEOUT_MS,
             $input->optionalString('database'),
             $input->optionalString('schema'),
+            lenient: true,
         );
 
         return new JsonResponse(['run' => ScriptRunPresenter::run($run)], Response::HTTP_ACCEPTED);

@@ -18,6 +18,8 @@ final readonly class ScriptOptions
         public int $timeoutMs = self::DEFAULT_TIMEOUT_MS,
         public bool $dryRun = false,
         public ?ScriptProgress $progress = null,
+        /** La console d'une personne connectée : les constructions hors cadre demandent confirmation au lieu d'être refusées (voir StatementGuard). */
+        public bool $lenient = false,
     ) {
         if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > QueryOptions::MAX_TIMEOUT_MS) {
             throw new InvalidQueryOptionsException('The timeout is out of bounds.');

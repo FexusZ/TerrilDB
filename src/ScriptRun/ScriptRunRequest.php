@@ -36,6 +36,8 @@ final readonly class ScriptRunRequest
         public int $timeoutMs,
         /** Qui a lancé l'exécution : les lignes d'audit des instructions s'écrivent à son nom, depuis le processus du worker. */
         public AuditContext $audit,
+        /** La console d'une personne connectée (voir ScriptOptions::$lenient) : le worker juge le script de la même façon que la route. */
+        public bool $lenient = false,
     ) {
         if (null !== $parameters->transport) {
             throw new InvalidScriptRunRequestException('A connection through a jump cannot run a detached script yet.');
@@ -64,6 +66,7 @@ final readonly class ScriptRunRequest
             'writeSchema' => $this->writes->schema,
             'confirmed' => $this->confirmed,
             'dryRun' => $this->dryRun,
+            'lenient' => $this->lenient,
             'timeoutMs' => $this->timeoutMs,
             'audit' => [
                 'actor' => $this->audit->actor->value,
@@ -115,7 +118,7 @@ final readonly class ScriptRunRequest
             throw new InvalidScriptRunRequestException('The connection of the message is not valid.');
         }
 
-        return new self(Uuid::fromString($run), $engine, $parameters, $script, new WritePermissions($data['writeData'], $data['writeSchema']), $data['confirmed'], $data['dryRun'], $timeoutMs, $audit);
+        return new self(Uuid::fromString($run), $engine, $parameters, $script, new WritePermissions($data['writeData'], $data['writeSchema']), $data['confirmed'], $data['dryRun'], $timeoutMs, $audit, true === ($data['lenient'] ?? null));
     }
 
     private static function auditFrom(mixed $data): AuditContext

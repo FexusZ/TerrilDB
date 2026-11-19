@@ -43,7 +43,7 @@ final readonly class AuditedScripts
         try {
             $result = $this->scripts->execute($target, $script, $options, $confirmed);
         } catch (ScriptRefusedException $e) {
-            $preview = $this->scripts->preview($script, $target->engine, $options->writes);
+            $preview = $this->scripts->preview($script, $target->engine, $options->writes, [], $options->lenient);
             $this->audit->record($context, AuditAction::QueryRefused, AuditOutcome::Refused, $connectionId, $base + [
                 'sql' => $preview->report->steps[$e->statementIndex]->sql ?? '',
                 'reason' => $e->reason->value,

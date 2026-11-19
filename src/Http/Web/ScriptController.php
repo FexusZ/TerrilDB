@@ -41,7 +41,7 @@ final readonly class ScriptController
 
         $preview = $this->targets->withSaved(
             Uuid::fromString($id),
-            fn (TargetConnection $target) => $this->scripts->previewFor($target, $script, WritePermissions::all()),
+            fn (TargetConnection $target) => $this->scripts->previewFor($target, $script, WritePermissions::all(), lenient: true),
             $input->optionalString('database'),
             $input->optionalString('schema'),
         );
@@ -58,6 +58,7 @@ final readonly class ScriptController
             WritePermissions::all(),
             $this->limit->timeout($input->optionalInt('timeoutMs'), ScriptOptions::DEFAULT_TIMEOUT_MS),
             $input->bool('dryRun', false),
+            lenient: true,
         );
         $confirmed = $input->bool('confirmed', false);
 

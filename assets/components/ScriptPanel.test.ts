@@ -103,6 +103,23 @@ describe('ScriptPanel', () => {
     wrapper.unmount()
   })
 
+  it('words a statement outside the usual frame as a warning, and says so in the confirmation', async () => {
+    const wrapper = await previewed({
+      steps: [
+        { index: 0, sql: 'DELETE FROM t', verdict: 'needs_confirmation', kind: 'write', reason: 'destructive_without_where' },
+        { index: 1, sql: "SELECT LOAD_FILE('/etc/hostname')", verdict: 'needs_confirmation', kind: 'read', reason: 'forbidden_construct' },
+      ],
+      destructiveCount: 2,
+    })
+
+    expect(wrapper.text()).toContain('Attention')
+    expect(wrapper.text()).not.toContain('interdite')
+    await wrapper.get('button.execute').trigger('click')
+    expect(document.body.textContent).toContain('1 instruction destructrice')
+    expect(document.body.textContent).toContain('1 instruction hors du cadre habituel')
+    wrapper.unmount()
+  })
+
   it('asks ONE confirmation for the whole script, then executes it confirmed', async () => {
     const wrapper = await previewed({ destructiveCount: 2 })
 
