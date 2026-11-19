@@ -695,10 +695,11 @@ final class StatementGuardCorpusTest extends TestCase
     }
 
     /**
-     * Vitess (#40) : les verbes propres à vtgate, jugés avec le dialecte MySQL. `SHOW VITESS_*` est une lecture du topo (permise) ;
-     * `VEXPLAIN` est REFUSÉ, y compris dans ses formes qui n'exécuteraient rien : `VEXPLAIN TRACE` joue la requête expliquée, et le
-     * garde ne juge pas ce qu'elle contient ; les migrations en ligne se pilotent hors d'ici (`REVERT` refusé, `ALTER VITESS_MIGRATION`
-     * = structure, jamais en lecture seule, confirmation en lecture-écriture).
+     * Vitess (#40) : les verbes propres à vtgate, jugés avec le dialecte MySQL. `SHOW VITESS_*` est une lecture du topo. `VEXPLAIN` se juge
+     * comme `EXPLAIN` / `EXPLAIN ANALYZE` : `PLAN` et `KEYS` n'exécutent rien (mesuré sur vtgate : une ligne reste inchangée) ; `QUERIES`, `ALL`
+     * et `TRACE` EXÉCUTENT la requête (vtgate refuse seul un DML sous `QUERIES`/`ALL`, mais `TRACE UPDATE` écrit, mesuré) : la requête est
+     * jugée selon sa nature, comme un `EXPLAIN ANALYZE`. Les migrations en ligne : `ALTER VITESS_MIGRATION` = structure (jamais en lecture
+     * seule, confirmation en lecture-écriture), `REVERT` refusé (verbe inconnu).
      *
      * @return iterable<string, array{string, Engine, QueryMode, string}>
      */
@@ -712,7 +713,30 @@ final class StatementGuardCorpusTest extends TestCase
             yield from self::rows($sql, $my, $ro, 'allow:Inspect');
             yield from self::rows($sql, $my, $rw, 'allow:Inspect');
         }
-        foreach (['VEXPLAIN ALL SELECT 1', 'VEXPLAIN TRACE SELECT * FROM t', 'VEXPLAIN PLAN SELECT 1', 'VEXPLAIN QUERIES SELECT 1', 'VEXPLAIN KEYS SELECT 1', 'VEXPLAIN SELECT 1', 'vexplain trace select 1', "REVERT VITESS_MIGRATION 'x'"] as $sql) {
+        // Sans exécution : une inspection, même d'une écriture ou d'un DDL (comme EXPLAIN).
+        foreach (['PLAN', 'KEYS'] as $form) {
+            foreach (['SELECT * FROM t', 'UPDATE t SET a = 1 WHERE id = 1', 'DELETE FROM t', 'DROP TABLE t'] as $inner) {
+                yield from self::rows(\sprintf('VEXPLAIN %s %s', $form, $inner), $my, $ro, 'allow:Inspect');
+                yield from self::rows(\sprintf('VEXPLAIN %s %s', $form, $inner), $my, $rw, 'allow:Inspect');
+            }
+        }
+        // Avec exécution : la requête jouée est jugée.
+        foreach (['QUERIES', 'ALL', 'TRACE'] as $form) {
+            yield from self::rows(\sprintf('VEXPLAIN %s SELECT * FROM t WHERE id = 1', $form), $my, $ro, 'allow:Inspect');
+            yield from self::rows(\sprintf('VEXPLAIN %s SELECT * FROM t WHERE id = 1', $form), $my, $rw, 'allow:Inspect');
+            yield from self::rows(\sprintf('VEXPLAIN %s UPDATE t SET a = 1 WHERE id = 1', $form), $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows(\sprintf('VEXPLAIN %s UPDATE t SET a = 1 WHERE id = 1', $form), $my, $rw, 'allow:Write');
+            yield from self::rows(\sprintf('VEXPLAIN %s DELETE FROM t', $form), $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows(\sprintf('VEXPLAIN %s DELETE FROM t', $form), $my, $rw, 'confirm:DestructiveWithoutWhere');
+            yield from self::rows(\sprintf('VEXPLAIN %s DROP TABLE t', $form), $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows(\sprintf('VEXPLAIN %s DROP TABLE t', $form), $my, $rw, 'confirm:DestructiveStatement');
+            yield from self::rows(\sprintf("VEXPLAIN %s SELECT GET_LOCK('a', 1)", $form), $my, $ro, 'refuse:ForbiddenConstruct');
+        }
+        yield from self::rows('vexplain trace select 1', $my, $ro, 'allow:Inspect');
+        yield from self::rows('VEXPLAIN SELECT 1', $my, $ro, 'allow:Inspect');
+        yield from self::rows('VEXPLAIN UPDATE t SET a = 1 WHERE id = 1', $my, $ro, 'refuse:NotReadOnly');
+        // Ce que le garde ne sait pas juger reste refusé.
+        foreach (['VEXPLAIN', 'VEXPLAIN TRACE', 'VEXPLAIN TRACE FOO BAR', 'VEXPLAIN ALL EXECUTE x', "REVERT VITESS_MIGRATION 'x'"] as $sql) {
             yield from self::rows($sql, $my, $ro, 'refuse:UnsupportedStatement');
             yield from self::rows($sql, $my, $rw, 'refuse:UnsupportedStatement');
         }

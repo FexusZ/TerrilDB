@@ -9,6 +9,8 @@ use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\Decision;
 use App\Core\Guard\StatementGuard;
+use App\Core\Guard\StatementKind;
+use App\Core\Query\Exception\QueryFailedException;
 use App\Core\Query\QueryMode;
 use App\Core\Query\QueryOptions;
 use App\Driver\DbalConnector;
@@ -19,8 +21,8 @@ use PHPUnit\Framework\SkippedWithMessageException;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Les verbes de lecture propres à vtgate (#40) passent le garde ET s'exécutent en lecture seule sur un vrai vtgate ; `VEXPLAIN` est
- * refusé avant d'atteindre le moteur (`VEXPLAIN TRACE` joue la requête expliquée). Sauté si `target-vitess` est éteinte.
+ * Les verbes de lecture propres à vtgate (#40) passent le garde ET s'exécutent en lecture seule sur un vrai vtgate ; `VEXPLAIN` se juge comme `EXPLAIN ANALYZE`
+ * (`TRACE` joue la requête expliquée, même une écriture). Sauté si `target-vitess` est éteinte.
  */
 #[Group('integration')]
 final class VitessShowTest extends TestCase
@@ -68,11 +70,44 @@ final class VitessShowTest extends TestCase
         self::assertNotSame([], $result->columns, 'le moteur répond par un jeu de colonnes');
     }
 
-    public function testVExplainNeverReachesTheEngine(): void
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function vexplains(): iterable
     {
-        foreach (['VEXPLAIN ALL SELECT 1', 'VEXPLAIN TRACE SELECT 1', 'VEXPLAIN PLAN SELECT 1'] as $sql) {
-            self::assertSame(Decision::Refused, (new StatementGuard())->check($sql, Engine::MySql, QueryMode::ReadOnly)->decision, $sql);
-            self::assertSame(Decision::Refused, (new StatementGuard())->check($sql, Engine::MySql, QueryMode::ReadWrite)->decision, $sql);
+        foreach (['PLAN', 'KEYS', 'QUERIES', 'ALL', 'TRACE'] as $form) {
+            yield $form => ['VEXPLAIN '.$form.' SELECT * FROM order_items WHERE id = 1'];
         }
+    }
+
+    #[DataProvider('vexplains')]
+    public function testAVExplainOfAReadPassesTheGuardAndRunsReadOnly(string $sql): void
+    {
+        $target = $this->open();
+        $verdict = (new StatementGuard())->check($sql, Engine::MySql, QueryMode::ReadOnly);
+        self::assertSame(Decision::Allowed, $verdict->decision);
+        self::assertNotNull($verdict->kind);
+
+        $result = $target->runner()->run($sql, $verdict->kind, new QueryOptions(QueryMode::ReadOnly, 10000, 1000));
+
+        self::assertNotSame([], $result->columns);
+    }
+
+    public function testAVExplainThatRunsAWriteIsStoppedByTheGuardInReadOnlyAndAskedInReadWrite(): void
+    {
+        foreach (['QUERIES', 'ALL', 'TRACE'] as $form) {
+            $sql = 'VEXPLAIN '.$form.' DELETE FROM order_items';
+            self::assertSame(Decision::Refused, (new StatementGuard())->check($sql, Engine::MySql, QueryMode::ReadOnly)->decision, $sql);
+            self::assertSame(Decision::NeedsConfirmation, (new StatementGuard())->check($sql, Engine::MySql, QueryMode::ReadWrite)->decision, $sql);
+        }
+    }
+
+    public function testTheEngineItselfRefusesAWriteRunByVExplainTraceInAReadOnlyTransaction(): void
+    {
+        // Le filet du moteur, si le filtre se trompait : le tablet refuse l'écriture jouée par TRACE dans la transaction en lecture seule.
+        $target = $this->open();
+
+        $this->expectException(QueryFailedException::class);
+        $target->runner()->run("VEXPLAIN TRACE UPDATE categories SET name = 'zz_probe' WHERE id = -1", StatementKind::Inspect, new QueryOptions(QueryMode::ReadOnly, 10000, 1000));
     }
 }
