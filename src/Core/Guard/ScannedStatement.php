@@ -129,6 +129,17 @@ final readonly class ScannedStatement
 
             return null === $inner ? null : ('WITH' === $this->words[$inner] ? $this->headAfterWith($inner) : $this->words[$inner]);
         }
+        if ('VEXPLAIN' === $first) {
+            // Vitess : PLAN et KEYS n'exécutent rien (une inspection) ; QUERIES, ALL, TRACE et la forme sans mot jouent la requête
+            // expliquée, qui se juge comme celle d'un EXPLAIN ANALYZE.
+            $form = $this->words[1] ?? '';
+            if (\in_array($form, ['PLAN', 'KEYS'], true)) {
+                return 'EXPLAIN';
+            }
+            $inner = $this->innerStatementIndex(\in_array($form, ['QUERIES', 'ALL', 'TRACE'], true) ? 2 : 1);
+
+            return null === $inner ? null : ('WITH' === $this->words[$inner] ? $this->headAfterWith($inner) : $this->words[$inner]);
+        }
         if ('ANALYZE' === $first) {
             $inner = 'TABLE' === ($this->words[1] ?? '') ? null : $this->innerStatementIndex(1);
             $verb = null === $inner ? null : $this->words[$inner];

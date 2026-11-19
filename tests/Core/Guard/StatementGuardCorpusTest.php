@@ -41,7 +41,7 @@ final class StatementGuardCorpusTest extends TestCase
     public static function corpus(): iterable
     {
         $seen = [];
-        foreach ([self::firstBatch(), self::secondBatch(), self::thirdBatch()] as $batch) {
+        foreach ([self::firstBatch(), self::secondBatch(), self::thirdBatch(), self::vitessBatch()] as $batch) {
             foreach ($batch as $name => $row) {
                 if (!isset($seen[$name])) {
                     $seen[$name] = true;
@@ -692,6 +692,56 @@ final class StatementGuardCorpusTest extends TestCase
         ] as $sql) {
             yield from self::rows($sql, $pg, $ro, 'allow:Read');
         }
+    }
+
+    /**
+     * Vitess (#40) : les verbes propres à vtgate, jugés avec le dialecte MySQL. `SHOW VITESS_*` est une lecture du topo. `VEXPLAIN` se juge
+     * comme `EXPLAIN` / `EXPLAIN ANALYZE` : `PLAN` et `KEYS` n'exécutent rien (mesuré sur vtgate : une ligne reste inchangée) ; `QUERIES`, `ALL`
+     * et `TRACE` EXÉCUTENT la requête (vtgate refuse seul un DML sous `QUERIES`/`ALL`, mais `TRACE UPDATE` écrit, mesuré) : la requête est
+     * jugée selon sa nature, comme un `EXPLAIN ANALYZE`. Les migrations en ligne : `ALTER VITESS_MIGRATION` = structure (jamais en lecture
+     * seule, confirmation en lecture-écriture), `REVERT` refusé (verbe inconnu).
+     *
+     * @return iterable<string, array{string, Engine, QueryMode, string}>
+     */
+    private static function vitessBatch(): iterable
+    {
+        $ro = QueryMode::ReadOnly;
+        $rw = QueryMode::ReadWrite;
+        $my = [Engine::MySql];
+
+        foreach (['SHOW VITESS_TABLETS', 'SHOW VITESS_SHARDS', 'SHOW VITESS_KEYSPACES', 'SHOW VITESS_REPLICATION_STATUS', 'SHOW VITESS_MIGRATIONS', "SHOW VITESS_MIGRATION 'x' LOGS", 'SHOW VITESS_TARGET', 'SHOW VSCHEMA TABLES', 'SHOW KEYSPACES'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'allow:Inspect');
+            yield from self::rows($sql, $my, $rw, 'allow:Inspect');
+        }
+        // Sans exécution : une inspection, même d'une écriture ou d'un DDL (comme EXPLAIN).
+        foreach (['PLAN', 'KEYS'] as $form) {
+            foreach (['SELECT * FROM t', 'UPDATE t SET a = 1 WHERE id = 1', 'DELETE FROM t', 'DROP TABLE t'] as $inner) {
+                yield from self::rows(\sprintf('VEXPLAIN %s %s', $form, $inner), $my, $ro, 'allow:Inspect');
+                yield from self::rows(\sprintf('VEXPLAIN %s %s', $form, $inner), $my, $rw, 'allow:Inspect');
+            }
+        }
+        // Avec exécution : la requête jouée est jugée.
+        foreach (['QUERIES', 'ALL', 'TRACE'] as $form) {
+            yield from self::rows(\sprintf('VEXPLAIN %s SELECT * FROM t WHERE id = 1', $form), $my, $ro, 'allow:Inspect');
+            yield from self::rows(\sprintf('VEXPLAIN %s SELECT * FROM t WHERE id = 1', $form), $my, $rw, 'allow:Inspect');
+            yield from self::rows(\sprintf('VEXPLAIN %s UPDATE t SET a = 1 WHERE id = 1', $form), $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows(\sprintf('VEXPLAIN %s UPDATE t SET a = 1 WHERE id = 1', $form), $my, $rw, 'allow:Write');
+            yield from self::rows(\sprintf('VEXPLAIN %s DELETE FROM t', $form), $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows(\sprintf('VEXPLAIN %s DELETE FROM t', $form), $my, $rw, 'confirm:DestructiveWithoutWhere');
+            yield from self::rows(\sprintf('VEXPLAIN %s DROP TABLE t', $form), $my, $ro, 'refuse:NotReadOnly');
+            yield from self::rows(\sprintf('VEXPLAIN %s DROP TABLE t', $form), $my, $rw, 'confirm:DestructiveStatement');
+            yield from self::rows(\sprintf("VEXPLAIN %s SELECT GET_LOCK('a', 1)", $form), $my, $ro, 'refuse:ForbiddenConstruct');
+        }
+        yield from self::rows('vexplain trace select 1', $my, $ro, 'allow:Inspect');
+        yield from self::rows('VEXPLAIN SELECT 1', $my, $ro, 'allow:Inspect');
+        yield from self::rows('VEXPLAIN UPDATE t SET a = 1 WHERE id = 1', $my, $ro, 'refuse:NotReadOnly');
+        // Ce que le garde ne sait pas juger reste refusé.
+        foreach (['VEXPLAIN', 'VEXPLAIN TRACE', 'VEXPLAIN TRACE FOO BAR', 'VEXPLAIN ALL EXECUTE x', "REVERT VITESS_MIGRATION 'x'"] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:UnsupportedStatement');
+            yield from self::rows($sql, $my, $rw, 'refuse:UnsupportedStatement');
+        }
+        yield from self::rows("ALTER VITESS_MIGRATION 'x' CANCEL", $my, $ro, 'refuse:NotReadOnly');
+        yield from self::rows("ALTER VITESS_MIGRATION 'x' CANCEL", $my, $rw, 'confirm:DestructiveStatement');
     }
 
     #[DataProvider('corpus')]

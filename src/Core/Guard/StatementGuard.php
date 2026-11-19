@@ -142,7 +142,7 @@ final class StatementGuard
         if (StatementKind::Read === $kind && ($verb !== $first || 'WITH' === $first) && $this->hasWriteVerb($statement)) {
             $kind = StatementKind::Write;
         }
-        if (('EXPLAIN' === $first && 'EXPLAIN' !== $verb) || ('ANALYZE' === $first && 'ANALYZE' !== $verb)) {
+        if ((\in_array($first, ['EXPLAIN', 'VEXPLAIN'], true) && 'EXPLAIN' !== $verb) || ('ANALYZE' === $first && 'ANALYZE' !== $verb)) {
             return StatementKind::Write === $kind || StatementKind::Schema === $kind ? $kind : StatementKind::Inspect;
         }
 
@@ -168,7 +168,7 @@ final class StatementGuard
     private function advancesSequence(ScannedStatement $statement, StatementKind $kind): bool
     {
         $executes = StatementKind::Read === $kind
-            || (StatementKind::Inspect === $kind && ($statement->has('ANALYZE') || $statement->has('ANALYSE')));
+            || (StatementKind::Inspect === $kind && ($statement->has('ANALYZE') || $statement->has('ANALYSE') || ('VEXPLAIN' === $statement->first() && !\in_array($statement->words[1] ?? '', ['PLAN', 'KEYS'], true))));
 
         return $executes && ($statement->calls('NEXTVAL') || $statement->calls('SETVAL') || $statement->hasSequence('NEXT', 'VALUE', 'FOR'));
     }
