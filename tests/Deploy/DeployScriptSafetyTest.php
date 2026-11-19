@@ -213,4 +213,64 @@ final class DeployScriptSafetyTest extends TestCase
         self::assertSame(2, $code);
         self::assertFileDoesNotExist($this->dir.'/deploy.env');
     }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function malformedDomains(): iterable
+    {
+        yield 'deux points de suite' => ['a..test'];
+        yield 'point initial' => ['.a.test'];
+        yield 'tiret initial' => ['-a.test'];
+        yield 'point final' => ['a.test.'];
+        yield 'tiret final' => ['a.test-'];
+        yield 'étiquette qui commence par un tiret' => ['a.-b.test'];
+        yield 'étiquette qui finit par un tiret' => ['a-.b.test'];
+        yield 'que des points' => ['..'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedDomains')]
+    public function testAMalformedDomainIsRefused(string $domain): void
+    {
+        [$code] = $this->deploy(['TERRILDB_DOMAIN' => $domain]);
+
+        self::assertSame(2, $code);
+        self::assertFileDoesNotExist($this->dir.'/deploy.env');
+    }
+
+    public function testOrdinaryDomainsAreStillAccepted(): void
+    {
+        foreach (['exemple.test', 'a-b.exemple.test', 'localhost', '10.0.0.1'] as $domain) {
+            [$code] = $this->deploy(['TERRILDB_DOMAIN' => $domain]);
+
+            self::assertSame(0, $code, $domain);
+            @unlink($this->dir.'/deploy.env');
+        }
+    }
+
+    public function testLeftoversOlderThanADayAreRemovedAndRecentOnesKept(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
+        $old = [$this->dir.'/.deploy.env.AbC123', $this->dir.'/backups/.partial-4242', $this->dir.'/backups/2026-oldtag.sql.gz.part'];
+        $recent = [$this->dir.'/.deploy.env.Zz9876', $this->dir.'/backups/.partial-777'];
+        foreach ([...$old, ...$recent] as $file) {
+            file_put_contents($file, 'x');
+        }
+        foreach ($old as $file) {
+            touch($file, time() - 3 * 86400);
+        }
+        file_put_contents($this->dir.'/backups/20260101-000000-old.sql.gz', 'bonne sauvegarde');
+        touch($this->dir.'/backups/20260101-000000-old.sql.gz', time() - 30 * 86400);
+
+        [$code] = $this->deploy();
+
+        self::assertSame(0, $code);
+        foreach ($old as $file) {
+            self::assertFileDoesNotExist($file);
+        }
+        foreach ($recent as $file) {
+            self::assertFileExists($file, 'un reste récent peut appartenir à un déploiement en cours');
+        }
+        self::assertFileExists($this->dir.'/backups/20260101-000000-old.sql.gz', 'une vraie sauvegarde ancienne n\'est jamais touchée par ce nettoyage');
+    }
 }
