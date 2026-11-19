@@ -223,7 +223,7 @@ final class RedisWebTest extends WebApiTestCase
 
         $keys = $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 'keys user:*', 'confirmed' => true]);
         self::assertSame(200, $this->statusCode());
-        self::assertContains(['user:1'], $keys['rows']);
+        self::assertContains(['user:1'], self::arrayOf($keys['rows']));
 
         // En lecture seule, le serveur a le dernier mot : une administration confirmée y est refusée, elle ne s'exécute pas.
         $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 'config set maxmemory-policy noeviction', 'confirmed' => true]);
