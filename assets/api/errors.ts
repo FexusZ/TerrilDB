@@ -20,7 +20,16 @@ const REASONS: Record<string, string> = {
 const GENERIC = 'Une erreur est survenue. Réessayez.'
 
 /** Explication d'un refus du garde. Un motif inconnu n'est jamais affiché tel quel. */
-export function reasonText(reason: unknown): string {
+// Ce qui est REFUSÉ aux jetons d'API et au MCP demande, dans la console, une simple confirmation : le texte est alors un avertissement.
+const WARNINGS: Record<string, string> = {
+  forbidden_construct: 'Attention : cette instruction sort du cadre habituel d’une requête (fichiers du serveur, verrous durables, état du serveur…). Le serveur de la base décidera selon les droits de votre compte.',
+}
+
+/** `confirming` : le texte d’une demande de confirmation (avertissement) plutôt que celui d’un refus. */
+export function reasonText(reason: unknown, confirming = false): string {
+  if (confirming && typeof reason === 'string' && WARNINGS[reason] !== undefined) {
+    return WARNINGS[reason]
+  }
   return (typeof reason === 'string' && REASONS[reason]) || 'Cette instruction n’est pas autorisée.'
 }
 

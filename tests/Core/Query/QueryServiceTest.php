@@ -115,6 +115,31 @@ final class QueryServiceTest extends TestCase
         self::assertSame([], $this->runner->calls);
     }
 
+    public function testALenientConsoleAsksForConfirmationInsteadOfRefusing(): void
+    {
+        $sql = "select load_file('/etc/hostname')";
+        $strict = new QueryOptions(QueryMode::ReadOnly);
+        $lenient = new QueryOptions(QueryMode::ReadOnly, lenient: true);
+
+        try {
+            $this->service()->execute($this->target(Engine::MySql), $sql, $strict);
+            self::fail('Expected a refusal.');
+        } catch (QueryRefusedException $e) {
+            self::assertSame(GuardReason::ForbiddenConstruct, $e->reason);
+        }
+        try {
+            $this->service()->execute($this->target(Engine::MySql), $sql, $lenient);
+            self::fail('Expected a confirmation request.');
+        } catch (QueryNeedsConfirmationException $e) {
+            self::assertSame(GuardReason::ForbiddenConstruct, $e->reason);
+        }
+        self::assertSame([], $this->runner->calls);
+
+        $this->service()->execute($this->target(Engine::MySql), $sql, $lenient, confirmed: true);
+
+        self::assertCount(1, $this->runner->calls);
+    }
+
     public function testTheModeComesFromTheOptions(): void
     {
         $this->service()->execute($this->target(), 'insert into t values (1)', new QueryOptions(QueryMode::ReadWrite));

@@ -25,7 +25,7 @@ final class StatementGuard
     // Maintenance : elle reconstruit des tables ou des index et prend des verrous (OPTIMIZE, VACUUM…) ; MariaDB exécute
     // d'ailleurs l'instruction qui suit ANALYZE. Une confirmation, comme pour une modification de structure.
     private const MAINTENANCE = ['ANALYZE', 'OPTIMIZE', 'VACUUM', 'REINDEX', 'CLUSTER'];
-    private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE'];
+    private const SCHEMA_DESTRUCTIVE = ['DROP', 'TRUNCATE', 'ALTER', 'RENAME', 'GRANT', 'REVOKE', 'DETACH', 'EXCHANGE', 'REVERT'];
     // Lecture ou écriture de fichiers du serveur, contrôle du serveur, ouverture de connexions sortantes.
     private const DANGEROUS_FUNCTIONS = [
         'LOAD_FILE', 'PG_READ_FILE', 'PG_READ_BINARY_FILE', 'PG_LS_DIR', 'PG_STAT_FILE', 'LO_IMPORT', 'LO_EXPORT',
@@ -80,7 +80,29 @@ final class StatementGuard
         $this->redis = $redis ?? new RedisCommandGuard();
     }
 
-    public function check(string $sql, Engine $engine, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true)): GuardVerdict
+    /**
+     * @param bool $lenient la console d'une personne connectée (comme un terminal SQL) : ce qui est REFUSÉ aux jetons d'API et au MCP
+     *                      parce qu'il sort du cadre (fichiers du serveur, verrous durables, état du serveur, indices de délai…) demande
+     *                      une confirmation « attention » ; rien d'autre n'est assoupli (une seule instruction, mode, droits d'écriture).
+     *                      Le moteur et les droits de son compte restent les remparts.
+     */
+    public function check(string $sql, Engine $engine, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true), bool $lenient = false): GuardVerdict
+    {
+        $verdict = $this->judge($sql, $engine, $mode, $writes, false);
+        if (!$lenient || Decision::Refused !== $verdict->decision || GuardReason::ForbiddenConstruct !== $verdict->reason) {
+            return $verdict;
+        }
+
+        // Le même jugement SANS ces refus : un autre refus (mode, droits, instruction illisible) reste un refus, le reste demande confirmation.
+        $without = $this->judge($sql, $engine, $mode, $writes, true);
+        if (Decision::Allowed === $without->decision && null !== $without->kind) {
+            return GuardVerdict::needsConfirmation($without->kind, GuardReason::ForbiddenConstruct);
+        }
+
+        return $without;
+    }
+
+    private function judge(string $sql, Engine $engine, QueryMode $mode, WritePermissions $writes, bool $skipForbidden): GuardVerdict
     {
         if (!$engine->speaksSql()) {
             return $this->redis->check($sql, $mode, $writes);
@@ -104,24 +126,26 @@ final class StatementGuard
         $statement = $scan->statements[0];
         $first = $statement->first();
 
-        if (\in_array($first, ['LOAD', 'COPY'], true) || $statement->hasSequence('INTO', 'OUTFILE') || $statement->hasSequence('INTO', 'DUMPFILE')) {
+        $outsideAccess = \in_array($first, ['LOAD', 'COPY'], true) || $statement->hasSequence('INTO', 'OUTFILE') || $statement->hasSequence('INTO', 'DUMPFILE');
+        if ($outsideAccess && !$skipForbidden) {
             return GuardVerdict::refused(GuardReason::ForbiddenConstruct);
         }
 
-        $kind = $this->kind($statement);
+        // LOAD et COPY ne sont pas des verbes connus : sans leur refus, ils s'écrivent comme une écriture.
+        $kind = $this->kind($statement) ?? ($outsideAccess && \in_array($first, ['LOAD', 'COPY'], true) ? StatementKind::Write : null);
         if (null !== $kind && $this->advancesSequence($statement, $kind)) {
             $kind = StatementKind::Write;
         }
         if (null === $kind) {
             return GuardVerdict::refused(GuardReason::UnsupportedStatement);
         }
-        if (Engine::ClickHouse === $engine && $this->usesClickHouseOutsideAccess($statement)) {
+        if (!$skipForbidden && Engine::ClickHouse === $engine && $this->usesClickHouseOutsideAccess($statement)) {
             return GuardVerdict::refused(GuardReason::ForbiddenConstruct, $kind);
         }
 
         return QueryMode::ReadOnly === $mode
-            ? $this->checkReadOnly($statement, $kind)
-            : $this->checkReadWrite($statement, $kind, $writes, $engine);
+            ? $this->checkReadOnly($statement, $kind, $skipForbidden)
+            : $this->checkReadWrite($statement, $kind, $writes, $engine, $skipForbidden);
     }
 
     /**
@@ -205,12 +229,12 @@ final class StatementGuard
         return false;
     }
 
-    private function checkReadOnly(ScannedStatement $statement, StatementKind $kind): GuardVerdict
+    private function checkReadOnly(ScannedStatement $statement, StatementKind $kind, bool $skipForbidden): GuardVerdict
     {
         if (StatementKind::Read !== $kind && StatementKind::Inspect !== $kind) {
             return GuardVerdict::refused(GuardReason::NotReadOnly, $kind);
         }
-        if ($statement->has('INTO') || $this->hasLockingClause($statement) || $this->usesDangerousFunction($statement)) {
+        if (!$skipForbidden && ($statement->has('INTO') || $this->hasLockingClause($statement) || $this->usesDangerousFunction($statement))) {
             return GuardVerdict::refused(GuardReason::ForbiddenConstruct, $kind);
         }
 
@@ -231,7 +255,7 @@ final class StatementGuard
         return StatementKind::Read === $kind || (StatementKind::Inspect === $kind && $explainsAndRuns);
     }
 
-    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes, Engine $engine): GuardVerdict
+    private function checkReadWrite(ScannedStatement $statement, StatementKind $kind, WritePermissions $writes, Engine $engine, bool $skipForbidden): GuardVerdict
     {
         // C'est l'instruction exécutée qui compte (WITH … DROP TABLE se juge comme DROP TABLE, EXPLAIN ANALYZE CREATE … comme CREATE).
         $first = $statement->executedVerb() ?? $statement->first();
@@ -241,7 +265,7 @@ final class StatementGuard
         }
 
         // Mêmes refus définitifs qu'en lecture seule : fichiers du serveur, contrôle du serveur, verrous durables.
-        if ($this->usesDangerousFunction($statement)) {
+        if (!$skipForbidden && $this->usesDangerousFunction($statement)) {
             return GuardVerdict::refused(GuardReason::ForbiddenConstruct, $kind);
         }
 

@@ -736,10 +736,12 @@ final class StatementGuardCorpusTest extends TestCase
         yield from self::rows('VEXPLAIN SELECT 1', $my, $ro, 'allow:Inspect');
         yield from self::rows('VEXPLAIN UPDATE t SET a = 1 WHERE id = 1', $my, $ro, 'refuse:NotReadOnly');
         // Ce que le garde ne sait pas juger reste refusé.
-        foreach (['VEXPLAIN', 'VEXPLAIN TRACE', 'VEXPLAIN TRACE FOO BAR', 'VEXPLAIN ALL EXECUTE x', "REVERT VITESS_MIGRATION 'x'"] as $sql) {
+        foreach (['VEXPLAIN', 'VEXPLAIN TRACE', 'VEXPLAIN TRACE FOO BAR', 'VEXPLAIN ALL EXECUTE x'] as $sql) {
             yield from self::rows($sql, $my, $ro, 'refuse:UnsupportedStatement');
             yield from self::rows($sql, $my, $rw, 'refuse:UnsupportedStatement');
         }
+        yield from self::rows("REVERT VITESS_MIGRATION 'x'", $my, $ro, 'refuse:NotReadOnly');
+        yield from self::rows("REVERT VITESS_MIGRATION 'x'", $my, $rw, 'confirm:DestructiveStatement');
         yield from self::rows("ALTER VITESS_MIGRATION 'x' CANCEL", $my, $ro, 'refuse:NotReadOnly');
         yield from self::rows("ALTER VITESS_MIGRATION 'x' CANCEL", $my, $rw, 'confirm:DestructiveStatement');
     }

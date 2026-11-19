@@ -38,6 +38,7 @@ final readonly class QueryController
             QueryMode::tryFrom($input->optionalString('mode') ?? QueryMode::ReadOnly->value) ?? throw new InvalidQueryOptionsException('The mode is not supported.'),
             $this->limit->timeout($input->optionalInt('timeoutMs'), $defaults->timeoutMs),
             $input->optionalInt('maxRows', $defaults->maxRows) ?? $defaults->maxRows,
+            lenient: true,
         );
 
         $uuid = Uuid::fromString($id);
