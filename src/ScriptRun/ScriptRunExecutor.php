@@ -51,7 +51,7 @@ final readonly class ScriptRunExecutor
                 $run->getConnectionId(),
                 $target,
                 $request->script,
-                new ScriptOptions($request->writes, $request->timeoutMs, $request->dryRun, new ScriptRunProgress($run, $this->runs, $this->clock, $this->afterStatement)),
+                new ScriptOptions($request->writes, $request->timeoutMs, $request->dryRun, new ScriptRunProgress($run, $this->runs, $this->clock, $this->afterStatement), $request->lenient),
                 $request->confirmed,
                 $run->getId(),
             );

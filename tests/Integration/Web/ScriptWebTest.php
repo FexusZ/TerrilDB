@@ -98,11 +98,37 @@ final class ScriptWebTest extends WebApiTestCase
         $this->seedAndLogin();
         $id = $this->saveTarget();
 
-        $body = $this->call('POST', '/web/connections/'.$id.'/script/preview', ['script' => "SELECT 1;\nCOPY t TO '/tmp/x'"]);
+        $body = $this->call('POST', '/web/connections/'.$id.'/script/preview', ['script' => "SELECT 1;\nCOMMIT"]);
 
         self::assertSame(200, $this->statusCode());
         self::assertFalse($body['canRun']);
-        self::assertSame(['index' => 1, 'reason' => 'forbidden_construct'], $body['firstRefused']);
+        self::assertSame(['index' => 1, 'reason' => 'unsupported_statement'], $body['firstRefused']);
+    }
+
+    public function testPreviewOfAConstructOutsideTheUsualFrameIsAWarningNotARefusal(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/script/preview', ['script' => "SELECT 1;\nCOPY t TO '/tmp/x'"]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertTrue($body['canRun']);
+        self::assertNull($body['firstRefused']);
+        self::assertTrue($body['needsConfirmation']);
+    }
+
+    public function testAConstructOutsideTheUsualFrameWaitsForTheConfirmationAndRunsNothingBeforeIt(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $table = $this->scratch();
+
+        $body = $this->call('POST', '/web/connections/'.$id.'/script/execute', ['script' => "INSERT INTO $table VALUES (1, 'a'); COPY $table TO '/tmp/x'"]);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $body['error']);
+        self::assertSame(0, $this->rows($table));
     }
 
     public function testExecuteCommitsTheScriptAndReportsEachStatement(): void
@@ -185,11 +211,11 @@ final class ScriptWebTest extends WebApiTestCase
         $id = $this->saveTarget();
         $table = $this->scratch();
 
-        $body = $this->call('POST', '/web/connections/'.$id.'/script/execute', ['script' => "INSERT INTO $table VALUES (1, 'a'); COPY $table TO '/tmp/x'", 'confirmed' => true]);
+        $body = $this->call('POST', '/web/connections/'.$id.'/script/execute', ['script' => "INSERT INTO $table VALUES (1, 'a'); COMMIT", 'confirmed' => true]);
 
         self::assertSame(403, $this->statusCode());
         self::assertSame('script_refused', $body['error']);
-        self::assertSame(['reason' => 'forbidden_construct', 'statement' => 1], ['reason' => $body['reason'], 'statement' => $body['statement']]);
+        self::assertSame(['reason' => 'unsupported_statement', 'statement' => 1], ['reason' => $body['reason'], 'statement' => $body['statement']]);
         self::assertSame(0, $this->rows($table));
     }
 
@@ -281,12 +307,12 @@ final class ScriptWebTest extends WebApiTestCase
         $user = $this->seedAndLogin();
         $id = $this->saveTarget();
 
-        $this->call('POST', '/web/connections/'.$id.'/script/execute', ['script' => "SELECT 1; COPY t TO '/tmp/x'", 'confirmed' => true]);
+        $this->call('POST', '/web/connections/'.$id.'/script/execute', ['script' => 'SELECT 1; COMMIT', 'confirmed' => true]);
 
         $events = $this->auditEvents($user, 'query');
         self::assertCount(1, $events);
         self::assertSame(AuditAction::QueryRefused, $events[0]->getAction());
-        self::assertSame(['forbidden_construct', 2, 2], [$events[0]->getDetails()['reason'], $events[0]->getDetails()['rank'], $events[0]->getDetails()['total']]);
+        self::assertSame(['unsupported_statement', 2, 2], [$events[0]->getDetails()['reason'], $events[0]->getDetails()['rank'], $events[0]->getDetails()['total']]);
     }
 
     public function testAConfirmationRequestIsNotAnExecution(): void

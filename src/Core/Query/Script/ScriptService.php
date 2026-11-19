@@ -43,13 +43,13 @@ final readonly class ScriptService
     /**
      * @param list<string> $nonTransactionalTables voir ScriptExecutor::nonTransactionalTables (MySQL/MariaDB)
      */
-    public function preview(string $script, Engine $engine, WritePermissions $writes, array $nonTransactionalTables = []): ScriptPreview
+    public function preview(string $script, Engine $engine, WritePermissions $writes, array $nonTransactionalTables = [], bool $lenient = false): ScriptPreview
     {
         if (!$engine->speaksSql()) {
             throw UnsupportedOperationException::for($engine, 'script');
         }
 
-        $report = $this->analyzer->analyze($script, $engine, $writes);
+        $report = $this->analyzer->analyze($script, $engine, $writes, $lenient);
 
         return new ScriptPreview($report, ScriptCapabilities::for($engine, $this->statements($report, $engine, $nonTransactionalTables)));
     }
@@ -61,11 +61,11 @@ final readonly class ScriptService
      * @throws ScriptTooLargeException
      * @throws UnsupportedOperationException
      */
-    public function previewFor(TargetConnection $target, string $script, WritePermissions $writes): ScriptPreview
+    public function previewFor(TargetConnection $target, string $script, WritePermissions $writes, bool $lenient = false): ScriptPreview
     {
-        $report = $this->preview($script, $target->engine, $writes)->report;
+        $report = $this->preview($script, $target->engine, $writes, [], $lenient)->report;
 
-        return $this->preview($script, $target->engine, $writes, $this->nonTransactionalTables($target->script(), $target->engine, $report));
+        return $this->preview($script, $target->engine, $writes, $this->nonTransactionalTables($target->script(), $target->engine, $report), $lenient);
     }
 
     /**
@@ -80,9 +80,9 @@ final readonly class ScriptService
     public function execute(TargetConnection $target, string $script, ScriptOptions $options, bool $confirmed = false): ScriptResult
     {
         $executor = $target->script();
-        $report = $this->preview($script, $target->engine, $options->writes)->report;
+        $report = $this->preview($script, $target->engine, $options->writes, [], $options->lenient)->report;
         $unsafe = $this->nonTransactionalTables($executor, $target->engine, $report);
-        $preview = $this->preview($script, $target->engine, $options->writes, $unsafe);
+        $preview = $this->preview($script, $target->engine, $options->writes, $unsafe, $options->lenient);
 
         $this->assertRunnable($report, $preview, $options->dryRun, $confirmed);
 
@@ -102,9 +102,9 @@ final readonly class ScriptService
      * @throws ScriptTooLargeException
      * @throws UnsupportedOperationException
      */
-    public function judge(string $script, Engine $engine, WritePermissions $writes, bool $dryRun, bool $confirmed): ScriptReport
+    public function judge(string $script, Engine $engine, WritePermissions $writes, bool $dryRun, bool $confirmed, bool $lenient = false): ScriptReport
     {
-        $preview = $this->preview($script, $engine, $writes);
+        $preview = $this->preview($script, $engine, $writes, [], $lenient);
         $this->assertRunnable($preview->report, $preview, $dryRun, $confirmed);
 
         return $preview->report;

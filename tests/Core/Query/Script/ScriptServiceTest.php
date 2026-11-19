@@ -162,6 +162,23 @@ final class ScriptServiceTest extends TestCase
         self::assertSame(0, $spy->calls);
     }
 
+    public function testALenientConsoleAsksForOneConfirmationInsteadOfRefusingAConstructOutsideTheFrame(): void
+    {
+        [$target, $spy] = $this->target(Engine::PostgreSql);
+        $script = "INSERT INTO t VALUES (1);\nCOPY t TO '/tmp/x';";
+
+        try {
+            $this->service()->execute($target, $script, new ScriptOptions(WritePermissions::all(), lenient: true));
+            self::fail('A confirmation was expected.');
+        } catch (ScriptNeedsConfirmationException $e) {
+            self::assertSame(1, $e->destructiveCount);
+        }
+        self::assertSame(0, $spy->calls);
+
+        $this->service()->execute($target, $script, new ScriptOptions(WritePermissions::all(), lenient: true), true);
+        self::assertSame(1, $spy->calls);
+    }
+
     public function testTheRightsOfTheCallerApplyToEachStatement(): void
     {
         [$target, $spy] = $this->target(Engine::PostgreSql);

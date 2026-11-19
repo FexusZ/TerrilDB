@@ -196,6 +196,21 @@ function execute(): void {
 
 const plural = (n: number, one: string, many: string): string => `${String(n)} ${n > 1 ? many : one}`
 
+/** Les instructions à confirmer : celles qui détruisent, et celles qui sortent du cadre habituel (avertissement, pas un refus). */
+function confirmationMessage(shown: ScriptPreview): string {
+  const outside = shown.steps.filter((step) => step.verdict === 'needs_confirmation' && step.reason === 'forbidden_construct').length
+  const destructive = shown.destructiveCount - outside
+  const parts: string[] = []
+  if (destructive > 0) {
+    parts.push(plural(destructive, 'instruction destructrice', 'instructions destructrices'))
+  }
+  if (outside > 0) {
+    parts.push(plural(outside, 'instruction hors du cadre habituel (fichiers du serveur, verrous…)', 'instructions hors du cadre habituel (fichiers du serveur, verrous…)'))
+  }
+
+  return `Ce script contient ${parts.join(' et ')}. Une seule confirmation couvre tout le script.`
+}
+
 // Lignes et durée d'une instruction partie ; rien pour une instruction jamais lancée.
 function metrics(step: ScriptRun['steps'][number]): string {
   if (step.status === 'not_run') {
@@ -332,7 +347,7 @@ const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 
         <span class="rank">{{ step.index + 1 }}</span>
         <code>{{ step.sql }}</code>
         <span class="chip">{{ VERDICTS[step.verdict] }}</span>
-        <span v-if="step.reason" class="step-error">{{ reasonText(step.reason) }}</span>
+        <span v-if="step.reason" class="step-error">{{ reasonText(step.reason, step.verdict === 'needs_confirmation') }}</span>
       </li>
     </ol>
 
@@ -347,7 +362,7 @@ const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 
     <ConfirmDialog
       v-if="confirming && preview"
       title="Exécuter ce script ?"
-      :message="`Ce script contient ${plural(preview.destructiveCount, 'instruction destructrice', 'instructions destructrices')}. Une seule confirmation couvre tout le script.`"
+      :message="confirmationMessage(preview)"
       :confirm-label="dryRun ? 'Tester quand même' : 'Exécuter quand même'"
       danger
       @confirm="send(true)"

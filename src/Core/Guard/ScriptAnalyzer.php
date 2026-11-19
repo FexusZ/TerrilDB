@@ -35,7 +35,7 @@ final class ScriptAnalyzer
      * @throws ScriptTooLargeException
      * @throws \InvalidArgumentException   moteur sans SQL (Redis)
      */
-    public function analyze(string $script, Engine $engine, WritePermissions $writes): ScriptReport
+    public function analyze(string $script, Engine $engine, WritePermissions $writes, bool $lenient = false): ScriptReport
     {
         if (\strlen($script) > $this->maxBytes) {
             throw ScriptTooLargeException::tooLong($this->maxBytes);
@@ -48,7 +48,7 @@ final class ScriptAnalyzer
 
         $steps = [];
         foreach ($pieces as $index => $sql) {
-            $steps[] = new ScriptStep($index, $sql, $this->guard->check($sql, $engine, QueryMode::ReadWrite, $writes));
+            $steps[] = new ScriptStep($index, $sql, $this->guard->check($sql, $engine, QueryMode::ReadWrite, $writes, $lenient));
         }
 
         return new ScriptReport($steps);

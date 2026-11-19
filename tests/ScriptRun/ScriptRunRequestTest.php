@@ -59,6 +59,19 @@ final class ScriptRunRequestTest extends TestCase
         self::assertSame('203.0.113.5', $back->audit->ip);
     }
 
+    public function testTheJudgingModeSurvivesTheTripAndDefaultsToStrict(): void
+    {
+        $request = new ScriptRunRequest(Uuid::v7(), Engine::PostgreSql, new ConnectionParameters('db.example.test', 5432, 'shop', 'app', self::SECRET), 'SELECT 1', WritePermissions::all(), false, false, 120_000, new AuditContext(AuditActor::Web, Uuid::fromString('0192f1c0-0000-7000-8000-000000000001'), null, '203.0.113.5'), true);
+
+        self::assertTrue(ScriptRunRequest::fromJson($request->toJson())->lenient);
+        self::assertFalse(ScriptRunRequest::fromJson($this->request()->toJson())->lenient);
+
+        $data = json_decode($request->toJson(), true, 8, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($data);
+        unset($data['lenient']);
+        self::assertFalse(ScriptRunRequest::fromJson(json_encode($data, \JSON_THROW_ON_ERROR))->lenient, 'un message sans le champ reste strict');
+    }
+
     public function testWithoutAPinnedAddressTheHostIsKept(): void
     {
         $back = ScriptRunRequest::fromJson($this->request()->toJson());
