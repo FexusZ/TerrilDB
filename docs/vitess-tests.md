@@ -25,6 +25,7 @@ docker compose --profile vitess down                        # arrêt (les donné
 
 - #38 : `SET SESSION MAX_EXECUTION_TIME` est accepté mais pas transmis (`@@session.max_execution_time` reste 0, `SELECT SLEEP(2)` n'est
   pas coupé) ; `/*vt+ QUERY_TIMEOUT_MS=1000 */` coupe bien (erreur 3024). Corrigé (PR #111) : le driver sait que la cible est Vitess par la version lue une fois à l'ouverture (`ServerFlavour::Vitess`) et injecte `/*vt+ QUERY_TIMEOUT_MS=n */` après le premier mot-clé (SELECT, INSERT, UPDATE, DELETE, REPLACE ; sans effet sur SHOW et WITH) ; vtgate répond par l'erreur 3024 = `query_timeout`. Seul le délai en dépend, pas la lecture seule.
+- #40 (bases) : `information_schema.SCHEMATA` rend `["mysql", "information_schema", "performance_schema", "sys", "_vt", "vt_shop_0"]` (les bases physiques du tablet) alors que `SHOW DATABASES` rend `["shop", "information_schema", "mysql", "sys", "performance_schema"]` et `SHOW KEYSPACES` `["shop"]`. Corrigé : sur Vitess la liste des bases vient de `SHOW DATABASES` (`VitessKeyspacesTest`).
 - #39 : NON vérifiable ici (un seul `mysqld`, voir la limite ci-dessus) ; le `@@read_only` = 0 vu « sur le réplica » ne prouve rien. Voir le vrai cluster plus bas.
 
 # Vrai cluster Vitess (profil `vitess-cluster`)

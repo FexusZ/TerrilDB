@@ -38,8 +38,20 @@ use Doctrine\DBAL\Exception\DriverException;
  */
 final readonly class MySqlIntrospector implements SchemaIntrospector, OperationsSource
 {
-    public function __construct(private Connection $connection)
+    /**
+     * @param bool $vitess la cible est un vtgate (`ServerFlavour::Vitess`, lue une fois à l'ouverture) : ses « bases » sont des keyspaces
+     */
+    public function __construct(private Connection $connection, private bool $vitess = false)
     {
+    }
+
+    /**
+     * Les bases physiques d'un tablet Vitess (`_vt`, `vt_<keyspace>_<partition>` : « vt_shop_0 », « vt_shop_-80 »), que vtgate ne connaît
+     * pas : les ouvrir échoue. Un keyspace qui commence seulement par « vt_ » n'est PAS reconnu comme tel.
+     */
+    public static function isVitessInternal(string $name): bool
+    {
+        return '_vt' === $name || 1 === preg_match('/^vt_.+_(?:0|[0-9a-f]*-[0-9a-f]*)$/iD', $name);
     }
 
     private const COMPRESSED = '~\s*/\*M?!\d+\s+COMPRESSED(?:=\w+)?\s*\*/~i';
@@ -58,8 +70,12 @@ final readonly class MySqlIntrospector implements SchemaIntrospector, Operations
 
     public function listDatabases(): array
     {
-        // information_schema.SCHEMATA ne montre que les bases sur lesquelles le compte a un droit.
-        $names = $this->connection->fetchFirstColumn('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA');
+        // information_schema.SCHEMATA ne montre que les bases sur lesquelles le compte a un droit. Sur vtgate elle est routée vers UN tablet :
+        // elle rend les bases physiques de son mysqld (`_vt`, `vt_<keyspace>_0`) et cache les autres keyspaces ; `SHOW DATABASES` rend les
+        // keyspaces (et les bases système). Une « base » Vitess est un keyspace.
+        $names = $this->vitess
+            ? array_filter($this->connection->fetchFirstColumn('SHOW DATABASES'), static fn (mixed $name): bool => !\is_string($name) || !self::isVitessInternal($name))
+            : $this->connection->fetchFirstColumn('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA');
         $databases = [];
         foreach ($names as $name) {
             $name = (new RowReader(['name' => $name]))->string('name');
