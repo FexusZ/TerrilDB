@@ -52,7 +52,10 @@ final readonly class DbalConnector
         } else {
             $options['unix_socket'] = $socket;
         }
-        if ('' !== $parameters->database) {
+        if ($parameters->readReplica && Engine::MySql === $engine) {
+            // Vitess : la cible `@replica` du nom de base envoie les lectures aux tablets réplica, jamais au primaire.
+            $options['dbname'] = str_ends_with($parameters->database, '@replica') ? $parameters->database : $parameters->database.'@replica';
+        } elseif ('' !== $parameters->database) {
             $options['dbname'] = $parameters->database;
         } elseif (Engine::PostgreSql === $engine) {
             $options['dbname'] = self::POSTGRES_MAINTENANCE_DATABASE;

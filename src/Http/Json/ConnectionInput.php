@@ -35,6 +35,11 @@ final class ConnectionInput
     {
         $engine = $input->engine('engine');
         $password = $input->optionalString('password') ?? $current?->password() ?? '';
+        // Absent : la connexion garde son choix (une modification ne le change pas en silence).
+        $readReplica = $input->bool('readReplica', $current->readReplica ?? false);
+        if ($readReplica && Engine::MySql !== $engine) {
+            throw new InvalidConnectionParametersException('Reading on a replica is only offered for MySQL connections (Vitess).');
+        }
 
         return [
             $nameRequired ? $input->string('name') : ($input->optionalString('name') ?? ''),
@@ -46,6 +51,7 @@ final class ConnectionInput
                 $input->string('username'),
                 $password,
                 transport: self::transport($input, $current),
+                readReplica: $readReplica,
             ),
         ];
     }
