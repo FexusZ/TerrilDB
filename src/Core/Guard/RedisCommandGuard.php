@@ -77,7 +77,12 @@ final class RedisCommandGuard
         return $names;
     }
 
-    public function check(string $text, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true)): GuardVerdict
+    /**
+     * @param bool $lenient la console d'une personne connectée : ce que la liste blanche refuse (KEYS, CONFIG, scripts, commandes bloquantes,
+     *                      commandes que le garde ne connaît pas…) demande une confirmation « attention » ; rien d'autre n'est assoupli. En
+     *                      lecture seule, le serveur a toujours le dernier mot (COMMAND INFO, voir RedisQueryRunner).
+     */
+    public function check(string $text, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true), bool $lenient = false): GuardVerdict
     {
         if (\strlen($text) > self::MAX_LENGTH_BYTES) {
             return GuardVerdict::refused(GuardReason::TooLong);
@@ -98,7 +103,7 @@ final class RedisCommandGuard
         $name = strtoupper($arguments[0] ?? '');
 
         if (\in_array($name, self::FORBIDDEN, true)) {
-            return GuardVerdict::refused(GuardReason::ForbiddenConstruct);
+            return $this->outsideTheList($lenient, $mode, $writes, GuardReason::ForbiddenConstruct);
         }
         if (\in_array($name, self::SESSION, true)) {
             return GuardVerdict::refused(GuardReason::UnsupportedStatement);
@@ -111,7 +116,7 @@ final class RedisCommandGuard
 
             return \in_array($sub, self::READ_SUBCOMMANDS[$name], true)
                 ? GuardVerdict::allowed(StatementKind::Read)
-                : GuardVerdict::refused(GuardReason::ForbiddenConstruct);
+                : $this->outsideTheList($lenient, $mode, $writes, GuardReason::ForbiddenConstruct);
         }
         if (\in_array($name, self::READ, true)) {
             return GuardVerdict::allowed(StatementKind::Read);
@@ -121,11 +126,15 @@ final class RedisCommandGuard
                 return GuardVerdict::refused(GuardReason::NotReadOnly, StatementKind::Write);
             }
             // COPY … DB n écrit dans une autre base que celle de la connexion (comme FLUSHALL, MOVE ou SWAPDB, hors de son périmètre).
-            if ('COPY' === $name && \in_array('DB', array_map('strtoupper', \array_slice($arguments, 3)), true)) {
+            $otherDatabase = 'COPY' === $name && \in_array('DB', array_map('strtoupper', \array_slice($arguments, 3)), true);
+            if ($otherDatabase && !$lenient) {
                 return GuardVerdict::refused(GuardReason::ForbiddenConstruct, StatementKind::Write);
             }
             if (!$writes->data) {
                 return GuardVerdict::refused(GuardReason::WriteNotPermitted, StatementKind::Write);
+            }
+            if ($otherDatabase) {
+                return GuardVerdict::needsConfirmation(StatementKind::Write, GuardReason::ForbiddenConstruct);
             }
 
             return 'FLUSHDB' === $name
@@ -133,6 +142,25 @@ final class RedisCommandGuard
                 : GuardVerdict::allowed(StatementKind::Write);
         }
 
-        return GuardVerdict::refused(GuardReason::UnsupportedStatement);
+        return $this->outsideTheList($lenient, $mode, $writes, GuardReason::UnsupportedStatement);
+    }
+
+    /**
+     * Une commande hors de la liste blanche : refusée (jetons d'API, MCP), ou, dans la console, confirmée. En lecture seule le serveur
+     * l'arbitre ensuite (une commande qu'il marque écriture, administration ou bloquante y est refusée) ; en lecture-écriture elle part
+     * telle quelle une fois confirmée, avec le droit d'écrire.
+     */
+    private function outsideTheList(bool $lenient, QueryMode $mode, WritePermissions $writes, GuardReason $strictReason): GuardVerdict
+    {
+        if (!$lenient) {
+            return GuardVerdict::refused($strictReason);
+        }
+        if (QueryMode::ReadOnly === $mode) {
+            return GuardVerdict::needsConfirmation(StatementKind::Read, GuardReason::ForbiddenConstruct);
+        }
+
+        return $writes->data
+            ? GuardVerdict::needsConfirmation(StatementKind::Write, GuardReason::ForbiddenConstruct)
+            : GuardVerdict::refused(GuardReason::WriteNotPermitted, StatementKind::Write);
     }
 }

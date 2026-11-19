@@ -108,4 +108,50 @@ final class LenientGuardTest extends TestCase
         self::assertSame(GuardReason::DestructiveStatement, $verdict->reason);
         self::assertSame(GuardReason::NotReadOnly, (new StatementGuard())->check("REVERT VITESS_MIGRATION 'x'", Engine::MySql, QueryMode::ReadOnly)->reason);
     }
+
+    /**
+     * @return iterable<string, array{string, QueryMode, string}>
+     */
+    public static function redisCommands(): iterable
+    {
+        // Ce que la liste blanche refusait : avertissement, et en lecture seule le serveur (COMMAND INFO, dans le runner) a le dernier mot.
+        foreach (['KEYS *', 'CONFIG GET maxmemory', 'CLIENT LIST', 'SLOWLOG GET 5', 'EVAL "return 1" 0', 'SCRIPT FLUSH', 'FLUSHALL', 'SUBSCRIBE a', 'BLPOP q 1', 'PUBLISH c m', 'OBJECT HELP', 'PFCOUNT hll', 'SHUTDOWN NOSAVE', 'CONFIG SET maxmemory 0'] as $command) {
+            yield 'lecture seule '.$command => [$command, QueryMode::ReadOnly, 'confirm:Read'];
+            yield 'lecture-écriture '.$command => [$command, QueryMode::ReadWrite, 'confirm:Write'];
+        }
+        yield 'COPY vers une autre base' => ['COPY a b DB 2', QueryMode::ReadWrite, 'confirm:Write'];
+        // Rien d'autre n'est assoupli.
+        yield 'écriture en lecture seule' => ['SET a 1', QueryMode::ReadOnly, 'refuse:NotReadOnly'];
+        yield 'plusieurs commandes' => ["GET a\nGET b", QueryMode::ReadOnly, 'refuse:MultipleStatements'];
+        yield 'session (pas de session côté TerrilDB)' => ['MULTI', QueryMode::ReadWrite, 'refuse:UnsupportedStatement'];
+        yield 'lecture ordinaire' => ['GET a', QueryMode::ReadOnly, 'allow:Read'];
+        yield 'FLUSHDB' => ['FLUSHDB', QueryMode::ReadWrite, 'confirm:DestructiveStatement'];
+    }
+
+    #[DataProvider('redisCommands')]
+    public function testRedisCommandsOutsideTheWhitelistAskForConfirmationInLenientMode(string $command, QueryMode $mode, string $expected): void
+    {
+        $verdict = (new StatementGuard())->check($command, Engine::Redis, $mode, lenient: true);
+
+        $actual = match ($verdict->decision) {
+            Decision::Allowed => 'allow:'.(string) $verdict->kind?->name,
+            Decision::NeedsConfirmation => 'confirm:'.(string) ('confirm:Read' === $expected || 'confirm:Write' === $expected ? $verdict->kind?->name : $verdict->reason?->name),
+            Decision::Refused => 'refuse:'.(string) $verdict->reason?->name,
+        };
+        self::assertSame($expected, $actual, $command);
+    }
+
+    public function testRedisKeepsItsStrictVerdictsForTokensAndTheMcp(): void
+    {
+        foreach (['KEYS *', 'CONFIG GET maxmemory', 'EVAL "return 1" 0', 'PFCOUNT hll'] as $command) {
+            self::assertSame(Decision::Refused, (new StatementGuard())->check($command, Engine::Redis, QueryMode::ReadOnly)->decision, $command);
+        }
+    }
+
+    public function testARedisWriteWithoutTheRightStaysRefusedWhenLenient(): void
+    {
+        $verdict = (new StatementGuard())->check('FLUSHALL', Engine::Redis, QueryMode::ReadWrite, new \App\Core\Query\WritePermissions(false, false), lenient: true);
+
+        self::assertSame(GuardReason::WriteNotPermitted, $verdict->reason);
+    }
 }

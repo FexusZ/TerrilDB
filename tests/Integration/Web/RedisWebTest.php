@@ -210,6 +210,26 @@ final class RedisWebTest extends WebApiTestCase
         self::assertSame('Alice', $this->seed->get('user:1'));
     }
 
+    public function testACommandOutsideTheWhitelistAsksForConfirmationInTheConsoleThenRunsOnTheServerRules(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveRedis();
+
+        // KEYS bloque le serveur : un avertissement, puis il part (lecture, le serveur ne le marque pas comme écriture).
+        $body = $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 'keys user:*']);
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $body['error']);
+        self::assertSame('forbidden_construct', $body['reason']);
+
+        $keys = $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 'keys user:*', 'confirmed' => true]);
+        self::assertSame(200, $this->statusCode());
+        self::assertContains(['user:1'], $keys['rows']);
+
+        // En lecture seule, le serveur a le dernier mot : une administration confirmée y est refusée, elle ne s'exécute pas.
+        $this->call('POST', '/web/connections/'.$id.'/query', ['sql' => 'config set maxmemory-policy noeviction', 'confirmed' => true]);
+        self::assertSame(403, $this->statusCode());
+    }
+
     public function testWritesWorkInReadWriteModeAndFlushingAsksForConfirmation(): void
     {
         $this->seedAndLogin();

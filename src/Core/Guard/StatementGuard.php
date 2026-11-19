@@ -88,6 +88,10 @@ final class StatementGuard
      */
     public function check(string $sql, Engine $engine, QueryMode $mode, WritePermissions $writes = new WritePermissions(true, true), bool $lenient = false): GuardVerdict
     {
+        if (!$engine->speaksSql()) {
+            return $this->redis->check($sql, $mode, $writes, $lenient);
+        }
+
         $verdict = $this->judge($sql, $engine, $mode, $writes, false);
         if (!$lenient || Decision::Refused !== $verdict->decision || GuardReason::ForbiddenConstruct !== $verdict->reason) {
             return $verdict;
