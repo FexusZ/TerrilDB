@@ -41,7 +41,7 @@ final class StatementGuardCorpusTest extends TestCase
     public static function corpus(): iterable
     {
         $seen = [];
-        foreach ([self::firstBatch(), self::secondBatch(), self::thirdBatch()] as $batch) {
+        foreach ([self::firstBatch(), self::secondBatch(), self::thirdBatch(), self::vitessBatch()] as $batch) {
             foreach ($batch as $name => $row) {
                 if (!isset($seen[$name])) {
                     $seen[$name] = true;
@@ -692,6 +692,32 @@ final class StatementGuardCorpusTest extends TestCase
         ] as $sql) {
             yield from self::rows($sql, $pg, $ro, 'allow:Read');
         }
+    }
+
+    /**
+     * Vitess (#40) : les verbes propres à vtgate, jugés avec le dialecte MySQL. `SHOW VITESS_*` est une lecture du topo (permise) ;
+     * `VEXPLAIN` est REFUSÉ, y compris dans ses formes qui n'exécuteraient rien : `VEXPLAIN TRACE` joue la requête expliquée, et le
+     * garde ne juge pas ce qu'elle contient ; les migrations en ligne se pilotent hors d'ici (`REVERT` refusé, `ALTER VITESS_MIGRATION`
+     * = structure, jamais en lecture seule, confirmation en lecture-écriture).
+     *
+     * @return iterable<string, array{string, Engine, QueryMode, string}>
+     */
+    private static function vitessBatch(): iterable
+    {
+        $ro = QueryMode::ReadOnly;
+        $rw = QueryMode::ReadWrite;
+        $my = [Engine::MySql];
+
+        foreach (['SHOW VITESS_TABLETS', 'SHOW VITESS_SHARDS', 'SHOW VITESS_KEYSPACES', 'SHOW VITESS_REPLICATION_STATUS', 'SHOW VITESS_MIGRATIONS', "SHOW VITESS_MIGRATION 'x' LOGS", 'SHOW VITESS_TARGET', 'SHOW VSCHEMA TABLES', 'SHOW KEYSPACES'] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'allow:Inspect');
+            yield from self::rows($sql, $my, $rw, 'allow:Inspect');
+        }
+        foreach (['VEXPLAIN ALL SELECT 1', 'VEXPLAIN TRACE SELECT * FROM t', 'VEXPLAIN PLAN SELECT 1', 'VEXPLAIN QUERIES SELECT 1', 'VEXPLAIN KEYS SELECT 1', 'VEXPLAIN SELECT 1', 'vexplain trace select 1', "REVERT VITESS_MIGRATION 'x'"] as $sql) {
+            yield from self::rows($sql, $my, $ro, 'refuse:UnsupportedStatement');
+            yield from self::rows($sql, $my, $rw, 'refuse:UnsupportedStatement');
+        }
+        yield from self::rows("ALTER VITESS_MIGRATION 'x' CANCEL", $my, $ro, 'refuse:NotReadOnly');
+        yield from self::rows("ALTER VITESS_MIGRATION 'x' CANCEL", $my, $rw, 'confirm:DestructiveStatement');
     }
 
     #[DataProvider('corpus')]

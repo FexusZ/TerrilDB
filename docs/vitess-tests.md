@@ -164,3 +164,11 @@ Tous les Vitess n'ont pas de réplica : sans tablet réplica en service, vtgate 
 injoignable (message générique, jamais un repli silencieux sur le primaire). Le garde et la transaction en lecture seule ne changent pas ;
 un `@replica` refuse en plus toute écriture de données (1105). Éprouvé sur `target-vitess` : `tests/Integration/Driver/VitessReplicaTest`
 (un seul `mysqld` : l'étiquette de routage est prouvée, pas la réplication).
+
+# Verbes de vtgate et le garde (#40)
+
+Jugés avec le dialecte MySQL, figés par `StatementGuardCorpusTest` et éprouvés sur un vrai vtgate (`VitessShowTest`) :
+
+- `SHOW VITESS_TABLETS|SHARDS|KEYSPACES|REPLICATION_STATUS|MIGRATIONS|TARGET`, `SHOW VITESS_MIGRATION '…' LOGS`, `SHOW VSCHEMA …`, `SHOW KEYSPACES` : lectures du topo, permises (un `SHOW` est une inspection).
+- `VEXPLAIN` (ALL, TRACE, PLAN, QUERIES, KEYS) : REFUSÉ (`unsupported_statement`), dans les deux modes. `VEXPLAIN TRACE` exécute la requête expliquée et le garde ne juge pas ce qu'elle contient ; les autres formes n'ont pas été examinées une à une, le refus est le choix prudent. Le plan d'une lecture passe par `EXPLAIN`, déjà permis.
+- `ALTER VITESS_MIGRATION '…' …` : structure, jamais en lecture seule, confirmation en lecture-écriture. `REVERT VITESS_MIGRATION` : refusé (verbe inconnu du garde). Les DDL en ligne ne sont pas pilotés par TerrilDB.
