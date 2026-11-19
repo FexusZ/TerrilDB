@@ -184,6 +184,24 @@ final class SchemaQueryWebTest extends WebApiTestCase
         self::assertSame('destructive_without_where', $body['reason']);
     }
 
+    public function testAConstructOutsideTheUsualFrameAsksForConfirmationInTheConsoleAndRunsOnceConfirmed(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget('TARGET_MYSQL_URL');
+        $sql = "select load_file('/nonexistent/terrildb')";
+
+        $body = $this->query($id, $sql);
+
+        self::assertSame(409, $this->statusCode());
+        self::assertSame('confirmation_required', $body['error']);
+        self::assertSame('forbidden_construct', $body['reason']);
+
+        $confirmed = $this->query($id, $sql, ['confirmed' => true]);
+
+        self::assertSame(200, $this->statusCode());
+        self::assertArrayHasKey('rows', $confirmed);
+    }
+
     public function testAHiddenSecondStatementIsRefused(): void
     {
         $this->seedAndLogin();

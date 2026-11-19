@@ -141,6 +141,15 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(409, 'deadlock', { retryable: false, applied: [{ sql: 'x' }] }))).toContain('déjà appliquées')
   })
 
+  it('words a construct outside the usual frame as a warning when it is being confirmed, and as a refusal otherwise', () => {
+    expect(reasonText('forbidden_construct')).toContain('interdite')
+    const warning = reasonText('forbidden_construct', true)
+
+    expect(warning).toContain('Attention')
+    expect(warning).not.toContain('interdite')
+    expect(reasonText('destructive_statement', true)).toBe(reasonText('destructive_statement'))
+  })
+
   it('names the refused statement of a script and says nothing ran', () => {
     const message = messageFor(new ApiError(403, 'script_refused', { reason: 'forbidden_construct', statement: 2 }))
 

@@ -13,6 +13,8 @@ use App\Core\Query\Exception\InvalidQueryOptionsException;
  * dans une session en lecture seule) ne doit rien laisser, quoi que fasse le moteur.
  * `measure` : une lecture parcourt TOUTES ses lignes (le LIMIT du SQL reste respecté) pour les compter, et ne garde que
  * `maxRows` lignes d'aperçu ; la durée maximale reste celle de `timeoutMs`.
+ * `lenient` : la console d'une personne connectée, qui garde tous ses outils : les refus du garde pour constructions hors cadre
+ * (fichiers du serveur, verrous durables…) y deviennent une confirmation ; jamais pour un jeton d'API ni le MCP.
  * Les bornes hautes sont fixes, pour qu'un client ne puisse pas les lever à volonté.
  */
 final readonly class QueryOptions
@@ -28,6 +30,7 @@ final readonly class QueryOptions
         public WritePermissions $writes = new WritePermissions(true, true),
         public bool $measure = false,
         public bool $discard = false,
+        public bool $lenient = false,
     ) {
         if ($timeoutMs < self::MIN_TIMEOUT_MS || $timeoutMs > self::MAX_TIMEOUT_MS) {
             throw new InvalidQueryOptionsException('The timeout is out of bounds.');
