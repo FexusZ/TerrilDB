@@ -20,7 +20,7 @@ const loading = ref(false)
 const note = computed(() => (report.value === null ? null : describeStatus(report.value.status, 'les comptes')))
 
 function scope() {
-  return { database: workspace.database, schema: workspace.schema }
+  return workspace.diagnosticScope()
 }
 
 const privileges = (privileges: string[]): string => (privileges.length === 0 ? '' : privileges.join(', '))

@@ -30,7 +30,7 @@ final class VitessTabletDiagnosticsWebTest extends WebApiTestCase
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<mixed>
      */
     private function replica(string $id): array
     {

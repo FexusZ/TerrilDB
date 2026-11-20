@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './client'
-import { fetchAccounts, fetchConfigAudit, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTopQueries, fetchVariableComparison, fetchVariables } from './diagnostics'
+import { fetchAccounts, fetchConfigAudit, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTablets, fetchTopQueries, fetchVariableComparison, fetchVariables } from './diagnostics'
 
 vi.mock('./client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./client')>()), api: vi.fn() }))
 
@@ -104,5 +104,22 @@ describe('diagnostics API', () => {
     await fetchVariableComparison('a b', 'c&d')
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/diagnostics/compare?a=a%20b&b=c%26d')
+  })
+
+  it('adds the chosen tablet to every read', async () => {
+    mocked.mockResolvedValueOnce({ status: { availability: 'available', reason: null, privilege: null }, truncated: false, sessions: [] })
+
+    await fetchSessions('abc', { database: 'shop', schema: null, tablet: 'test-0000000002' })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/sessions?database=shop&tablet=test-0000000002')
+  })
+
+  it('lists the tablets of a gateway', async () => {
+    mocked.mockResolvedValueOnce({ tablets: [{ alias: 'test-0000000002', cell: 'test', keyspace: 'shop', shard: '0', type: 'REPLICA', serving: true }] })
+
+    const tablets = await fetchTablets('abc', { database: null, schema: null })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/tablets')
+    expect(tablets[0]?.alias).toBe('test-0000000002')
   })
 })

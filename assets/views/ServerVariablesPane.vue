@@ -24,7 +24,7 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    report.value = await fetchVariables(props.id, { database: workspace.database, schema: workspace.schema }, { search: search.value, changedOnly: changedOnly.value, limit: LIMIT })
+    report.value = await fetchVariables(props.id, workspace.diagnosticScope(), { search: search.value, changedOnly: changedOnly.value, limit: LIMIT })
   } catch (failure) {
     report.value = null
     error.value = messageFor(failure)

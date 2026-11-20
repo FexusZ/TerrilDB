@@ -17,7 +17,7 @@ describe('describeStatus', () => {
     const text = describeStatus(status('unsupported', { reason: 'vitess_tablet_scope' }), 'les sessions')
 
     expect(text).toContain('un seul tablet')
-    expect(text).toContain('connexion directe')
+    expect(text).toContain('Choisissez le tablet')
     expect(text).not.toContain('Ce moteur ne fournit pas')
   })
 

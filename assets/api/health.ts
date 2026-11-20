@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DiagnosticScope } from './diagnostics'
+import { scopeParts, type DiagnosticScope } from './diagnostics'
 import type { DiagnosticStatus } from './types'
 
 export type HealthLevel = 'ok' | 'warning' | 'unknown'
@@ -26,8 +26,7 @@ export interface HealthReport {
 /** Deux relevés de compteurs à `seconds` secondes d'écart (1 à 30) : la requête dure autant. */
 export function fetchHealth(id: string, scope: DiagnosticScope, seconds: number): Promise<HealthReport> {
   const parts = [`seconds=${String(seconds)}`]
-  if (scope.database !== null) parts.push(`database=${encodeURIComponent(scope.database)}`)
-  if (scope.schema !== null) parts.push(`schema=${encodeURIComponent(scope.schema)}`)
+  parts.push(...scopeParts(scope))
 
   return api<HealthReport>('GET', `/web/connections/${id}/diagnostics/health?${parts.join('&')}`)
 }

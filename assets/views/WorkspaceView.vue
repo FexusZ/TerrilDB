@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
+import TabletPicker from '../components/TabletPicker.vue'
 import WorkbenchSidebar from '../components/WorkbenchSidebar.vue'
 import { useConnectionsStore } from '../stores/connections'
 import { useWorkspaceStore, type TableTab } from '../stores/workspace'
@@ -22,6 +23,25 @@ const connection = computed(() => connections.byId(props.id))
 const hasSchemaViews = computed(() => connection.value !== undefined && connection.value.engine !== 'redis')
 const hasAccounts = computed(() => connection.value?.engine === 'mysql' || connection.value?.engine === 'mariadb')
 const scope = computed(() => ({ ...(workspace.database === null ? {} : { database: workspace.database }), ...(workspace.schema === null ? {} : { schema: workspace.schema }) }))
+
+// Pages de supervision : sur un vtgate (Vitess), elles se lisent tablet par tablet. Les tablets sont lus à l'entrée sur l'une d'elles,
+// et la page ne se monte qu'une fois un tablet choisi (sinon la lecture partirait vers un tablet au hasard).
+const SERVER_PAGES = ['server-activity', 'accounts', 'server-variables', 'server-health', 'replication', 'server-logs']
+const isServerPage = computed(() => typeof route.name === 'string' && SERVER_PAGES.includes(route.name))
+const tabletsReady = ref(false)
+watch(
+  () => [isServerPage.value, ready.value, hasAccounts.value] as const,
+  async ([serverPage, isReady, sql]) => {
+    if (!serverPage || !isReady || !sql) {
+      return
+    }
+    tabletsReady.value = false
+    await workspace.loadTablets()
+    tabletsReady.value = true
+  },
+  { immediate: true },
+)
+const holdPage = computed(() => isServerPage.value && hasAccounts.value && (!tabletsReady.value || workspace.needsTablet))
 
 // Les tables ouvertes forment des onglets : on y revient à la vue où on les a laissées, et ils restent quand on part vers la console,
 // le diagramme ou l'audit.
@@ -144,7 +164,8 @@ watch(() => [route.query.database, route.query.schema], () => {
     <div v-else class="body">
       <div class="content">
         <p v-if="workspace.tablesError" class="error" role="alert">{{ workspace.tablesError }}</p>
-        <RouterView v-if="ready" />
+        <TabletPicker v-if="isServerPage && workspace.tablets.length > 0" />
+        <RouterView v-if="ready && !holdPage" :key="isServerPage ? (workspace.tablet ?? '') : undefined" />
       </div>
       <WorkbenchSidebar @deleted="onDeleted" />
     </div>
