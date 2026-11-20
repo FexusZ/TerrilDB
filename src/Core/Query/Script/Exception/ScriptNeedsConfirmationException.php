@@ -9,7 +9,10 @@ namespace App\Core\Query\Script\Exception;
  */
 final class ScriptNeedsConfirmationException extends \RuntimeException
 {
-    public function __construct(public readonly int $destructiveCount)
+    /**
+     * @param string $reason `destructive_script` (défaut) ou `stream_source` : Vitess, une instruction touche une table qui nourrit un flux
+     */
+    public function __construct(public readonly int $destructiveCount, public readonly string $reason = 'destructive_script')
     {
         parent::__construct('The script needs a confirmation.');
     }

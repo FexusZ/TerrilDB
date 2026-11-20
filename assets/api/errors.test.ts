@@ -167,4 +167,10 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'non_transactional_tables' }))).toContain('sans transaction')
     expect(reasonText('destructive_script')).toContain('confirm')
   })
+
+  it('warns that a flow will not follow, instead of calling it destructive', () => {
+    expect(reasonText('stream_source', true)).toContain('flux')
+    expect(reasonText('stream_source', true)).toContain('ne suivra pas')
+    expect(reasonText('stream_source')).toContain('flux')
+  })
 })

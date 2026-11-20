@@ -14,6 +14,7 @@ const REASONS: Record<string, string> = {
   destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
   big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
   other_administrator_token: 'Ce jeton appartient à un autre administrateur : sa révocation demande une confirmation explicite.',
+  stream_source: 'Attention : cette modification touche une table qui nourrit un flux Vitess (Materialize, MoveTables). Le flux ne suivra pas ce changement : la table cible peut cesser d’être à jour. Vérifiez-la avant de continuer.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -22,6 +23,7 @@ const GENERIC = 'Une erreur est survenue. Réessayez.'
 /** Explication d'un refus du garde. Un motif inconnu n'est jamais affiché tel quel. */
 // Ce qui est REFUSÉ aux jetons d'API et au MCP demande, dans la console, une simple confirmation : le texte est alors un avertissement.
 const WARNINGS: Record<string, string> = {
+  stream_source: 'Attention : cette modification touche une table qui nourrit un flux Vitess (Materialize, MoveTables). Le flux ne suivra pas ce changement : la table cible peut cesser d’être à jour. Vérifiez-la avant de continuer.',
   forbidden_construct: 'Attention : cette instruction sort du cadre habituel d’une requête (fichiers du serveur, verrous durables, état du serveur…). Le serveur de la base décidera selon les droits de votre compte.',
 }
 

@@ -54,6 +54,7 @@ final readonly class TableStructureController
             'stale' => $preview->stale,
             'bigTable' => ChangePlanPresenter::bigTable($preview->bigTable),
             'lockCheck' => null === $preview->holders ? null : DiagnosticsPresenter::tableHolders($preview->holders),
+            'feedsStream' => $preview->feedsStream,
         ]);
     }
 

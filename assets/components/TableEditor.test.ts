@@ -255,6 +255,29 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('warns, without blocking, that a Vitess flow reading this table will not follow the change', async () => {
+    mocked.mockImplementation(() => Promise.resolve(preview({ feedsStream: true })))
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    const warning = wrapper.get('[data-test="stream-warning"]')
+    expect(warning.text()).toContain('flux')
+    expect(warning.text()).toContain('ne suivra pas')
+    expect(wrapper.findAll('button').find((button) => button.text() === 'Valider les changements')?.attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('says nothing about flows when the table feeds none', async () => {
+    mocked.mockImplementation(() => Promise.resolve(preview({ feedsStream: false })))
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    expect(wrapper.find('[data-test="stream-warning"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('says the holders cannot be checked rather than that there are none', async () => {
     const wrapper = await previewWith({ status: { availability: 'disabled', reason: 'performance_schema_off', privilege: null }, holders: [] })
 

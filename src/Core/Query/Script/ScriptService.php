@@ -16,6 +16,7 @@ use App\Core\Guard\SqlDialect;
 use App\Core\Guard\SqlScanner;
 use App\Core\Guard\StatementKind;
 use App\Core\Query\Exception\QueryRefusedException;
+use App\Core\Query\QueryService;
 use App\Core\Query\Script\Exception\ScriptDryRunUnavailableException;
 use App\Core\Query\Script\Exception\ScriptNeedsConfirmationException;
 use App\Core\Query\Script\Exception\ScriptRefusedException;
@@ -84,6 +85,9 @@ final readonly class ScriptService
         $unsafe = $this->nonTransactionalTables($executor, $target->engine, $report);
         $preview = $this->preview($script, $target->engine, $options->writes, $unsafe, $options->lenient);
 
+        if ($options->lenient && !$confirmed && [] !== $report->steps && null === $report->firstRefused) {
+            $this->warnAboutStreams($target, $report);
+        }
         $this->assertRunnable($report, $preview, $options->dryRun, $confirmed);
 
         return $executor->execute($this->statements($report, $target->engine, $unsafe), $options->timeoutMs, $options->dryRun, $options->progress);
@@ -108,6 +112,25 @@ final readonly class ScriptService
         $this->assertRunnable($preview->report, $preview, $dryRun, $confirmed);
 
         return $preview->report;
+    }
+
+    /**
+     * Vitess (console seulement) : une instruction de structure qui nomme une table source d'un flux (Materialize, MoveTables) n'y sera pas
+     * propagée ; l'avertissement le dit, une seule confirmation couvre le script.
+     *
+     * @throws ScriptNeedsConfirmationException
+     */
+    private function warnAboutStreams(TargetConnection $target, ScriptReport $report): void
+    {
+        $count = 0;
+        foreach ($report->steps as $step) {
+            if (StatementKind::Schema === $step->verdict->kind && QueryService::feedsAStream($target, $step->sql)) {
+                ++$count;
+            }
+        }
+        if ($count > 0) {
+            throw new ScriptNeedsConfirmationException($count, 'stream_source');
+        }
     }
 
     /**

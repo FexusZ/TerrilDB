@@ -256,6 +256,17 @@ final class ErrorMapperTest extends TestCase
         self::assertCount(1, $response->extra['applied']);
     }
 
+    public function testAScriptConfirmationSaysWhyItAsks(): void
+    {
+        $usual = (new ErrorMapper())->map(new \App\Core\Query\Script\Exception\ScriptNeedsConfirmationException(2));
+        $stream = (new ErrorMapper())->map(new \App\Core\Query\Script\Exception\ScriptNeedsConfirmationException(1, 'stream_source'));
+
+        self::assertSame(409, $usual?->status);
+        self::assertSame('destructive_script', $usual->extra['reason']);
+        self::assertSame(2, $usual->extra['destructiveCount']);
+        self::assertSame('stream_source', $stream?->extra['reason']);
+    }
+
     public function testLockTimeoutOfAStructureChangeKeepsTheHolderReport(): void
     {
         $statement = new DdlStatement('ALTER TABLE t ADD c int', 'add_column', 't', false);

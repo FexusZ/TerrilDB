@@ -816,6 +816,8 @@ export interface StructurePreview extends StructurePlan {
   stale: boolean
   /** Nul quand le moteur n'a pas de diagnostic. */
   lockCheck?: StructureLockCheck | null
+  /** Vitess : la table nourrit un flux (Materialize, MoveTables) qui ne suivra pas ce changement. */
+  feedsStream?: boolean
 }
 
 export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'

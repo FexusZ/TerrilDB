@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { ApiError } from '../api/client'
-import { messageFor } from '../api/errors'
+import { messageFor, reasonText } from '../api/errors'
 import { algorithmDetail, algorithmPill, copyWarning } from '../utils/alterAlgorithm'
 import { describeHolder, describeStatus } from '../utils/diagnostics'
 import { formatBytes } from '../utils/format'
@@ -415,6 +415,7 @@ const dropLosses = computed(() => (dropping.value?.losses ?? []).map(lossSentenc
         </template>
         <p v-else>Aucune transaction ouverte ne tient cette table.</p>
       </div>
+      <p v-if="preview?.feedsStream" class="warn" role="status" data-test="stream-warning">{{ reasonText('stream_source', true) }}</p>
       <p v-if="copyNote" class="warn" role="status" data-test="copy-warning">{{ copyNote }}</p>
       <p v-if="bigTableNote" class="warn" :class="{ danger: needsName }" role="status" data-test="big-table">{{ bigTableNote }}</p>
       <label v-if="needsName" class="retype">

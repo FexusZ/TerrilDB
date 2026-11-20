@@ -23,6 +23,8 @@ final readonly class ChangePreview
         public ?TableHolders $holders = null,
         /** @var list<AlgorithmAdvice> */
         public array $algorithms = [],
+        /** Vitess : la table nourrit un flux (Materialize, MoveTables) qui ne suivra pas ce changement. Un avertissement, jamais un blocage. */
+        public bool $feedsStream = false,
     ) {
     }
 }

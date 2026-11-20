@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { ApiError } from '../api/client'
 import { reasonText, messageFor } from '../api/errors'
 import { cancelScriptRun, executeScript, fetchScriptRun, previewScript, startScriptRun } from '../api/script'
 import type { BackgroundRun, ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
@@ -18,6 +19,8 @@ const error = ref<string | null>(null)
 const busy = ref(false)
 const dryRun = ref(false)
 const confirming = ref(false)
+// Vitess : le serveur a dit qu'un flux ne suivra pas une instruction de structure (il lit la cible, pas l'aperçu) : même confirmation unique.
+const streamWarning = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileError = ref<string | null>(null)
 const pendingImport = ref<{ text: string; name: string } | null>(null)
@@ -175,12 +178,18 @@ async function send(confirmed: boolean): Promise<void> {
     return
   }
   confirming.value = false
+  streamWarning.value = false
   busy.value = true
   error.value = null
   try {
     run.value = await executeScript(props.connectionId, props.script, { confirmed, dryRun: dryRun.value }, props.scope)
   } catch (e) {
-    error.value = messageFor(e)
+    if (!confirmed && e instanceof ApiError && e.code === 'confirmation_required' && e.details.reason === 'stream_source') {
+      streamWarning.value = true
+      confirming.value = true
+    } else {
+      error.value = messageFor(e)
+    }
   } finally {
     busy.value = false
   }
@@ -362,11 +371,11 @@ const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 
     <ConfirmDialog
       v-if="confirming && preview"
       title="Exécuter ce script ?"
-      :message="confirmationMessage(preview)"
+      :message="streamWarning ? reasonText('stream_source', true) : confirmationMessage(preview)"
       :confirm-label="dryRun ? 'Tester quand même' : 'Exécuter quand même'"
       danger
       @confirm="send(true)"
-      @cancel="confirming = false"
+      @cancel="confirming = false; streamWarning = false"
     />
   </section>
 </template>

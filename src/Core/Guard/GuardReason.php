@@ -20,4 +20,6 @@ enum GuardReason: string
     case DestructiveWithoutWhere = 'destructive_without_where';
     case DestructiveStatement = 'destructive_statement';
     case WriteNotPermitted = 'write_not_permitted';
+    /** Vitess : la table nourrit un flux (Materialize, MoveTables) qui ne suivra pas la modification. Un avertissement, jamais un refus. */
+    case StreamSource = 'stream_source';
 }

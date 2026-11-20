@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Core\Query;
 
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\Vitess\StreamSource;
+use App\Core\Diagnostics\Vitess\StreamSources;
 use App\Core\Driver\TargetConnection;
 use App\Core\Guard\GuardReason;
 use App\Core\Guard\StatementGuard;
@@ -30,7 +32,7 @@ final class QueryServiceTest extends TestCase
         $this->runner = new RecordingRunner();
     }
 
-    private function target(Engine $engine = Engine::PostgreSql): TargetConnection
+    private function target(Engine $engine = Engine::PostgreSql, ?StreamSources $streams = null): TargetConnection
     {
         $introspector = new class implements SchemaIntrospector {
             public function listDatabases(): array
@@ -70,7 +72,7 @@ final class QueryServiceTest extends TestCase
         };
 
         return new TargetConnection($engine, $introspector, $this->runner, static function (): void {
-        });
+        }, streams: $streams);
     }
 
     private function service(): QueryService
@@ -184,6 +186,67 @@ final class QueryServiceTest extends TestCase
             }
         }
         self::assertSame([], $this->runner->calls);
+    }
+
+    private function feedingCorder(): StreamSources
+    {
+        return new class implements StreamSources {
+            public function sources(): array
+            {
+                $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}');
+
+                return null === $source ? [] : [$source];
+            }
+        };
+    }
+
+    public function testAnAlterOfAStreamSourceAsksWithTheStreamWarningInsteadOfTheGenericOne(): void
+    {
+        $lenient = new QueryOptions(QueryMode::ReadWrite, writes: WritePermissions::all(), lenient: true);
+
+        try {
+            $this->service()->execute($this->target(Engine::MySql, $this->feedingCorder()), 'ALTER TABLE corder ADD COLUMN note text', $lenient);
+            self::fail('A warning was expected.');
+        } catch (QueryNeedsConfirmationException $e) {
+            self::assertSame(GuardReason::StreamSource, $e->reason);
+        }
+        self::assertSame([], $this->runner->calls);
+
+        $this->service()->execute($this->target(Engine::MySql, $this->feedingCorder()), 'ALTER TABLE corder ADD COLUMN note text', $lenient, confirmed: true);
+        self::assertCount(1, $this->runner->calls);
+    }
+
+    public function testAnAlterOfAnotherTableKeepsTheGenericWarning(): void
+    {
+        $lenient = new QueryOptions(QueryMode::ReadWrite, writes: WritePermissions::all(), lenient: true);
+
+        try {
+            $this->service()->execute($this->target(Engine::MySql, $this->feedingCorder()), 'ALTER TABLE customer ADD COLUMN note text', $lenient);
+            self::fail('A confirmation was expected.');
+        } catch (QueryNeedsConfirmationException $e) {
+            self::assertSame(GuardReason::DestructiveStatement, $e->reason);
+        }
+    }
+
+    public function testTheStreamWarningIsForTheConsoleOnly(): void
+    {
+        $strict = new QueryOptions(QueryMode::ReadWrite, writes: WritePermissions::all());
+
+        try {
+            $this->service()->execute($this->target(Engine::MySql, $this->feedingCorder()), 'ALTER TABLE corder ADD COLUMN note text', $strict);
+            self::fail('A confirmation was expected.');
+        } catch (QueryNeedsConfirmationException $e) {
+            self::assertSame(GuardReason::DestructiveStatement, $e->reason);
+        }
+    }
+
+    public function testAReadOfAStreamSourceIsNotWarnedAbout(): void
+    {
+        $lenient = new QueryOptions(QueryMode::ReadOnly, lenient: true);
+
+        $this->service()->execute($this->target(Engine::MySql, $this->feedingCorder()), 'SELECT * FROM corder', $lenient);
+
+        self::assertCount(1, $this->runner->calls);
     }
 }
 

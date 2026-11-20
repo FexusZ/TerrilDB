@@ -136,6 +136,25 @@ describe('ScriptPanel', () => {
     wrapper.unmount()
   })
 
+  it('warns when the server says a flow will not follow, and runs once confirmed', async () => {
+    const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
+    mocked.mockRejectedValueOnce(new ApiError(409, 'confirmation_required', { reason: 'stream_source', destructiveCount: 1 }))
+
+    await wrapper.get('button.execute').trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('ne suivra pas')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+    mocked.mockResolvedValueOnce(run())
+    await document.body.querySelector<HTMLButtonElement>('.confirm')!.click()
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/abc/script/execute', { script: 'INSERT INTO t VALUES (1); DELETE FROM t', confirmed: true, dryRun: false })
+    expect(wrapper.get('.outcome').text()).toContain('Script exécuté')
+    wrapper.unmount()
+  })
+
   it('executes straight away when nothing is destructive, with no confirmation', async () => {
     const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
     mocked.mockResolvedValueOnce(run())
