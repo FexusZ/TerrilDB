@@ -157,6 +157,7 @@ final class VitessTabletApiTest extends WebApiTestCase
     public function testMcpListsTheTabletsAndReadsThemeFromTheChosenOne(): void
     {
         $this->prepare();
+        $this->replicaAlias();
         $this->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => self::PROTOCOL, 'capabilities' => new \stdClass(), 'clientInfo' => ['name' => 'tests', 'version' => '1.0']]]);
         $this->session = $this->client->getResponse()->headers->get('Mcp-Session-Id') ?? '';
         $this->post(['jsonrpc' => '2.0', 'method' => 'notifications/initialized']);
