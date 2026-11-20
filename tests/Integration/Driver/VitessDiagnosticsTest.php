@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Integration\Driver;
 
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\Vitess\VitessTablet;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\Driver\TargetConnection;
@@ -48,6 +49,8 @@ final class VitessDiagnosticsTest extends TestCase
         $capabilities = $this->open()->diagnostics()->capabilities();
 
         self::assertNotSame([], $capabilities);
+        self::assertSame('available', $capabilities['tablets']->availability->value, 'la liste des tablets est le chemin vers la lecture par tablet');
+        unset($capabilities['tablets']);
         foreach ($capabilities as $theme => $status) {
             self::assertSame('unsupported', $status->availability->value, $theme);
             self::assertSame('vitess_tablet_scope', $status->reason, $theme);
@@ -60,6 +63,38 @@ final class VitessDiagnosticsTest extends TestCase
 
         $this->expectException(UnsupportedOperationException::class);
         $diagnostics->sessions();
+    }
+
+    public function testTheGatewayListsItsTabletsWithATargetableName(): void
+    {
+        $tablets = $this->open()->diagnostics()->tablets()->tablets();
+
+        self::assertNotSame([], $tablets);
+        $types = array_map(static fn ($t): string => $t->type, $tablets);
+        self::assertContains('PRIMARY', $types);
+        foreach ($tablets as $tablet) {
+            self::assertTrue(VitessTablet::isTarget($tablet->target()), $tablet->target());
+        }
+    }
+
+    public function testConnectedToOneTabletEveryThemeIsServed(): void
+    {
+        $tablets = $this->open()->diagnostics()->tablets()->tablets();
+        $replica = null;
+        foreach ($tablets as $tablet) {
+            if ('REPLICA' === $tablet->type) {
+                $replica = $tablet;
+            }
+        }
+        self::assertNotNull($replica, 'target-vitess has a replica tablet');
+        $this->target?->close();
+
+        $this->target = (new MySqlDriver(new DbalConnector()))->connect(Engine::MySql, TargetDatabase::parameters('TARGET_VITESS_URL')->withDatabase($replica->target()));
+        $capabilities = $this->target->diagnostics()->capabilities();
+
+        self::assertSame('available', $capabilities['sessions']->availability->value);
+        self::assertSame('available', $capabilities['replication']->availability->value);
+        self::assertSame('available', $this->target->diagnostics()->sessions()->sessions()->status->availability->value);
     }
 
     public function testPlainMySqlKeepsEveryTheme(): void

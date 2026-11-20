@@ -27,4 +27,14 @@ final class DatabaseParam
 
         return \is_string($value) && '' !== $value ? $value : null;
     }
+
+    /**
+     * Le tablet visé (`?tablet=<alias>`, Vitess) : absent ou vide, la lecture passe par vtgate (qui en choisit un au hasard).
+     */
+    public static function tabletFromQuery(Request $request): ?string
+    {
+        $value = $request->query->get('tablet');
+
+        return \is_string($value) && '' !== $value ? $value : null;
+    }
 }

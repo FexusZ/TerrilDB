@@ -6,6 +6,7 @@ namespace App\Driver;
 
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Diagnostics\Vitess\VitessTablet;
 use App\Core\Driver\Exception\TargetConnectionFailedException;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
@@ -52,7 +53,7 @@ final readonly class DbalConnector
         } else {
             $options['unix_socket'] = $socket;
         }
-        if ($parameters->readReplica && Engine::MySql === $engine) {
+        if ($parameters->readReplica && Engine::MySql === $engine && !VitessTablet::isTarget($parameters->database)) {
             // Vitess : la cible `@replica` du nom de base envoie les lectures aux tablets réplica, jamais au primaire.
             $options['dbname'] = str_ends_with($parameters->database, '@replica') ? $parameters->database : $parameters->database.'@replica';
         } elseif ('' !== $parameters->database) {
