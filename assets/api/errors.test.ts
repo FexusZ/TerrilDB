@@ -173,4 +173,12 @@ describe('error messages', () => {
     expect(reasonText('stream_source', true)).toContain('ne suivra pas')
     expect(reasonText('stream_source')).toContain('flux')
   })
+
+  it('dit comment appliquer le changement partout quand une table nourrit un flux', () => {
+    const text = reasonText('stream_source', true)
+    expect(text).toContain('table cible')
+    expect(text).toContain('DROP')
+    expect(text).toContain('MoveTables')
+    expect(text).toContain('TerrilDB ne lance rien')
+  })
 })
