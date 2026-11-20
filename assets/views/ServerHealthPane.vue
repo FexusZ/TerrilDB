@@ -22,7 +22,7 @@ async function measure(): Promise<void> {
   loading.value = true
   failure.value = null
   try {
-    report.value = await fetchHealth(props.id, { database: workspace.database, schema: workspace.schema }, seconds.value)
+    report.value = await fetchHealth(props.id, workspace.diagnosticScope(), seconds.value)
   } catch (error) {
     report.value = null
     failure.value = messageFor(error)

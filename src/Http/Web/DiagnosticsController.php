@@ -36,16 +36,28 @@ final readonly class DiagnosticsController
     #[Route('/web/connections/{id}/diagnostics', requirements: self::ID, methods: ['GET'])]
     public function capabilities(string $id, Request $request): JsonResponse
     {
-        $capabilities = $this->targets->withSaved(Uuid::fromString($id), fn (TargetConnection $target): array => $this->diagnostics->capabilities($target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $capabilities = $this->targets->withSaved(Uuid::fromString($id), fn (TargetConnection $target): array => $this->diagnostics->capabilities($target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
+    }
+
+    /**
+     * Les tablets que vtgate sait viser : de quoi choisir celui dont on veut lire les autres thèmes (`?tablet=<alias>`).
+     */
+    #[Route('/web/connections/{id}/diagnostics/tablets', requirements: self::ID, methods: ['GET'])]
+    public function tablets(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $tablets = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->tablets($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::tablets($tablets));
     }
 
     #[Route('/web/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]
     public function sessions(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->sessions($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->sessions($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::sessions($report));
     }
@@ -54,7 +66,7 @@ final readonly class DiagnosticsController
     public function locks(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->locks($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->locks($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
     }
@@ -64,7 +76,7 @@ final readonly class DiagnosticsController
     {
         $uuid = Uuid::fromString($id);
         $query = DigestQueryParam::fromQuery($request);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->statements($this->session->auditContext(), $uuid, $target, $query), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->statements($this->session->auditContext(), $uuid, $target, $query), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::statements($report));
     }
@@ -74,7 +86,7 @@ final readonly class DiagnosticsController
     {
         $uuid = Uuid::fromString($id);
         $query = VariableQueryParser::fromRequest($request);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->variables($this->session->auditContext(), $uuid, $target, $query), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->variables($this->session->auditContext(), $uuid, $target, $query), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::variables($report));
     }
@@ -83,7 +95,7 @@ final readonly class DiagnosticsController
     public function configAudit(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::configAudit($report));
     }
@@ -113,7 +125,7 @@ final readonly class DiagnosticsController
     public function accounts(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->accounts($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->accounts($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::accounts($report));
     }
@@ -122,7 +134,7 @@ final readonly class DiagnosticsController
     public function encryption(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        $encryption = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->encryption($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $encryption = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->encryption($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
     }
@@ -132,7 +144,7 @@ final readonly class DiagnosticsController
     {
         $uuid = Uuid::fromString($id);
         $seconds = HealthInterval::parse($request->query->get('seconds'));
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->health($this->session->auditContext(), $uuid, $target, $seconds), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->health($this->session->auditContext(), $uuid, $target, $seconds), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::health($report));
     }
@@ -141,7 +153,7 @@ final readonly class DiagnosticsController
     public function replication(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->replication($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->replication($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::replication($report, $this->masking->enabled));
     }
@@ -150,7 +162,7 @@ final readonly class DiagnosticsController
     public function logs(string $id, Request $request): JsonResponse
     {
         $uuid = Uuid::fromString($id);
-        [$error, $slow] = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->logs($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+        [$error, $slow] = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->logs($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request), DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::logs($error, $slow));
     }

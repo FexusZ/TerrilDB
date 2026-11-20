@@ -11,6 +11,7 @@ const REASONS: Record<string, string> = {
 }
 
 const UNSUPPORTED_REASONS: Record<string, string> = {
+  vitess_tablet_scope: 'Sur Vitess, vtgate envoie chaque lecture à un seul tablet : TerrilDB ne l’affiche pas pour ne pas faire passer l’état d’un tablet pour celui du cluster. Choisissez le tablet à lire dans la liste en haut de la page.',
   log_is_a_file: 'Ce journal est un fichier du serveur : TerrilDB ne lit jamais les fichiers de l’hôte, il n’est donc pas lisible ici.',
 }
 

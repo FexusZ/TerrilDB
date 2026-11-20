@@ -28,7 +28,7 @@ const blockingLines = computed(() => flattenBlocking(locks.value?.blocking ?? []
 const longCount = computed(() => (locks.value?.transactions ?? []).filter((transaction) => isLongTransaction(transaction, threshold.value)).length)
 
 function scope() {
-  return { database: workspace.database, schema: workspace.schema }
+  return workspace.diagnosticScope()
 }
 
 async function load(): Promise<void> {

@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { ApiError, api, apiDownload } from '../api/client'
+import { fetchTablets } from '../api/diagnostics'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary } from '../api/types'
+import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary, VitessTablet } from '../api/types'
 import { useConnectionsStore } from './connections'
 
 export interface QueryTab {
@@ -70,6 +71,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** Les noms de TOUTES les tables de la base explorée, pour l'autocomplétion de l'éditeur (le panneau, lui, est paginé). */
   const completionTables = ref<string[]>([])
   let completionLoaded = ''
+  /** Vitess : les tablets que vtgate sait viser et celui dont on lit les pages de supervision (nul = aucun choisi). Vide hors Vitess. */
+  const tablets = ref<VitessTablet[]>([])
+  const tablet = ref<string | null>(null)
+  let tabletsLoaded = ''
+  /** Sur un vtgate, aucune page de supervision ne se lit tant qu'un tablet n'est pas choisi (la lecture partirait vers un tablet au hasard). */
+  const needsTablet = computed(() => tablets.value.length > 0 && tablet.value === null)
   /** Ce que le serveur de la connexion déclare savoir faire (matrice de capacités) ; nul tant que c'est inconnu : les extraits restent alors masqués. */
   const capabilities = ref<Record<string, boolean> | null>(null)
   let capabilitiesLoaded = ''
@@ -138,6 +145,9 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     completionLoaded = ''
     capabilities.value = null
     capabilitiesLoaded = ''
+    tablets.value = []
+    tablet.value = null
+    tabletsLoaded = ''
     keys.value = []
     keysCursor.value = null
     keysTotal.value = 0
@@ -350,6 +360,34 @@ export const useWorkspaceStore = defineStore('workspace', () => {
         capabilities.value = null
       }
     }
+  }
+
+  /** Une fois par connexion. Un refus (ce n'est pas un vtgate) ou un échec laisse la liste vide : rien n'est demandé à tort. */
+  async function loadTablets(): Promise<void> {
+    const id = connectionId.value
+    if (id === null || isKeyValue.value || tabletsLoaded === id) {
+      return
+    }
+    tabletsLoaded = id
+    try {
+      const found = await fetchTablets(id, { database: database.value, schema: schema.value })
+      if (tabletsLoaded === id) {
+        tablets.value = found
+      }
+    } catch {
+      if (tabletsLoaded === id) {
+        tablets.value = []
+      }
+    }
+  }
+
+  function selectTablet(alias: string | null): void {
+    tablet.value = alias
+  }
+
+  /** La base, le schéma et le tablet qu'une page de supervision lit. */
+  function diagnosticScope(): { database: string | null; schema: string | null; tablet: string | null } {
+    return { database: database.value, schema: schema.value, tablet: tablet.value }
   }
 
   function scopeQuery(databaseName: string | null, schemaName: string | null): string {
@@ -719,5 +757,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, capabilities, loadCapabilities, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, measureTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tablets, tablet, needsTablet, loadTablets, selectTablet, diagnosticScope, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, capabilities, loadCapabilities, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, measureTab, exportTab, confirmPending, cancelPending, describe }
 })

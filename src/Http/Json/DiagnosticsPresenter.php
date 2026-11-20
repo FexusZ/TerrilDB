@@ -38,6 +38,7 @@ use App\Core\Diagnostics\TableHolders;
 use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableDifference;
 use App\Core\Diagnostics\VariableReport;
+use App\Core\Diagnostics\Vitess\VitessTablet;
 
 final class DiagnosticsPresenter
 {
@@ -237,6 +238,16 @@ final class DiagnosticsPresenter
                 'currentAccount' => $f->currentAccount,
             ], $report->findings()),
         ];
+    }
+
+    /**
+     * @param list<VitessTablet> $tablets
+     *
+     * @return array<string, mixed>
+     */
+    public static function tablets(array $tablets): array
+    {
+        return ['tablets' => array_map(static fn (VitessTablet $t): array => ['alias' => $t->alias, 'cell' => $t->cell, 'keyspace' => $t->keyspace, 'shard' => $t->shard, 'type' => $t->type, 'serving' => $t->serving], $tablets)];
     }
 
     /**

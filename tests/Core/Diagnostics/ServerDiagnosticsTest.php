@@ -27,9 +27,11 @@ use App\Core\Diagnostics\SessionDiagnostics;
 use App\Core\Diagnostics\SessionReport;
 use App\Core\Diagnostics\StatementDiagnostics;
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Diagnostics\TabletDiagnostics;
 use App\Core\Diagnostics\VariableDiagnostics;
 use App\Core\Diagnostics\VariableQuery;
 use App\Core\Diagnostics\VariableReport;
+use App\Core\Diagnostics\Vitess\VitessTablet;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use PHPUnit\Framework\TestCase;
 
@@ -64,6 +66,48 @@ final class ServerDiagnosticsTest extends TestCase
         $diagnostics = new ServerDiagnostics(Engine::Redis);
 
         self::assertSame(['sessions' => 'unsupported', 'locks' => 'unsupported', 'statements' => 'unsupported', 'variables' => 'unsupported', 'accounts' => 'unsupported', 'encryption' => 'unsupported', 'health' => 'unsupported', 'replication' => 'unsupported', 'logs' => 'unsupported'], array_map(static fn (DiagnosticStatus $s): string => $s->availability->value, $diagnostics->capabilities()));
+    }
+
+    public function testAnEngineCanGiveTheReasonWhyNoThemeIsServed(): void
+    {
+        $diagnostics = new ServerDiagnostics(Engine::MySql, unsupportedReason: 'vitess_tablet_scope');
+
+        foreach ($diagnostics->capabilities() as $theme => $status) {
+            self::assertSame('unsupported', $status->availability->value, $theme);
+            self::assertSame('vitess_tablet_scope', $status->reason, $theme);
+        }
+        self::assertSame('not_supported', (new ServerDiagnostics(Engine::MySql))->capabilities()['sessions']->reason, 'sans raison donnée, la raison d\'avant');
+    }
+
+    public function testTheTabletListIsAThemeOfItsOwnThatStaysAvailableWhenTheOthersAreNot(): void
+    {
+        $tablets = new class implements TabletDiagnostics {
+            public function status(): DiagnosticStatus
+            {
+                return DiagnosticStatus::available();
+            }
+
+            public function tablets(): array
+            {
+                return [new VitessTablet('test-0000000002', 'test', 'shop', '0', 'REPLICA', true)];
+            }
+        };
+        $diagnostics = new ServerDiagnostics(Engine::MySql, tablets: $tablets, unsupportedReason: 'vitess_tablet_scope');
+
+        $capabilities = $diagnostics->capabilities();
+
+        self::assertSame('available', $capabilities['tablets']->availability->value);
+        self::assertSame('unsupported', $capabilities['sessions']->availability->value);
+        self::assertSame('test-0000000002', $diagnostics->tablets()->tablets()[0]->alias);
+    }
+
+    public function testWithoutTabletsNoSuchThemeIsAnnounced(): void
+    {
+        $diagnostics = new ServerDiagnostics(Engine::MySql);
+
+        self::assertArrayNotHasKey('tablets', $diagnostics->capabilities());
+        $this->expectException(UnsupportedOperationException::class);
+        $diagnostics->tablets();
     }
 
     public function testCapabilitiesAskTheThemeForItsStatus(): void

@@ -25,6 +25,9 @@ final readonly class ServerDiagnostics
         private ?EncryptionDiagnostics $encryption = null,
         private ?ReplicationDiagnostics $replication = null,
         private ?LogDiagnostics $logs = null,
+        private ?TabletDiagnostics $tablets = null,
+        /** Pourquoi aucun thème n'est servi, quand le moteur le sait (code stable, ex. `vitess_tablet_scope`) ; sinon `not_supported`. */
+        private ?string $unsupportedReason = null,
     ) {
     }
 
@@ -101,6 +104,14 @@ final readonly class ServerDiagnostics
     }
 
     /**
+     * @throws UnsupportedOperationException
+     */
+    public function tablets(): TabletDiagnostics
+    {
+        return $this->tablets ?? throw UnsupportedOperationException::for($this->engine, 'tablets');
+    }
+
+    /**
      * Ce que chaque thème peut lire, sans lire les données. Un thème dont la vérification échoue pour une cause imprévue rend
      * l'état « erreur » sans masquer les autres ; `$onFailure` reçoit son nom et l'exception (pour la consigner, jamais la montrer).
      *
@@ -111,10 +122,14 @@ final readonly class ServerDiagnostics
     public function capabilities(?\Closure $onFailure = null): array
     {
         $themes = ['sessions' => $this->sessions, 'locks' => $this->locks, 'statements' => $this->statements, 'variables' => $this->variables, 'accounts' => $this->accounts, 'encryption' => $this->encryption, 'health' => $this->health, 'replication' => $this->replication, 'logs' => $this->logs];
+        if (null !== $this->tablets) {
+            // Annoncé seulement quand le serveur le sert (Vitess) : aucun autre moteur n'a cette notion, pas de ligne « non pris en charge ».
+            $themes['tablets'] = $this->tablets;
+        }
         $capabilities = [];
         foreach ($themes as $name => $theme) {
             if (null === $theme) {
-                $capabilities[$name] = DiagnosticStatus::unsupported();
+                $capabilities[$name] = DiagnosticStatus::unsupported($this->unsupportedReason ?? 'not_supported');
 
                 continue;
             }

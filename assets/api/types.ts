@@ -281,6 +281,16 @@ export interface ApiTokenInput {
 /** `error` : la vérification a échoué pour une cause imprévue (`reason: check_failed`) ; on ne sait pas, et on le dit. */
 export type DiagnosticAvailability = 'available' | 'unsupported' | 'permission_denied' | 'disabled' | 'error'
 
+/** Un tablet que vtgate sait viser (Vitess) : on lit un tablet à la fois, jamais « le cluster ». */
+export interface VitessTablet {
+  alias: string
+  cell: string
+  keyspace: string
+  shard: string
+  type: string
+  serving: boolean
+}
+
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability
   /** Code stable (`insufficient_privilege`, `not_supported`…), jamais le message du moteur. */

@@ -817,6 +817,36 @@ describe('workspace store capabilities', () => {
     expect(store.capabilities).toBeNull()
   })
 
+  it('reads the tablets of a Vitess gateway once and asks to pick one before any server page is read', async () => {
+    const store = await opened()
+    expect(store.needsTablet).toBe(false)
+    mocked.mockResolvedValueOnce({ tablets: [{ alias: 'test-0000000002', cell: 'test', keyspace: 'shop', shard: '0', type: 'REPLICA', serving: true }] })
+
+    await store.loadTablets()
+    await store.loadTablets()
+
+    expect(mocked.mock.calls.filter(([, url]) => String(url).includes('/diagnostics/tablets'))).toHaveLength(1)
+    expect(store.tablets).toHaveLength(1)
+    expect(store.needsTablet).toBe(true)
+    store.selectTablet('test-0000000002')
+    expect(store.needsTablet).toBe(false)
+    expect(store.diagnosticScope()).toEqual({ database: null, schema: null, tablet: 'test-0000000002' })
+  })
+
+  it('has no tablet to pick on a server that is not a gateway, and forgets the choice with the connection', async () => {
+    const store = await opened()
+    mocked.mockRejectedValueOnce(new ApiError(501, 'unsupported_operation'))
+
+    await store.loadTablets()
+
+    expect(store.tablets).toEqual([])
+    expect(store.needsTablet).toBe(false)
+    store.selectTablet('test-0000000002')
+    mocked.mockResolvedValueOnce({ tables })
+    await store.open('conn-2')
+    expect(store.tablet).toBeNull()
+  })
+
   it('does not ask a key-value connection', async () => {
     useConnectionsStore().items = [{ id: 'conn-r', name: 'Cache', engine: 'redis', createdAt: '', updatedAt: '' }]
     mocked.mockResolvedValueOnce({ keys: [], nextCursor: null, total: 0 })

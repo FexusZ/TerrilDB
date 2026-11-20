@@ -1,17 +1,34 @@
 import { api } from './client'
-import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport } from './types'
+import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport, VitessTablet } from './types'
 
 export interface DiagnosticScope {
   database: string | null
   schema: string | null
+  /** Vitess : l'alias du tablet à lire (sans lui, vtgate en choisit un au hasard, donc rien n'est servi). */
+  tablet?: string | null
+}
+
+/** La base, le schéma et le tablet visés, en paramètres d'adresse (le même ordre partout). */
+export function scopeParts(scope: DiagnosticScope): string[] {
+  const parts: string[] = []
+  if (scope.database !== null) parts.push(`database=${encodeURIComponent(scope.database)}`)
+  if (scope.schema !== null) parts.push(`schema=${encodeURIComponent(scope.schema)}`)
+  if (scope.tablet !== undefined && scope.tablet !== null) parts.push(`tablet=${encodeURIComponent(scope.tablet)}`)
+
+  return parts
 }
 
 function suffix(scope: DiagnosticScope, leading: string[] = []): string {
-  const parts: string[] = [...leading]
-  if (scope.database !== null) parts.push(`database=${encodeURIComponent(scope.database)}`)
-  if (scope.schema !== null) parts.push(`schema=${encodeURIComponent(scope.schema)}`)
+  const parts: string[] = [...leading, ...scopeParts(scope)]
 
   return parts.length === 0 ? '' : `?${parts.join('&')}`
+}
+
+/** Les tablets que le serveur sait viser ; refusé (501) quand ce n'est pas un vtgate. */
+export async function fetchTablets(id: string, scope: DiagnosticScope): Promise<VitessTablet[]> {
+  const answer = await api<{ tablets: VitessTablet[] }>('GET', `/web/connections/${id}/diagnostics/tablets${suffix({ database: scope.database, schema: scope.schema })}`)
+
+  return answer.tablets ?? []
 }
 
 /** Ce que chaque source de supervision peut lire pour la connexion (sans lire les données). */
@@ -44,8 +61,7 @@ export function fetchVariables(id: string, scope: DiagnosticScope, filter: Varia
   if (filter.search !== '') parts.push(`q=${encodeURIComponent(filter.search)}`)
   if (filter.changedOnly) parts.push('changed=1')
   parts.push(`limit=${String(filter.limit)}`)
-  if (scope.database !== null) parts.push(`database=${encodeURIComponent(scope.database)}`)
-  if (scope.schema !== null) parts.push(`schema=${encodeURIComponent(scope.schema)}`)
+  parts.push(...scopeParts(scope))
 
   return api<VariableReport>('GET', `/web/connections/${id}/diagnostics/variables?${parts.join('&')}`)
 }

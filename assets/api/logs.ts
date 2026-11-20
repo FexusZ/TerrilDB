@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { DiagnosticScope } from './diagnostics'
+import { scopeParts, type DiagnosticScope } from './diagnostics'
 import type { DiagnosticStatus } from './types'
 
 export interface ErrorLogLine {
@@ -32,8 +32,7 @@ export interface LogsReport {
 /** Journal d'erreurs et requêtes lentes en table, lus en SQL, lecture seule. */
 export function fetchLogs(id: string, scope: DiagnosticScope): Promise<LogsReport> {
   const parts: string[] = []
-  if (scope.database !== null) parts.push(`database=${encodeURIComponent(scope.database)}`)
-  if (scope.schema !== null) parts.push(`schema=${encodeURIComponent(scope.schema)}`)
+  parts.push(...scopeParts(scope))
 
   return api<LogsReport>('GET', `/web/connections/${id}/diagnostics/logs${parts.length === 0 ? '' : `?${parts.join('&')}`}`)
 }

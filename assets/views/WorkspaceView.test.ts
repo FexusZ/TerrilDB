@@ -31,6 +31,7 @@ async function mountView(path = '/connections/abc') {
         children: [
           { path: '', name: 'workspace', component: { template: '<p class="child">éditeur</p>' } },
           { path: 'activity', name: 'server-activity', component: { template: '<p class="child">activité</p>' } },
+          { path: 'accounts', name: 'accounts', component: { template: '<p class="child">comptes</p>' } },
           { path: 'variables', name: 'server-variables', component: { template: '<p class="child">variables</p>' } },
           { path: 'health', name: 'server-health', component: { template: '<p class="child">santé</p>' } },
           { path: 'replication', name: 'replication', component: { template: '<p class="child">réplication</p>' } },
@@ -314,6 +315,56 @@ describe('WorkspaceView', () => {
     mocked.mockImplementation(answer())
     const plain = await mountView()
     expect(plain.wrapper.get('nav.views').attributes('data-color')).toBeUndefined()
+  })
+
+  describe('server pages on a Vitess gateway', () => {
+    const gateway = { ...summary, engine: 'mysql' }
+    const tablet = { alias: 'test-0000000002', cell: 'test', keyspace: 'shop', shard: '0', type: 'REPLICA', serving: true }
+
+    function serve(tablets: unknown): void {
+      mocked.mockImplementation((method?: string, url = ''): Promise<unknown> => {
+        if (url.includes('/diagnostics/tablets')) {
+          return tablets instanceof ApiError ? Promise.reject(tablets) : Promise.resolve(tablets)
+        }
+        return Promise.resolve(url === '/web/connections' ? { connections: [gateway] } : url.includes('/databases') ? { databases: [] } : { tables: [] })
+      })
+    }
+
+    it('holds the page until a tablet is chosen, then shows it', async () => {
+      serve({ tablets: [tablet] })
+
+      const { wrapper } = await mountView('/connections/abc/activity')
+      await flushPromises()
+
+      expect(wrapper.find('.child').exists()).toBe(false)
+      expect(wrapper.text()).toContain('un seul tablet')
+
+      await wrapper.get('select').setValue('test-0000000002')
+      await flushPromises()
+
+      expect(wrapper.get('.child').text()).toBe('activité')
+      expect(wrapper.text()).toContain('Vous lisez le tablet test-0000000002')
+    })
+
+    it('shows the page at once on a server that is not a gateway', async () => {
+      serve(new ApiError(501, 'unsupported_operation'))
+
+      const { wrapper } = await mountView('/connections/abc/activity')
+      await flushPromises()
+
+      expect(wrapper.get('.child').text()).toBe('activité')
+      expect(wrapper.find('select').exists()).toBe(false)
+    })
+
+    it('does not ask for a tablet on the console', async () => {
+      serve({ tablets: [tablet] })
+
+      const { wrapper } = await mountView('/connections/abc')
+      await flushPromises()
+
+      expect(wrapper.get('.child').text()).toBe('éditeur')
+      expect(mocked.mock.calls.some(([, url]) => String(url).includes('/diagnostics/tablets'))).toBe(false)
+    })
   })
 
   it('offers no diagram or audit on a key-value connection, which has no schema to draw', async () => {
