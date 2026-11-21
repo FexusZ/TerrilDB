@@ -74,7 +74,7 @@ final class ScriptRunApiTest extends WebApiTestCase
         self::assertSame(202, $this->statusCode());
 
         $run = self::arrayOf($body['run']);
-        /** @var array<string, mixed> $run */
+        /* @var array<string, mixed> $run */
 
         return $run;
     }
