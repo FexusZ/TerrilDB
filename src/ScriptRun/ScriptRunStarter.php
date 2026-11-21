@@ -50,10 +50,10 @@ final readonly class ScriptRunStarter
      * @throws ScriptWorkerUnavailableException
      * @throws ScriptWorkerBusyException
      */
-    public function start(User $owner, DerivedKey $key, AuditContext $context, Uuid $connectionId, string $script, bool $confirmed, bool $dryRun, int $timeoutMs, ?string $database, ?string $schema, bool $lenient = false): ScriptRun
+    public function start(User $owner, DerivedKey $key, AuditContext $context, Uuid $connectionId, string $script, bool $confirmed, bool $dryRun, int $timeoutMs, ?string $database, ?string $schema, bool $lenient = false, ?WritePermissions $writes = null, ?Uuid $apiTokenId = null): ScriptRun
     {
         $target = $this->targets->resolve($owner, $key, $connectionId, $database, $schema);
-        $writes = WritePermissions::all();
+        $writes ??= WritePermissions::all();
         $report = $this->scripts->judge($script, $target->engine, $writes, $dryRun, $confirmed, $lenient);
 
         $id = Uuid::v7();
@@ -61,7 +61,7 @@ final readonly class ScriptRunStarter
         $request = new ScriptRunRequest($id, $target->engine, $target->parameters, $script, $writes, $confirmed, $dryRun, $timeoutMs, $context, $lenient);
         $textHash = hash('sha256', $script);
 
-        $run = new ScriptRun($id, $owner, $connectionId, $textHash, \count($report->steps), $dryRun, $this->now());
+        $run = new ScriptRun($id, $owner, $connectionId, $textHash, \count($report->steps), $dryRun, $this->now(), $apiTokenId);
         $this->runs->save($run);
         $this->audit->record($context, AuditAction::ScriptStarted, AuditOutcome::Success, $connectionId, [
             'executionId' => $id->toRfc4122(),

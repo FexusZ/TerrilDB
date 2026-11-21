@@ -61,7 +61,12 @@ final readonly class ScriptRunAccess
     public function cancel(User $owner, Uuid $id): ScriptRun
     {
         $this->runs->interruptStale($this->now());
-        $run = $this->owned($owner, $id);
+
+        return $this->requestCancel($this->owned($owner, $id), $id);
+    }
+
+    private function requestCancel(ScriptRun $run, Uuid $id): ScriptRun
+    {
         if ($run->getStatus()->isTerminal()) {
             throw new ScriptRunFinishedException('The run is finished.');
         }
@@ -72,9 +77,42 @@ final readonly class ScriptRunAccess
         return $run;
     }
 
+    /**
+     * La lecture d'un jeton : seulement ce qu'il a lancé lui-même.
+     *
+     * @throws ScriptRunNotFoundException
+     */
+    public function readLaunchedBy(Uuid $tokenId, Uuid $id): ScriptRun
+    {
+        $this->runs->interruptStale($this->now());
+
+        return $this->launched($tokenId, $id);
+    }
+
+    /**
+     * @throws ScriptRunNotFoundException
+     * @throws ScriptRunFinishedException
+     */
+    public function cancelLaunchedBy(Uuid $tokenId, Uuid $id): ScriptRun
+    {
+        $this->runs->interruptStale($this->now());
+        $run = $this->launched($tokenId, $id);
+
+        return $this->requestCancel($run, $id);
+    }
+
+    private function launched(Uuid $tokenId, Uuid $id): ScriptRun
+    {
+        return $this->fresh($this->runs->findLaunchedBy($id, $tokenId));
+    }
+
     private function owned(User $owner, Uuid $id): ScriptRun
     {
-        $run = $this->runs->findOwned($id, $owner->getId());
+        return $this->fresh($this->runs->findOwned($id, $owner->getId()));
+    }
+
+    private function fresh(?ScriptRun $run): ScriptRun
+    {
         if (null === $run) {
             throw new ScriptRunNotFoundException('No such run.');
         }

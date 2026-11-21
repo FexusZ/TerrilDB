@@ -296,9 +296,13 @@ final class McpTest extends WebApiTestCase
         $message = $this->post(['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
         foreach (self::list(self::obj($message['result'])['tools']) as $tool) {
             $tool = self::obj($tool);
-            if (\in_array($tool['name'], ['execute_statement', 'execute_script'], true)) {
+            if (\in_array($tool['name'], ['execute_statement', 'execute_script', 'run_script'], true)) {
                 self::assertFalse(self::obj($tool['annotations'])['readOnlyHint']);
                 self::assertTrue(self::obj($tool['annotations'])['destructiveHint']);
+            } elseif ('cancel_script_run' === $tool['name']) {
+                // Demande l'arrêt entre deux instructions : écrit un drapeau, ne détruit rien.
+                self::assertFalse(self::obj($tool['annotations'])['readOnlyHint']);
+                self::assertFalse(self::obj($tool['annotations'])['destructiveHint']);
             } else {
                 self::assertTrue(self::obj($tool['annotations'])['readOnlyHint'], self::str($tool['name']));
             }
@@ -696,6 +700,45 @@ final class McpTest extends WebApiTestCase
 
         self::assertContains('prepare_script', $this->toolNames());
         self::assertContains('execute_script', $this->toolNames());
+    }
+
+    public function testTheBackgroundScriptToolsAreOnlyForWritingTokens(): void
+    {
+        $this->prepare();
+        $this->initialize();
+        foreach (['run_script', 'get_script_run', 'cancel_script_run'] as $name) {
+            self::assertNotContains($name, $this->toolNames());
+        }
+    }
+
+    public function testAWritingTokenLaunchesFollowsAndStopsABackgroundScript(): void
+    {
+        RecordingScriptRunLauncher::reset();
+        $this->prepare(rights: ['writeData' => true]);
+        $this->initialize();
+        foreach (['run_script', 'get_script_run', 'cancel_script_run'] as $name) {
+            self::assertContains($name, $this->toolNames());
+        }
+        $script = 'update categories set name = name where id = 1; update categories set name = name where id = 2';
+
+        $direct = $this->callTool('run_script', ['connection' => $this->connectionId, 'script' => $script]);
+        self::assertTrue($direct['isError']);
+        self::assertStringContainsString('preparation_required', self::str(self::obj(self::first($direct['content']))['text']));
+        self::assertSame([], RecordingScriptRunLauncher::$requests);
+
+        $prepared = self::textOf($this->callTool('prepare_script', ['connection' => $this->connectionId, 'script' => $script]));
+        $started = self::textOf($this->callTool('run_script', ['connection' => $this->connectionId, 'script' => $script, 'confirmationToken' => $prepared['confirmationToken']]));
+        $run = self::obj($started['run']);
+        self::assertSame(['queued', 2], [$run['status'], $run['total']]);
+        self::assertCount(1, RecordingScriptRunLauncher::$requests);
+
+        $seen = self::textOf($this->callTool('get_script_run', ['run' => $run['id']]));
+        self::assertSame($run['id'], self::obj($seen['run'])['id']);
+        $stopped = self::textOf($this->callTool('cancel_script_run', ['run' => $run['id']]));
+        self::assertTrue(self::obj($stopped['run'])['cancelRequested']);
+
+        $unknown = $this->callTool('get_script_run', ['run' => '00000000-0000-7000-8000-000000000000']);
+        self::assertTrue($unknown['isError']);
     }
 
     public function testAScriptNeedsATicketEvenForASingleStepToken(): void

@@ -25,6 +25,7 @@ final readonly class McpServerFactory
     public function __construct(
         private McpTools $tools,
         private McpLintTool $lintTool,
+        private McpScriptRunTool $scriptRuns,
         private ApiRequestAccess $access,
         private RequestTimeLimit $limit,
         #[Autowire('%kernel.cache_dir%/mcp-sessions')] private string $sessionDirectory,
@@ -299,6 +300,49 @@ final readonly class McpServerFactory
                         'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'maximum' => $this->limit->maxMs(), 'description' => 'Durée maximale du script entier en millisecondes (100000 par défaut, jamais plus que la limite du serveur).'],
                     ],
                     'required' => ['connection', 'script'],
+                    'additionalProperties' => false,
+                ],
+            );
+            $builder->addTool(
+                [$this->scriptRuns, 'runScript'],
+                name: 'run_script',
+                description: 'Lance un script préparé par prepare_script EN ARRIÈRE-PLAN (avec son confirmationToken et le MÊME texte, obligatoire) : rend tout de suite une exécution (run.id, statut « queued ») qui continue sur le serveur sans la limite de durée d’une requête. Suivez-la avec get_script_run (scrutation toutes les quelques secondes) ; elle s’arrête à la première erreur et le suivi dit ce qui est resté appliqué. Même règle que execute_script pour confirmed (destructif, sur demande expresse seulement) et dryRun.',
+                annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true),
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => [
+                        'connection' => $connection,
+                        'script' => ['type' => 'string', 'description' => 'Le script, identique octet pour octet à celui préparé.'],
+                        'confirmationToken' => ['type' => 'string', 'description' => 'Jeton rendu par prepare_script pour CE script.'],
+                        'confirmed' => ['type' => 'boolean', 'description' => 'Vrai pour confirmer d’un coup toutes les instructions destructrices demandées expressément par l’utilisateur.'],
+                        'dryRun' => ['type' => 'boolean', 'description' => 'Vrai pour tout exécuter puis tout annuler (test).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'description' => 'Durée maximale du script entier en millisecondes (600000 par défaut).'],
+                    ],
+                    'required' => ['connection', 'script'],
+                    'additionalProperties' => false,
+                ],
+            );
+            $builder->addTool(
+                [$this->scriptRuns, 'getScriptRun'],
+                name: 'get_script_run',
+                description: 'Suit une exécution lancée par run_script : statut (queued, running, committed, dry_run, rolled_back, partial, failed, cancelled, interrupted), instruction en cours, une ligne par instruction (rang, état, lignes touchées, SQLSTATE ; jamais le texte). « finished » vaut vrai quand c’est terminé. Seul le jeton qui l’a lancée la voit.',
+                annotations: $readOnly,
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => ['run' => ['type' => 'string', 'description' => 'Identifiant (UUID) rendu par run_script.']],
+                    'required' => ['run'],
+                    'additionalProperties' => false,
+                ],
+            );
+            $builder->addTool(
+                [$this->scriptRuns, 'cancelScriptRun'],
+                name: 'cancel_script_run',
+                description: 'Demande l’arrêt d’une exécution lancée par run_script : elle s’arrête ENTRE deux instructions, celle qui tourne va à son terme (rien n’est tué) ; ce qui est déjà validé reste appliqué. À ne faire que si l’utilisateur le demande.',
+                annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true),
+                inputSchema: [
+                    'type' => 'object',
+                    'properties' => ['run' => ['type' => 'string', 'description' => 'Identifiant (UUID) rendu par run_script.']],
+                    'required' => ['run'],
                     'additionalProperties' => false,
                 ],
             );
