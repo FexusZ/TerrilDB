@@ -230,22 +230,34 @@ final readonly class ApiController
      * Ce que chaque source de supervision peut lire pour cette connexion. Réservé aux jetons qui ont le droit `diagnostic`.
      */
     #[Route('/api/v1/connections/{id}/diagnostics', requirements: self::ID, methods: ['GET'])]
-    public function diagnostics(string $id): JsonResponse
+    public function diagnostics(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $capabilities = $this->open($id, fn (TargetConnection $target): array => $this->diagnostics->capabilities($target));
+        $capabilities = $this->open($id, fn (TargetConnection $target): array => $this->diagnostics->capabilities($target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(['capabilities' => DiagnosticsPresenter::capabilities($capabilities)]);
+    }
+
+    /**
+     * Les tablets que vtgate sait viser (Vitess) : de quoi choisir celui dont on lit les autres thèmes (`?tablet=<alias>`). 501 hors Vitess.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/tablets', requirements: self::ID, methods: ['GET'])]
+    public function tablets(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $tablets = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->tablets($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::tablets($tablets));
     }
 
     /**
      * Les sessions en cours sur le serveur de la connexion, en lecture seule, textes de requêtes masqués puis raccourcis.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]
-    public function sessions(string $id): JsonResponse
+    public function sessions(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::sessions($report));
     }
@@ -254,10 +266,10 @@ final readonly class ApiController
      * Les transactions ouvertes et qui bloque qui sur le serveur de la connexion, en lecture seule : aucune instruction d'arrêt.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/locks', requirements: self::ID, methods: ['GET'])]
-    public function locks(string $id): JsonResponse
+    public function locks(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::locks($report));
     }
@@ -266,10 +278,10 @@ final readonly class ApiController
      * Comptes, rôles et privilèges du serveur, avec l'audit de sécurité : lecture seule, jamais une empreinte de mot de passe.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/accounts', requirements: self::ID, methods: ['GET'])]
-    public function accounts(string $id): JsonResponse
+    public function accounts(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::accounts($report));
     }
@@ -278,10 +290,10 @@ final readonly class ApiController
      * Si la connexion de TerrilDB vers la cible est chiffrée (protocole, suite) : une observation, rien ne change.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/encryption', requirements: self::ID, methods: ['GET'])]
-    public function encryption(string $id): JsonResponse
+    public function encryption(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $encryption = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $encryption = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::encryption($encryption));
     }
@@ -291,10 +303,10 @@ final readonly class ApiController
      * lignes les plus récentes, textes masqués puis raccourcis. L'état de chaque source dit si elle est éteinte, refusée ou sans objet.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/logs', requirements: self::ID, methods: ['GET'])]
-    public function logs(string $id): JsonResponse
+    public function logs(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        [$error, $slow] = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        [$error, $slow] = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::logs($error, $slow));
     }
@@ -308,7 +320,7 @@ final readonly class ApiController
     {
         $this->request->get()->requireDiagnostic();
         $seconds = HealthInterval::parse($request->query->get('seconds'));
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $seconds));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $seconds), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::health($report));
     }
@@ -321,7 +333,7 @@ final readonly class ApiController
     {
         $this->request->get()->requireDiagnostic();
         $query = DigestQueryParam::fromQuery($request);
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::statements($report));
     }
@@ -335,7 +347,7 @@ final readonly class ApiController
     {
         $this->request->get()->requireDiagnostic();
         $query = VariableQueryParser::fromRequest($request);
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target, $query), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::variables($report));
     }
@@ -345,10 +357,10 @@ final readonly class ApiController
      * explication, la valeur recommandée et une suggestion à lire (jamais exécutée). Aucun SET.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/config-audit', requirements: self::ID, methods: ['GET'])]
-    public function configAudit(string $id): JsonResponse
+    public function configAudit(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::configAudit($report));
     }
@@ -411,7 +423,7 @@ final readonly class ApiController
      *
      * @return T
      */
-    private function open(string $id, \Closure $action, ?string $database = null): mixed
+    private function open(string $id, \Closure $action, ?string $database = null, ?string $schema = null, ?string $tablet = null): mixed
     {
         $access = $this->request->get();
         $connectionId = Uuid::fromString($id);
@@ -419,7 +431,7 @@ final readonly class ApiController
             throw ConnectionNotFoundException::create();
         }
 
-        return $this->targets->with($access->user, $access->key, $connectionId, $action, $database);
+        return $this->targets->with($access->user, $access->key, $connectionId, $action, $database, $schema, $tablet);
     }
 
     /**
@@ -427,10 +439,10 @@ final readonly class ApiController
      * instruction de réplication (START, STOP, CHANGE) n'est jamais envoyée.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/replication', requirements: self::ID, methods: ['GET'])]
-    public function replication(string $id): JsonResponse
+    public function replication(string $id, Request $request): JsonResponse
     {
         $this->request->get()->requireDiagnostic();
-        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target), null, null, DatabaseParam::tabletFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::replication($report, $this->masking->enabled));
     }

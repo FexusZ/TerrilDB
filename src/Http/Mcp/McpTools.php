@@ -162,35 +162,47 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
-    public function listSessions(string $connection): array
+    public function listTablets(string $connection): array
     {
         return $this->guard(function () use ($connection): array {
             $this->request->get()->requireDiagnostic();
 
-            return DiagnosticsPresenter::sessions($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+            return DiagnosticsPresenter::tablets($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->tablets($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function listLocks(string $connection): array
+    public function listSessions(string $connection, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection): array {
+        return $this->guard(function () use ($connection, $tablet): array {
             $this->request->get()->requireDiagnostic();
 
-            return DiagnosticsPresenter::locks($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+            return DiagnosticsPresenter::sessions($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->sessions($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet));
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function listLogs(string $connection): array
+    public function listLocks(string $connection, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection): array {
+        return $this->guard(function () use ($connection, $tablet): array {
             $this->request->get()->requireDiagnostic();
-            [$error, $slow] = $this->open($connection, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target));
+
+            return DiagnosticsPresenter::locks($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->locks($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function listLogs(string $connection, ?string $tablet = null): array
+    {
+        return $this->guard(function () use ($connection, $tablet): array {
+            $this->request->get()->requireDiagnostic();
+            [$error, $slow] = $this->open($connection, fn (TargetConnection $target) => $this->diagnostics->logs($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet);
 
             return DiagnosticsPresenter::logs($error, $slow);
         });
@@ -199,63 +211,63 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
-    public function serverHealth(string $connection, ?int $seconds = null): array
+    public function serverHealth(string $connection, ?int $seconds = null, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection, $seconds): array {
+        return $this->guard(function () use ($connection, $seconds, $tablet): array {
             $this->request->get()->requireDiagnostic();
             $interval = HealthInterval::parse($seconds);
 
-            return DiagnosticsPresenter::health($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $interval)));
+            return DiagnosticsPresenter::health($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->health($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $interval), null, null, $tablet));
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null): array
+    public function topQueries(string $connection, ?string $order = null, ?int $limit = null, ?int $hours = null, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection, $order, $limit, $hours): array {
+        return $this->guard(function () use ($connection, $order, $limit, $hours, $tablet): array {
             $this->request->get()->requireDiagnostic();
             $query = DigestQuery::fromInput($order, null === $limit ? null : (string) $limit, null === $hours ? null : (string) $hours);
 
-            return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+            return DiagnosticsPresenter::statements($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->statements($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query), null, null, $tablet));
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function listAccounts(string $connection): array
+    public function listAccounts(string $connection, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection): array {
+        return $this->guard(function () use ($connection, $tablet): array {
             $this->request->get()->requireDiagnostic();
 
-            return DiagnosticsPresenter::accounts($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+            return DiagnosticsPresenter::accounts($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->accounts($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet));
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function connectionEncryption(string $connection): array
+    public function connectionEncryption(string $connection, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection): array {
+        return $this->guard(function () use ($connection, $tablet): array {
             $this->request->get()->requireDiagnostic();
 
-            return DiagnosticsPresenter::encryption($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+            return DiagnosticsPresenter::encryption($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->encryption($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet));
         });
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function listVariables(string $connection, ?string $search = null, ?bool $changedOnly = null, ?int $limit = null): array
+    public function listVariables(string $connection, ?string $search = null, ?bool $changedOnly = null, ?int $limit = null, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection, $search, $changedOnly, $limit): array {
+        return $this->guard(function () use ($connection, $search, $changedOnly, $limit, $tablet): array {
             $this->request->get()->requireDiagnostic();
             $query = VariableQueryParser::build($search, $changedOnly ? '1' : null, null === $limit ? null : (string) $limit);
 
-            return DiagnosticsPresenter::variables($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query)));
+            return DiagnosticsPresenter::variables($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->variables($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target, $query), null, null, $tablet));
         });
     }
 
@@ -304,12 +316,12 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
-    public function auditConfig(string $connection): array
+    public function auditConfig(string $connection, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection): array {
+        return $this->guard(function () use ($connection, $tablet): array {
             $this->request->get()->requireDiagnostic();
 
-            return DiagnosticsPresenter::configAudit($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+            return DiagnosticsPresenter::configAudit($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->configAudit($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet));
         });
     }
 
@@ -363,14 +375,14 @@ final readonly class McpTools
      *
      * @return T
      */
-    private function open(string $connection, \Closure $action, ?string $database = null): mixed
+    private function open(string $connection, \Closure $action, ?string $database = null, ?string $schema = null, ?string $tablet = null): mixed
     {
         $access = $this->request->get();
         if (!Uuid::isValid($connection) || !$access->token->allows(Uuid::fromString($connection))) {
             throw ConnectionNotFoundException::create();
         }
 
-        return $this->targets->with($access->user, $access->key, Uuid::fromString($connection), $action, $database);
+        return $this->targets->with($access->user, $access->key, Uuid::fromString($connection), $action, $database, $schema, $tablet);
     }
 
     /**
@@ -397,12 +409,12 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
-    public function getReplication(string $connection): array
+    public function getReplication(string $connection, ?string $tablet = null): array
     {
-        return $this->guard(function () use ($connection): array {
+        return $this->guard(function () use ($connection, $tablet): array {
             $this->request->get()->requireDiagnostic();
 
-            return DiagnosticsPresenter::replication($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)), $this->masking->enabled);
+            return DiagnosticsPresenter::replication($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->replication($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target), null, null, $tablet), $this->masking->enabled);
         });
     }
 }
