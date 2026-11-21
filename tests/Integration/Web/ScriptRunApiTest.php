@@ -173,4 +173,17 @@ final class ScriptRunApiTest extends WebApiTestCase
         $this->api('POST', 'connections/'.$this->connectionId.'/script/run', ['script' => $script, 'confirmationToken' => $ticket]);
         self::assertSame(202, $this->statusCode());
     }
+
+    public function testAHoursLongTimeoutIsAcceptedUpToTheMaximumAndRefusedBeyondBeforeTheTicketIsBurnt(): void
+    {
+        $this->setUpToken();
+        $script = 'SELECT 1';
+        $ticket = $this->ticket($script);
+
+        $this->api('POST', 'connections/'.$this->connectionId.'/script/run', ['script' => $script, 'confirmationToken' => $ticket, 'timeoutMs' => 14_400_001]);
+        self::assertSame(422, $this->statusCode());
+
+        $this->api('POST', 'connections/'.$this->connectionId.'/script/run', ['script' => $script, 'confirmationToken' => $ticket, 'timeoutMs' => 14_400_000]);
+        self::assertSame(202, $this->statusCode());
+    }
 }

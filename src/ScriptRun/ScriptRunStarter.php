@@ -35,6 +35,7 @@ final readonly class ScriptRunStarter
         private ScriptRunLauncher $launcher,
         private AuditLog $audit,
         private ClockInterface $clock,
+        private ScriptRunTimeLimit $limit,
     ) {
     }
 
@@ -46,12 +47,14 @@ final readonly class ScriptRunStarter
      * @throws \App\Core\Query\Script\Exception\ScriptRefusedException
      * @throws \App\Core\Query\Script\Exception\ScriptNeedsConfirmationException
      * @throws \App\Core\Query\Script\Exception\ScriptDryRunUnavailableException
+     * @throws \App\Core\Query\Exception\InvalidQueryOptionsException            délai hors bornes (`ScriptRunTimeLimit`)
      * @throws Exception\InvalidScriptRunRequestException
      * @throws ScriptWorkerUnavailableException
      * @throws ScriptWorkerBusyException
      */
     public function start(User $owner, DerivedKey $key, AuditContext $context, Uuid $connectionId, string $script, bool $confirmed, bool $dryRun, int $timeoutMs, ?string $database, ?string $schema, bool $lenient = false, ?WritePermissions $writes = null, ?Uuid $apiTokenId = null): ScriptRun
     {
+        $this->limit->check($timeoutMs);
         $target = $this->targets->resolve($owner, $key, $connectionId, $database, $schema);
         $writes ??= WritePermissions::all();
         $report = $this->scripts->judge($script, $target->engine, $writes, $dryRun, $confirmed, $lenient);

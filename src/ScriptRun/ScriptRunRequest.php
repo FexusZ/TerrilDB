@@ -9,6 +9,7 @@ use App\Audit\AuditContext;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Query\QueryOptions;
+use App\Core\Query\Script\ScriptOptions;
 use App\Core\Query\WritePermissions;
 use App\ScriptRun\Exception\InvalidScriptRunRequestException;
 use Symfony\Component\Uid\Uuid;
@@ -42,7 +43,7 @@ final readonly class ScriptRunRequest
         if ('' === trim($script) || \strlen($script) > self::MAX_SCRIPT_BYTES) {
             throw new InvalidScriptRunRequestException('The script is empty or too large.');
         }
-        if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > QueryOptions::MAX_TIMEOUT_MS) {
+        if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > ScriptOptions::MAX_TIMEOUT_MS) {
             throw new InvalidScriptRunRequestException('The timeout is out of bounds.');
         }
     }

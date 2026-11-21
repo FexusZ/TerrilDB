@@ -106,6 +106,15 @@ final class ScriptRunRequestTest extends TestCase
         }
     }
 
+    public function testAHoursLongTimeoutIsCarried(): void
+    {
+        $back = ScriptRunRequest::fromJson($this->request(timeoutMs: 14_400_000)->toJson());
+
+        self::assertSame(14_400_000, $back->timeoutMs);
+        $this->expectException(InvalidScriptRunRequestException::class);
+        $this->request(timeoutMs: 86_400_001);
+    }
+
     public function testTheTimeoutIsBounded(): void
     {
         $this->expectException(InvalidScriptRunRequestException::class);

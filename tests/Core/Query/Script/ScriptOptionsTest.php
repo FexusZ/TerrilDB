@@ -14,4 +14,12 @@ final class ScriptOptionsTest extends TestCase
     {
         self::assertLessThanOrEqual(100_000, (new ScriptOptions(WritePermissions::all()))->timeoutMs);
     }
+
+    public function testADetachedRunMayLastHoursButNotMoreThanADay(): void
+    {
+        self::assertSame(86_400_000, (new ScriptOptions(WritePermissions::all(), 86_400_000))->timeoutMs);
+
+        $this->expectException(\App\Core\Query\Exception\InvalidQueryOptionsException::class);
+        new ScriptOptions(WritePermissions::all(), 86_400_001);
+    }
 }

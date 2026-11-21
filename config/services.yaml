@@ -19,6 +19,8 @@ parameters:
     # Délai (secondes) après lequel le reverse proxy coupe la réponse ; la même valeur règle nginx (docker/prod/nginx.conf.template).
     # Une durée demandée par un client ne peut pas dépasser ce délai moins une marge (RequestTimeLimit).
     env(TERRILDB_PROXY_TIMEOUT): '120'
+    # Durée maximale (secondes) d'une exécution de script DÉTACHÉE (#169), indépendante du proxy : 4 h par défaut, 600 à 86400 (ScriptRunTimeLimit).
+    env(TERRILDB_SCRIPT_RUN_MAX_SECONDS): '14400'
 
     # Envoi des invitations par e-mail : actif seulement si l'expéditeur ET l'adresse publique sont renseignés
     # (avec MAILER_DSN). Sans cela, l'administrateur transmet le lien lui-même.
@@ -68,6 +70,10 @@ services:
         public: true
         arguments:
             $directory: '%kernel.cache_dir%/measure-slots'
+    App\ScriptRun\ScriptRunTimeLimit:
+        arguments:
+            $maxSeconds: '%env(int:TERRILDB_SCRIPT_RUN_MAX_SECONDS)%'
+
     App\Http\Json\RequestTimeLimit:
         arguments:
             $proxyTimeoutSeconds: '%env(int:TERRILDB_PROXY_TIMEOUT)%'

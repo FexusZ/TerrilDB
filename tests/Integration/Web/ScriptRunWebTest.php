@@ -194,6 +194,20 @@ final class ScriptRunWebTest extends WebApiTestCase
         self::assertArrayHasKey('error', $body);
     }
 
+    public function testARunMayLastHoursUpToTheInstallationMaximum(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+
+        $this->start($id, 'SELECT 1', ['timeoutMs' => 14_400_000]);
+        self::assertSame(202, $this->statusCode());
+        self::assertSame(14_400_000, RecordingScriptRunLauncher::last()->timeoutMs);
+
+        $this->start($id, 'SELECT 1', ['timeoutMs' => 14_400_001]);
+        self::assertSame(422, $this->statusCode());
+        self::assertCount(1, RecordingScriptRunLauncher::$requests, 'refusée avant de rien lancer');
+    }
+
     public function testWithoutAWorkerTheRunIsEndedFailedAndTheAnswerSaysSo(): void
     {
         $alice = $this->seedAndLogin();
