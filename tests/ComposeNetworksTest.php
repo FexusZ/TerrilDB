@@ -46,7 +46,9 @@ final class ComposeNetworksTest extends TestCase
             self::assertIsArray($first);
             $subnet = $first['subnet'] ?? null;
             self::assertIsString($subnet);
-            self::assertSame(1, preg_match('/^\$\{(TERRILDB_(?:[A-Z_]+_)?SUBNET):-([0-9.]+\/[0-9]+)\}$/D', $subnet, $m), $name.' : la plage doit venir d’une variable avec une valeur par défaut.');
+            if (1 !== preg_match('/^\$\{(TERRILDB_(?:[A-Z_]+_)?SUBNET):-([0-9.]+\/[0-9]+)\}$/D', $subnet, $m)) {
+                self::fail($name.' : la plage doit venir d’une variable avec une valeur par défaut.');
+            }
             $found[$name] = [$m[1], $m[2]];
         }
 
