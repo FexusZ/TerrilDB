@@ -623,7 +623,7 @@ describe('ScriptPanel recent runs', () => {
     await wrapper.get('button.recent').trigger('click')
     await flushPromises()
 
-    expect(wrapper.get('.recent-error').exists()).toBe(true)
+    expect(wrapper.find('.recent-error').exists()).toBe(true)
     expect(wrapper.find('button.preview').exists()).toBe(true)
     wrapper.unmount()
   })
