@@ -535,3 +535,96 @@ describe('ScriptPanel in the background', () => {
       wrapper.unmount()
     })
 })
+
+describe('ScriptPanel recent runs', () => {
+  beforeEach(() => {
+    mocked.mockReset()
+    vi.useFakeTimers()
+  })
+  afterEach(() => vi.useRealTimers())
+
+  const bg = (over: Partial<BackgroundRun> = {}): BackgroundRun => ({
+    id: 'r1',
+    connectionId: 'abc',
+    status: 'committed',
+    finished: true,
+    dryRun: false,
+    total: 3,
+    completed: 3,
+    cancelRequested: false,
+    statements: [],
+    createdAt: '2026-11-19T01:00:00+00:00',
+    startedAt: '2026-11-19T01:00:01+00:00',
+    heartbeatAt: '2026-11-19T01:00:05+00:00',
+    finishedAt: '2026-11-19T01:00:05+00:00',
+    ...over,
+  })
+
+  it('reads the runs of this connection only when the list is opened', async () => {
+    const wrapper = mountPanel()
+    expect(mocked).not.toHaveBeenCalled()
+
+    mocked.mockResolvedValueOnce({ runs: [bg(), bg({ id: 'r2', status: 'interrupted', completed: 1 })] })
+    await wrapper.get('button.recent').trigger('click')
+    await flushPromises()
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/script-runs?connection=abc&limit=20')
+    const rows = wrapper.findAll('.recent-runs li')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('Exécuté')
+    expect(rows[0]!.text()).toContain('3 sur 3')
+    expect(rows[1]!.text()).toContain('Interrompu')
+    wrapper.unmount()
+  })
+
+  it('says so when there is no run', async () => {
+    const wrapper = mountPanel()
+    mocked.mockResolvedValueOnce({ runs: [] })
+    await wrapper.get('button.recent').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.recent-empty').text()).toContain('Aucune')
+    wrapper.unmount()
+  })
+
+  it('shows the outcome of a finished run when it is picked, without polling it', async () => {
+    const wrapper = mountPanel()
+    mocked.mockResolvedValueOnce({ runs: [bg()] })
+    await wrapper.get('button.recent').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('.recent-runs button.follow').trigger('click')
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(wrapper.get('.outcome').text()).toContain('exécuté en arrière-plan')
+    expect(mocked).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('follows a run that is still alive', async () => {
+    const wrapper = mountPanel()
+    mocked.mockResolvedValueOnce({ runs: [bg({ id: 'r9', status: 'running', finished: false, completed: 1, finishedAt: null })] })
+    await wrapper.get('button.recent').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('.recent-runs button.follow').trigger('click')
+    mocked.mockResolvedValueOnce({ run: bg({ id: 'r9', status: 'committed' }) })
+    await vi.advanceTimersByTimeAsync(2000)
+    await flushPromises()
+
+    expect(mocked).toHaveBeenLastCalledWith('GET', '/web/script-runs/r9')
+    expect(wrapper.get('.outcome').text()).toContain('exécuté en arrière-plan')
+    wrapper.unmount()
+  })
+
+  it('reports a failed read of the list without hiding the panel', async () => {
+    const wrapper = mountPanel()
+    mocked.mockRejectedValueOnce(new ApiError(500, 'internal_error', {}))
+    await wrapper.get('button.recent').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.recent-error').exists()).toBe(true)
+    expect(wrapper.find('button.preview').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})
