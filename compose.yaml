@@ -470,11 +470,22 @@ services:
       interval: 3s
       retries: 40
 
+# Plages fixées (#187), voir compose.prod.yaml : les réseaux de développement ne doivent pas recouvrir l'adresse d'une base cible.
 networks:
-  bastion-net: {}
+  default:
+    ipam:
+      config:
+        - subnet: ${TERRILDB_DEV_SUBNET:-10.213.50.0/24}
+  bastion-net:
+    ipam:
+      config:
+        - subnet: ${TERRILDB_DEV_BASTION_SUBNET:-10.213.51.0/24}
   # Sans route vers l'extérieur ni vers `php` : seule la base cachée y vit, avec le bastion.
   bastion-inner:
     internal: true
+    ipam:
+      config:
+        - subnet: ${TERRILDB_DEV_BASTION_INNER_SUBNET:-10.213.52.0/24}
 
 volumes:
   tunnel-sockets:
