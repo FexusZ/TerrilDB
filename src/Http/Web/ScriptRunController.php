@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Web;
 
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Http\Json\JsonInput;
 use App\Http\Json\ScriptRunPresenter;
 use App\ScriptRun\ScriptRunAccess;
@@ -50,6 +51,26 @@ final readonly class ScriptRunController
         );
 
         return new JsonResponse(['run' => ScriptRunPresenter::run($run)], Response::HTTP_ACCEPTED);
+    }
+
+    #[Route('/web/script-runs', methods: ['GET'])]
+    public function list(Request $request): JsonResponse
+    {
+        $limit = $request->query->get('limit');
+        $connection = $request->query->get('connection');
+        if (null !== $limit && 1 !== preg_match('/^[0-9]{1,6}$/D', $limit)) {
+            throw new InvalidQueryOptionsException('limit must be a number.');
+        }
+        if (null !== $connection && !Uuid::isValid($connection)) {
+            throw new InvalidQueryOptionsException('connection must be an identifier.');
+        }
+        $runs = $this->access->list(
+            $this->session->user(),
+            null === $limit ? ScriptRunAccess::DEFAULT_LIST : (int) $limit,
+            null === $connection ? null : Uuid::fromString($connection),
+        );
+
+        return new JsonResponse(['runs' => array_map(ScriptRunPresenter::run(...), $runs)]);
     }
 
     #[Route('/web/script-runs/{id}', requirements: ['id' => '[0-9a-fA-F-]{36}'], methods: ['GET'])]

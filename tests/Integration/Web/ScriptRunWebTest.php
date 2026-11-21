@@ -59,6 +59,9 @@ final class ScriptRunWebTest extends WebApiTestCase
 
         $this->call('POST', '/web/script-runs/00000000-0000-7000-8000-000000000000/cancel');
         self::assertSame(401, $this->statusCode());
+
+        $this->call('GET', '/web/script-runs');
+        self::assertSame(401, $this->statusCode());
     }
 
     public function testAStartedRunIsQueuedAndHandedToTheWorkerWithTheDecryptedConnection(): void
@@ -237,6 +240,50 @@ final class ScriptRunWebTest extends WebApiTestCase
 
         $this->call('GET', '/web/script-runs/'.Uuid::v7()->toRfc4122());
         self::assertSame(404, $this->statusCode());
+    }
+
+    public function testTheListHoldsTheOwnRunsNewestFirstAndNeverTheOthers(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $first = $this->startedRunId($id);
+        $second = $this->startedRunId($id);
+
+        $body = $this->call('GET', '/web/script-runs');
+
+        self::assertSame(200, $this->statusCode());
+        $runs = self::arrayOf($body['runs']);
+        self::assertSame([$second, $first], array_map(static fn (mixed $run): mixed => self::arrayOf($run)['id'], $runs));
+        self::assertArrayNotHasKey('script', self::arrayOf($runs[0]));
+
+        $limited = $this->call('GET', '/web/script-runs?limit=1');
+        self::assertCount(1, self::arrayOf($limited['runs']));
+
+        $this->call('POST', '/web/logout');
+        $this->seedUser('bob');
+        $this->login('bob');
+        $other = $this->call('GET', '/web/script-runs');
+        self::assertSame([], $other['runs']);
+    }
+
+    public function testTheListCanBeNarrowedToOneConnectionAndRefusesABadLimit(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveTarget();
+        $this->startedRunId($id);
+
+        $none = $this->call('GET', '/web/script-runs?connection='.Uuid::v7()->toRfc4122());
+        self::assertSame([], $none['runs']);
+
+        $one = $this->call('GET', '/web/script-runs?connection='.$id);
+        self::assertCount(1, self::arrayOf($one['runs']));
+
+        $this->call('GET', '/web/script-runs?limit=0');
+        self::assertSame(422, $this->statusCode());
+        $this->call('GET', '/web/script-runs?limit=101');
+        self::assertSame(422, $this->statusCode());
+        $this->call('GET', '/web/script-runs?connection=nope');
+        self::assertSame(422, $this->statusCode());
     }
 
     private function startedRunId(string $connection): string
