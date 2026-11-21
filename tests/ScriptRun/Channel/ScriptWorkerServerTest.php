@@ -6,13 +6,20 @@ namespace App\Tests\ScriptRun\Channel;
 
 use App\Audit\AuditActor;
 use App\Audit\AuditContext;
+use App\Connection\TunnelQuota;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Connection\SshJump;
+use App\Core\Connection\Tunnel\TunnelFailedException;
 use App\Core\Query\WritePermissions;
 use App\ScriptRun\Channel\ScriptRunChannel;
+use App\ScriptRun\Channel\ScriptTunnelKeeper;
 use App\ScriptRun\Channel\ScriptWorkerServer;
 use App\ScriptRun\ScriptRunRequest;
+use App\Tests\Core\Connection\Tunnel\RecordingTunnelOpener;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -41,9 +48,9 @@ final class ScriptWorkerServerTest extends TestCase
         @rmdir($this->dir);
     }
 
-    private function server(FakeChildSpawner $spawner, int $maxChildren = 2): ScriptWorkerServer
+    private function server(FakeChildSpawner $spawner, int $maxChildren = 2, ?ScriptTunnelKeeper $tunnels = null): ScriptWorkerServer
     {
-        $this->server = new ScriptWorkerServer($this->socket, new ScriptRunChannel(self::SECRET), $spawner, $maxChildren, readTimeoutSeconds: 1);
+        $this->server = new ScriptWorkerServer($this->socket, new ScriptRunChannel(self::SECRET), $spawner, $maxChildren, readTimeoutSeconds: 1, tunnels: $tunnels);
         $this->server->listen();
 
         return $this->server;
@@ -140,6 +147,75 @@ final class ScriptWorkerServerTest extends TestCase
 
         self::assertSame(0, $server->liveChildren());
         self::assertSame('ok', $this->send($server, $channel->frame(self::json())));
+    }
+
+    private static function jumpJson(): string
+    {
+        $jump = new SshJump('bastion.example.test', 22, 'jump', "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----", null);
+
+        return (new ScriptRunRequest(Uuid::v7(), Engine::PostgreSql, new ConnectionParameters('db.behind.example', 5432, 'shop', 'app', 'pw-unique-3', transport: $jump), 'SELECT 1', new WritePermissions(), false, false, 10_000, new AuditContext(AuditActor::Web, Uuid::v7(), null, null)))->toJson();
+    }
+
+    private static function keeper(RecordingTunnelOpener $tunnels, ?MockClock $clock = null): ScriptTunnelKeeper
+    {
+        $clock ??= new MockClock('2026-11-21 10:00:00 UTC');
+
+        return new ScriptTunnelKeeper($tunnels, new TunnelQuota(new ArrayAdapter(), $clock), $clock);
+    }
+
+    public function testAJumpRunGetsItsTunnelOpenedByTheWorkerAndTheProcessReceivesTheSocket(): void
+    {
+        $spawner = new FakeChildSpawner();
+        $tunnels = new RecordingTunnelOpener();
+        $server = $this->server($spawner, tunnels: self::keeper($tunnels));
+
+        $reply = $this->send($server, (new ScriptRunChannel(self::SECRET))->frame(self::jumpJson()));
+
+        self::assertSame('ok', $reply);
+        self::assertSame(1, $tunnels->opened);
+        self::assertCount(1, $spawner->messages);
+        self::assertSame('/run/tunnels/abc/tunnel.sock', ScriptRunRequest::fromJson($spawner->messages[0])->parameters->socketPath());
+    }
+
+    public function testTheTunnelIsClosedWhenTheProcessEnds(): void
+    {
+        $spawner = new FakeChildSpawner();
+        $tunnels = new RecordingTunnelOpener();
+        $server = $this->server($spawner, tunnels: self::keeper($tunnels));
+        $this->send($server, (new ScriptRunChannel(self::SECRET))->frame(self::jumpJson()));
+
+        self::assertSame(0, $tunnels->closed);
+        $spawner->children[0]->running = false;
+        $server->tick(10);
+
+        self::assertSame(1, $tunnels->closed);
+    }
+
+    public function testARunWhoseTunnelCannotOpenIsRefusedAndNothingStarts(): void
+    {
+        $spawner = new FakeChildSpawner();
+        $tunnels = new RecordingTunnelOpener();
+        $tunnels->failure = new TunnelFailedException();
+        $server = $this->server($spawner, tunnels: self::keeper($tunnels));
+
+        $reply = $this->send($server, (new ScriptRunChannel(self::SECRET))->frame(self::jumpJson()));
+
+        self::assertSame('refused', $reply);
+        self::assertSame([], $spawner->messages);
+    }
+
+    public function testTheTunnelOfALiveRunIsRenewedByTheServer(): void
+    {
+        $spawner = new FakeChildSpawner();
+        $tunnels = new RecordingTunnelOpener();
+        $clock = new MockClock('2026-11-21 10:00:00 UTC');
+        $server = $this->server($spawner, tunnels: self::keeper($tunnels, $clock));
+        $this->send($server, (new ScriptRunChannel(self::SECRET))->frame(self::jumpJson()));
+
+        $clock->sleep(61);
+        $server->renewTunnels();
+
+        self::assertSame(2, $tunnels->opened);
     }
 
     public function testASilentClientDoesNotBlockTheServerForLong(): void

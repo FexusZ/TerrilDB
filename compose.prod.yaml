@@ -103,6 +103,9 @@ services:
     networks: [default, backend]
     volumes:
       - script-sockets:/run/script-runs
+      # Tunnel SSH : le worker ouvre et garde lui-même le tunnel d'une exécution sur une connexion avec rebond (socket de contrôle du
+      # volume, comme l'application) ; sans le profil `tunnel` le dossier est vide et ces connexions sont refusées.
+      - tunnel-sockets:/run/tunnels
     depends_on:
       db:
         condition: service_healthy

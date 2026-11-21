@@ -370,6 +370,34 @@ final class TargetOpenerTest extends DatabaseTestCase
         self::assertSame(0, $tunnels->opened);
     }
 
+    public function testResolveKeepsTheJumpAndOpensNothing(): void
+    {
+        $saved = $this->throughJump();
+        $tunnels = new RecordingTunnelOpener();
+
+        $resolved = $this->opener(tunnels: $tunnels)->resolve($this->alice, $this->key, $saved->getId());
+
+        self::assertInstanceOf(SshJump::class, $resolved->parameters->transport);
+        self::assertSame('db.behind', $resolved->parameters->host);
+        self::assertSame(0, $tunnels->opened, 'le tunnel est ouvert par le worker, pas par la requête');
+    }
+
+    public function testResolveRefusesAnUnlistedBastion(): void
+    {
+        $saved = $this->throughJump(bastion: 'other.example');
+
+        $this->expectException(\App\Core\Connection\Exception\ForbiddenBastionException::class);
+        $this->opener()->resolve($this->alice, $this->key, $saved->getId());
+    }
+
+    public function testResolveRefusesAnEngineWithoutSocketThroughAJump(): void
+    {
+        $saved = $this->throughJump(engine: Engine::Redis, port: 6379);
+
+        $this->expectException(UnsupportedOperationException::class);
+        $this->opener()->resolve($this->alice, $this->key, $saved->getId());
+    }
+
     private function jumpParameters(int $port = 5432): ConnectionParameters
     {
         return new ConnectionParameters('db.behind', $port, 'shop', 'reader', 'secret', transport: new SshJump('bastion.example', 22, 'tunnel', self::KEY, RecordingTunnelOpener::FINGERPRINT));
