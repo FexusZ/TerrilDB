@@ -308,6 +308,64 @@ final class ConnectionsWebTest extends WebApiTestCase
         yield from TargetDatabase::all();
     }
 
+    public function testReadingOnReplicasIsRefusedOnAServerThatIsNotVitess(): void
+    {
+        $this->seedAndLogin();
+        $body = $this->targetBody('TARGET_MYSQL_URL') + ['readReplica' => true];
+
+        $created = $this->call('POST', '/web/connections', $body);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('replica_unavailable', $created['error']);
+        self::assertSame('not_vitess', $created['reason']);
+        $list = $this->call('GET', '/web/connections');
+        self::assertSame([], $list['connections'], 'rien n’est enregistré');
+
+        $this->call('POST', '/web/connections/test', $body);
+        self::assertSame(422, $this->statusCode());
+    }
+
+    public function testAnUpdateThatTicksReplicaReadingOnAServerWithoutOneIsRefused(): void
+    {
+        $this->seedAndLogin();
+        $created = $this->call('POST', '/web/connections', $this->targetBody('TARGET_MYSQL_URL'));
+        $id = self::arrayOf($created['connection'])['id'];
+        self::assertIsString($id);
+
+        $updated = $this->call('PUT', '/web/connections/'.$id, $this->targetBody('TARGET_MYSQL_URL') + ['readReplica' => true]);
+
+        self::assertSame(422, $this->statusCode());
+        self::assertSame('replica_unavailable', $updated['error']);
+    }
+
+    public function testATestOfAMysqlServerSaysWhetherItIsVitessAndWhetherItHasAReplica(): void
+    {
+        $this->seedAndLogin();
+
+        $result = $this->call('POST', '/web/connections/test', $this->targetBody('TARGET_MYSQL_URL'));
+        self::assertSame(200, $this->statusCode());
+        self::assertSame('not_vitess', $result['replica']);
+
+        $result = $this->call('POST', '/web/connections/test', $this->targetBody('TARGET_POSTGRES_URL'));
+        self::assertArrayNotHasKey('replica', $result, 'seul MySQL (donc Vitess) a la question');
+    }
+
+    public function testAVitessGatewayWithAReplicaAcceptsReplicaReading(): void
+    {
+        $this->seedAndLogin();
+        $parameters = TargetDatabase::parameters('TARGET_VITESS_URL');
+        $body = ['name' => 'Vitess', 'engine' => 'mysql', 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()];
+        $result = $this->call('POST', '/web/connections/test', $body);
+        if (200 !== $this->statusCode()) {
+            self::markTestSkipped('TARGET_VITESS_URL is unreachable (docker compose --profile vitess up -d --wait target-vitess).');
+        }
+        self::assertSame('available', $result['replica']);
+
+        $this->call('POST', '/web/connections', $body + ['readReplica' => true]);
+
+        self::assertSame(201, $this->statusCode());
+    }
+
     public function testAConnectionCanBeColoredAndTheColorChangedOrRemoved(): void
     {
         $this->seedAndLogin();

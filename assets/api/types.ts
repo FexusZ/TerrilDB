@@ -90,6 +90,9 @@ export interface HostKey {
   keyType: string
 }
 
+/** Ce qu'un essai de connexion MySQL apprend d'un vtgate : un réplica en service, aucun, pas un Vitess, ou inconnu. */
+export type ReplicaAvailability = 'available' | 'missing' | 'not_vitess' | 'unknown'
+
 export interface ConnectionInput {
   name: string
   engine: Engine

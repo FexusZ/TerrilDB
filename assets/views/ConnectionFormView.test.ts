@@ -179,6 +179,40 @@ describe('ConnectionFormView', () => {
     expect(wrapper.get('[role="status"]').text()).toContain('23 ms')
   })
 
+  it('says whether a Vitess server has a replica to read on, at test time', async () => {
+    const { wrapper } = await mountForm()
+    await wrapper.get('input[value="mysql"]').setValue(true)
+    await fill(wrapper, { name: 'V', host: 'h', database: 'shop', username: 'u', password: 'p' })
+
+    mocked.mockResolvedValueOnce({ ok: true, durationMs: 5, replica: 'available' })
+    await wrapper.get('button.test').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('réplica en service')
+
+    mocked.mockResolvedValueOnce({ ok: true, durationMs: 5, replica: 'missing' })
+    await wrapper.get('button.test').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).toContain('Aucun réplica')
+
+    mocked.mockResolvedValueOnce({ ok: true, durationMs: 5, replica: 'not_vitess' })
+    await wrapper.get('button.test').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).not.toContain('éplica')
+  })
+
+  it('explains why reading on replicas was refused', async () => {
+    const { wrapper } = await mountForm()
+    await wrapper.get('input[value="mysql"]').setValue(true)
+    await fill(wrapper, { name: 'V', host: 'h', database: 'shop', username: 'u', password: 'p' })
+    await wrapper.get('#read-replica').setValue(true)
+    mocked.mockRejectedValueOnce(new ApiError(422, 'replica_unavailable', { reason: 'no_replica' }))
+
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('aucun réplica')
+  })
+
   it('reports a failed test as such', async () => {
     const { wrapper } = await mountForm()
     await fill(wrapper, { name: 'P', host: 'h', database: 'd', username: 'u', password: 'p' })

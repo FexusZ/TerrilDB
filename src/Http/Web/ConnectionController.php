@@ -9,6 +9,9 @@ use App\Audit\AuditedTargetHosts;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\InvalidConnectionOrderException;
+use App\Connection\VitessReplicaCheck;
+use App\Core\Connection\ConnectionParameters;
+use App\Core\Connection\Engine;
 use App\Http\Json\ConnectionInput;
 use App\Http\Json\JsonInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,6 +30,7 @@ final readonly class ConnectionController
         private AuditedTargetHosts $hosts,
         private WebSession $session,
         private AuditLog $audit,
+        private VitessReplicaCheck $replicas,
     ) {
     }
 
@@ -46,6 +50,7 @@ final readonly class ConnectionController
         [$name, $engine, $parameters] = ConnectionInput::read($input, null);
         $color = ConnectionInput::color($input);
         $this->hosts->assertAllowed($this->session->user(), $parameters);
+        $this->requireReplicaIfAsked($engine, $parameters);
 
         $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters, $color);
         $this->audit->record($this->session->auditContext(), AuditAction::ConnectionCreated, subject: $connection->getId(), details: ['name' => $connection->getName(), 'engine' => $engine->value]);
@@ -70,7 +75,24 @@ final readonly class ConnectionController
     {
         [, $engine, $parameters] = ConnectionInput::read(JsonInput::fromRequest($request), null, nameRequired: false);
 
-        return new JsonResponse(['ok' => true, 'durationMs' => $this->targets->probe($engine, $parameters)]);
+        $this->requireReplicaIfAsked($engine, $parameters);
+        $body = ['ok' => true, 'durationMs' => $this->targets->probe($engine, $parameters)];
+        if (Engine::MySql === $engine) {
+            // Vitess ? un réplica à lire ? Informatif : l'interface le dit à côté de la case « Lire sur les réplicas ».
+            $body['replica'] = $this->replicas->inspect($this->session->user(), $engine, $parameters)->value;
+        }
+
+        return new JsonResponse($body);
+    }
+
+    /**
+     * Lire sur les réplicas n'a de sens que sur un vtgate qui en a un : sinon chaque ouverture échouerait.
+     */
+    private function requireReplicaIfAsked(Engine $engine, ConnectionParameters $parameters): void
+    {
+        if ($parameters->readReplica) {
+            $this->replicas->require($this->session->user(), $engine, $parameters);
+        }
     }
 
     #[Route('/web/connections/{id}', requirements: self::ID, methods: ['GET'])]
@@ -94,6 +116,7 @@ final readonly class ConnectionController
         [$name, $engine, $parameters] = ConnectionInput::read($input, $current);
         $color = ConnectionInput::color($input);
         $this->hosts->assertAllowed($user, $parameters);
+        $this->requireReplicaIfAsked($engine, $parameters);
 
         $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters, $color);
         $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionUpdated, subject: $uuid, details: ['name' => $connection->getName(), 'engine' => $engine->value]);
