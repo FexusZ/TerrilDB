@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { messageFor } from '../api/errors'
 import { ENGINE_BADGES, ENGINE_LABELS } from '../api/types'
 import AppHeader from '../components/AppHeader.vue'
+import ReplicaReminder from '../components/ReplicaReminder.vue'
 import TabletPicker from '../components/TabletPicker.vue'
 import WorkbenchSidebar from '../components/WorkbenchSidebar.vue'
 import { useConnectionsStore } from '../stores/connections'
@@ -164,6 +165,7 @@ watch(() => [route.query.database, route.query.schema], () => {
     <div v-else class="body">
       <div class="content">
         <p v-if="workspace.tablesError" class="error" role="alert">{{ workspace.tablesError }}</p>
+        <ReplicaReminder v-if="connection?.engine === 'mysql'" :id="props.id" />
         <TabletPicker v-if="isServerPage && workspace.tablets.length > 0" />
         <RouterView v-if="ready && !holdPage" :key="isServerPage ? (workspace.tablet ?? '') : undefined" />
       </div>
