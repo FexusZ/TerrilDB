@@ -42,6 +42,14 @@ final class ScriptRunRepository extends ServiceEntityRepository
     }
 
     /**
+     * Une exécution lancée par CE jeton : celle d'un autre jeton (ou de la session web) est indiscernable d'une inexistante.
+     */
+    public function findLaunchedBy(Uuid $id, Uuid $tokenId): ?ScriptRun
+    {
+        return $this->findOneBy(['id' => $id, 'apiTokenId' => $tokenId]);
+    }
+
+    /**
      * Les exécutions d'UN compte, les plus récentes d'abord (index `user_id, created_at`), éventuellement pour une seule connexion.
      *
      * @return list<ScriptRun>

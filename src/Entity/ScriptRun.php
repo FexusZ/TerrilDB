@@ -39,6 +39,10 @@ final class ScriptRun
     #[ORM\Column(type: UuidType::NAME)]
     private Uuid $connectionId;
 
+    /** Le jeton d'API qui l'a lancée (nul : la session web). Lui seul la suit par l'API, le propriétaire la voit toujours sur le web. */
+    #[ORM\Column(type: UuidType::NAME, nullable: true)]
+    private ?Uuid $apiTokenId;
+
     #[ORM\Column(length: 64)]
     private string $textHash;
 
@@ -73,7 +77,7 @@ final class ScriptRun
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $finishedAt = null;
 
-    public function __construct(Uuid $id, User $user, Uuid $connectionId, string $textHash, int $total, bool $dryRun, \DateTimeImmutable $now)
+    public function __construct(Uuid $id, User $user, Uuid $connectionId, string $textHash, int $total, bool $dryRun, \DateTimeImmutable $now, ?Uuid $apiTokenId = null)
     {
         if (1 !== preg_match('/^[0-9a-f]{64}$/D', $textHash)) {
             throw new InvalidScriptRunException('The text of a script is kept as a SHA-256 fingerprint only.');
@@ -84,11 +88,17 @@ final class ScriptRun
         $this->id = $id;
         $this->user = $user;
         $this->connectionId = $connectionId;
+        $this->apiTokenId = $apiTokenId;
         $this->textHash = $textHash;
         $this->total = $total;
         $this->dryRun = $dryRun;
         $this->createdAt = $now;
         $this->heartbeatAt = $now;
+    }
+
+    public function getApiTokenId(): ?Uuid
+    {
+        return $this->apiTokenId;
     }
 
     public function start(\DateTimeImmutable $now): void
