@@ -76,6 +76,14 @@ tag="$(git rev-parse --short=12 HEAD 2>/dev/null || date +%Y%m%d%H%M%S)"
 previous="$(cat "$dir/current-tag" 2>/dev/null || true)"
 compose() { docker compose -f compose.prod.yaml "$@"; }
 
+# Les réseaux ont une plage fixée (compose.prod.yaml). Un réseau déjà créé sur une autre plage est recréé par `up`, et les règles de sortie
+# de l'hôte (docs/deploy.md) lisent l'ancienne : on le dit (sans écrire d'adresse, le journal est public), sans jamais arrêter le déploiement.
+wanted_subnet="${TERRILDB_SUBNET:-10.213.40.0/24}"
+current_subnet="$(docker network inspect terrildb-prod_default --format '{{(index .IPAM.Config 0).Subnet}}' 2>/dev/null || true)"
+if [ -n "$current_subnet" ] && [ "$current_subnet" != "$wanted_subnet" ]; then
+    echo "Attention : le sous-réseau du réseau « default » change. Refaites les règles de sortie du pare-feu de l'hôte sur la nouvelle plage (docs/deploy.md)." >&2
+fi
+
 echo "==> Construction de l'image $tag"
 TERRILDB_TAG="$tag" compose build app
 

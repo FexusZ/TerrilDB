@@ -159,11 +159,25 @@ services:
       interval: 3s
       retries: 20
 
+# Plages FIXÉES (#187) : sans cela Docker prend des /20 dans 192.168.0.0/16 une fois 172.17-31 épuisé, et le réseau de n'importe quel projet
+# peut recouvrir l'adresse d'une base cible (injoignable). Réglables dans deploy.env ; changer une plage sur une installation existante
+# recrée le réseau, donc les règles de sortie de l'hôte (docs/deploy.md) sont à refaire sur la nouvelle plage.
 networks:
+  # Joint les bases des utilisateurs : c'est ce sous-réseau (`terrildb-prod_default`) qui reçoit les règles de sortie de l'hôte.
+  default:
+    ipam:
+      config:
+        - subnet: ${TERRILDB_SUBNET:-10.213.40.0/24}
   backend:
     internal: true
+    ipam:
+      config:
+        - subnet: ${TERRILDB_BACKEND_SUBNET:-10.213.41.0/24}
   # Seul réseau avec sortie du tunnel : ce sous-réseau (`terrildb-prod_tunnel`) reçoit les règles de sortie vers les bastions.
-  tunnel: {}
+  tunnel:
+    ipam:
+      config:
+        - subnet: ${TERRILDB_TUNNEL_SUBNET:-10.213.42.0/24}
 
 volumes:
   db-data:

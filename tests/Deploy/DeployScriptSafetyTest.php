@@ -30,6 +30,9 @@ final class DeployScriptSafetyTest extends TestCase
             #!/bin/sh
             echo "docker $*" >> "$FAKE_LOG"
             case "$*" in
+                "network inspect "*)
+                    [ -n "${FAKE_NETWORK_SUBNET:-}" ] && echo "$FAKE_NETWORK_SUBNET" || exit 1
+                    ;;
                 *"pg_dump"*)
                     if [ "${FAKE_DUMP_FAIL:-}" = 1 ]; then echo "-- debut partiel"; echo "pg_dump: erreur" >&2; exit 1; fi
                     echo "-- dump complet"
@@ -272,5 +275,30 @@ final class DeployScriptSafetyTest extends TestCase
             self::assertFileExists($file, 'un reste récent peut appartenir à un déploiement en cours');
         }
         self::assertFileExists($this->dir.'/backups/20260101-000000-old.sql.gz', 'une vraie sauvegarde ancienne n\'est jamais touchée par ce nettoyage');
+    }
+
+    public function testAChangedSubnetOfAnExistingNetworkIsReportedBecauseTheHostFirewallRulesReadTheOldOne(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
+
+        [$code, $output] = $this->deploy(['FAKE_NETWORK_SUBNET' => '172.30.0.0/16']);
+
+        self::assertSame(0, $code, $output);
+        self::assertStringContainsString('sous-réseau', $output);
+        self::assertStringContainsString('règles de sortie', $output);
+        self::assertStringNotContainsString('172.30.0.0', $output, 'Le journal est public : aucune adresse.');
+    }
+
+    public function testNoWarningWhenTheNetworkIsNewOrAlreadyOnTheConfiguredRange(): void
+    {
+        file_put_contents($this->dir.'/deploy.env', "TERRILDB_DOMAIN=exemple.test\n");
+
+        [, $fresh] = $this->deploy();
+        [, $same] = $this->deploy(['FAKE_NETWORK_SUBNET' => '10.213.40.0/24']);
+        [, $custom] = $this->deploy(['FAKE_NETWORK_SUBNET' => '10.99.1.0/24', 'TERRILDB_SUBNET' => '10.99.1.0/24']);
+
+        foreach ([$fresh, $same, $custom] as $output) {
+            self::assertStringNotContainsString('règles de sortie', $output);
+        }
     }
 }

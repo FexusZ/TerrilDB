@@ -112,9 +112,15 @@ docker network ls -q | xargs docker network inspect --format '{{.Name}} {{range 
 Si un sous-réseau contient l'adresse de la cible, c'est lui. Supprimer ce réseau (`docker network rm`, s'il n'est pas utilisé) rend la cible
 joignable aussitôt. Parade durable, côté hôte : fixer les plages que Docker peut attribuer (`default-address-pools` dans `/etc/docker/daemon.json`,
 ou dans la configuration de Docker Desktop / Colima) à une plage qui n'est pas celle de vos réseaux d'entreprise, par exemple une plage `10.x`
-que vous n'utilisez pas, puis redémarrer Docker et recréer les réseaux. TerrilDB ne fixe PAS ses propres sous-réseaux : les règles de sortie
-ci-dessus lisent celui de `terrildb-prod_default` sur la machine, et le changer en cours de route les laisserait sur l'ancien (donc sans
-filtre sur le nouveau).
+que vous n'utilisez pas, puis redémarrer Docker et recréer les réseaux. Les réseaux de TerrilDB eux-mêmes ont une plage FIXÉE (`compose.prod.yaml` et `compose.yaml`, variables ci-dessous), dans `10.213.40.0/22` par défaut,
+hors des plages que Docker attribue seul : un recouvrement ne vient alors plus de TerrilDB.
+
+**Installation existante : changer la plage recrée le réseau.** Au premier déploiement après cette modification, `docker compose up` recrée
+`terrildb-prod_default` (et `backend`) sur la nouvelle plage : l'application redémarre brièvement. Les règles de sortie de l'hôte, elles, lisent
+l'ancien sous-réseau et ne filtrent plus rien sur le nouveau : `deploy.sh` l'écrit dans son journal (« le sous-réseau du réseau « default » change »,
+sans adresse). Il faut alors les refaire : retirer les anciennes (`sudo iptables -D DOCKER-USER -s <ancienne plage> -j TERRILDB-EGRESS`), relire la plage
+(`docker network inspect terrildb-prod_default`, commande ci-dessus) et reposer la règle `-I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS`. La chaîne
+`TERRILDB-EGRESS` elle-même ne change pas. Pour garder une plage existante au lieu de la nouvelle, poser `TERRILDB_SUBNET` à sa valeur dans `deploy.env`.
 
 ## Worker des scripts détachés
 
@@ -201,6 +207,7 @@ redémarrage du conteneur concerné (`docker compose -f compose.prod.yaml up -d 
 | `TERRILDB_PORT` | `8090` | port local publié (nginx y pointe) | `deploy.env` (conservé, voir ci-dessous) |
 | `TERRILDB_BIND` | `127.0.0.1` | adresse d'écoute ; autre chose que la boucle locale = quelques minutes, pour créer le premier compte | `deploy.env` |
 | `TERRILDB_PROXY_TIMEOUT` | `120` (30 à 3600) | délai de nginx ET limite de durée d'une requête (moins 20 s) ; voir plus haut | `deploy.env` |
+| `TERRILDB_SUBNET`, `TERRILDB_BACKEND_SUBNET`, `TERRILDB_TUNNEL_SUBNET` | `10.213.40.0/24`, `10.213.41.0/24`, `10.213.42.0/24` | plages fixées des réseaux `default` (celui des règles de sortie), `backend` (base interne) et `tunnel` ; à changer si l'une recouvre une base cible. Changer une plage recrée le réseau et oblige à refaire les règles de sortie de l'hôte | `deploy.env` |
 | `TERRILDB_SSH_ALLOWED_BASTIONS` | vide (tunnel éteint, tout rebond refusé) | bastions SSH autorisés (`hôte` ou `hôte:port`, séparés par des virgules) ; non vide : `deploy.sh` construit et démarre le conteneur `tunnel` ; lue dans `deploy.env` SEULEMENT (une variable du shell est ignorée) ; voir « Tunnel SSH » | `deploy.env` |
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | `terrildb`, `terrildb`, tirée au hasard | initialisation de la base interne (le mot de passe ne sert qu'à la CRÉATION du volume) | `db.env` |
 
