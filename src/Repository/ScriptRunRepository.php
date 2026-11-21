@@ -42,6 +42,21 @@ final class ScriptRunRepository extends ServiceEntityRepository
     }
 
     /**
+     * Les exécutions d'UN compte, les plus récentes d'abord (index `user_id, created_at`), éventuellement pour une seule connexion.
+     *
+     * @return list<ScriptRun>
+     */
+    public function findOwnedBy(Uuid $userId, int $limit, ?Uuid $connectionId): array
+    {
+        $criteria = ['user' => $userId];
+        if (null !== $connectionId) {
+            $criteria['connectionId'] = $connectionId;
+        }
+
+        return $this->findBy($criteria, ['createdAt' => 'DESC', 'id' => 'DESC'], $limit);
+    }
+
+    /**
      * La demande d'annulation, lue à la base à chaque fois (jamais depuis l'objet en mémoire : une autre requête la pose).
      */
     public function isCancelRequested(Uuid $id): bool

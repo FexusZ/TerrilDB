@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\ScriptRun;
 
+use App\Core\Query\Exception\InvalidQueryOptionsException;
 use App\Entity\ScriptRun;
 use App\Entity\User;
 use App\Repository\ScriptRunRepository;
@@ -17,6 +18,9 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class ScriptRunAccess
 {
+    public const int DEFAULT_LIST = 20;
+    public const int MAX_LIST = 100;
+
     public function __construct(private ScriptRunRepository $runs, private ClockInterface $clock)
     {
     }
@@ -31,6 +35,21 @@ final readonly class ScriptRunAccess
         $this->runs->interruptStale($this->now());
 
         return $this->owned($owner, $id);
+    }
+
+    /**
+     * Les exécutions du compte, les plus récentes d'abord ; une exécution vivante sans signe de vie y est déjà déclarée interrompue.
+     *
+     * @return list<ScriptRun>
+     */
+    public function list(User $owner, int $limit, ?Uuid $connection): array
+    {
+        if ($limit < 1 || $limit > self::MAX_LIST) {
+            throw new InvalidQueryOptionsException(\sprintf('limit must be between 1 and %d.', self::MAX_LIST));
+        }
+        $this->runs->interruptStale($this->now());
+
+        return $this->runs->findOwnedBy($owner->getId(), $limit, $connection);
     }
 
     /**
