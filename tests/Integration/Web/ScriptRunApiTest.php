@@ -73,8 +73,10 @@ final class ScriptRunApiTest extends WebApiTestCase
         $body = $this->api('POST', 'connections/'.$this->connectionId.'/script/run', ['script' => $script, 'confirmationToken' => $this->ticket($script)]);
         self::assertSame(202, $this->statusCode());
 
-        $run = self::arrayOf($body['run']);
-        /* @var array<string, mixed> $run */
+        $run = [];
+        foreach (self::arrayOf($body['run']) as $key => $value) {
+            $run[(string) $key] = $value;
+        }
 
         return $run;
     }
