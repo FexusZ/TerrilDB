@@ -72,6 +72,25 @@ final readonly class ConnectionManager
     }
 
     /**
+     * Surveille la recherche d'un réplica (rappel hebdomadaire) : maintenant est la date de la dernière recherche.
+     */
+    public function watchReplica(User $owner, Uuid $id, bool $found): void
+    {
+        $connection = $this->owned($owner, $id);
+        $connection->watchReplica(\DateTimeImmutable::createFromInterface($this->clock->now()), $found);
+        $this->save($connection);
+    }
+
+    public function stopWatchingReplica(User $owner, Uuid $id): void
+    {
+        $connection = $this->owned($owner, $id);
+        if (null !== $connection->getReplicaCheckedAt()) {
+            $connection->stopWatchingReplica();
+            $this->save($connection);
+        }
+    }
+
+    /**
      * Les connexions citées passent en tête, dans l'ordre donné ; les autres suivent, dans leur ordre actuel (une connexion
      * créée entre-temps ailleurs ne se perd pas).
      *

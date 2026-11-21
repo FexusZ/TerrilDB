@@ -18,7 +18,7 @@ use App\Entity\User;
  * vérifie que c'est un vtgate puis lit `SHOW VITESS_TABLETS` : lecture du topo, rien n'est modifié. Ce qui ne peut pas être lu
  * (serveur injoignable, droit manquant) rend `Unknown` et ne refuse jamais rien.
  */
-final readonly class VitessReplicaCheck
+final readonly class VitessReplicaCheck implements ReplicaProbe
 {
     public function __construct(private TargetOpener $opener)
     {
@@ -58,7 +58,7 @@ final readonly class VitessReplicaCheck
     public function require(User $user, Engine $engine, ConnectionParameters $parameters): void
     {
         $availability = $this->inspect($user, $engine, $parameters);
-        if (ReplicaAvailability::NotVitess === $availability || ReplicaAvailability::Missing === $availability) {
+        if ($availability->refusesReplicaReading()) {
             throw ReplicaUnavailableException::for($availability);
         }
     }

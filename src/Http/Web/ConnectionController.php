@@ -9,6 +9,7 @@ use App\Audit\AuditedTargetHosts;
 use App\Audit\AuditLog;
 use App\Connection\ConnectionManager;
 use App\Connection\Exception\InvalidConnectionOrderException;
+use App\Connection\ReplicaReminder;
 use App\Connection\VitessReplicaCheck;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
@@ -31,6 +32,7 @@ final readonly class ConnectionController
         private WebSession $session,
         private AuditLog $audit,
         private VitessReplicaCheck $replicas,
+        private ReplicaReminder $reminder,
     ) {
     }
 
@@ -54,6 +56,7 @@ final readonly class ConnectionController
 
         $connection = $this->connections->create($this->session->user(), $this->session->key(), $name, $engine, $parameters, $color);
         $this->audit->record($this->session->auditContext(), AuditAction::ConnectionCreated, subject: $connection->getId(), details: ['name' => $connection->getName(), 'engine' => $engine->value]);
+        $this->reminder->arm($this->session->user(), $connection->getId(), $engine, $parameters);
 
         return new JsonResponse(['connection' => ConnectionPresenter::summary($connection)], Response::HTTP_CREATED);
     }
@@ -120,6 +123,7 @@ final readonly class ConnectionController
 
         $connection = $this->connections->update($user, $key, $uuid, $name, $engine, $parameters, $color);
         $this->audit->record($this->session->auditContext($user), AuditAction::ConnectionUpdated, subject: $uuid, details: ['name' => $connection->getName(), 'engine' => $engine->value]);
+        $this->reminder->arm($user, $uuid, $engine, $parameters);
 
         return new JsonResponse(['connection' => ConnectionPresenter::summary($connection)]);
     }

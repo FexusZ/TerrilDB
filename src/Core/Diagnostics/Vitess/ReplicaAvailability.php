@@ -17,6 +17,14 @@ enum ReplicaAvailability: string
     case Unknown = 'unknown';
 
     /**
+     * Refus seulement sur une absence PROUVÉE : un serveur illisible ne bloque rien.
+     */
+    public function refusesReplicaReading(): bool
+    {
+        return self::Missing === $this || self::NotVitess === $this;
+    }
+
+    /**
      * @param list<VitessTablet> $tablets ce que `SHOW VITESS_TABLETS` rend
      */
     public static function fromTablets(string $database, array $tablets): self

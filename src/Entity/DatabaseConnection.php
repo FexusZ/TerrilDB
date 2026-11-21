@@ -58,6 +58,13 @@ final class DatabaseConnection
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $updatedAt;
 
+    /** Surveillance d'un réplica Vitess (rappel hebdomadaire) : date de la dernière recherche, nulle = pas de surveillance. Rien de secret. */
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $replicaCheckedAt = null;
+
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $replicaFound = false;
+
     #[ORM\Version]
     #[ORM\Column(type: Types::INTEGER, options: ['default' => 1])]
     private int $version = 1;
@@ -143,6 +150,32 @@ final class DatabaseConnection
     public function getUpdatedAt(): \DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function getReplicaCheckedAt(): ?\DateTimeImmutable
+    {
+        return $this->replicaCheckedAt;
+    }
+
+    public function isReplicaFound(): bool
+    {
+        return $this->replicaFound;
+    }
+
+    /**
+     * Cette connexion Vitess n'a pas (ou pas encore choisi) de réplica : on la surveille. `$found` : un réplica est apparu,
+     * l'interface le propose.
+     */
+    public function watchReplica(\DateTimeImmutable $now, bool $found): void
+    {
+        $this->replicaCheckedAt = $now->setTimezone(new \DateTimeZone('UTC'));
+        $this->replicaFound = $found;
+    }
+
+    public function stopWatchingReplica(): void
+    {
+        $this->replicaCheckedAt = null;
+        $this->replicaFound = false;
     }
 
     public function update(string $name, Engine $engine, string $encryptedParameters, \DateTimeImmutable $now): void
