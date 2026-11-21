@@ -56,6 +56,8 @@ docker compose run --rm --no-deps php vendor/bin/phpunit                    # te
 docker compose run --rm --no-deps php vendor/bin/phpunit --group integration
 ```
 
+Une base cible d'un réseau privé injoignable depuis TerrilDB alors qu'elle répond depuis la machine ? Un réseau Docker (celui de n'importe quel projet) en recouvre peut-être l'adresse : voir [`docs/deploy.md`](docs/deploy.md), « Une base cible injoignable… ».
+
 La liste complète des commandes (qualité, front, migrations) et l'architecture sont dans [`CLAUDE.md`](CLAUDE.md).
 
 ## Sécurité

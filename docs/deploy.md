@@ -95,6 +95,27 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -j TERRILDB-EGRESS
 - Après la pose, vérifier depuis le conteneur qu'une adresse non listée est bien injoignable (`docker compose -f compose.prod.yaml exec app php -r 'var_dump(@fsockopen("1.1.1.1", 443, $e, $m, 3));'` doit rendre `false`) et qu'une base listée l'est toujours, avant de fermer la session.
 - Ces règles ne sont pas testées par l'intégration continue : à valider sur votre machine.
 
+## Une base cible injoignable alors qu'elle répond depuis l'hôte (réseaux Docker qui se recouvrent)
+
+Symptôme : `target_unreachable` (ou un délai dépassé) pour une base d'un réseau privé, alors qu'elle répond depuis la machine. Cause fréquente
+quand Docker tourne dans une VM ou sur un poste qui porte beaucoup de projets : une fois ses plages `172.17–31.0.0/16` épuisées, Docker
+attribue aux réseaux compose des `/20` pris dans `192.168.0.0/16` (`192.168.16.0/20`, `192.168.32.0/20`…). Si l'un d'eux recouvre l'adresse
+de la cible, la machine envoie ce trafic vers le pont local au lieu de le sortir. Le réseau en cause peut être celui de N'IMPORTE QUEL projet
+compose, pas forcément celui de TerrilDB, et revient à chaque `compose up` de ce projet.
+
+Diagnostic : comparer l'adresse de la cible aux réseaux Docker.
+
+```bash
+docker network ls -q | xargs docker network inspect --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+
+Si un sous-réseau contient l'adresse de la cible, c'est lui. Supprimer ce réseau (`docker network rm`, s'il n'est pas utilisé) rend la cible
+joignable aussitôt. Parade durable, côté hôte : fixer les plages que Docker peut attribuer (`default-address-pools` dans `/etc/docker/daemon.json`,
+ou dans la configuration de Docker Desktop / Colima) à une plage qui n'est pas celle de vos réseaux d'entreprise, par exemple une plage `10.x`
+que vous n'utilisez pas, puis redémarrer Docker et recréer les réseaux. TerrilDB ne fixe PAS ses propres sous-réseaux : les règles de sortie
+ci-dessus lisent celui de `terrildb-prod_default` sur la machine, et le changer en cours de route les laisserait sur l'ancien (donc sans
+filtre sur le nouveau).
+
 ## Worker des scripts détachés
 
 Un script SQL peut s'exécuter en arrière-plan, au-delà de la durée d'une requête, avec un suivi et une annulation entre deux instructions (issue #169). Le conteneur `script-worker` (même image que l'application, sans serveur web) le joue : il est démarré par `deploy.sh` APRÈS l'application, avec `script-init` qui pose le dossier de son socket en 0700 dans le volume `script-sockets`. Un échec de démarrage ne défait jamais le déploiement : l'application reste en ligne, la console, l'API et le MCP ne changent pas, seuls les scripts détachés répondent « worker indisponible ».
