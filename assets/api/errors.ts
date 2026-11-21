@@ -14,6 +14,7 @@ const REASONS: Record<string, string> = {
   destructive_script: 'Ce script contient des instructions destructrices : une seule confirmation les couvre toutes.',
   big_table_name: 'Cette table est très volumineuse : retapez le nom de la table pour confirmer.',
   other_administrator_token: 'Ce jeton appartient à un autre administrateur : sa révocation demande une confirmation explicite.',
+  stream_source: 'Attention : cette modification touche une table qui nourrit un flux Vitess (Materialize, MoveTables). Le flux ne suivra pas ce changement. Pour tout garder à jour : faites d’abord le même changement sur la table cible du flux, puis appliquez-le ici. Pour un DROP, un RENAME ou un TRUNCATE, arrêtez ou annulez le flux avant (commandes Materialize ou MoveTables de vtctldclient), sinon il s’interrompt ; un flux MoveTables se termine ou s’annule avant de toucher sa source. TerrilDB ne lance rien de cela. Vérifiez la table cible ensuite.',
   destructive_schema_change: 'Cette modification détruit des données ou une structure : confirmez-la pour l’appliquer.',
 }
 
@@ -22,6 +23,7 @@ const GENERIC = 'Une erreur est survenue. Réessayez.'
 /** Explication d'un refus du garde. Un motif inconnu n'est jamais affiché tel quel. */
 // Ce qui est REFUSÉ aux jetons d'API et au MCP demande, dans la console, une simple confirmation : le texte est alors un avertissement.
 const WARNINGS: Record<string, string> = {
+  stream_source: 'Attention : cette modification touche une table qui nourrit un flux Vitess (Materialize, MoveTables). Le flux ne suivra pas ce changement. Pour tout garder à jour : faites d’abord le même changement sur la table cible du flux, puis appliquez-le ici. Pour un DROP, un RENAME ou un TRUNCATE, arrêtez ou annulez le flux avant (commandes Materialize ou MoveTables de vtctldclient), sinon il s’interrompt ; un flux MoveTables se termine ou s’annule avant de toucher sa source. TerrilDB ne lance rien de cela. Vérifiez la table cible ensuite.',
   forbidden_construct: 'Attention : cette instruction sort du cadre habituel d’une requête (fichiers du serveur, verrous durables, état du serveur…). Le serveur de la base décidera selon les droits de votre compte.',
 }
 

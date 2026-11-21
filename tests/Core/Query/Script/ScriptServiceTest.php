@@ -35,7 +35,7 @@ final class ScriptServiceTest extends TestCase
      *
      * @return array{TargetConnection, object{statements: list<ScriptStatement>, timeoutMs: int, dryRun: bool, calls: int, tableLookups: int, nonTransactional: list<string>}}
      */
-    private function target(Engine $engine, array $nonTransactional = []): array
+    private function target(Engine $engine, array $nonTransactional = [], ?\App\Core\Diagnostics\Vitess\StreamSources $streams = null): array
     {
         $spy = new class($nonTransactional) implements ScriptExecutor {
             /** @var list<ScriptStatement> */
@@ -69,7 +69,7 @@ final class ScriptServiceTest extends TestCase
         };
 
         return [new TargetConnection($engine, null, $this->createStub(QueryRunner::class), static function (): void {
-        }, script: $spy), $spy];
+        }, script: $spy, streams: $streams), $spy];
     }
 
     public function testPreviewOnPostgreSqlIsAtomicAndAllowsADryRunEvenWithDdl(): void
@@ -177,6 +177,47 @@ final class ScriptServiceTest extends TestCase
 
         $this->service()->execute($target, $script, new ScriptOptions(WritePermissions::all(), lenient: true), true);
         self::assertSame(1, $spy->calls);
+    }
+
+    private function feedingCorder(): \App\Core\Diagnostics\Vitess\StreamSources
+    {
+        return new class implements \App\Core\Diagnostics\Vitess\StreamSources {
+            public function sources(): array
+            {
+                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}');
+
+                return null === $source ? [] : [$source];
+            }
+        };
+    }
+
+    public function testALenientConsoleWarnsThatAStructureChangeWillNotReachAStream(): void
+    {
+        [$target, $spy] = $this->target(Engine::MySql, streams: $this->feedingCorder());
+        $script = "INSERT INTO customer VALUES (1);\nALTER TABLE corder ADD COLUMN note text;";
+
+        try {
+            $this->service()->execute($target, $script, new ScriptOptions(WritePermissions::all(), lenient: true));
+            self::fail('A warning was expected.');
+        } catch (ScriptNeedsConfirmationException $e) {
+            self::assertSame('stream_source', $e->reason);
+        }
+        self::assertSame(0, $spy->calls);
+
+        $this->service()->execute($target, $script, new ScriptOptions(WritePermissions::all(), lenient: true), true);
+        self::assertSame(1, $spy->calls);
+    }
+
+    public function testAnAlterOfAnotherTableKeepsTheUsualDestructiveWarning(): void
+    {
+        [$target] = $this->target(Engine::MySql, streams: $this->feedingCorder());
+
+        try {
+            $this->service()->execute($target, 'ALTER TABLE customer ADD COLUMN note text;', new ScriptOptions(WritePermissions::all(), lenient: true));
+            self::fail('A confirmation was expected.');
+        } catch (ScriptNeedsConfirmationException $e) {
+            self::assertSame('destructive_script', $e->reason);
+        }
     }
 
     public function testTheRightsOfTheCallerApplyToEachStatement(): void

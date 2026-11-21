@@ -38,7 +38,7 @@ final class SchemaChangeServiceAlgorithmTest extends TestCase
         return new TableDefinition('events', TableKind::Table, [new ColumnDefinition('id', 'int', false, null, false, null), new ColumnDefinition('n', 'int', true, null, false, null)], [], [], null, 500_000, 40_000_000, 10_000_000, 'InnoDB', true);
     }
 
-    private function target(TableDefinition $table, Engine $engine = Engine::MySql, string $version = '8.4.13'): TargetConnection
+    private function target(TableDefinition $table, Engine $engine = Engine::MySql, string $version = '8.4.13', ?\App\Core\Diagnostics\Vitess\StreamSources $streams = null): TargetConnection
     {
         $introspector = new class($table) implements SchemaIntrospector {
             public function __construct(private readonly TableDefinition $table)
@@ -95,7 +95,7 @@ final class SchemaChangeServiceAlgorithmTest extends TestCase
         };
 
         return new TargetConnection($engine, $introspector, new NullRunner(), static function (): void {
-        }, null, $ddl, null, null, null, ServerVersion::parse($version));
+        }, null, $ddl, null, null, null, ServerVersion::parse($version), $streams);
     }
 
     private function draft(string $type, bool $addColumn = false): TableDraft
@@ -123,6 +123,39 @@ final class SchemaChangeServiceAlgorithmTest extends TestCase
 
         self::assertSame(AlterAlgorithm::Copy, $preview->algorithms[0]->algorithm);
         self::assertSame(50_000_000, $preview->algorithms[0]->estimatedExtraBytes);
+    }
+
+    private function feeding(string $table): \App\Core\Diagnostics\Vitess\StreamSources
+    {
+        return new class($table) implements \App\Core\Diagnostics\Vitess\StreamSources {
+            public function __construct(private readonly string $table)
+            {
+            }
+
+            public function sources(): array
+            {
+                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse(\sprintf('keyspace:"shop" shard:"0" filter:{rules:{match:"summary" filter:"select id from %s"}}', $this->table));
+
+                return null === $source ? [] : [$source];
+            }
+        };
+    }
+
+    public function testThePreviewWarnsWhenTheTableFeedsAStreamThatWillNotFollow(): void
+    {
+        $preview = (new SchemaChangeService())->preview($this->target($this->table(), streams: $this->feeding('events')), 'events', $this->draft('bigint'), null);
+
+        self::assertTrue($preview->feedsStream);
+        self::assertCount(0, $this->executed, 'a warning, nothing is blocked or run');
+    }
+
+    public function testThePreviewSaysNothingForAnotherTableOrWithoutStreamsOrWithNothingToDo(): void
+    {
+        $service = new SchemaChangeService();
+
+        self::assertFalse($service->preview($this->target($this->table(), streams: $this->feeding('orders')), 'events', $this->draft('bigint'), null)->feedsStream);
+        self::assertFalse($service->preview($this->target($this->table()), 'events', $this->draft('bigint'), null)->feedsStream);
+        self::assertFalse($service->preview($this->target($this->table(), streams: $this->feeding('events')), 'events', $this->draft('int'), null)->feedsStream, 'no statement: nothing to warn about');
     }
 
     public function testNothingToDoGivesNoAdvice(): void

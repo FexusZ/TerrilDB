@@ -7,6 +7,7 @@ namespace App\Core\Driver;
 use App\Core\Connection\Engine;
 use App\Core\Data\DataExecutor;
 use App\Core\Diagnostics\ServerDiagnostics;
+use App\Core\Diagnostics\Vitess\StreamSources;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\KeyValueStore;
 use App\Core\Query\QueryRunner;
@@ -38,6 +39,7 @@ final class TargetConnection
         private readonly ?ServerDiagnostics $diagnostics = null,
         private readonly ?ScriptExecutor $script = null,
         private readonly ?ServerVersion $version = null,
+        private readonly ?StreamSources $streams = null,
     ) {
         $this->release = $release;
     }
@@ -90,6 +92,14 @@ final class TargetConnection
     public function script(): ScriptExecutor
     {
         return $this->script ?? throw UnsupportedOperationException::for($this->engine, 'script');
+    }
+
+    /**
+     * Vitess : les flux dont une table du keyspace est la source, pour avertir avant une modification qu'ils ne suivraient pas. Nul ailleurs.
+     */
+    public function streams(): ?StreamSources
+    {
+        return $this->streams;
     }
 
     /**

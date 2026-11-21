@@ -167,4 +167,18 @@ describe('error messages', () => {
     expect(messageFor(new ApiError(409, 'dry_run_unavailable', { reason: 'non_transactional_tables' }))).toContain('sans transaction')
     expect(reasonText('destructive_script')).toContain('confirm')
   })
+
+  it('warns that a flow will not follow, instead of calling it destructive', () => {
+    expect(reasonText('stream_source', true)).toContain('flux')
+    expect(reasonText('stream_source', true)).toContain('ne suivra pas')
+    expect(reasonText('stream_source')).toContain('flux')
+  })
+
+  it('dit comment appliquer le changement partout quand une table nourrit un flux', () => {
+    const text = reasonText('stream_source', true)
+    expect(text).toContain('table cible')
+    expect(text).toContain('DROP')
+    expect(text).toContain('MoveTables')
+    expect(text).toContain('TerrilDB ne lance rien')
+  })
 })

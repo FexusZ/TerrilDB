@@ -50,6 +50,7 @@ final class SchemaChangeService
             $this->assess($plan, $current),
             [] === $plan->statements ? null : self::holders($target, $table),
             $this->algorithms->advise($target->engine, $target->version(), $current, $draft, $plan),
+            [] !== $plan->statements && self::feedsStream($target, $table),
         );
     }
 
@@ -109,6 +110,18 @@ final class SchemaChangeService
         } catch (\Throwable) {
             return TableHolders::unreadable(DiagnosticStatus::unsupported('lock_check_failed'));
         }
+    }
+
+    /** Vitess : un flux dont la table est la source ne suit pas une modification de structure. Lecture facultative, jamais une erreur. */
+    private static function feedsStream(TargetConnection $target, string $table): bool
+    {
+        foreach ($target->streams()?->sources() ?? [] as $source) {
+            if ($source->feeds($table)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** Une table grosse n'inquiète que si quelque chose va réellement être exécuté. */
