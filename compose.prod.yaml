@@ -26,6 +26,8 @@ services:
       # Le délai (secondes) du reverse proxy de l'hôte, qui règle aussi nginx (docker/prod/proxy-timeout.sh) : l'application en tire
       # la limite de durée d'une requête ou d'un script.
       TERRILDB_PROXY_TIMEOUT: ${TERRILDB_PROXY_TIMEOUT:-120}
+      # Durée maximale d'une exécution de script en arrière-plan (secondes) : indépendante du proxy.
+      TERRILDB_SCRIPT_RUN_MAX_SECONDS: ${TERRILDB_SCRIPT_RUN_MAX_SECONDS:-14400}
       # Bastions SSH autorisés (« hôte » ou « hôte:port », virgules) : VIDE par défaut = tout refusé, le tunnel reste éteint.
       # Le conteneur `tunnel` lit la même valeur (docs/ssh-tunnel.md).
       TERRILDB_SSH_ALLOWED_BASTIONS: ${TERRILDB_SSH_ALLOWED_BASTIONS:-}

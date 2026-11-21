@@ -22,14 +22,12 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class TokenScriptRuns
 {
-    /** Comme la console web : au-delà de la durée d'une requête, c'est le but d'une exécution détachée. */
-    public const int DEFAULT_TIMEOUT_MS = 600_000;
-
     public function __construct(
         private TargetSession $targets,
         private WriteApproval $approval,
         private ScriptRunStarter $starter,
         private ScriptRunAccess $access,
+        private ScriptRunTimeLimit $limit,
     ) {
     }
 
@@ -44,10 +42,7 @@ final readonly class TokenScriptRuns
         if (!$token->token->allows($connectionId)) {
             throw ConnectionNotFoundException::create();
         }
-        $timeout = $timeoutMs ?? self::DEFAULT_TIMEOUT_MS;
-        if ($timeout < QueryOptions::MIN_TIMEOUT_MS || $timeout > QueryOptions::MAX_TIMEOUT_MS) {
-            throw new InvalidQueryOptionsException('timeoutMs is out of bounds.');
-        }
+        $timeout = $this->limit->check($timeoutMs ?? $this->limit->defaultMs());
 
         $this->targets->with($token->user, $token->key, $connectionId, fn (TargetConnection $target) => $this->approval->authorizeScript($token, $context, $connectionId, $target, $script, $ticket, $confirmed));
 

@@ -9,6 +9,7 @@ use App\Http\Json\JsonInput;
 use App\Http\Json\ScriptRunPresenter;
 use App\ScriptRun\ScriptRunAccess;
 use App\ScriptRun\ScriptRunStarter;
+use App\ScriptRun\ScriptRunTimeLimit;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,13 +23,11 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class ScriptRunController
 {
-    /** Au-delà de la durée d'une requête : c'est le but, l'exécution ne dépend plus du proxy. */
-    private const DEFAULT_TIMEOUT_MS = 600_000;
-
     public function __construct(
         private ScriptRunStarter $starter,
         private ScriptRunAccess $access,
         private WebSession $session,
+        private ScriptRunTimeLimit $limit,
     ) {
     }
 
@@ -44,7 +43,7 @@ final readonly class ScriptRunController
             $input->string('script'),
             $input->bool('confirmed', false),
             $input->bool('dryRun', false),
-            $input->optionalInt('timeoutMs') ?? self::DEFAULT_TIMEOUT_MS,
+            $input->optionalInt('timeoutMs') ?? $this->limit->defaultMs(),
             $input->optionalString('database'),
             $input->optionalString('schema'),
             lenient: true,

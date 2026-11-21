@@ -12,6 +12,8 @@ final readonly class ScriptOptions
 {
     /** Sous les 120 s du proxy de production : au-delà, le client recevrait un 504 pendant que le script continue. */
     public const DEFAULT_TIMEOUT_MS = 100_000;
+    /** Une exécution détachée n'a pas la durée d'une requête ; le maximum de l'installation (`ScriptRunTimeLimit`) est en dessous. */
+    public const MAX_TIMEOUT_MS = 86_400_000;
 
     public function __construct(
         public WritePermissions $writes,
@@ -21,7 +23,7 @@ final readonly class ScriptOptions
         /** La console d'une personne connectée : les constructions hors cadre demandent confirmation au lieu d'être refusées (voir StatementGuard). */
         public bool $lenient = false,
     ) {
-        if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > QueryOptions::MAX_TIMEOUT_MS) {
+        if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > self::MAX_TIMEOUT_MS) {
             throw new InvalidQueryOptionsException('The timeout is out of bounds.');
         }
     }

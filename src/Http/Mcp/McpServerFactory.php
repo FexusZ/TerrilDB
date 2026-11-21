@@ -316,7 +316,7 @@ final readonly class McpServerFactory
                         'confirmationToken' => ['type' => 'string', 'description' => 'Jeton rendu par prepare_script pour CE script.'],
                         'confirmed' => ['type' => 'boolean', 'description' => 'Vrai pour confirmer d’un coup toutes les instructions destructrices demandées expressément par l’utilisateur.'],
                         'dryRun' => ['type' => 'boolean', 'description' => 'Vrai pour tout exécuter puis tout annuler (test).'],
-                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'description' => 'Durée maximale du script entier en millisecondes (600000 par défaut).'],
+                        'timeoutMs' => ['type' => 'integer', 'minimum' => 100, 'description' => 'Durée maximale du script entier en millisecondes (600000 par défaut ; au plus le maximum des exécutions en arrière-plan de l’installation, 4 h sauf réglage, sinon refusé).'],
                     ],
                     'required' => ['connection', 'script'],
                     'additionalProperties' => false,
