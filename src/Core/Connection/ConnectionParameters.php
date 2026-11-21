@@ -112,6 +112,11 @@ final readonly class ConnectionParameters
         return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $socketPath, $this->readReplica);
     }
 
+    public function withReadReplica(bool $readReplica): self
+    {
+        return new self($this->host, $this->port, $this->database, $this->username, $this->password, $this->pinnedAddress, $this->schema, $this->transport, $this->socketPath, $readReplica);
+    }
+
     public function socketPath(): ?string
     {
         return $this->socketPath;

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { api } from '../api/client'
-import type { ConnectionInput, ConnectionParams, ConnectionSummary, HostKey } from '../api/types'
+import type { ConnectionInput, ConnectionParams, ConnectionSummary, HostKey, ReplicaAvailability } from '../api/types'
 
 export const useConnectionsStore = defineStore('connections', () => {
   const items = ref<ConnectionSummary[]>([])
@@ -79,8 +79,10 @@ export const useConnectionsStore = defineStore('connections', () => {
   }
 
   /** Essaie des paramètres sans rien enregistrer. */
-  async function probe(input: ConnectionInput): Promise<number> {
-    return (await api<{ durationMs: number }>('POST', '/web/connections/test', input)).durationMs
+  async function probe(input: ConnectionInput): Promise<{ durationMs: number; replica?: ReplicaAvailability }> {
+    const result = await api<{ durationMs: number; replica?: ReplicaAvailability }>('POST', '/web/connections/test', input)
+
+    return result.replica === undefined ? { durationMs: result.durationMs } : { durationMs: result.durationMs, replica: result.replica }
   }
 
   async function testSaved(id: string): Promise<number> {

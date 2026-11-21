@@ -224,8 +224,13 @@ async function test(): Promise<void> {
   }
   testing.value = true
   try {
-    const duration = unchanged && props.id !== undefined ? await store.testSaved(props.id) : await store.probe(input)
-    testOk.value = `Connexion réussie en ${formatDuration(duration)}`
+    const result = unchanged && props.id !== undefined ? { durationMs: await store.testSaved(props.id) } : await store.probe(input)
+    testOk.value = `Connexion réussie en ${formatDuration(result.durationMs)}`
+    if ('replica' in result && result.replica === 'available') {
+      testOk.value += ' · un réplica en service peut recevoir les lectures'
+    } else if ('replica' in result && result.replica === 'missing') {
+      testOk.value += ' · Aucun réplica en service : la lecture sur réplica n’est pas possible pour l’instant'
+    }
   } catch (failure) {
     error.value = messageFor(failure)
   } finally {

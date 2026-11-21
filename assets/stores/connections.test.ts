@@ -76,7 +76,7 @@ describe('connections store', () => {
     mocked.mockResolvedValue({ ok: true, durationMs: 23 })
     const store = useConnectionsStore()
 
-    expect(await store.probe(input)).toBe(23)
+    expect(await store.probe(input)).toEqual({ durationMs: 23 })
     expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/test', input)
     expect(await store.testSaved('a')).toBe(23)
     expect(mocked).toHaveBeenLastCalledWith('POST', '/web/connections/a/test')

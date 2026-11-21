@@ -108,6 +108,10 @@ export function messageFor(error: unknown): string {
       return 'Cette adresse désigne le serveur de TerrilDB lui-même : seul un administrateur peut la viser.'
     case 'forbidden_bastion':
       return 'Ce bastion n’est pas autorisé : l’administrateur doit le déclarer avant qu’on puisse l’utiliser.'
+    case 'replica_unavailable':
+      return error.details.reason === 'not_vitess'
+        ? 'Ce serveur n’est pas un Vitess : la lecture sur réplica n’existe pas ici.'
+        : 'Vitess ne connaît aucun réplica en service pour cette base : il n’y a rien à lire. Créez-en un, puis réessayez.'
     case 'too_many_tunnels':
       return 'Trop de rebonds SSH sont ouverts pour votre compte : attendez qu’ils se referment (5 minutes d’inactivité) ou fermez-en.'
     case 'tunnel_failed':
