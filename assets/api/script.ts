@@ -102,3 +102,7 @@ export const fetchScriptRun = (runId: string): Promise<{ run: BackgroundRun }> =
 /** Demande l'arrêt ENTRE deux instructions : celle qui tourne va à son terme, rien n'est tué. */
 export const cancelScriptRun = (runId: string): Promise<{ run: BackgroundRun }> => api<{ run: BackgroundRun }>('POST', `/web/script-runs/${runId}/cancel`)
 
+
+/** Les exécutions en arrière-plan du compte (les plus récentes d'abord), éventuellement pour une seule connexion. */
+export const fetchScriptRuns = (connectionId: string | null, limit = 20): Promise<{ runs: BackgroundRun[] }> =>
+  api<{ runs: BackgroundRun[] }>('GET', `/web/script-runs?${connectionId === null ? '' : `connection=${encodeURIComponent(connectionId)}&`}limit=${String(limit)}`)

@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ApiError } from '../api/client'
 import { reasonText, messageFor } from '../api/errors'
-import { cancelScriptRun, executeScript, fetchScriptRun, previewScript, startScriptRun } from '../api/script'
-import type { BackgroundRun, ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
+import { cancelScriptRun, executeScript, fetchScriptRun, fetchScriptRuns, previewScript, startScriptRun } from '../api/script'
+import type { BackgroundRun, BackgroundRunStatus, ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
 import type { StructureScope } from '../api/structure'
 import { readSqlFile, SQL_FILE_MESSAGES } from '../utils/sqlFile'
 import AppButton from './AppButton.vue'
@@ -57,6 +57,50 @@ const dryRunReason = computed(() => {
   return reason === 'no_transaction' ? 'Indisponible : ce moteur n’a pas de transaction.' : null
 })
 const refusedRank = computed(() => (preview.value?.firstRefused ? preview.value.firstRefused.index + 1 : null))
+
+// Les exécutions récentes de cette connexion (#169) : lues à l'ouverture de la liste, jamais le texte des scripts.
+const recentOpen = ref(false)
+const recent = ref<BackgroundRun[] | null>(null)
+const recentError = ref<string | null>(null)
+// Une exécution reprise de la liste n'a pas de texte à montrer : l'aperçu courant jugeait peut-être un autre script.
+const picked = ref(false)
+
+const RUN_STATUSES: Record<BackgroundRunStatus, string> = {
+  queued: 'En attente',
+  running: 'En cours',
+  committed: 'Exécuté',
+  dry_run: 'Test réussi',
+  rolled_back: 'Annulé',
+  partial: 'Partiel',
+  failed: 'En échec',
+  cancelled: 'Arrêté',
+  interrupted: 'Interrompu',
+}
+
+async function toggleRecent(): Promise<void> {
+  recentOpen.value = !recentOpen.value
+  if (!recentOpen.value) {
+    return
+  }
+  recentError.value = null
+  try {
+    recent.value = (await fetchScriptRuns(props.connectionId)).runs
+  } catch (e) {
+    recentError.value = messageFor(e)
+  }
+}
+
+function follow(chosen: BackgroundRun): void {
+  stopPolling()
+  pollFailures = 0
+  error.value = null
+  run.value = null
+  picked.value = true
+  bgRun.value = chosen
+  if (!chosen.finished) {
+    schedulePoll(chosen.id)
+  }
+}
 
 function stopPolling(): void {
   if (pollTimer !== null) {
@@ -151,6 +195,7 @@ async function startInBackground(confirmed: boolean): Promise<void> {
   error.value = null
   stopPolling()
   pollFailures = 0
+  picked.value = false
   try {
     bgRun.value = (await startScriptRun(props.connectionId, props.script, { confirmed, dryRun: dryRun.value }, props.scope)).run
     schedulePoll(bgRun.value.id)
@@ -261,7 +306,7 @@ const failedRun = computed(() => run.value !== null && run.value.failed !== null
 const BG_STATEMENTS: Record<ScriptStepStatus, string> = { applied: 'Exécutée', rolled_back: 'Annulée', failed: 'En échec', not_run: 'Non lancée' }
 
 // Le suivi ne porte jamais le texte : on le retrouve par le rang dans l'aperçu que l'on vient de juger.
-const sqlOf = (rank: number): string => preview.value?.steps[rank - 1]?.sql ?? ''
+const sqlOf = (rank: number): string => (picked.value ? '' : (preview.value?.steps[rank - 1]?.sql ?? ''))
 const bgApplied = computed(() => bgRun.value?.statements.filter((s) => s.status === 'applied').length ?? 0)
 const bgFailedRank = computed(() => bgRun.value?.statements.find((s) => s.status === 'failed')?.rank ?? null)
 
@@ -312,6 +357,21 @@ const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 
         En arrière-plan
       </label>
       <AppButton class="execute" small variant="primary" :disabled="!canRun" @click="execute">{{ background ? 'Lancer en arrière-plan' : dryRun ? 'Tester le script' : 'Exécuter le script' }}</AppButton>
+    </div>
+    <div class="recent">
+      <AppButton class="recent" small :aria-expanded="recentOpen" @click="toggleRecent">Exécutions récentes</AppButton>
+      <p v-if="recentError" class="recent-error error" role="alert">{{ recentError }}</p>
+      <template v-else-if="recentOpen && recent !== null">
+        <p v-if="recent.length === 0" class="recent-empty note">Aucune exécution en arrière-plan pour cette connexion.</p>
+        <ul v-else class="recent-runs" aria-label="Exécutions récentes">
+          <li v-for="item in recent" :key="item.id">
+            <span class="when">{{ new Date(item.createdAt).toLocaleString('fr-FR') }}</span>
+            <span class="chip">{{ RUN_STATUSES[item.status] }}{{ item.dryRun ? ' (test)' : '' }}</span>
+            <span class="metrics">{{ item.completed }} sur {{ item.total }}</span>
+            <AppButton class="follow" small @click="follow(item)">{{ item.finished ? 'Voir' : 'Suivre' }}</AppButton>
+          </li>
+        </ul>
+      </template>
     </div>
     <p v-if="preview && dryRunReason" class="dry-run-reason note">{{ dryRunReason }}</p>
     <p v-else-if="preview && dryRun" class="note">Tout est exécuté pour de vrai dans la transaction, puis annulé. Des verrous sont posés le temps du test et les compteurs automatiques (séquences, auto-incréments) avancent malgré l’annulation.</p>
@@ -385,6 +445,10 @@ const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 
 .intro, .note { color: var(--mut); font-size: 13px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .dry, .bg { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg); }
+.recent { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.recent-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 20vh; overflow: auto; align-self: stretch; }
+.recent-runs li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; padding: 4px 8px; border-radius: var(--radius); background: var(--bg); border: 1px solid var(--line); font-size: 13px; }
+.when { color: var(--mut); font: 400 12px var(--font-mono); }
 .cancel { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .warnings { margin: 0; padding: 8px 12px 8px 28px; border-radius: var(--radius); background: var(--sec-bg); border: 1px solid var(--sec-line); color: var(--sec-ink); font-size: 13px; }
 .refused-note, .error { padding: 8px 12px; border-radius: var(--radius); background: var(--bad-bg); border: 1px solid var(--bad-line); color: var(--bad); font-size: 13px; }
