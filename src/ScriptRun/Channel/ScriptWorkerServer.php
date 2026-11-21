@@ -26,6 +26,8 @@ final class ScriptWorkerServer
         private readonly int $maxChildren = 4,
         /** Un client qui n'envoie rien (ou trop lentement) est lâché après ce délai. */
         private readonly int $readTimeoutSeconds = 5,
+        /** Ouvre, renouvelle et referme le tunnel des connexions avec rebond ; absent = ces connexions sont refusées. */
+        private readonly ?ScriptTunnelKeeper $tunnels = null,
     ) {
     }
 
@@ -124,14 +126,22 @@ final class ScriptWorkerServer
 
             return;
         }
+        $id = $request->runId->toRfc4122();
         try {
+            if (null !== $request->parameters->transport) {
+                if (null === $this->tunnels) {
+                    throw new \RuntimeException('This worker has no tunnel.');
+                }
+                $json = $this->tunnels->prepare($request)->toJson();
+            }
             $child = $this->spawner->spawn($json);
         } catch (\Throwable) {
+            $this->tunnels?->release($id);
             $this->reply($client, 'refused');
 
             return;
         }
-        $this->children[] = ['id' => $request->runId->toRfc4122(), 'child' => $child];
+        $this->children[] = ['id' => $id, 'child' => $child];
         $this->reply($client, 'ok');
     }
 
@@ -170,8 +180,24 @@ final class ScriptWorkerServer
         @fwrite($client, $word."\n");
     }
 
+    /**
+     * Garde ouverts les tunnels des exécutions vivantes (à appeler à chaque tour de la boucle).
+     */
+    public function renewTunnels(): void
+    {
+        $this->tunnels?->renew();
+    }
+
     private function reap(): void
     {
-        $this->children = array_values(array_filter($this->children, static fn (array $entry): bool => $entry['child']->isRunning()));
+        $alive = [];
+        foreach ($this->children as $entry) {
+            if ($entry['child']->isRunning()) {
+                $alive[] = $entry;
+            } else {
+                $this->tunnels?->release($entry['id']);
+            }
+        }
+        $this->children = $alive;
     }
 }

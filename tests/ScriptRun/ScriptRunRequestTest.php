@@ -79,12 +79,19 @@ final class ScriptRunRequestTest extends TestCase
         self::assertSame('db.example.test', $back->parameters->address());
     }
 
-    public function testAConnectionThroughAJumpIsRefusedForNow(): void
+    public function testAConnectionThroughAJumpTravelsWithItsTunnelSocket(): void
     {
-        $parameters = new ConnectionParameters('db.internal.example', 5432, 'shop', 'app', self::SECRET, transport: new SshJump('bastion.example.test', 22, 'jump', "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----", null));
+        $jump = new SshJump('bastion.example.test', 22, 'jump', "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----", null);
+        $request = $this->request(new ConnectionParameters('db.internal.example', 5432, 'shop', 'app', self::SECRET, transport: $jump));
 
-        $this->expectException(InvalidScriptRunRequestException::class);
-        $this->request($parameters);
+        $back = ScriptRunRequest::fromJson($request->toJson());
+
+        self::assertInstanceOf(SshJump::class, $back->parameters->transport);
+        self::assertNull($back->parameters->socketPath(), 'sans tunnel ouvert, aucun socket');
+
+        $opened = ScriptRunRequest::fromJson($request->withTunnelSocket('/run/tunnels/abc/tunnel.sock')->toJson());
+        self::assertSame('/run/tunnels/abc/tunnel.sock', $opened->parameters->socketPath());
+        self::assertSame('db.internal.example', $opened->parameters->host);
     }
 
     public function testAScriptTooLargeOrEmptyIsRefused(): void

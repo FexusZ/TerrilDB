@@ -7,6 +7,7 @@ namespace App\Command;
 use App\Repository\ScriptRunRepository;
 use App\ScriptRun\Channel\ChildSpawner;
 use App\ScriptRun\Channel\ScriptRunChannel;
+use App\ScriptRun\Channel\ScriptTunnelKeeper;
 use App\ScriptRun\Channel\ScriptWorkerServer;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -34,6 +35,7 @@ final class ScriptWorkerCommand extends Command
         private readonly ScriptRunRepository $runs,
         private readonly ChildSpawner $spawner,
         private readonly ScriptRunChannel $channel,
+        private readonly ScriptTunnelKeeper $tunnels,
         private readonly ClockInterface $clock,
         #[Autowire('%env(TERRILDB_SCRIPT_SOCKET)%')] private readonly string $socketPath,
     ) {
@@ -57,13 +59,14 @@ final class ScriptWorkerCommand extends Command
 
         // Ce que le worker précédent jouait n'a plus personne pour donner son signe de vie.
         $interrupted = $this->runs->interruptStale(\DateTimeImmutable::createFromInterface($this->clock->now()));
-        $server = new ScriptWorkerServer($this->socketPath, $this->channel, $this->spawner, $max);
+        $server = new ScriptWorkerServer($this->socketPath, $this->channel, $this->spawner, $max, tunnels: $this->tunnels);
         $server->listen();
         $output->writeln(\sprintf('Worker des scripts à l’écoute (%d exécution(s) au plus) ; %d exécution(s) périmée(s) déclarée(s) interrompue(s).', $max, $interrupted));
 
         $lastBeat = 0;
         while ($this->running) {
             $server->tick(1000);
+            $server->renewTunnels();
             if (time() - $lastBeat >= self::HEARTBEAT_EVERY_SECONDS) {
                 $ids = array_map(static fn (string $id): \Symfony\Component\Uid\Uuid => \Symfony\Component\Uid\Uuid::fromString($id), $server->liveRunIds());
                 $this->runs->beatAll($ids, \DateTimeImmutable::createFromInterface($this->clock->now()));

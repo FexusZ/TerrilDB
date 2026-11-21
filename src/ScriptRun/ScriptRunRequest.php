@@ -39,15 +39,20 @@ final readonly class ScriptRunRequest
         /** La console d'une personne connectée (voir ScriptOptions::$lenient) : le worker juge le script de la même façon que la route. */
         public bool $lenient = false,
     ) {
-        if (null !== $parameters->transport) {
-            throw new InvalidScriptRunRequestException('A connection through a jump cannot run a detached script yet.');
-        }
         if ('' === trim($script) || \strlen($script) > self::MAX_SCRIPT_BYTES) {
             throw new InvalidScriptRunRequestException('The script is empty or too large.');
         }
         if ($timeoutMs < QueryOptions::MIN_TIMEOUT_MS || $timeoutMs > QueryOptions::MAX_TIMEOUT_MS) {
             throw new InvalidScriptRunRequestException('The timeout is out of bounds.');
         }
+    }
+
+    /**
+     * Le même message une fois le tunnel ouvert par le worker : le driver joint la base par ce socket Unix.
+     */
+    public function withTunnelSocket(string $socketPath): self
+    {
+        return new self($this->runId, $this->engine, $this->parameters->withSocket($socketPath), $this->script, $this->writes, $this->confirmed, $this->dryRun, $this->timeoutMs, $this->audit, $this->lenient);
     }
 
     public function toJson(): string
@@ -61,6 +66,7 @@ final readonly class ScriptRunRequest
             'connection' => $this->parameters->toJson(),
             'address' => $address === $this->parameters->host ? null : $address,
             'schema' => $this->parameters->schema,
+            'socket' => $this->parameters->socketPath(),
             'script' => $this->script,
             'writeData' => $this->writes->data,
             'writeSchema' => $this->writes->schema,
@@ -113,6 +119,9 @@ final readonly class ScriptRunRequest
             }
             if (\is_string($data['schema'] ?? null)) {
                 $parameters = $parameters->withSchema($data['schema']);
+            }
+            if (\is_string($data['socket'] ?? null)) {
+                $parameters = $parameters->withSocket($data['socket']);
             }
         } catch (\DomainException) {
             throw new InvalidScriptRunRequestException('The connection of the message is not valid.');

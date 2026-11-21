@@ -68,25 +68,32 @@ final readonly class TargetOpener
     /**
      * Prépare la cible d'une connexion enregistrée pour un AUTRE processus (le worker des scripts détachés) sans l'ouvrir : mêmes
      * paramètres déchiffrés, mêmes base et schéma, même règle d'adresses (adresse contrôlée puis épinglée). Une connexion avec rebond
-     * n'est pas portée : le tunnel est ouvert par la requête web, il ne survivrait pas à son retour.
+     * porte son bastion sans rien ouvrir : le tunnel est ouvert par le worker, qui le garde le temps de l'exécution.
      *
      * @throws Exception\ConnectionNotFoundException
      * @throws Exception\ForbiddenTargetHostException
      * @throws InvalidConnectionParametersException
-     * @throws UnsupportedOperationException          connexion avec rebond
+     * @throws ForbiddenBastionException
+     * @throws UnsupportedOperationException          rebond sur un moteur sans socket Unix
      */
     public function resolve(User $owner, DerivedKey $key, Uuid $id, ?string $database = null, ?string $schema = null): ResolvedTarget
     {
         $engine = $this->connections->get($owner, $id)->getEngine();
         $parameters = $this->connections->reveal($owner, $key, $id);
-        if (null !== $parameters->transport) {
-            throw UnsupportedOperationException::for($engine, 'detached script through a jump');
-        }
         if (null !== $database) {
             $parameters = $parameters->withDatabase($database);
         }
         if (null !== $schema) {
             $parameters = $parameters->withSchema($schema);
+        }
+        if (null !== $parameters->transport) {
+            if (!$parameters->transport instanceof SshJump || !$engine->reachableThroughJump()) {
+                throw UnsupportedOperationException::for($engine, 'detached script through a jump');
+            }
+            // Le bastion ET la cible derrière lui sont jugés ici ; le TUNNEL, lui, est ouvert (et gardé ouvert) par le worker.
+            $this->hosts->assertAllowed($owner, $parameters);
+
+            return new ResolvedTarget($engine, $parameters);
         }
 
         return new ResolvedTarget($engine, $this->hosts->pinned($owner, $parameters));
