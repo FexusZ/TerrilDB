@@ -6,6 +6,7 @@ namespace App\Driver\MySql;
 
 use App\Core\Diagnostics\DiagnosticStatus;
 use App\Core\Diagnostics\TabletDiagnostics;
+use App\Core\Diagnostics\Vitess\TabletListing;
 use App\Core\Diagnostics\Vitess\VitessTablet;
 use App\Driver\DbalCatalogReader;
 use Doctrine\DBAL\Connection;
@@ -32,19 +33,27 @@ final readonly class MySqlTabletDiagnostics implements TabletDiagnostics
 
     public function tablets(): array
     {
-        return $this->catalog->read(static function (Connection $c): array {
+        return $this->listing()->tablets;
+    }
+
+    public function listing(): TabletListing
+    {
+        return $this->catalog->read(static function (Connection $c): TabletListing {
             $tablets = [];
+            $skipped = [];
             foreach ($c->fetchAllAssociative('SHOW VITESS_TABLETS') as $row) {
                 $tablet = VitessTablet::fromRow($row);
                 if (null !== $tablet) {
                     $tablets[] = $tablet;
+                } else {
+                    $skipped[] = VitessTablet::skipped($row);
                 }
-                if (\count($tablets) >= self::LIMIT) {
+                if (\count($tablets) + \count($skipped) >= self::LIMIT) {
                     break;
                 }
             }
 
-            return $tablets;
+            return new TabletListing($tablets, $skipped);
         });
     }
 }

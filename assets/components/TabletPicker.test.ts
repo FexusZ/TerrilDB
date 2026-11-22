@@ -13,6 +13,31 @@ const tablets = [
 describe('TabletPicker', () => {
   beforeEach(() => setActivePinia(createPinia()))
 
+  it('says how many tablets are left out and why, instead of hiding them', () => {
+    const store = useWorkspaceStore()
+    store.tablets = tablets
+    store.skippedTablets = [
+      { reason: 'type_not_targetable', type: 'BACKUP' },
+      { reason: 'type_not_targetable', type: 'BACKUP' },
+      { reason: 'unexpected_name', type: 'REPLICA' },
+      { reason: 'type_not_targetable', type: null },
+    ]
+
+    const note = mount(TabletPicker).get('.skipped').text()
+
+    expect(note).toContain('4 tablets ne sont pas proposés')
+    expect(note).toContain('2 en sauvegarde')
+    expect(note).toContain('1 au nom inhabituel')
+    expect(note).toContain('1 de type inconnu')
+  })
+
+  it('stays silent when every tablet can be chosen', () => {
+    const store = useWorkspaceStore()
+    store.tablets = tablets
+
+    expect(mount(TabletPicker).find('.skipped').exists()).toBe(false)
+  })
+
   it('explains why a tablet must be chosen and lists them with their role', () => {
     const store = useWorkspaceStore()
     store.tablets = tablets

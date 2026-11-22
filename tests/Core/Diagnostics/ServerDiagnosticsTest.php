@@ -89,7 +89,12 @@ final class ServerDiagnosticsTest extends TestCase
 
             public function tablets(): array
             {
-                return [new VitessTablet('test-0000000002', 'test', 'shop', '0', 'REPLICA', true)];
+                return $this->listing()->tablets;
+            }
+
+            public function listing(): \App\Core\Diagnostics\Vitess\TabletListing
+            {
+                return new \App\Core\Diagnostics\Vitess\TabletListing([new VitessTablet('test-0000000002', 'test', 'shop', '0', 'REPLICA', true)]);
             }
         };
         $diagnostics = new ServerDiagnostics(Engine::MySql, tablets: $tablets, unsupportedReason: 'vitess_tablet_scope');
