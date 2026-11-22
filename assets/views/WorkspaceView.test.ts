@@ -35,6 +35,7 @@ async function mountView(path = '/connections/abc') {
           { path: 'variables', name: 'server-variables', component: { template: '<p class="child">variables</p>' } },
           { path: 'health', name: 'server-health', component: { template: '<p class="child">santé</p>' } },
           { path: 'replication', name: 'replication', component: { template: '<p class="child">réplication</p>' } },
+          { path: 'tablets', name: 'tablet-compare', component: { template: '<p class="child">tablets</p>' } },
           { path: 'logs', name: 'server-logs', component: { template: '<p class="child">journaux</p>' } },
           { path: 'audit', name: 'audit', component: { template: '<p class="child">audit</p>' } },
           { path: 'key', name: 'key', component: { template: '<p class="child">clé</p>' } },
