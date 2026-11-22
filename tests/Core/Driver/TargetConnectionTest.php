@@ -172,4 +172,24 @@ final class TargetConnectionTest extends TestCase
         self::assertNull($connection->version());
         self::assertSame([], $connection->capabilities()->supported());
     }
+
+    public function testTheStreamsOfATableAreTheOnesItFeeds(): void
+    {
+        $streams = new class implements \App\Core\Diagnostics\Vitess\StreamSources {
+            public function sources(): array
+            {
+                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse('keyspace:"k" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}', 'flow');
+
+                return null === $source ? [] : [$source];
+            }
+        };
+        $with = new TargetConnection(Engine::MySql, $this->introspector(), $this->runner(), static function (): void {
+        }, streams: $streams);
+        $without = new TargetConnection(Engine::MySql, $this->introspector(), $this->runner(), static function (): void {
+        });
+
+        self::assertEquals([new \App\Core\Diagnostics\Vitess\StreamHit('flow', 'corder', ['sales'])], $with->streamsOf('corder'));
+        self::assertSame([], $with->streamsOf('customer'));
+        self::assertSame([], $without->streamsOf('corder'));
+    }
 }

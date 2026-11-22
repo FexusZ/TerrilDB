@@ -134,7 +134,7 @@ final class SchemaChangeServiceAlgorithmTest extends TestCase
 
             public function sources(): array
             {
-                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse(\sprintf('keyspace:"shop" shard:"0" filter:{rules:{match:"summary" filter:"select id from %s"}}', $this->table));
+                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse(\sprintf('keyspace:"shop" shard:"0" filter:{rules:{match:"summary" filter:"select id from %s"}}', $this->table), 'summary_flow');
 
                 return null === $source ? [] : [$source];
             }
@@ -146,6 +146,7 @@ final class SchemaChangeServiceAlgorithmTest extends TestCase
         $preview = (new SchemaChangeService())->preview($this->target($this->table(), streams: $this->feeding('events')), 'events', $this->draft('bigint'), null);
 
         self::assertTrue($preview->feedsStream);
+        self::assertEquals([new \App\Core\Diagnostics\Vitess\StreamHit('summary_flow', 'events', ['summary'])], $preview->streams);
         self::assertCount(0, $this->executed, 'a warning, nothing is blocked or run');
     }
 

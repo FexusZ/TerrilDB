@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Core\Diagnostics\Vitess;
 
+use App\Core\Diagnostics\Vitess\StreamHit;
 use App\Core\Diagnostics\Vitess\StreamSource;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -110,5 +111,44 @@ final class StreamSourceTest extends TestCase
         yield 'the name only in a string' => ["ALTER TABLE customer COMMENT 'corder is the source'", false];
         yield 'the name only in a comment' => ['ALTER TABLE customer /* corder */ ADD COLUMN x int', false];
         yield 'a longer name' => ['ALTER TABLE corder_archive ADD COLUMN x int', false];
+    }
+
+    public function testTheWorkflowAndTheTargetTableOfAMaterializeAreKnown(): void
+    {
+        $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales_by_sku" filter:"select sku, count(*) from corder group by sku"} rules:{match:"other" filter:"select id from customer"}}', 'sales');
+
+        self::assertNotNull($source);
+        self::assertSame('sales', $source->workflow);
+        self::assertSame(['sales_by_sku'], $source->targetsOf('corder'));
+        self::assertSame(['other'], $source->targetsOf('customer'));
+        self::assertSame([], $source->targetsOf('sales_by_sku'), 'la cible n\'est la source de rien');
+    }
+
+    public function testAMoveTablesRuleHasNoOtherTargetNameThanItsOwn(): void
+    {
+        $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"customer"}}', 'move');
+
+        self::assertNotNull($source);
+        self::assertSame(['customer'], $source->targetsOf('customer'));
+    }
+
+    public function testARegexRuleHasNoNameableTargetAndAnUnnamedWorkflowIsEmpty(): void
+    {
+        $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"/cust.*/"}}');
+
+        self::assertNotNull($source);
+        self::assertSame('', $source->workflow);
+        self::assertTrue($source->feeds('customer'));
+        self::assertSame([], $source->targetsOf('customer'));
+    }
+
+    public function testTheHitsOfAStatementNameTheWorkflowTheSourceAndItsTargets(): void
+    {
+        $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales_by_sku" filter:"select sku from corder"}}', 'sales');
+
+        self::assertNotNull($source);
+        self::assertEquals([new StreamHit('sales', 'corder', ['sales_by_sku'])], $source->hitsIn('ALTER TABLE `corder` ADD COLUMN note text'));
+        self::assertSame([], $source->hitsIn('ALTER TABLE customer ADD COLUMN note text'));
+        self::assertEquals([new StreamHit('sales', 'corder', ['sales_by_sku'])], $source->hitsIn('DROP TABLE corder, corder'), 'une seule fois par table');
     }
 }

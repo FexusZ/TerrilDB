@@ -14,35 +14,61 @@ namespace App\Core\Diagnostics\Vitess;
 final readonly class StreamSource
 {
     /**
-     * @param list<string> $tables   noms minuscules lus dans les `FROM` / `JOIN`, ou le `match` d'une règle sans `SELECT`
-     * @param list<string> $patterns expressions (`/…/`) des règles dont le nom n'est pas fixe
+     * @param list<string>                $tables   noms minuscules lus dans les `FROM` / `JOIN`, ou le `match` d'une règle sans `SELECT`
+     * @param list<string>                $patterns expressions (`/…/`) des règles dont le nom n'est pas fixe
+     * @param array<string, list<string>> $targets  table cible (minuscules) => tables sources de sa règle
      */
-    private function __construct(public string $keyspace, private array $tables, private array $patterns)
+    private function __construct(public string $keyspace, private array $tables, private array $patterns, public string $workflow = '', private array $targets = [])
     {
     }
 
-    public static function parse(string $source): ?self
+    public static function parse(string $source, string $workflow = ''): ?self
     {
         if (1 !== preg_match('/\bkeyspace:"((?:[^"\\\\]|\\\\.)*)"/', $source, $keyspace) || '' === $keyspace[1]) {
             return null;
         }
         $tables = [];
         $patterns = [];
+        $targets = [];
         if (false !== preg_match_all('/\bmatch:"((?:[^"\\\\]|\\\\.)*)"(?:\s+filter:"((?:[^"\\\\]|\\\\.)*)")?/', $source, $rules, \PREG_SET_ORDER)) {
             foreach ($rules as $rule) {
                 $match = stripcslashes($rule[1]);
                 $filter = isset($rule[2]) ? stripcslashes($rule[2]) : '';
                 if ('' !== $filter) {
-                    array_push($tables, ...self::tablesOf($filter));
+                    $read = self::tablesOf($filter);
+                    array_push($tables, ...$read);
+                    if ('' !== $match && !str_starts_with($match, '/')) {
+                        $targets[strtolower($match)] = array_values(array_unique([...($targets[strtolower($match)] ?? []), ...$read]));
+                    }
                 } elseif (str_starts_with($match, '/')) {
                     $patterns[] = $match;
                 } elseif ('' !== $match) {
                     $tables[] = strtolower($match);
+                    $targets[strtolower($match)] = [strtolower($match)];
                 }
             }
         }
 
-        return new self($keyspace[1], array_values(array_unique($tables)), $patterns);
+        return new self($keyspace[1], array_values(array_unique($tables)), $patterns, $workflow, $targets);
+    }
+
+    /**
+     * Les tables que ce flux remplit à partir de `$table` (nom fixe seulement : une règle par expression ne nomme rien). Un MoveTables
+     * garde le même nom dans l'autre keyspace.
+     *
+     * @return list<string>
+     */
+    public function targetsOf(string $table): array
+    {
+        $table = strtolower($table);
+        $found = [];
+        foreach ($this->targets as $target => $sources) {
+            if (\in_array($table, $sources, true)) {
+                $found[] = (string) $target;
+            }
+        }
+
+        return $found;
     }
 
     public function feeds(string $table): bool
@@ -62,22 +88,37 @@ final readonly class StreamSource
         return false;
     }
 
+    public function hitFor(string $table): ?StreamHit
+    {
+        return $this->feeds($table) ? new StreamHit($this->workflow, $table, $this->targetsOf($table)) : null;
+    }
+
     /**
-     * L'instruction nomme-t-elle une table source ? Chaînes et commentaires ne comptent pas ; un nom plus long qui la contient non plus.
+     * Les tables source que l'instruction nomme, une fois chacune. Chaînes et commentaires ne comptent pas ; un nom plus long qui la contient non plus.
+     *
+     * @return list<StreamHit>
      */
-    public function touchedBy(string $sql): bool
+    public function hitsIn(string $sql): array
     {
         $bare = preg_replace(['~/\\*.*?\\*/~s', '~--[^\\n]*~', "~'(?:[^'\\\\]|\\\\.|'')*'~s", '~"(?:[^"\\\\]|\\\\.|"")*"~s'], ' ', $sql);
         if (!\is_string($bare) || false === preg_match_all('/`([^`]+)`|([A-Za-z_][A-Za-z0-9_$]*)/', $bare, $found, \PREG_SET_ORDER)) {
-            return false;
+            return [];
         }
+        $hits = [];
         foreach ($found as $word) {
-            if ($this->feeds('' !== ($word[1] ?? '') ? $word[1] : ($word[2] ?? ''))) {
-                return true;
+            $name = '' !== ($word[1] ?? '') ? $word[1] : ($word[2] ?? '');
+            $hit = isset($hits[strtolower($name)]) ? null : $this->hitFor($name);
+            if (null !== $hit) {
+                $hits[strtolower($name)] = $hit;
             }
         }
 
-        return false;
+        return array_values($hits);
+    }
+
+    public function touchedBy(string $sql): bool
+    {
+        return [] !== $this->hitsIn($sql);
     }
 
     /**

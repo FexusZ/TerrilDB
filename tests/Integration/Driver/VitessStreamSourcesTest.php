@@ -70,16 +70,21 @@ final class VitessStreamSourcesTest extends TestCase
         $gateway = $this->open();
         $this->createStream('keyspace:"shop" shard:"0" filter:{rules:{match:"tdb_sales" filter:"select sku from tdb_orders group by sku"}}');
 
-        self::assertTrue(QueryService::feedsAStream($gateway, 'ALTER TABLE tdb_orders ADD COLUMN note text'));
-        self::assertFalse(QueryService::feedsAStream($gateway, 'ALTER TABLE tdb_sales ADD COLUMN note text'));
-        self::assertFalse(QueryService::feedsAStream($gateway, 'ALTER TABLE customers ADD COLUMN note text'));
+        $hits = QueryService::streamsTouched($gateway, 'ALTER TABLE tdb_orders ADD COLUMN note text');
+        self::assertCount(1, $hits);
+        self::assertSame(self::WORKFLOW, $hits[0]->workflow, 'le workflow vient de la colonne `workflow`');
+        self::assertSame('tdb_orders', $hits[0]->table);
+        self::assertSame(['tdb_sales'], $hits[0]->targets);
+        self::assertEquals($hits, $gateway->streamsOf('tdb_orders'));
+        self::assertSame([], QueryService::streamsTouched($gateway, 'ALTER TABLE tdb_sales ADD COLUMN note text'));
+        self::assertSame([], QueryService::streamsTouched($gateway, 'ALTER TABLE customers ADD COLUMN note text'));
     }
 
     public function testNoStreamMeansNoWarning(): void
     {
         $gateway = $this->open();
 
-        self::assertFalse(QueryService::feedsAStream($gateway, 'ALTER TABLE tdb_orders ADD COLUMN note text'));
+        self::assertSame([], QueryService::streamsTouched($gateway, 'ALTER TABLE tdb_orders ADD COLUMN note text'));
     }
 
     public function testAStreamFromAnotherKeyspaceIsNotThisKeyspacesSource(): void
@@ -87,7 +92,7 @@ final class VitessStreamSourcesTest extends TestCase
         $gateway = $this->open();
         $this->createStream('keyspace:"elsewhere" shard:"0" filter:{rules:{match:"tdb_sales" filter:"select sku from tdb_orders"}}');
 
-        self::assertFalse(QueryService::feedsAStream($gateway, 'ALTER TABLE tdb_orders ADD COLUMN note text'));
+        self::assertSame([], QueryService::streamsTouched($gateway, 'ALTER TABLE tdb_orders ADD COLUMN note text'));
     }
 
     public function testPlainMySqlHasNoStreams(): void

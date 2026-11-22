@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core\Schema\Change;
 
 use App\Core\Diagnostics\TableHolders;
+use App\Core\Diagnostics\Vitess\StreamHit;
 use App\Core\Schema\Change\Algorithm\AlgorithmAdvice;
 
 /**
@@ -25,6 +26,8 @@ final readonly class ChangePreview
         public array $algorithms = [],
         /** Vitess : la table nourrit un flux (Materialize, MoveTables) qui ne suivra pas ce changement. Un avertissement, jamais un blocage. */
         public bool $feedsStream = false,
+        /** @var list<StreamHit> ce flux, son workflow et les tables qu'il remplit (une expression ne nomme rien) */
+        public array $streams = [],
     ) {
     }
 }

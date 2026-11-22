@@ -181,4 +181,23 @@ describe('error messages', () => {
     expect(text).toContain('MoveTables')
     expect(text).toContain('TerrilDB ne lance rien')
   })
+
+  it('nomme le workflow, la table touchée et les tables qu’il remplit', () => {
+    const text = reasonText('stream_source', true, [{ workflow: 'sales', table: 'corder', targets: ['sales_by_sku', 'sales_by_day'] }])
+    expect(text).toContain('« sales »')
+    expect(text).toContain('corder')
+    expect(text).toContain('sales_by_sku')
+    expect(text).toContain('sales_by_day')
+  })
+
+  it('ne nomme rien quand le serveur ne dit ni workflow ni cible', () => {
+    const text = reasonText('stream_source', true, [{ workflow: '', table: 'corder', targets: [] }])
+    expect(text).toContain('corder')
+    expect(text).not.toContain('«')
+    expect(text).not.toContain('remplit')
+  })
+
+  it('ne change rien aux autres motifs', () => {
+    expect(reasonText('destructive_statement', true, [{ workflow: 'x', table: 't', targets: [] }])).toBe(reasonText('destructive_statement', true))
+  })
 })

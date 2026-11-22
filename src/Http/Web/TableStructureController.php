@@ -12,6 +12,7 @@ use App\Http\Json\ChangePlanPresenter;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\JsonInput;
 use App\Http\Json\SchemaPresenter;
+use App\Http\Json\StreamPresenter;
 use App\Http\Json\TableDraftInput;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -55,6 +56,7 @@ final readonly class TableStructureController
             'bigTable' => ChangePlanPresenter::bigTable($preview->bigTable),
             'lockCheck' => null === $preview->holders ? null : DiagnosticsPresenter::tableHolders($preview->holders),
             'feedsStream' => $preview->feedsStream,
+            'streams' => StreamPresenter::hits($preview->streams),
         ]);
     }
 

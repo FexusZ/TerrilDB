@@ -284,6 +284,25 @@ describe('workspace store', () => {
     expect(store.activeTab.result).toBeNull()
   })
 
+  it('keeps the flows named by a stream_source confirmation, and forgets them once confirmed', async () => {
+    const store = await opened()
+    const id = store.activeTab.id
+    store.setSql(id, 'alter table corder add note text')
+    store.setMode(id, 'read_write')
+    const streams = [{ workflow: 'sales', table: 'corder', targets: ['sales_by_sku'] }]
+    mocked.mockRejectedValueOnce(new ApiError(409, 'confirmation_required', { reason: 'stream_source', streams }))
+
+    await store.run(id)
+
+    expect(store.activeTab.pendingConfirmation).toBe('stream_source')
+    expect(store.activeTab.pendingStreams).toEqual(streams)
+
+    mocked.mockResolvedValueOnce({ ...result, columns: [], rows: [], rowCount: 0, affectedRows: 0 })
+    await store.confirmPending(id)
+
+    expect(store.activeTab.pendingStreams).toEqual([])
+  })
+
   it('asks for confirmation instead of showing an error, then re-sends with the confirmation', async () => {
     const store = await opened()
     const id = store.activeTab.id

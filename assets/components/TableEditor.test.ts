@@ -268,6 +268,18 @@ describe('TableEditor', () => {
     wrapper.unmount()
   })
 
+  it('names the workflow and the tables it fills in the stream warning', async () => {
+    mocked.mockImplementation(() => Promise.resolve(preview({ feedsStream: true, streams: [{ workflow: 'sales', table: 'events', targets: ['summary'] }] })))
+    const wrapper = mountEditor('mysql')
+    await wrapper.findAll('input[aria-label="Type de la colonne"]')[2]?.setValue('varchar(80)')
+    await settle()
+
+    const warning = wrapper.get('[data-test="stream-warning"]').text()
+    expect(warning).toContain('« sales »')
+    expect(warning).toContain('summary')
+    wrapper.unmount()
+  })
+
   it('says nothing about flows when the table feeds none', async () => {
     mocked.mockImplementation(() => Promise.resolve(preview({ feedsStream: false })))
     const wrapper = mountEditor('mysql')

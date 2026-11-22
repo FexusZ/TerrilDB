@@ -1,4 +1,5 @@
 import { lockSentence } from '../utils/lock'
+import type { StreamHit } from './types'
 import { ApiError } from './client'
 
 const REASONS: Record<string, string> = {
@@ -27,10 +28,20 @@ const WARNINGS: Record<string, string> = {
   forbidden_construct: 'Attention : cette instruction sort du cadre habituel d’une requête (fichiers du serveur, verrous durables, état du serveur…). Le serveur de la base décidera selon les droits de votre compte.',
 }
 
-/** `confirming` : le texte d’une demande de confirmation (avertissement) plutôt que celui d’un refus. */
-export function reasonText(reason: unknown, confirming = false): string {
+/** Les flux concernés, nommés : workflow, table touchée, tables remplies (rien d’inventé quand le serveur ne le dit pas). */
+function streamSentence(streams: readonly StreamHit[]): string {
+  const parts = streams.map((hit) => {
+    const flow = hit.workflow === '' ? 'Un flux' : `Le flux « ${hit.workflow} »`
+    const fills = hit.targets.length === 0 ? '' : ` et remplit ${hit.targets.join(', ')}`
+    return `${flow} lit ${hit.table}${fills}.`
+  })
+  return parts.join(' ')
+}
+
+/** `confirming` : le texte d’une demande de confirmation (avertissement) plutôt que celui d’un refus. `streams` : les flux nommés par le serveur (motif `stream_source`). */
+export function reasonText(reason: unknown, confirming = false, streams: readonly StreamHit[] = []): string {
   if (confirming && typeof reason === 'string' && WARNINGS[reason] !== undefined) {
-    return WARNINGS[reason]
+    return reason === 'stream_source' && streams.length > 0 ? `${streamSentence(streams)} ${WARNINGS[reason]}` : WARNINGS[reason]
   }
   return (typeof reason === 'string' && REASONS[reason]) || 'Cette instruction n’est pas autorisée.'
 }

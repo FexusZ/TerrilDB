@@ -114,9 +114,9 @@ final readonly class ApiController
     #[Route('/api/v1/connections/{id}/tables/{name}', requirements: self::ID + ['name' => '.+'], methods: ['GET'])]
     public function table(string $id, string $name): JsonResponse
     {
-        $table = $this->open($id, static fn (TargetConnection $target) => $target->introspector()->describeTable($name));
+        [$table, $streams] = $this->open($id, static fn (TargetConnection $target): array => [$target->introspector()->describeTable($name), $target->streamsOf($name)]);
 
-        return new JsonResponse(['table' => SchemaPresenter::table($table)]);
+        return new JsonResponse(['table' => SchemaPresenter::table($table, $streams)]);
     }
 
     #[Route('/api/v1/connections/{id}/query', requirements: self::ID, methods: ['POST'])]

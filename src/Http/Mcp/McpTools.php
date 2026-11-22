@@ -102,7 +102,7 @@ final readonly class McpTools
     public function describeTable(string $connection, string $table): array
     {
         return $this->guard(fn (): array => [
-            'table' => SchemaPresenter::table($this->open($connection, static fn (TargetConnection $target) => $target->introspector()->describeTable($table))),
+            'table' => SchemaPresenter::table(...$this->open($connection, static fn (TargetConnection $target): array => [$target->introspector()->describeTable($table), $target->streamsOf($table)])),
         ]);
     }
 

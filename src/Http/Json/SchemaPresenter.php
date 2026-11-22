@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Json;
 
+use App\Core\Diagnostics\Vitess\StreamHit;
 use App\Core\Schema\Change\SchemaChangePlanner;
 use App\Core\Schema\ColumnDefinition;
 use App\Core\Schema\DatabaseSummary;
@@ -42,11 +43,13 @@ final class SchemaPresenter
     }
 
     /**
+     * @param list<StreamHit> $streams Vitess : les flux qui lisent cette table (clé `streams` seulement s'il y en a)
+     *
      * @return array<string, mixed>
      */
-    public static function table(TableDefinition $table): array
+    public static function table(TableDefinition $table, array $streams = []): array
     {
-        return [
+        return ([] === $streams ? [] : ['streams' => StreamPresenter::hits($streams)]) + [
             'name' => $table->name,
             'fingerprint' => SchemaChangePlanner::fingerprint($table),
             'kind' => $table->kind->value,

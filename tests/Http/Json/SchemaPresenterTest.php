@@ -61,4 +61,14 @@ final class SchemaPresenterTest extends TestCase
         self::assertTrue($json['truncated']);
         self::assertNull($json['estimatedRows']);
     }
+
+    public function testTheFlowsFeedingATableAreNamedOnlyWhenThereAreSome(): void
+    {
+        self::assertArrayNotHasKey('streams', SchemaPresenter::table($this->table(null)));
+        self::assertArrayNotHasKey('streams', SchemaPresenter::table($this->table(null), []));
+
+        $json = SchemaPresenter::table($this->table(null), [new \App\Core\Diagnostics\Vitess\StreamHit('sales', 'events', ['summary'])]);
+
+        self::assertSame([['workflow' => 'sales', 'table' => 'events', 'targets' => ['summary']]], $json['streams']);
+    }
 }
