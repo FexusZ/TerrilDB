@@ -618,7 +618,7 @@ final class McpTest extends WebApiTestCase
         self::assertSame('available', self::obj($report['status'])['availability']);
         $rules = array_map(static fn (mixed $f): mixed => self::obj($f)['rule'], self::list($report['findings']));
         sort($rules);
-        self::assertSame(['slow_statement_log_off', 'ssl_off'], $rules);
+        self::assertSame(['archive_mode_off', 'slow_statement_log_off', 'ssl_off'], $rules);
         self::assertNotContains('execute_statement', $this->toolNames());
 
         $other = $this->callTool('audit_config', ['connection' => $this->otherConnectionId]);

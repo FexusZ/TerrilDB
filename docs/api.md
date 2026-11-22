@@ -203,11 +203,11 @@ constat » avec peu de règles évaluées ne prouve rien) et `findings` : `rule`
 (ce que le serveur annonce), `recommended`, `suggestion` (une commande à LIRE, jamais exécutée par TerrilDB ; nulle quand la variable ne se change
 qu'au redémarrage, dans le fichier de configuration), `explanation` (texte français fixe). Une variable masquée, absente ou illisible n'est pas jugée.
 Règles MySQL / MariaDB : `sql_mode_not_strict`, `local_infile_enabled`, `skip_name_resolve_missing`, `binlog_never_expires` (journal binaire actif, ni
-`binlog_expire_logs_seconds` ni `expire_logs_days` > 0), `flush_log_at_commit_relaxed`, `sync_binlog_relaxed` (journal actif seulement),
+`binlog_expire_logs_seconds` ni `expire_logs_days` > 0), `flush_log_at_commit_relaxed`, `sync_binlog_relaxed` (journal actif seulement), `binlog_off` (pas de journal binaire : ni réplica ni reprise à un instant),
 `performance_schema_off`, `slow_query_log_off`, `general_log_on`, `max_allowed_packet_tiny` (< 1 Mio), `tmp_table_above_heap_table` (MariaDB seulement),
 `secure_file_priv_empty` (moyen sur MySQL, faible sur MariaDB où c'est le défaut), `doublewrite_off`. PostgreSQL : `fsync_off`, `autovacuum_off`,
 `zero_damaged_pages_on`, `ignore_checksum_failure_on` (graves), `full_page_writes_off`, `ssl_off`, `ssl_min_protocol_old` (seulement si `ssl` est actif),
-`track_counts_off` (moyens), `synchronous_commit_off`, `slow_statement_log_off`, `data_checksums_off` (faibles). Écartées volontairement : taille du cache
+`track_counts_off` (moyens), `synchronous_commit_off`, `slow_statement_log_off`, `archive_mode_off` (pas d'archivage du WAL : pas de restauration à un instant), `data_checksums_off` (faibles). Écartées volontairement : taille du cache
 (`innodb_buffer_pool_size`, `shared_buffers`) et plafond de connexions, qui demandent la RAM et les compteurs d'état (pas lus ici) ; `password_encryption`
 (son nom est masqué, donc illisible). ClickHouse : `unsupported` / `no_rules` ; Redis : 501. Un compte sans droit particulier lit les mêmes variables
 (MySQL, MariaDB, PostgreSQL ; PostgreSQL laisse vides celles que seul `pg_read_all_settings` lit : la règle concernée se tait) ; ClickHouse sans

@@ -38,9 +38,9 @@ final class ConfigAuditWebTest extends WebApiTestCase
     {
         yield 'MySQL' => ['TARGET_MYSQL_URL', ['slow_query_log_off']];
         yield 'MySQL 26' => ['TARGET_MYSQL26_URL', ['slow_query_log_off']];
-        yield 'MariaDB' => ['TARGET_MARIADB_URL', ['local_infile_enabled', 'performance_schema_off', 'secure_file_priv_empty', 'slow_query_log_off']];
-        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', ['local_infile_enabled', 'performance_schema_off', 'secure_file_priv_empty', 'slow_query_log_off']];
-        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL', ['slow_statement_log_off', 'ssl_off']];
+        yield 'MariaDB' => ['TARGET_MARIADB_URL', ['binlog_off', 'local_infile_enabled', 'performance_schema_off', 'secure_file_priv_empty', 'slow_query_log_off']];
+        yield 'MariaDB 13' => ['TARGET_MARIADB13_URL', ['binlog_off', 'local_infile_enabled', 'performance_schema_off', 'secure_file_priv_empty', 'slow_query_log_off']];
+        yield 'PostgreSQL' => ['TARGET_POSTGRES_URL', ['archive_mode_off', 'slow_statement_log_off', 'ssl_off']];
     }
 
     public function testRequiresASession(): void
@@ -141,7 +141,7 @@ final class ConfigAuditWebTest extends WebApiTestCase
         self::assertCount(1, $events);
         $details = $events[0]->getDetails();
         self::assertSame('available', $details['status']);
-        self::assertSame(2, $details['findings']);
+        self::assertSame(3, $details['findings']);
         $text = json_encode($details, \JSON_THROW_ON_ERROR);
         foreach (['ssl', 'log_min_duration', 'fsync'] as $leak) {
             self::assertStringNotContainsString($leak, $text);
