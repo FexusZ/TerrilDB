@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from './client'
-import { fetchAccounts, fetchConfigAudit, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTablets, fetchTopQueries, fetchVariableComparison, fetchVariables } from './diagnostics'
+import { fetchAccounts, fetchConfigAudit, fetchDiagnosticCapabilities, fetchEncryption, fetchLocks, fetchSessions, fetchTabletComparison, fetchTablets, fetchTopQueries, fetchVariableComparison, fetchVariables } from './diagnostics'
 
 vi.mock('./client', async (importOriginal) => ({ ...(await importOriginal<typeof import('./client')>()), api: vi.fn() }))
 
@@ -130,5 +130,14 @@ describe('diagnostics API', () => {
     const listing = await fetchTablets('abc', { database: null, schema: null })
 
     expect(listing.skipped).toEqual([{ reason: 'type_not_targetable', type: 'BACKUP' }])
+  })
+
+  it('compares the tablets of the explored keyspace', async () => {
+    mocked.mockResolvedValueOnce({ tablets: [], differences: [], masked: 0, truncated: false })
+
+    const comparison = await fetchTabletComparison('abc', { database: 'shop', schema: null })
+
+    expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/tablets/compare?database=shop')
+    expect(comparison.differences).toEqual([])
   })
 })

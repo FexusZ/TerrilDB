@@ -39,7 +39,10 @@ use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableDifference;
 use App\Core\Diagnostics\VariableReport;
 use App\Core\Diagnostics\Vitess\SkippedTablet;
+use App\Core\Diagnostics\Vitess\TabletComparison;
 use App\Core\Diagnostics\Vitess\TabletListing;
+use App\Core\Diagnostics\Vitess\TabletSnapshot;
+use App\Core\Diagnostics\Vitess\TabletVariableDifference;
 use App\Core\Diagnostics\Vitess\VitessTablet;
 
 final class DiagnosticsPresenter
@@ -253,6 +256,33 @@ final class DiagnosticsPresenter
         return [
             'tablets' => array_map(static fn (VitessTablet $t): array => ['alias' => $t->alias, 'cell' => $t->cell, 'keyspace' => $t->keyspace, 'shard' => $t->shard, 'type' => $t->type, 'serving' => $t->serving], $listing->tablets),
             'skipped' => array_map(static fn (SkippedTablet $s): array => ['reason' => $s->reason, 'type' => $s->type], $listing->skipped),
+        ];
+    }
+
+    /**
+     * Les tablets côte à côte : pour chacun ce qu'on a lu (réplication, nombre de variables modifiées), puis les variables dont la valeur
+     * diffère (`null` = au défaut sur ce tablet). Rien d'écrit, jamais la valeur d'un secret.
+     *
+     * @return array<string, mixed>
+     */
+    public static function tabletComparison(TabletComparison $comparison): array
+    {
+        return [
+            'tablets' => array_map(static fn (TabletSnapshot $s): array => [
+                'alias' => $s->tablet->alias,
+                'cell' => $s->tablet->cell,
+                'keyspace' => $s->tablet->keyspace,
+                'shard' => $s->tablet->shard,
+                'type' => $s->tablet->type,
+                'serving' => $s->tablet->serving,
+                'failure' => $s->failure,
+                'replication' => null === $s->replication ? null : self::replication($s->replication),
+                'variablesStatus' => null === $s->variables ? null : self::status($s->variables->status),
+                'changedVariables' => null !== $s->variables && $s->variables->status->isAvailable() ? \count($s->variables->variables) : null,
+            ], $comparison->snapshots),
+            'differences' => array_map(static fn (TabletVariableDifference $d): array => ['name' => $d->name, 'unit' => $d->unit, 'values' => $d->values], $comparison->differences),
+            'masked' => $comparison->masked,
+            'truncated' => $comparison->truncated,
         ];
     }
 

@@ -306,6 +306,31 @@ export interface TabletListing {
   skipped: SkippedTablet[]
 }
 
+/** Un tablet lu pour la comparaison : `failure` quand il n'a pas pu l'être, jamais un tablet sain par défaut. */
+export interface TabletReading extends VitessTablet {
+  failure: string | null
+  replication: ReplicationReport | null
+  variablesStatus: DiagnosticStatus | null
+  /** Variables modifiées par rapport au défaut ; nul si la source est illisible. */
+  changedVariables: number | null
+}
+
+/** Une variable dont la valeur diffère d'un tablet à l'autre ; `null` = au défaut sur ce tablet. */
+export interface TabletVariableDifference {
+  name: string
+  unit: string | null
+  values: Record<string, string | null>
+}
+
+export interface TabletComparison {
+  tablets: TabletReading[]
+  differences: TabletVariableDifference[]
+  /** Variables masquées (secrets), écartées sans être montrées. */
+  masked: number
+  /** Tous les tablets ne sont pas lus (au plus huit). */
+  truncated: boolean
+}
+
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability
   /** Code stable (`insufficient_privilege`, `not_supported`…), jamais le message du moteur. */

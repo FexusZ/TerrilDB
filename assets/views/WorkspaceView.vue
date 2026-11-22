@@ -147,6 +147,7 @@ watch(() => [route.query.database, route.query.schema], () => {
       <RouterLink :to="{ name: 'server-variables', params: { id }, query: scope }" active-class="on">Variables</RouterLink>
       <RouterLink :to="{ name: 'server-health', params: { id }, query: scope }" active-class="on">Santé</RouterLink>
       <RouterLink :to="{ name: 'replication', params: { id }, query: scope }" active-class="on">Réplication</RouterLink>
+      <RouterLink v-if="workspace.tablets.length > 0" :to="{ name: 'tablet-compare', params: { id }, query: scope }" active-class="on">Tablets</RouterLink>
       <RouterLink :to="{ name: 'server-logs', params: { id }, query: scope }" active-class="on">Journaux</RouterLink>
     </nav>
 

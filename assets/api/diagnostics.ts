@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport, TabletListing } from './types'
+import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport, TabletComparison, TabletListing } from './types'
 
 export interface DiagnosticScope {
   database: string | null
@@ -29,6 +29,11 @@ export async function fetchTablets(id: string, scope: DiagnosticScope): Promise<
   const answer = await api<Partial<TabletListing>>('GET', `/web/connections/${id}/diagnostics/tablets${suffix({ database: scope.database, schema: scope.schema })}`)
 
   return { tablets: answer.tablets ?? [], skipped: answer.skipped ?? [] }
+}
+
+/** Les tablets du keyspace côte à côte (réplication, variables modifiées qui diffèrent) ; refusé (501) hors vtgate. */
+export async function fetchTabletComparison(id: string, scope: DiagnosticScope): Promise<TabletComparison> {
+  return api<TabletComparison>('GET', `/web/connections/${id}/diagnostics/tablets/compare${suffix({ database: scope.database, schema: scope.schema })}`)
 }
 
 /** Ce que chaque source de supervision peut lire pour la connexion (sans lire les données). */

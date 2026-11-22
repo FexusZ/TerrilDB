@@ -26,7 +26,11 @@ use App\Core\Diagnostics\VariableComparer;
 use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableQuery;
 use App\Core\Diagnostics\VariableReport;
+use App\Core\Diagnostics\Vitess\TabletComparer;
+use App\Core\Diagnostics\Vitess\TabletComparison;
 use App\Core\Diagnostics\Vitess\TabletListing;
+use App\Core\Diagnostics\Vitess\TabletSnapshot;
+use App\Core\Diagnostics\Vitess\VitessTablet;
 use App\Core\Driver\TargetConnection;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -39,6 +43,9 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class AuditedDiagnostics
 {
+    /** Chaque tablet lu coûte une session : au-delà, la page dit qu'elle est tronquée. */
+    private const MAX_COMPARED_TABLETS = 8;
+
     public function __construct(private AuditLog $audit, private HealthSampler $sampler, private HealthSlots $slots, private LoggerInterface $logger = new NullLogger())
     {
     }
@@ -257,6 +264,41 @@ final readonly class AuditedDiagnostics
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => 'available', 'rows' => \count($listing->tablets), 'skipped' => \count($listing->skipped)]);
 
         return $listing;
+    }
+
+    /**
+     * Les tablets d'un keyspace côte à côte (Vitess) : la passerelle donne la liste, `$read` lit UN tablet (une session par tablet, ouverte
+     * et refermée par l'appelant). Un tablet qui ne s'ouvre pas est rendu `failure: unreachable`, jamais une erreur de la page. Le journal
+     * garde le nombre de tablets lus, d'écarts et le fait d'être tronqué, jamais un nom de variable ni une valeur.
+     *
+     * @param \Closure(VitessTablet): TabletSnapshot $read
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function compareTablets(AuditContext $context, Uuid $connectionId, TargetConnection $gateway, ?string $keyspace, \Closure $read): TabletComparison
+    {
+        $base = ['topic' => 'compare_tablets', 'engine' => $gateway->engine->value];
+
+        try {
+            [$tablets, $truncated] = TabletComparer::select($gateway->diagnostics()->tablets()->listing(), $keyspace, self::MAX_COMPARED_TABLETS);
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+        $snapshots = [];
+        foreach ($tablets as $tablet) {
+            try {
+                $snapshots[] = $read($tablet);
+            } catch (\Throwable) {
+                $snapshots[] = new TabletSnapshot($tablet, null, null, 'unreachable');
+            }
+        }
+        $comparison = (new TabletComparer())->compare($snapshots, $truncated);
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => 'available', 'rows' => \count($snapshots), 'differences' => \count($comparison->differences), 'masked' => $comparison->masked, 'truncated' => $comparison->truncated]);
+
+        return $comparison;
     }
 
     /**

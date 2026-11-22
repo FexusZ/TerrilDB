@@ -61,6 +61,47 @@ final class VitessTabletDiagnosticsWebTest extends WebApiTestCase
         self::assertTrue($tablet['serving']);
     }
 
+    public function testTheTabletsOfAKeyspaceAreComparedSideBySide(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveGateway();
+        $this->replica($id);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/tablets/compare');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['tablets', 'differences', 'masked', 'truncated'], array_keys($body));
+        $tablets = self::listOf($body['tablets']);
+        self::assertGreaterThanOrEqual(2, \count($tablets));
+        $types = [];
+        foreach ($tablets as $tablet) {
+            $tablet = self::arrayOf($tablet);
+            self::assertNull($tablet['failure'], 'every tablet of target-vitess is readable');
+            self::assertNotNull($tablet['replication']);
+            $types[] = $tablet['type'];
+        }
+        self::assertSame('PRIMARY', $types[0], 'le primaire d\'abord');
+        self::assertIsList($body['differences']);
+        self::assertFalse($body['truncated']);
+    }
+
+    public function testTheComparisonIsRefusedOnAConnectionThatIsNotAVitessGateway(): void
+    {
+        $this->seedAndLogin();
+        try {
+            $parameters = TargetDatabase::parameters('TARGET_MYSQL_URL');
+        } catch (\Throwable $e) {
+            self::markTestSkipped($e->getMessage());
+        }
+        $created = $this->call('POST', '/web/connections', ['name' => 'Plain', 'engine' => 'mysql', 'host' => $parameters->host, 'port' => $parameters->port, 'database' => $parameters->database, 'username' => $parameters->username, 'password' => $parameters->password()]);
+        $id = self::arrayOf($created['connection'])['id'];
+        self::assertIsString($id);
+
+        $this->call('GET', '/web/connections/'.$id.'/diagnostics/tablets/compare');
+
+        self::assertSame(501, $this->statusCode());
+    }
+
     public function testWithoutATabletThemesAreStillUnsupportedOnTheGateway(): void
     {
         $this->seedAndLogin();

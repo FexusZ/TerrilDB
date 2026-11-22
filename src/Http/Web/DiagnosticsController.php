@@ -7,6 +7,8 @@ namespace App\Http\Web;
 use App\Audit\AuditedDiagnostics;
 use App\Core\Diagnostics\Exception\InvalidVariableQueryException;
 use App\Core\Diagnostics\Masking;
+use App\Core\Diagnostics\Vitess\TabletSnapshot;
+use App\Core\Diagnostics\Vitess\VitessTablet;
 use App\Core\Driver\TargetConnection;
 use App\Http\Json\DiagnosticsPresenter;
 use App\Http\Json\DigestQueryParam;
@@ -51,6 +53,27 @@ final readonly class DiagnosticsController
         $tablets = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->tablets($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
 
         return new JsonResponse(DiagnosticsPresenter::tablets($tablets));
+    }
+
+    /**
+     * Les tablets d'un keyspace côte à côte : la réplication de chacun et les variables modifiées dont la valeur diffère. Une session par
+     * tablet, lecture seule.
+     */
+    #[Route('/web/connections/{id}/diagnostics/tablets/compare', requirements: self::ID, methods: ['GET'])]
+    public function compareTablets(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $database = DatabaseParam::fromQuery($request);
+        $keyspace = null === $database ? null : explode('@', explode(':', $database, 2)[0], 2)[0];
+        $comparison = $this->targets->withSaved($uuid, fn (TargetConnection $gateway) => $this->diagnostics->compareTablets(
+            $this->session->auditContext(),
+            $uuid,
+            $gateway,
+            $keyspace,
+            fn (VitessTablet $tablet): TabletSnapshot => $this->targets->withSaved($uuid, static fn (TargetConnection $target): TabletSnapshot => TabletSnapshot::read($tablet, $target->diagnostics()), $database, DatabaseParam::schemaFromQuery($request), $tablet->alias),
+        ), $database, DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::tabletComparison($comparison));
     }
 
     #[Route('/web/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]
