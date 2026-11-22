@@ -26,6 +26,7 @@ use App\Core\Diagnostics\VariableComparer;
 use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableQuery;
 use App\Core\Diagnostics\VariableReport;
+use App\Core\Diagnostics\Vitess\MigrationReport;
 use App\Core\Diagnostics\Vitess\TabletComparer;
 use App\Core\Diagnostics\Vitess\TabletComparison;
 use App\Core\Diagnostics\Vitess\TabletListing;
@@ -299,6 +300,28 @@ final readonly class AuditedDiagnostics
         $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => 'available', 'rows' => \count($snapshots), 'differences' => \count($comparison->differences), 'masked' => $comparison->masked, 'truncated' => $comparison->truncated]);
 
         return $comparison;
+    }
+
+    /**
+     * Les migrations de DDL en ligne (Vitess) : le journal garde l'état et des nombres, jamais une instruction ni un nom de table.
+     *
+     * @throws DiagnosticsFailedException
+     */
+    public function migrations(AuditContext $context, Uuid $connectionId, TargetConnection $target): MigrationReport
+    {
+        $base = ['topic' => 'migrations', 'engine' => $target->engine->value];
+
+        try {
+            $report = $target->diagnostics()->migrations()->migrations();
+        } catch (DiagnosticsFailedException $e) {
+            $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
+
+            throw $e;
+        }
+
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => $report->status->availability->value, 'rows' => \count($report->migrations), 'truncated' => $report->truncated]);
+
+        return $report;
     }
 
     /**

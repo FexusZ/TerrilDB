@@ -38,11 +38,14 @@ use App\Core\Diagnostics\TableHolders;
 use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableDifference;
 use App\Core\Diagnostics\VariableReport;
+use App\Core\Diagnostics\Vitess\MigrationAction;
+use App\Core\Diagnostics\Vitess\MigrationReport;
 use App\Core\Diagnostics\Vitess\SkippedTablet;
 use App\Core\Diagnostics\Vitess\TabletComparison;
 use App\Core\Diagnostics\Vitess\TabletListing;
 use App\Core\Diagnostics\Vitess\TabletSnapshot;
 use App\Core\Diagnostics\Vitess\TabletVariableDifference;
+use App\Core\Diagnostics\Vitess\VitessMigration;
 use App\Core\Diagnostics\Vitess\VitessTablet;
 
 final class DiagnosticsPresenter
@@ -283,6 +286,40 @@ final class DiagnosticsPresenter
             'differences' => array_map(static fn (TabletVariableDifference $d): array => ['name' => $d->name, 'unit' => $d->unit, 'values' => $d->values], $comparison->differences),
             'masked' => $comparison->masked,
             'truncated' => $comparison->truncated,
+        ];
+    }
+
+    /**
+     * Les migrations de DDL en ligne. Chaque action offerte vient avec l'instruction prête à envoyer (écrite par `MigrationAction` sur
+     * un UUID vérifié) : elle part par la console ou par `prepare` / `execute`, jamais par une route d'écriture propre.
+     *
+     * @return array<string, mixed>
+     */
+    public static function migrations(MigrationReport $report): array
+    {
+        return [
+            'status' => self::status($report->status),
+            'truncated' => $report->truncated,
+            'migrations' => array_map(static fn (VitessMigration $m): array => [
+                'uuid' => $m->uuid,
+                'keyspace' => $m->keyspace,
+                'shard' => $m->shard,
+                'table' => $m->table,
+                'status' => $m->status,
+                'progress' => $m->progress,
+                'statement' => $m->statement,
+                'strategy' => $m->strategy,
+                'addedAt' => $m->addedAt,
+                'startedAt' => $m->startedAt,
+                'completedAt' => $m->completedAt,
+                'message' => $m->message,
+                'retries' => $m->retries,
+                'etaSeconds' => $m->etaSeconds,
+                'postponeCompletion' => $m->postponeCompletion,
+                'postponeLaunch' => $m->postponeLaunch,
+                'tablet' => $m->tablet,
+                'actions' => array_map(static fn (MigrationAction $a): array => ['action' => $a->value, 'statement' => $a->statement($m->uuid)], $m->actions()),
+            ], $report->migrations),
         ];
     }
 

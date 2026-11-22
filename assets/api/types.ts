@@ -331,6 +331,38 @@ export interface TabletComparison {
   truncated: boolean
 }
 
+export type MigrationActionName = 'launch' | 'cancel' | 'retry' | 'complete'
+
+/** Une migration de DDL en ligne (Vitess). `actions` : ce qui a un sens pour son état, chacune avec l'instruction à envoyer. */
+export interface VitessMigration {
+  uuid: string
+  keyspace: string
+  shard: string
+  table: string
+  /** `unknown` quand le serveur donne un état hors de la liste connue. */
+  status: 'queued' | 'ready' | 'running' | 'complete' | 'failed' | 'cancelled' | 'unknown'
+  progress: number
+  /** Littéraux masqués. */
+  statement: string | null
+  strategy: string
+  addedAt: string | null
+  startedAt: string | null
+  completedAt: string | null
+  message: string | null
+  retries: number
+  etaSeconds: number | null
+  postponeCompletion: boolean
+  postponeLaunch: boolean
+  tablet: string | null
+  actions: { action: MigrationActionName; statement: string }[]
+}
+
+export interface MigrationReport {
+  status: DiagnosticStatus
+  truncated: boolean
+  migrations: VitessMigration[]
+}
+
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability
   /** Code stable (`insufficient_privilege`, `not_supported`…), jamais le message du moteur. */

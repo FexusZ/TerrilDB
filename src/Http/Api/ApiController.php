@@ -251,6 +251,19 @@ final readonly class ApiController
     }
 
     /**
+     * Les migrations de DDL en ligne (Vitess), lecture seule ; chaque action offerte porte son instruction `ALTER VITESS_MIGRATION`, qui
+     * s'exécute par `prepare` puis `execute` (droit structure, confirmation habituelle). 501 hors Vitess.
+     */
+    #[Route('/api/v1/connections/{id}/diagnostics/migrations', requirements: self::ID, methods: ['GET'])]
+    public function migrations(string $id): JsonResponse
+    {
+        $this->request->get()->requireDiagnostic();
+        $report = $this->open($id, fn (TargetConnection $target) => $this->diagnostics->migrations($this->request->auditContext(AuditActor::Api), Uuid::fromString($id), $target));
+
+        return new JsonResponse(DiagnosticsPresenter::migrations($report));
+    }
+
+    /**
      * Les sessions en cours sur le serveur de la connexion, en lecture seule, textes de requêtes masqués puis raccourcis.
      */
     #[Route('/api/v1/connections/{id}/diagnostics/sessions', requirements: self::ID, methods: ['GET'])]

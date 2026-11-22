@@ -85,6 +85,20 @@ final class VitessTabletDiagnosticsWebTest extends WebApiTestCase
         self::assertFalse($body['truncated']);
     }
 
+    public function testTheMigrationsOfTheGatewayAreListedReadOnly(): void
+    {
+        $this->seedAndLogin();
+        $id = $this->saveGateway();
+        $this->replica($id);
+
+        $body = $this->call('GET', '/web/connections/'.$id.'/diagnostics/migrations');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'truncated', 'migrations'], array_keys($body));
+        self::assertSame('available', self::arrayOf($body['status'])['availability']);
+        self::assertIsList($body['migrations']);
+    }
+
     public function testTheComparisonIsRefusedOnAConnectionThatIsNotAVitessGateway(): void
     {
         $this->seedAndLogin();

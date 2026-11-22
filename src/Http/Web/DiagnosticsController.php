@@ -56,6 +56,19 @@ final readonly class DiagnosticsController
     }
 
     /**
+     * Les migrations de DDL en ligne du keyspace. Lecture seule : les actions (annuler, rejouer, terminer, lancer) sont des instructions
+     * `ALTER VITESS_MIGRATION` envoyées par la console et ses confirmations.
+     */
+    #[Route('/web/connections/{id}/diagnostics/migrations', requirements: self::ID, methods: ['GET'])]
+    public function migrations(string $id, Request $request): JsonResponse
+    {
+        $uuid = Uuid::fromString($id);
+        $report = $this->targets->withSaved($uuid, fn (TargetConnection $target) => $this->diagnostics->migrations($this->session->auditContext(), $uuid, $target), DatabaseParam::fromQuery($request), DatabaseParam::schemaFromQuery($request));
+
+        return new JsonResponse(DiagnosticsPresenter::migrations($report));
+    }
+
+    /**
      * Les tablets d'un keyspace côte à côte : la réplication de chacun et les variables modifiées dont la valeur diffère. Une session par
      * tablet, lecture seule.
      */
