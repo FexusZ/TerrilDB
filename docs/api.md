@@ -99,7 +99,7 @@ corps porte `retryable` et le journal d'audit le code seulement (`reason`).
 | `auth_failed` | 502 | identifiants de la cible refusés (1045 ; 28P01) | non |
 | `auth_requires_tls` | 502 | le serveur exige une connexion chiffrée (MySQL/MariaDB 3159 ; PostgreSQL « no encryption » du `pg_hba.conf`) | non |
 
-Les deux derniers (et `too_many_connections`) apparaissent à l'ouverture de la connexion, à la place de `target_unreachable`. Sur une modification de structure jouée
+Les deux derniers (et `too_many_connections`) apparaissent à l'ouverture de la connexion, à la place de `target_unreachable`. Dans ce mode, un `target_unreachable` dont l'adresse tombe dans un réseau relié au serveur (pont Docker) porte `reason: overlaps_local_network` (voir `docs/deploy.md`). Sur une modification de structure jouée
 instruction par instruction, `retryable` est faux dès que `applied` n'est pas vide (ne pas rejouer telle quelle). Tout le reste garde
 `query_failed` (400, avec `message`) ou `data_change_failed` / `schema_change_failed`.
 

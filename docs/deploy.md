@@ -103,6 +103,11 @@ attribue aux réseaux compose des `/20` pris dans `192.168.0.0/16` (`192.168.16.
 de la cible, la machine envoie ce trafic vers le pont local au lieu de le sortir. Le réseau en cause peut être celui de N'IMPORTE QUEL projet
 compose, pas forcément celui de TerrilDB, et revient à chaque `compose up` de ce projet.
 
+Avec `TERRILDB_DETAILED_ERRORS=1`, TerrilDB le dit quand il le voit : si l'adresse de la cible tombe dans un réseau relié en direct à son
+propre conteneur (lu dans la table de routage du noyau), la réponse `target_unreachable` porte `reason: overlaps_local_network`, sans jamais
+répéter l'adresse. Il ne voit que les réseaux de SON conteneur : un réseau d'un autre projet compose, qui n'existe que dans la VM, reste invisible
+pour lui, d'où la commande ci-dessous. Sans ce réglage la réponse reste la même qu'avant, pour ne rien apprendre à un membre sur le réseau interne.
+
 Diagnostic : comparer l'adresse de la cible aux réseaux Docker.
 
 ```bash
