@@ -11,6 +11,7 @@ use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
 use App\Core\Connection\Exception\ForbiddenBastionException;
 use App\Core\Connection\Exception\InvalidConnectionParametersException;
+use App\Core\Connection\LocalNetworks;
 use App\Core\Connection\SshJump;
 use App\Core\Connection\Tunnel\TooManyTunnelsException;
 use App\Core\Connection\Tunnel\TunnelEndpoint;
@@ -37,6 +38,7 @@ final readonly class TargetOpener
         private AuditedTunnels $tunnels,
         private RequestAuditContext $contexts,
         private TunnelQuota $quota,
+        private ?LocalNetworks $local = null,
     ) {
     }
 
@@ -142,7 +144,13 @@ final readonly class TargetOpener
     {
         $transport = $parameters->transport;
         if (null === $transport) {
-            return $this->drivers->for($engine)->connect($engine, $this->hosts->pinned($owner, $parameters));
+            $pinned = $this->hosts->pinned($owner, $parameters);
+            try {
+                return $this->drivers->for($engine)->connect($engine, $pinned);
+            } catch (TargetConnectionFailedException $failed) {
+                // Une adresse dans un réseau relié au serveur (pont Docker) n'en sort pas : on le dit, sans jamais répéter l'adresse.
+                throw ($this->local ?? LocalNetworks::ofHost())->covers($pinned->address()) ? $failed->overlappingLocalNetwork() : $failed;
+            }
         }
         if (!$transport instanceof SshJump || !$engine->reachableThroughJump()) {
             throw UnsupportedOperationException::for($engine, 'connection through a jump');

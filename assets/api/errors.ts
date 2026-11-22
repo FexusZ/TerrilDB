@@ -104,6 +104,9 @@ export function messageFor(error: unknown): string {
     case 'unauthenticated':
       return 'Votre session doit être déverrouillée : reconnectez-vous.'
     case 'target_unreachable':
+      if (error.details.reason === 'overlaps_local_network') {
+        return 'L’adresse de la base tombe dans un réseau local du serveur de TerrilDB (un réseau Docker, le plus souvent) : le trafic n’en sort pas. Changez les plages d’adresses de Docker, voir la documentation de déploiement.'
+      }
       return 'Impossible de joindre la base. Vérifiez l’hôte, le port et les identifiants.'
     case 'connection_name_used':
       return 'Vous avez déjà une connexion portant ce nom.'

@@ -16,6 +16,7 @@ use App\Connection\TargetOpener;
 use App\Connection\TunnelQuota;
 use App\Core\Connection\ConnectionParameters;
 use App\Core\Connection\Engine;
+use App\Core\Connection\LocalNetworks;
 use App\Core\Connection\SshJump;
 use App\Core\Connection\Tunnel\AllowedBastionTunnelOpener;
 use App\Core\Connection\Tunnel\BastionAllowList;
@@ -74,7 +75,7 @@ final class TargetOpenerTest extends DatabaseTestCase
         return new AuditedTargetHosts($policy, $audit, new RequestStack(), BastionAllowList::fromString('bastion.example'));
     }
 
-    private function opener(?AuditedTargetHosts $hosts = null, ?RecordingTunnelOpener $tunnels = null, ?DriverRegistry $drivers = null, ?TunnelQuota $quota = null): TargetOpener
+    private function opener(?AuditedTargetHosts $hosts = null, ?RecordingTunnelOpener $tunnels = null, ?DriverRegistry $drivers = null, ?TunnelQuota $quota = null, ?LocalNetworks $local = null): TargetOpener
     {
         $audit = self::getContainer()->get(AuditLog::class);
         self::assertInstanceOf(AuditLog::class, $audit);
@@ -86,6 +87,7 @@ final class TargetOpenerTest extends DatabaseTestCase
             new AuditedTunnels(new AllowedBastionTunnelOpener($tunnels ?? new RecordingTunnelOpener(), BastionAllowList::fromString('bastion.example')), $audit),
             new RequestAuditContext(new RequestStack()),
             $quota ?? new TunnelQuota(new ArrayAdapter(), new MockClock('2026-11-14 10:00:00 UTC')),
+            $local,
         );
     }
 
@@ -159,6 +161,54 @@ final class TargetOpenerTest extends DatabaseTestCase
         self::assertSame(1, $resolver->calls);
         self::assertCount(7, $target->introspector()->listTables());
         $target->close();
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}> adresse de la cible, recouvre un réseau local du serveur
+     */
+    public static function overlaps(): iterable
+    {
+        yield 'dans un pont Docker' => ['192.168.50.7', true];
+        yield 'hors des réseaux locaux' => ['192.168.80.7', false];
+    }
+
+    #[DataProvider('overlaps')]
+    public function testAFailedConnectionSaysWhenTheAddressIsInsideALocalNetwork(string $address, bool $overlaps): void
+    {
+        $saved = $this->manager->create($this->alice, $this->key, 'Bridge', Engine::MySql, new ConnectionParameters('db.example', 3306, 'shop', 'app', 'pw'));
+        $resolver = new class($address) implements HostResolver {
+            public function __construct(private string $address)
+            {
+            }
+
+            public function resolve(string $host): array
+            {
+                return [$this->address];
+            }
+        };
+        $audit = self::getContainer()->get(AuditLog::class);
+        self::assertInstanceOf(AuditLog::class, $audit);
+        $hosts = new AuditedTargetHosts(new TargetHostPolicy($resolver, null), $audit, new RequestStack(), BastionAllowList::fromString(''));
+        $drivers = new DriverRegistry([new class implements Driver {
+            public function engines(): array
+            {
+                return [Engine::MySql];
+            }
+
+            public function connect(Engine $engine, ConnectionParameters $parameters): TargetConnection
+            {
+                throw TargetConnectionFailedException::create();
+            }
+        }]);
+        $local = LocalNetworks::fromRoutes("eth1\t0030A8C0\t00000000\t0001\t0\t0\t0\t00F0FFFF\t0\t0\t0\n");
+
+        try {
+            $this->opener($hosts, drivers: $drivers, local: $local)->open($this->alice, $this->key, $saved->getId());
+            self::fail('The connection must fail.');
+        } catch (TargetConnectionFailedException $failed) {
+            self::assertSame($overlaps, $failed->overlapsLocalNetwork);
+            self::assertStringNotContainsString($address, $failed->getMessage());
+        }
     }
 
     /**

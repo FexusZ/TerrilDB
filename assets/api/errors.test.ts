@@ -201,3 +201,11 @@ describe('error messages', () => {
     expect(reasonText('destructive_statement', true, [{ workflow: 'x', table: 't', targets: [] }])).toBe(reasonText('destructive_statement', true))
   })
 })
+
+describe('target_unreachable avec recouvrement d’un réseau local', () => {
+  it('explique que l’adresse tombe dans un réseau du serveur', () => {
+    const text = messageFor(new ApiError(502, 'target_unreachable', { reason: 'overlaps_local_network' }))
+    expect(text).toContain('réseau')
+    expect(text).toContain('Docker')
+  })
+})
