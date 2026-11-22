@@ -117,9 +117,18 @@ describe('diagnostics API', () => {
   it('lists the tablets of a gateway', async () => {
     mocked.mockResolvedValueOnce({ tablets: [{ alias: 'test-0000000002', cell: 'test', keyspace: 'shop', shard: '0', type: 'REPLICA', serving: true }] })
 
-    const tablets = await fetchTablets('abc', { database: null, schema: null })
+    const listing = await fetchTablets('abc', { database: null, schema: null })
 
     expect(mocked).toHaveBeenCalledWith('GET', '/web/connections/abc/diagnostics/tablets')
-    expect(tablets[0]?.alias).toBe('test-0000000002')
+    expect(listing.tablets[0]?.alias).toBe('test-0000000002')
+    expect(listing.skipped).toEqual([])
+  })
+
+  it('also reports the tablets that cannot be targeted', async () => {
+    mocked.mockResolvedValueOnce({ tablets: [], skipped: [{ reason: 'type_not_targetable', type: 'BACKUP' }] })
+
+    const listing = await fetchTablets('abc', { database: null, schema: null })
+
+    expect(listing.skipped).toEqual([{ reason: 'type_not_targetable', type: 'BACKUP' }])
   })
 })

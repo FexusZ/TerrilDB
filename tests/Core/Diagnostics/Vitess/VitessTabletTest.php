@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Core\Diagnostics\Vitess;
 
+use App\Core\Diagnostics\Vitess\SkippedTablet;
 use App\Core\Diagnostics\Vitess\VitessTablet;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -79,5 +80,41 @@ final class VitessTabletTest extends TestCase
         self::assertFalse(VitessTablet::isTarget('shop:0@replica'));
         self::assertFalse(VitessTablet::isTarget('shop:0@replica|x'));
         self::assertFalse(VitessTablet::isTarget(''));
+    }
+
+    public function testASkippedRowIsExplainedByItsTypeWhenTheTypeIsAKnownOne(): void
+    {
+        $skipped = VitessTablet::skipped(['Cell' => 'test', 'Keyspace' => 'shop', 'Shard' => '0', 'TabletType' => 'backup', 'State' => 'SERVING', 'Alias' => 'test-0000000009']);
+
+        self::assertSame(SkippedTablet::TYPE_NOT_TARGETABLE, $skipped->reason);
+        self::assertSame('BACKUP', $skipped->type);
+    }
+
+    public function testAnUnknownTypeIsNeverEchoedBack(): void
+    {
+        $skipped = VitessTablet::skipped(['Cell' => 'test', 'Keyspace' => 'shop', 'Shard' => '0', 'TabletType' => "<script>alert('x')</script>", 'State' => 'SERVING', 'Alias' => 'test-0000000009']);
+
+        self::assertSame(SkippedTablet::TYPE_NOT_TARGETABLE, $skipped->reason);
+        self::assertNull($skipped->type, 'une valeur du serveur qui n\'est pas un type connu ne sort jamais');
+    }
+
+    public function testARowWithAStrangeNameOrMissingColumnIsExplainedWithoutItsValues(): void
+    {
+        $base = ['Cell' => 'test', 'Keyspace' => 'shop', 'Shard' => '0', 'TabletType' => 'REPLICA', 'State' => 'SERVING', 'Alias' => 'test-0000000002'];
+
+        $name = VitessTablet::skipped(['Alias' => 'test-1|x'] + $base);
+        self::assertSame(SkippedTablet::UNEXPECTED_NAME, $name->reason);
+        self::assertSame('REPLICA', $name->type);
+
+        $missing = VitessTablet::skipped(['Alias' => null] + $base);
+        self::assertSame(SkippedTablet::UNREADABLE, $missing->reason);
+    }
+
+    public function testEveryRowThatFromRowRefusesHasASkipReason(): void
+    {
+        foreach (self::unusableRows() as [$row]) {
+            self::assertNull(VitessTablet::fromRow($row));
+            self::assertContains(VitessTablet::skipped($row)->reason, [SkippedTablet::TYPE_NOT_TARGETABLE, SkippedTablet::UNEXPECTED_NAME, SkippedTablet::UNREADABLE]);
+        }
     }
 }

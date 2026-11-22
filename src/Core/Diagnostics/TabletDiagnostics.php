@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Diagnostics;
 
+use App\Core\Diagnostics\Vitess\TabletListing;
 use App\Core\Diagnostics\Vitess\VitessTablet;
 
 /**
@@ -18,4 +19,9 @@ interface TabletDiagnostics
      * @return list<VitessTablet> ceux qui ont la forme d'une cible, dans l'ordre du serveur
      */
     public function tablets(): array;
+
+    /**
+     * Les mêmes tablets, avec ceux qu'on a écartés et pourquoi (une seule lecture du topo).
+     */
+    public function listing(): TabletListing;
 }

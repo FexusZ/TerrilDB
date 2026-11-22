@@ -38,6 +38,8 @@ use App\Core\Diagnostics\TableHolders;
 use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableDifference;
 use App\Core\Diagnostics\VariableReport;
+use App\Core\Diagnostics\Vitess\SkippedTablet;
+use App\Core\Diagnostics\Vitess\TabletListing;
 use App\Core\Diagnostics\Vitess\VitessTablet;
 
 final class DiagnosticsPresenter
@@ -241,13 +243,17 @@ final class DiagnosticsPresenter
     }
 
     /**
-     * @param list<VitessTablet> $tablets
+     * Les tablets qu'on sait viser, puis (à la suite des clés historiques) ceux qu'on a écartés avec la raison : jamais un alias ni
+     * une valeur du serveur.
      *
      * @return array<string, mixed>
      */
-    public static function tablets(array $tablets): array
+    public static function tablets(TabletListing $listing): array
     {
-        return ['tablets' => array_map(static fn (VitessTablet $t): array => ['alias' => $t->alias, 'cell' => $t->cell, 'keyspace' => $t->keyspace, 'shard' => $t->shard, 'type' => $t->type, 'serving' => $t->serving], $tablets)];
+        return [
+            'tablets' => array_map(static fn (VitessTablet $t): array => ['alias' => $t->alias, 'cell' => $t->cell, 'keyspace' => $t->keyspace, 'shard' => $t->shard, 'type' => $t->type, 'serving' => $t->serving], $listing->tablets),
+            'skipped' => array_map(static fn (SkippedTablet $s): array => ['reason' => $s->reason, 'type' => $s->type], $listing->skipped),
+        ];
     }
 
     /**

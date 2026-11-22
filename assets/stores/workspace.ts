@@ -4,7 +4,7 @@ import { ApiError, api, apiDownload } from '../api/client'
 import { fetchTablets } from '../api/diagnostics'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, TableSummary, VitessTablet } from '../api/types'
+import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, SkippedTablet, TableSummary, VitessTablet } from '../api/types'
 import { useConnectionsStore } from './connections'
 
 export interface QueryTab {
@@ -73,6 +73,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   let completionLoaded = ''
   /** Vitess : les tablets que vtgate sait viser et celui dont on lit les pages de supervision (nul = aucun choisi). Vide hors Vitess. */
   const tablets = ref<VitessTablet[]>([])
+  /** Les tablets que le serveur a écartés de la liste (sauvegarde en cours, nom inhabituel…) : on le dit au lieu de les faire disparaître. */
+  const skippedTablets = ref<SkippedTablet[]>([])
   const tablet = ref<string | null>(null)
   let tabletsLoaded = ''
   /** Sur un vtgate, aucune page de supervision ne se lit tant qu'un tablet n'est pas choisi (la lecture partirait vers un tablet au hasard). */
@@ -146,6 +148,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     capabilities.value = null
     capabilitiesLoaded = ''
     tablets.value = []
+    skippedTablets.value = []
     tablet.value = null
     tabletsLoaded = ''
     keys.value = []
@@ -372,11 +375,13 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       const found = await fetchTablets(id, { database: database.value, schema: schema.value })
       if (tabletsLoaded === id) {
-        tablets.value = found
+        tablets.value = found.tablets
+        skippedTablets.value = found.skipped
       }
     } catch {
       if (tabletsLoaded === id) {
         tablets.value = []
+        skippedTablets.value = []
       }
     }
   }
@@ -757,5 +762,5 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   /** `?database=…&schema=…` de ce qu'on explore (vide si la connexion est lue telle quelle) : pour les pages qui lisent la base elle-même. */
   const scopeSuffix = (): string => databaseQuery()
 
-  return { connectionId, scopeSuffix, tablets, tablet, needsTablet, loadTablets, selectTablet, diagnosticScope, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, capabilities, loadCapabilities, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, measureTab, exportTab, confirmPending, cancelPending, describe }
+  return { connectionId, scopeSuffix, tablets, skippedTablets, tablet, needsTablet, loadTablets, selectTablet, diagnosticScope, tables, tablesError, tablesTotal, tablesHasMore, tablesLoading, tablesSearch, loadMoreTables, searchTables, reloadTables, database, databases, databasesError, defaultDatabase, schema, schemas, completionTables, loadCompletion, capabilities, loadCapabilities, loadDatabases, loadSchemas, selectDatabase, selectSchema, isKeyValue, keys, keysCursor, keysTotal, keysPattern, keysLoading, keysError, loadMoreKeys, searchKeys, tabs, activeTab, history, historyLoaded, historyLoading, historyError, historyHasMore, loadHistory, moreHistory, open, close, addTab, openTableData, tableTabs, openTableTab, closeTableTab, closeTab, select, setSql, setMode, run, planTab, lintTab, measureTab, exportTab, confirmPending, cancelPending, describe }
 })

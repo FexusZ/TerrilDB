@@ -14,6 +14,8 @@ final readonly class VitessTablet
     private const NAME = '/^[A-Za-z0-9_.-]{1,64}$/D';
     private const SHARD = '/^[A-Za-z0-9_.-]{1,64}$/D';
     private const TARGETABLE = ['PRIMARY' => 'primary', 'REPLICA' => 'replica', 'RDONLY' => 'rdonly'];
+    /** Les types de tablet que Vitess connaît ; une autre valeur du serveur n'est jamais rendue telle quelle. */
+    private const KNOWN_TYPES = ['PRIMARY', 'MASTER', 'REPLICA', 'RDONLY', 'BATCH', 'SPARE', 'EXPERIMENTAL', 'BACKUP', 'RESTORE', 'DRAINED', 'UNKNOWN'];
 
     public function __construct(
         public string $alias,
@@ -61,6 +63,25 @@ final readonly class VitessTablet
         }
 
         return new self($alias, $cell, $keyspace, $shard, $type, 'SERVING' === strtoupper($state));
+    }
+
+    /**
+     * Pourquoi une ligne que `fromRow` refuse n'est pas proposée : le type d'abord (une sauvegarde en cours n'est pas une panne), puis
+     * la forme des noms, puis des colonnes absentes.
+     *
+     * @param array<string, mixed> $row une ligne de `SHOW VITESS_TABLETS`
+     */
+    public static function skipped(array $row): SkippedTablet
+    {
+        foreach (['Alias', 'Cell', 'Keyspace', 'Shard', 'TabletType', 'State'] as $column) {
+            if (!\is_string($row[$column] ?? null)) {
+                return new SkippedTablet(SkippedTablet::UNREADABLE, null);
+            }
+        }
+        $type = strtoupper($row['TabletType']);
+        $known = \in_array($type, self::KNOWN_TYPES, true) ? $type : null;
+
+        return new SkippedTablet(isset(self::TARGETABLE[$type]) ? SkippedTablet::UNEXPECTED_NAME : SkippedTablet::TYPE_NOT_TARGETABLE, $known);
     }
 
     /**

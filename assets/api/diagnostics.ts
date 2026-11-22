@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport, VitessTablet } from './types'
+import type { AccountReport, ConfigAuditReport, ConnectionEncryption, DiagnosticStatus, DigestOrder, DigestReport, LockReport, SessionReport, VariableComparison, VariableReport, TabletListing } from './types'
 
 export interface DiagnosticScope {
   database: string | null
@@ -24,11 +24,11 @@ function suffix(scope: DiagnosticScope, leading: string[] = []): string {
   return parts.length === 0 ? '' : `?${parts.join('&')}`
 }
 
-/** Les tablets que le serveur sait viser ; refusé (501) quand ce n'est pas un vtgate. */
-export async function fetchTablets(id: string, scope: DiagnosticScope): Promise<VitessTablet[]> {
-  const answer = await api<{ tablets: VitessTablet[] }>('GET', `/web/connections/${id}/diagnostics/tablets${suffix({ database: scope.database, schema: scope.schema })}`)
+/** Les tablets que le serveur sait viser, et ceux qu'il a écartés ; refusé (501) quand ce n'est pas un vtgate. */
+export async function fetchTablets(id: string, scope: DiagnosticScope): Promise<TabletListing> {
+  const answer = await api<Partial<TabletListing>>('GET', `/web/connections/${id}/diagnostics/tablets${suffix({ database: scope.database, schema: scope.schema })}`)
 
-  return answer.tablets ?? []
+  return { tablets: answer.tablets ?? [], skipped: answer.skipped ?? [] }
 }
 
 /** Ce que chaque source de supervision peut lire pour la connexion (sans lire les données). */

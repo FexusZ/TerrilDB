@@ -294,6 +294,18 @@ export interface VitessTablet {
   serving: boolean
 }
 
+/** Un tablet que le serveur a écarté de la liste, et pourquoi (jamais son alias ni une valeur du serveur). */
+export interface SkippedTablet {
+  reason: 'type_not_targetable' | 'unexpected_name' | 'unreadable'
+  /** Le type s'il fait partie de ceux que Vitess connaît (BACKUP, RESTORE, DRAINED…), sinon null. */
+  type: string | null
+}
+
+export interface TabletListing {
+  tablets: VitessTablet[]
+  skipped: SkippedTablet[]
+}
+
 export interface DiagnosticStatus {
   availability: DiagnosticAvailability
   /** Code stable (`insufficient_privilege`, `not_supported`…), jamais le message du moteur. */

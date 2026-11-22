@@ -26,7 +26,7 @@ use App\Core\Diagnostics\VariableComparer;
 use App\Core\Diagnostics\VariableComparison;
 use App\Core\Diagnostics\VariableQuery;
 use App\Core\Diagnostics\VariableReport;
-use App\Core\Diagnostics\Vitess\VitessTablet;
+use App\Core\Diagnostics\Vitess\TabletListing;
 use App\Core\Driver\TargetConnection;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -240,25 +240,23 @@ final readonly class AuditedDiagnostics
     /**
      * La liste des tablets d'un vtgate : une lecture du topo, le journal garde le nombre seulement (jamais un alias ni un hôte).
      *
-     * @return list<VitessTablet>
-     *
      * @throws DiagnosticsFailedException
      */
-    public function tablets(AuditContext $context, Uuid $connectionId, TargetConnection $target): array
+    public function tablets(AuditContext $context, Uuid $connectionId, TargetConnection $target): TabletListing
     {
         $base = ['topic' => 'tablets', 'engine' => $target->engine->value];
 
         try {
-            $tablets = $target->diagnostics()->tablets()->tablets();
+            $listing = $target->diagnostics()->tablets()->listing();
         } catch (DiagnosticsFailedException $e) {
             $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Failed, $connectionId, $base);
 
             throw $e;
         }
 
-        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => 'available', 'rows' => \count($tablets)]);
+        $this->audit->record($context, AuditAction::DiagnosticRead, AuditOutcome::Success, $connectionId, $base + ['status' => 'available', 'rows' => \count($listing->tablets), 'skipped' => \count($listing->skipped)]);
 
-        return $tablets;
+        return $listing;
     }
 
     /**
