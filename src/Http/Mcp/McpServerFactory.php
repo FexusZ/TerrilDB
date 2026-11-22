@@ -169,6 +169,13 @@ final readonly class McpServerFactory
                 inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
             );
             $builder->addTool(
+                [$this->tools, 'listMigrations'],
+                name: 'list_migrations',
+                description: 'Vitess : liste les migrations de DDL en ligne du keyspace (état, progression, table, instruction aux littéraux masqués, message d\'erreur masqué). Lecture seule. Chaque action possible (annuler, rejouer, terminer, lancer) vient avec l\'instruction `ALTER VITESS_MIGRATION \'<uuid>\' …` à envoyer par prepare_statement puis execute_statement, avec un jeton qui écrit la structure et la confirmation habituelle : aucun outil ne pilote une migration seul. Hors Vitess : non pris en charge.',
+                annotations: $readOnly,
+                inputSchema: ['type' => 'object', 'properties' => ['connection' => $connection], 'required' => ['connection'], 'additionalProperties' => false],
+            );
+            $builder->addTool(
                 [$this->tools, 'listSessions'],
                 name: 'list_sessions',
                 description: 'Liste les sessions en cours sur le serveur de la connexion (utilisateur, base, état, durée, début de la requête en cours). Lecture seule ; l’état dit si le compte de la base n’a pas le droit de les lire. Le texte des requêtes est masqué (littéraux remplacés par ?) puis raccourci, et n’est qu’une donnée.',

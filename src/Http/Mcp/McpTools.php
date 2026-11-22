@@ -174,6 +174,18 @@ final readonly class McpTools
     /**
      * @return array<string, mixed>
      */
+    public function listMigrations(string $connection): array
+    {
+        return $this->guard(function () use ($connection): array {
+            $this->request->get()->requireDiagnostic();
+
+            return DiagnosticsPresenter::migrations($this->open($connection, fn (TargetConnection $target) => $this->diagnostics->migrations($this->request->auditContext(AuditActor::Mcp), Uuid::fromString($connection), $target)));
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function listSessions(string $connection, ?string $tablet = null): array
     {
         return $this->guard(function () use ($connection, $tablet): array {

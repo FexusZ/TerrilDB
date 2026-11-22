@@ -154,6 +154,24 @@ final class VitessTabletApiTest extends WebApiTestCase
         return self::arrayOf(json_decode($content['text'], true, flags: \JSON_THROW_ON_ERROR));
     }
 
+    public function testTheApiAndMcpListTheMigrationsOfTheGateway(): void
+    {
+        $this->prepare();
+        $this->replicaAlias();
+
+        $body = $this->api('/api/v1/connections/'.$this->connectionId.'/diagnostics/migrations');
+
+        self::assertSame(200, $this->statusCode());
+        self::assertSame(['status', 'truncated', 'migrations'], array_keys($body));
+        self::assertIsList($body['migrations']);
+
+        $this->post(['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => ['protocolVersion' => self::PROTOCOL, 'capabilities' => new \stdClass(), 'clientInfo' => ['name' => 'tests', 'version' => '1.0']]]);
+        $this->session = $this->client->getResponse()->headers->get('Mcp-Session-Id') ?? '';
+        $this->post(['jsonrpc' => '2.0', 'method' => 'notifications/initialized']);
+        $listed = self::textOf($this->tool('list_migrations', ['connection' => $this->connectionId]));
+        self::assertSame('available', self::arrayOf($listed['status'])['availability']);
+    }
+
     public function testMcpListsTheTabletsAndReadsThemeFromTheChosenOne(): void
     {
         $this->prepare();
