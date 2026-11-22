@@ -42,8 +42,8 @@ final readonly class MySqlStreamSources implements StreamSources
                 }
                 $connection = $this->connector->connect($this->engine, $this->parameters->withDatabase($tablet->target()));
                 try {
-                    foreach ($connection->fetchFirstColumn('SELECT source FROM _vt.vreplication LIMIT '.self::MAX_STREAMS) as $text) {
-                        $source = \is_string($text) ? StreamSource::parse($text) : null;
+                    foreach ($connection->fetchAllNumeric('SELECT source, workflow FROM _vt.vreplication LIMIT '.self::MAX_STREAMS) as [$text, $workflow]) {
+                        $source = \is_string($text) ? StreamSource::parse($text, \is_string($workflow) ? $workflow : '') : null;
                         if (null !== $source && $source->keyspace === $tablet->keyspace) {
                             $found[] = $source;
                         }

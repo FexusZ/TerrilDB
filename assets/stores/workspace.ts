@@ -4,7 +4,7 @@ import { ApiError, api, apiDownload } from '../api/client'
 import { fetchTablets } from '../api/diagnostics'
 import { messageFor } from '../api/errors'
 import { saveFile } from '../utils/download'
-import type { DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, SkippedTablet, TableSummary, VitessTablet } from '../api/types'
+import type { StreamHit, DatabaseInfo, HistoryEntry, KeyEntry, KeyPage, LintResult, PlanResult, QueryMode, QueryResult, TableDetail, SkippedTablet, TableSummary, VitessTablet } from '../api/types'
 import { useConnectionsStore } from './connections'
 
 export interface QueryTab {
@@ -17,6 +17,8 @@ export interface QueryTab {
   error: string | null
   /** Motif de la confirmation demandée par le garde, en attendant la décision de l'utilisateur. */
   pendingConfirmation: string | null
+  /** Vitess : les flux que la confirmation `stream_source` nomme. */
+  pendingStreams: StreamHit[]
   exporting: boolean
   /** Ce que la zone de résultat montre : le résultat de l'exécution, ou le plan estimé. */
   view: 'result' | 'plan' | 'lint'
@@ -108,7 +110,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function blankTab(sql = ''): QueryTab {
     const id = nextId++
-    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, lint: null, linting: false, measuring: false, table: null, tableKey: null, lastSql: null }
+    return { id, title: `Requête ${String(id)}`, sql, mode: 'read_only', running: false, result: null, error: null, pendingConfirmation: null, pendingStreams: [], exporting: false, exportNotice: null, view: 'result', plan: null, planning: false, lint: null, linting: false, measuring: false, table: null, tableKey: null, lastSql: null }
   }
 
   function tab(id: number): QueryTab | undefined {
@@ -553,6 +555,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (target) {
       target.sql = sql
       target.pendingConfirmation = null
+      target.pendingStreams = []
       target.plan = null
       target.lint = null
       target.view = 'result'
@@ -564,6 +567,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     if (target) {
       target.mode = mode
       target.pendingConfirmation = null
+      target.pendingStreams = []
     }
   }
 
@@ -582,6 +586,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     target.running = true
     target.error = null
     target.pendingConfirmation = null
+    target.pendingStreams = []
     target.view = 'result'
 
     const sent = target.sql
@@ -597,6 +602,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
       }
       if (error instanceof ApiError && error.code === 'confirmation_required') {
         target.pendingConfirmation = typeof error.details.reason === 'string' ? error.details.reason : 'destructive_statement'
+        target.pendingStreams = Array.isArray(error.details.streams) ? (error.details.streams as StreamHit[]) : []
       } else {
         target.result = null
         target.error = messageFor(error)
@@ -710,6 +716,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     const target = tab(id)
     if (target) {
       target.pendingConfirmation = null
+      target.pendingStreams = []
     }
   }
 

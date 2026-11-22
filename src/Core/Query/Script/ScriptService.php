@@ -123,13 +123,21 @@ final readonly class ScriptService
     private function warnAboutStreams(TargetConnection $target, ScriptReport $report): void
     {
         $count = 0;
+        $streams = [];
         foreach ($report->steps as $step) {
-            if (StatementKind::Schema === $step->verdict->kind && QueryService::feedsAStream($target, $step->sql)) {
+            if (StatementKind::Schema !== $step->verdict->kind) {
+                continue;
+            }
+            $hits = QueryService::streamsTouched($target, $step->sql);
+            if ([] !== $hits) {
                 ++$count;
+                foreach ($hits as $hit) {
+                    $streams[$hit->workflow."\0".strtolower($hit->table)] = $hit;
+                }
             }
         }
         if ($count > 0) {
-            throw new ScriptNeedsConfirmationException($count, 'stream_source');
+            throw new ScriptNeedsConfirmationException($count, 'stream_source', array_values($streams));
         }
     }
 

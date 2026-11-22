@@ -5,6 +5,7 @@ import { reasonText, messageFor } from '../api/errors'
 import { cancelScriptRun, executeScript, fetchScriptRun, fetchScriptRuns, previewScript, startScriptRun } from '../api/script'
 import type { BackgroundRun, BackgroundRunStatus, ScriptPreview, ScriptRun, ScriptStepStatus, StepVerdict } from '../api/script'
 import type { StructureScope } from '../api/structure'
+import type { StreamHit } from '../api/types'
 import { readSqlFile, SQL_FILE_MESSAGES } from '../utils/sqlFile'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -21,6 +22,7 @@ const dryRun = ref(false)
 const confirming = ref(false)
 // Vitess : le serveur a dit qu'un flux ne suivra pas une instruction de structure (il lit la cible, pas l'aperçu) : même confirmation unique.
 const streamWarning = ref(false)
+const streamHits = ref<StreamHit[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileError = ref<string | null>(null)
 const pendingImport = ref<{ text: string; name: string } | null>(null)
@@ -224,6 +226,7 @@ async function send(confirmed: boolean): Promise<void> {
   }
   confirming.value = false
   streamWarning.value = false
+  streamHits.value = []
   busy.value = true
   error.value = null
   try {
@@ -231,6 +234,7 @@ async function send(confirmed: boolean): Promise<void> {
   } catch (e) {
     if (!confirmed && e instanceof ApiError && e.code === 'confirmation_required' && e.details.reason === 'stream_source') {
       streamWarning.value = true
+      streamHits.value = Array.isArray(e.details.streams) ? (e.details.streams as StreamHit[]) : []
       confirming.value = true
     } else {
       error.value = messageFor(e)
@@ -431,7 +435,7 @@ const bgBad = computed(() => bgRun.value !== null && ['rolled_back', 'partial', 
     <ConfirmDialog
       v-if="confirming && preview"
       title="Exécuter ce script ?"
-      :message="streamWarning ? reasonText('stream_source', true) : confirmationMessage(preview)"
+      :message="streamWarning ? reasonText('stream_source', true, streamHits) : confirmationMessage(preview)"
       :confirm-label="dryRun ? 'Tester quand même' : 'Exécuter quand même'"
       danger
       @confirm="send(true)"

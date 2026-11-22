@@ -193,7 +193,7 @@ final class QueryServiceTest extends TestCase
         return new class implements StreamSources {
             public function sources(): array
             {
-                $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}');
+                $source = StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}', 'sales_flow');
 
                 return null === $source ? [] : [$source];
             }
@@ -209,6 +209,7 @@ final class QueryServiceTest extends TestCase
             self::fail('A warning was expected.');
         } catch (QueryNeedsConfirmationException $e) {
             self::assertSame(GuardReason::StreamSource, $e->reason);
+            self::assertEquals([new \App\Core\Diagnostics\Vitess\StreamHit('sales_flow', 'corder', ['sales'])], $e->streams);
         }
         self::assertSame([], $this->runner->calls);
 

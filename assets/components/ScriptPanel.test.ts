@@ -138,12 +138,14 @@ describe('ScriptPanel', () => {
 
   it('warns when the server says a flow will not follow, and runs once confirmed', async () => {
     const wrapper = await previewed({ needsConfirmation: false, destructiveCount: 0 })
-    mocked.mockRejectedValueOnce(new ApiError(409, 'confirmation_required', { reason: 'stream_source', destructiveCount: 1 }))
+    mocked.mockRejectedValueOnce(new ApiError(409, 'confirmation_required', { reason: 'stream_source', destructiveCount: 1, streams: [{ workflow: 'sales', table: 't', targets: ['summary'] }] }))
 
     await wrapper.get('button.execute').trigger('click')
     await flushPromises()
 
     expect(document.body.textContent).toContain('ne suivra pas')
+    expect(document.body.textContent).toContain('« sales »')
+    expect(document.body.textContent).toContain('summary')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 
     mocked.mockResolvedValueOnce(run())

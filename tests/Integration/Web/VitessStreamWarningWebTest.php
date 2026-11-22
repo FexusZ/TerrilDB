@@ -75,6 +75,7 @@ final class VitessStreamWarningWebTest extends WebApiTestCase
         self::assertSame(409, $this->statusCode());
         self::assertSame('confirmation_required', $body['error']);
         self::assertSame('stream_source', $body['reason']);
+        self::assertSame([['workflow' => self::WORKFLOW, 'table' => 'tdb_orders', 'targets' => ['tdb_sales']]], $body['streams']);
     }
 
     public function testAnotherTableKeepsTheUsualWarning(): void

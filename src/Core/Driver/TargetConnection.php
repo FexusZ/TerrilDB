@@ -7,6 +7,7 @@ namespace App\Core\Driver;
 use App\Core\Connection\Engine;
 use App\Core\Data\DataExecutor;
 use App\Core\Diagnostics\ServerDiagnostics;
+use App\Core\Diagnostics\Vitess\StreamHit;
 use App\Core\Diagnostics\Vitess\StreamSources;
 use App\Core\Driver\Exception\UnsupportedOperationException;
 use App\Core\KeyValue\KeyValueStore;
@@ -100,6 +101,24 @@ final class TargetConnection
     public function streams(): ?StreamSources
     {
         return $this->streams;
+    }
+
+    /**
+     * Vitess : les flux dont CETTE table est la source (workflow, tables remplies). Vide ailleurs ou si la lecture échoue : jamais une erreur.
+     *
+     * @return list<StreamHit>
+     */
+    public function streamsOf(string $table): array
+    {
+        $hits = [];
+        foreach ($this->streams?->sources() ?? [] as $source) {
+            $hit = $source->hitFor($table);
+            if (null !== $hit) {
+                $hits[] = $hit;
+            }
+        }
+
+        return $hits;
     }
 
     /**

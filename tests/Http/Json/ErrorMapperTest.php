@@ -133,6 +133,18 @@ final class ErrorMapperTest extends TestCase
         self::assertSame(['reason' => 'destructive_without_where'], $response->extra);
     }
 
+    public function testAStreamWarningNamesTheWorkflowAndTheTargets(): void
+    {
+        $hit = new \App\Core\Diagnostics\Vitess\StreamHit('sales', 'corder', ['sales_by_sku']);
+
+        $query = (new ErrorMapper())->map(new QueryNeedsConfirmationException(GuardReason::StreamSource, [$hit]));
+        $script = (new ErrorMapper())->map(new \App\Core\Query\Script\Exception\ScriptNeedsConfirmationException(1, 'stream_source', [$hit]));
+
+        $streams = [['workflow' => 'sales', 'table' => 'corder', 'targets' => ['sales_by_sku']]];
+        self::assertSame(['reason' => 'stream_source', 'streams' => $streams], $query?->extra);
+        self::assertSame(['reason' => 'stream_source', 'destructiveCount' => 1, 'streams' => $streams], $script?->extra);
+    }
+
     public function testEngineErrorsShowTheEngineMessage(): void
     {
         $response = (new ErrorMapper())->map(new QueryFailedException('syntax error at or near "selec"'));

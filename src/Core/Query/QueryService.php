@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core\Query;
 
+use App\Core\Diagnostics\Vitess\StreamHit;
 use App\Core\Driver\Exception\EngineFaultException;
 use App\Core\Driver\Exception\LockConflictException;
 use App\Core\Driver\TargetConnection;
@@ -42,9 +43,9 @@ final readonly class QueryService
         if (Decision::Refused === $verdict->decision || null === $verdict->kind) {
             throw new QueryRefusedException($verdict->reason ?? GuardReason::UnsupportedStatement);
         }
-        if (!$confirmed && $options->lenient && StatementKind::Schema === $verdict->kind && self::feedsAStream($target, $sql)) {
+        if (!$confirmed && $options->lenient && StatementKind::Schema === $verdict->kind && [] !== ($streams = self::streamsTouched($target, $sql))) {
             // Console : l'avertissement dit la vraie raison (un flux ne suivra pas), à la place du « destructif » générique ou du silence.
-            throw new QueryNeedsConfirmationException(GuardReason::StreamSource);
+            throw new QueryNeedsConfirmationException(GuardReason::StreamSource, $streams);
         }
         if (Decision::NeedsConfirmation === $verdict->decision && !$confirmed) {
             throw new QueryNeedsConfirmationException($verdict->reason ?? GuardReason::DestructiveStatement);
@@ -54,17 +55,18 @@ final readonly class QueryService
     }
 
     /**
-     * Vitess : l'instruction nomme-t-elle une table qui nourrit un flux (Materialize, MoveTables) ? Une modification de structure n'y est pas
+     * Vitess : les flux (Materialize, MoveTables) dont l'instruction nomme une table source ; une modification de structure n'y est pas
      * propagée. Sans flux ou sans lecture possible, rien à dire : l'avertissement n'est jamais un obstacle.
+     *
+     * @return list<StreamHit>
      */
-    public static function feedsAStream(TargetConnection $target, string $sql): bool
+    public static function streamsTouched(TargetConnection $target, string $sql): array
     {
+        $hits = [];
         foreach ($target->streams()?->sources() ?? [] as $source) {
-            if ($source->touchedBy($sql)) {
-                return true;
-            }
+            array_push($hits, ...$source->hitsIn($sql));
         }
 
-        return false;
+        return $hits;
     }
 }

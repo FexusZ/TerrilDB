@@ -152,7 +152,7 @@ function toggleMode(): void {
     <ConfirmDialog
       v-if="tab.pendingConfirmation"
       title="Confirmer cette instruction ?"
-      :message="reasonText(tab.pendingConfirmation, true)"
+      :message="reasonText(tab.pendingConfirmation, true, tab.pendingStreams)"
       confirm-label="Exécuter quand même"
       danger
       @confirm="workspace.confirmPending(tab.id)"

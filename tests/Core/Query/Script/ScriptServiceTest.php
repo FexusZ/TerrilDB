@@ -184,7 +184,7 @@ final class ScriptServiceTest extends TestCase
         return new class implements \App\Core\Diagnostics\Vitess\StreamSources {
             public function sources(): array
             {
-                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}');
+                $source = \App\Core\Diagnostics\Vitess\StreamSource::parse('keyspace:"commerce" shard:"0" filter:{rules:{match:"sales" filter:"select sku from corder"}}', 'sales_flow');
 
                 return null === $source ? [] : [$source];
             }
@@ -201,6 +201,7 @@ final class ScriptServiceTest extends TestCase
             self::fail('A warning was expected.');
         } catch (ScriptNeedsConfirmationException $e) {
             self::assertSame('stream_source', $e->reason);
+            self::assertEquals([new \App\Core\Diagnostics\Vitess\StreamHit('sales_flow', 'corder', ['sales'])], $e->streams);
         }
         self::assertSame(0, $spy->calls);
 

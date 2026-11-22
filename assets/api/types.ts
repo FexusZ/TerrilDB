@@ -833,6 +833,17 @@ export interface StructurePreview extends StructurePlan {
   lockCheck?: StructureLockCheck | null
   /** Vitess : la table nourrit un flux (Materialize, MoveTables) qui ne suivra pas ce changement. */
   feedsStream?: boolean
+  /** Vitess : les flux concernés, avec le workflow et les tables qu’ils remplissent. */
+  streams?: StreamHit[]
+}
+
+/** Vitess : un flux VReplication (Materialize, MoveTables) dont la table touchée est la source. */
+export interface StreamHit {
+  /** Vide quand le serveur ne le dit pas. */
+  workflow: string
+  table: string
+  /** Vide quand le flux se définit par une expression. */
+  targets: string[]
 }
 
 export type ReferentialActionName = 'no_action' | 'restrict' | 'cascade' | 'set_null' | 'set_default'
