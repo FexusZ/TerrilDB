@@ -35,6 +35,7 @@ final class DesignAuditTest extends TestCase
         FindingRule::CopyWithoutIndexes,
         FindingRule::TimestampDeadline,
         FindingRule::DateAsText,
+        FindingRule::NonTransactionalTable,
     ];
 
     private ?TargetConnection $target = null;
@@ -121,6 +122,20 @@ final class DesignAuditTest extends TestCase
         yield 'MySQL 26' => ['TARGET_MYSQL26_URL'];
         yield 'MariaDB' => ['TARGET_MARIADB_URL'];
         yield 'MariaDB 13' => ['TARGET_MARIADB13_URL'];
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testATableWithoutTransactionsIsFoundNextToInnoDbOnes(string $env): void
+    {
+        $this->open($env);
+        $legacy = $this->scratch('myisam');
+        $this->raw(\sprintf('CREATE TABLE %s (id int NOT NULL PRIMARY KEY, label varchar(20) NOT NULL) ENGINE=MyISAM', $this->q($legacy)));
+
+        $findings = $this->findings(FindingRule::NonTransactionalTable);
+
+        self::assertCount(1, $findings);
+        self::assertSame($legacy, $findings[0]->table);
+        self::assertSame('MyISAM', $findings[0]->detail);
     }
 
     #[DataProvider('mysqlFamily')]

@@ -37,8 +37,36 @@ final class DesignRules
         array_push($findings, ...$this->collationMismatches($table, $tables));
         array_push($findings, ...$this->twinTable($table, $tables));
         array_push($findings, ...$this->datesAsText($table));
+        if (Engine::MySql === $engine || Engine::MariaDb === $engine) {
+            array_push($findings, ...$this->nonTransactionalTable($table, $tables));
+        }
 
         return $findings;
+    }
+
+    /**
+     * Une table dont le moteur de stockage ne sait pas annuler (MyISAM, MEMORY, Aria…) au milieu de tables qui le savent : une
+     * erreur en cours de transaction laisse alors ses écritures en place, et une panne peut la corrompre. Seulement quand le moteur
+     * a dit lui-même « sans transaction » (état inconnu = rien) ET qu'une autre table sait annuler : un schéma entièrement MyISAM
+     * est un choix d'ensemble, pas une incohérence. Rien n'est suggéré : changer de moteur réécrit la table et ne convient pas à
+     * MEMORY ou CSV, qui peuvent être voulus.
+     *
+     * @param list<TableDefinition> $tables
+     *
+     * @return list<Finding>
+     */
+    private function nonTransactionalTable(TableDefinition $table, array $tables): array
+    {
+        if (TableKind::Table !== $table->kind || false !== $table->transactional || null === $table->storageEngine) {
+            return [];
+        }
+        foreach ($tables as $other) {
+            if (TableKind::Table === $other->kind && true === $other->transactional) {
+                return [new Finding(FindingRule::NonTransactionalTable, Severity::Info, $table->name, detail: $table->storageEngine)];
+            }
+        }
+
+        return [];
     }
 
     /**
