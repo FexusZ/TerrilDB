@@ -35,7 +35,7 @@ La cible ci-dessus ne répond pas aux questions de réplication. Le profil `vite
 
 | Service | Rôle |
 |---|---|
-| `vitess-etcd` | topologie (etcd 3.5) |
+| `vitess-etcd` | topologie (etcd 3.7) |
 | `vitess-vtctld` | vtctld + cellule `zone1` + keyspace `shop` non partagé, une partition (`0`) |
 | `vitess-tablet-primary` (uid 100) | `mysqld` PROPRE (mysqlctl, MySQL 8.4.6) + vttablet |
 | `vitess-tablet-replica` (uid 101) | autre `mysqld` PROPRE + vttablet, répliqué depuis le primaire (GTID) |
