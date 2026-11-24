@@ -21,7 +21,7 @@ final class ConfigAuditor
     ];
     private const POSTGRESQL_NAMES = [
         'fsync', 'full_page_writes', 'synchronous_commit', 'log_min_duration_statement', 'ssl', 'ssl_min_protocol_version',
-        'autovacuum', 'track_counts', 'zero_damaged_pages', 'ignore_checksum_failure', 'data_checksums',
+        'autovacuum', 'track_counts', 'zero_damaged_pages', 'ignore_checksum_failure', 'data_checksums', 'archive_mode',
     ];
     private const MIN_PACKET = 1_048_576;
 
@@ -87,6 +87,10 @@ final class ConfigAuditor
         $binlog = $p->get('log_bin');
         if (null !== $binlog) {
             $on = ConfigProbe::isOn($binlog);
+            ++$p->evaluated;
+            if (ConfigProbe::isOff($binlog)) {
+                $p->add(ConfigRule::BinlogOff, Severity::Low, 'log_bin', $binlog, 'ON (démarrage avec --log-bin, redémarrage nécessaire)', null);
+            }
             $seconds = $p->get('binlog_expire_logs_seconds');
             $days = $p->get('expire_logs_days');
             // MySQL 8.4 n'a plus expire_logs_days ; MariaDB l'a toujours et l'une OU l'autre purge : sans lui, on ne sait pas.
@@ -128,6 +132,7 @@ final class ConfigAuditor
         $p->when(ConfigRule::TrackCountsOff, 'track_counts', ConfigProbe::isOff(...), Severity::Medium, 'on', 'on');
         $p->when(ConfigRule::ZeroDamagedPagesOn, 'zero_damaged_pages', ConfigProbe::isOn(...), Severity::High, 'off', 'off');
         $p->when(ConfigRule::IgnoreChecksumFailureOn, 'ignore_checksum_failure', ConfigProbe::isOn(...), Severity::High, 'off', 'off');
+        $p->when(ConfigRule::ArchiveModeOff, 'archive_mode', ConfigProbe::isOff(...), Severity::Low, 'on (avec archive_command ou archive_library, redémarrage nécessaire)', null);
         $p->when(ConfigRule::DataChecksumsOff, 'data_checksums', ConfigProbe::isOff(...), Severity::Low, 'on (pg_checksums --enable, serveur arrêté)', null);
 
         $ssl = $p->get('ssl');

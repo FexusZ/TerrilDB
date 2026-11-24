@@ -89,6 +89,9 @@ final class ConfigAuditorTest extends TestCase
         yield 'track_counts off' => [Engine::PostgreSql, ['track_counts' => 'off'], ConfigRule::TrackCountsOff, Severity::Medium];
         yield 'zero_damaged_pages on' => [Engine::PostgreSql, ['zero_damaged_pages' => 'on'], ConfigRule::ZeroDamagedPagesOn, Severity::High];
         yield 'ignore_checksum_failure on' => [Engine::PostgreSql, ['ignore_checksum_failure' => 'on'], ConfigRule::IgnoreChecksumFailureOn, Severity::High];
+        yield 'no binary log (MySQL)' => [Engine::MySql, ['log_bin' => 'OFF'], ConfigRule::BinlogOff, Severity::Low];
+        yield 'no binary log (MariaDB)' => [Engine::MariaDb, ['log_bin' => 'OFF'], ConfigRule::BinlogOff, Severity::Low];
+        yield 'no WAL archiving' => [Engine::PostgreSql, ['archive_mode' => 'off'], ConfigRule::ArchiveModeOff, Severity::Low];
         yield 'checksums off' => [Engine::PostgreSql, ['data_checksums' => 'off'], ConfigRule::DataChecksumsOff, Severity::Low];
     }
 
@@ -115,13 +118,14 @@ final class ConfigAuditorTest extends TestCase
         yield 'strict, any case' => [Engine::MariaDb, ['sql_mode' => 'ansi,strict_trans_tables']];
         yield 'local_infile off' => [Engine::MySql, ['local_infile' => 'OFF']];
         yield 'skip_name_resolve on' => [Engine::MySql, ['skip_name_resolve' => 'ON']];
-        yield 'no binary log' => [Engine::MySql, ['log_bin' => 'OFF', 'binlog_expire_logs_seconds' => '0']];
         yield 'binlog expires' => [Engine::MySql, ['log_bin' => 'ON', 'binlog_expire_logs_seconds' => '2592000']];
         yield 'MariaDB expires by days' => [Engine::MariaDb, ['log_bin' => 'ON', 'binlog_expire_logs_seconds' => '0', 'expire_logs_days' => '10.000000']];
         yield 'MariaDB days unknown' => [Engine::MariaDb, ['log_bin' => 'ON', 'binlog_expire_logs_seconds' => '0']];
         yield 'flush at commit 1' => [Engine::MySql, ['innodb_flush_log_at_trx_commit' => '1']];
         yield 'sync_binlog 1' => [Engine::MySql, ['log_bin' => 'ON', 'sync_binlog' => '1']];
-        yield 'sync_binlog 0 without binlog' => [Engine::MariaDb, ['log_bin' => 'OFF', 'sync_binlog' => '0']];
+        yield 'binary log on' => [Engine::MariaDb, ['log_bin' => 'ON']];
+        yield 'archiving on' => [Engine::PostgreSql, ['archive_mode' => 'on']];
+        yield 'archiving always' => [Engine::PostgreSql, ['archive_mode' => 'always']];
         yield 'performance_schema on' => [Engine::MySql, ['performance_schema' => 'ON']];
         yield 'slow log on' => [Engine::MySql, ['slow_query_log' => 'ON']];
         yield 'general log off' => [Engine::MySql, ['general_log' => 'OFF']];
@@ -131,7 +135,7 @@ final class ConfigAuditorTest extends TestCase
         yield 'secure_file_priv set' => [Engine::MySql, ['secure_file_priv' => '/var/lib/mysql-files/']];
         yield 'doublewrite on' => [Engine::MySql, ['innodb_doublewrite' => 'ON']];
         yield 'doublewrite detect_only' => [Engine::MySql, ['innodb_doublewrite' => 'DETECT_ONLY']];
-        yield 'pg defaults' => [Engine::PostgreSql, ['fsync' => 'on', 'full_page_writes' => 'on', 'synchronous_commit' => 'on', 'log_min_duration_statement' => '250', 'ssl' => 'on', 'ssl_min_protocol_version' => 'TLSv1.2', 'autovacuum' => 'on', 'track_counts' => 'on', 'zero_damaged_pages' => 'off', 'ignore_checksum_failure' => 'off', 'data_checksums' => 'on']];
+        yield 'pg defaults' => [Engine::PostgreSql, ['fsync' => 'on', 'full_page_writes' => 'on', 'synchronous_commit' => 'on', 'log_min_duration_statement' => '250', 'ssl' => 'on', 'ssl_min_protocol_version' => 'TLSv1.2', 'autovacuum' => 'on', 'track_counts' => 'on', 'zero_damaged_pages' => 'off', 'ignore_checksum_failure' => 'off', 'data_checksums' => 'on', 'archive_mode' => 'on']];
         yield 'synchronous_commit local' => [Engine::PostgreSql, ['synchronous_commit' => 'local']];
     }
 
@@ -144,6 +148,12 @@ final class ConfigAuditorTest extends TestCase
         $rules = self::rules($engine, $values);
 
         self::assertSame([], $rules);
+    }
+
+    public function testTheBinaryLogRulesOnlyJudgeAnActiveLog(): void
+    {
+        self::assertSame([ConfigRule::BinlogOff->value], self::rules(Engine::MySql, ['log_bin' => 'OFF', 'binlog_expire_logs_seconds' => '0', 'sync_binlog' => '0']));
+        self::assertSame([ConfigRule::BinlogOff->value], self::rules(Engine::MariaDb, ['log_bin' => 'OFF', 'sync_binlog' => '0']));
     }
 
     public function testAnOldTlsFloorIsNotJudgedWhileSslIsOff(): void

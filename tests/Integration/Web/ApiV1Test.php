@@ -697,7 +697,7 @@ final class ApiV1Test extends WebApiTestCase
         self::assertSame(['status', 'engine', 'evaluated', 'rulesTotal', 'findings'], array_keys($body));
         $rules = array_map(static fn ($f): mixed => self::arrayOf($f)['rule'], self::arrayOf($body['findings']));
         sort($rules);
-        self::assertSame(['slow_statement_log_off', 'ssl_off'], $rules);
+        self::assertSame(['archive_mode_off', 'slow_statement_log_off', 'ssl_off'], $rules);
         self::assertStringNotContainsString('hunter', json_encode($body, \JSON_THROW_ON_ERROR));
     }
 

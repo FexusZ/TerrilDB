@@ -36,6 +36,8 @@ enum ConfigRule: string
     case ZeroDamagedPagesOn = 'zero_damaged_pages_on';
     case IgnoreChecksumFailureOn = 'ignore_checksum_failure_on';
     case DataChecksumsOff = 'data_checksums_off';
+    case BinlogOff = 'binlog_off';
+    case ArchiveModeOff = 'archive_mode_off';
 
     /**
      * @return list<self>
@@ -56,7 +58,7 @@ enum ConfigRule: string
         return \in_array($this, [
             self::SqlModeNotStrict, self::LocalInfileEnabled, self::SkipNameResolveMissing, self::BinlogNeverExpires, self::FlushLogAtCommitRelaxed,
             self::SyncBinlogRelaxed, self::PerformanceSchemaOff, self::SlowQueryLogOff, self::GeneralLogOn, self::MaxAllowedPacketTiny,
-            self::TmpTableAboveHeapTable, self::SecureFilePrivEmpty, self::DoublewriteOff,
+            self::TmpTableAboveHeapTable, self::SecureFilePrivEmpty, self::DoublewriteOff, self::BinlogOff,
         ], true);
     }
 
@@ -86,6 +88,8 @@ enum ConfigRule: string
             self::TrackCountsOff => 'L\'autovacuum s\'appuie sur les statistiques d\'activité : sans elles, il ne sait plus quelles tables nettoyer.',
             self::ZeroDamagedPagesOn => 'Une page endommagée est remplacée par des zéros au lieu d\'arrêter la lecture : les données qu\'elle portait sont perdues. Réservé à la récupération après sinistre.',
             self::IgnoreChecksumFailureOn => 'Une somme de contrôle fausse est ignorée : une page corrompue est lue comme si de rien n\'était. Réservé à la récupération après sinistre.',
+            self::BinlogOff => 'Sans journal binaire, le serveur ne peut ni alimenter un réplica ni être restauré à un instant précis : seule la dernière sauvegarde complète reste. Son activation demande un redémarrage.',
+            self::ArchiveModeOff => 'Sans archivage du journal de transactions, la restauration à un instant (PITR) est impossible : seule la dernière sauvegarde complète reste. À peser contre le besoin réel ; l\'activation demande un redémarrage et une commande d\'archivage.',
             self::DataChecksumsOff => 'Sans sommes de contrôle, une corruption silencieuse des pages n\'est pas détectée (activables avec pg_checksums, serveur arrêté).',
         };
     }
