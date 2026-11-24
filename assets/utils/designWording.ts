@@ -34,6 +34,11 @@ export function describeDesignFinding(finding: SchemaFinding & { rule: DesignRul
         title: `« ${finding.table} » : ${finding.columns.join(', ')} est un TIMESTAMP, et son nom dit une échéance.`,
         help: 'À vérifier : sur MySQL un TIMESTAMP s’arrête au 19 janvier 2038 et refuse une date plus lointaine (un abonnement de vingt ans, une échéance de contrat). DATETIME va jusqu’à l’an 9999. Si les dates restent proches, il n’y a rien à faire. Changer le type réécrit la colonne : à planifier.',
       }
+    case 'non_transactional_table':
+      return {
+        title: `« ${finding.table} » est en ${finding.detail ?? 'un moteur sans transaction'}, alors que d’autres tables de la base savent annuler.`,
+        help: 'À vérifier : une table sans transaction ne revient pas en arrière quand une erreur interrompt une série d’écritures (le « tout ou rien » ne la couvre pas), et une coupure brutale peut l’abîmer. Si elle a un usage propre (cache en mémoire, import en lecture seule), laissez-la ; sinon InnoDB est le moteur habituel. Changer de moteur réécrit la table : à essayer sur une copie.',
+      }
     case 'date_as_text':
       return {
         title: `« ${finding.table} » : ${finding.columns.join(', ')} est du texte${finding.detail === null ? '' : ` (${finding.detail})`}, et son nom dit une date.`,

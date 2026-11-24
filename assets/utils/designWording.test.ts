@@ -48,4 +48,11 @@ describe('design rule wording', () => {
     expect(w.help).toContain('À vérifier')
     expect(w.help).toContain('31/02')
   })
+  it('words a table whose engine cannot roll back', () => {
+    const w = describeSchemaFinding(finding({ rule: 'non_transactional_table', severity: 'info', table: 'legacy_log', columns: [], detail: 'MyISAM' }))
+
+    expect(w.title).toBe('« legacy_log » est en MyISAM, alors que d’autres tables de la base savent annuler.')
+    expect(w.help).toContain('À vérifier')
+    expect(w.help).toContain('InnoDB')
+  })
 })

@@ -434,4 +434,53 @@ final class DesignAuditTest extends TestCase
         self::assertSame([], self::rule(FindingRule::DateAsText, [$table]));
         self::assertSame([], self::rule(FindingRule::DateAsText, [$table], Engine::PostgreSql));
     }
+
+    private static function stored(string $name, string $engine, ?bool $transactional): TableDefinition
+    {
+        return new TableDefinition($name, TableKind::Table, [self::column('id')], [self::primary('id')], [], null, null, storageEngine: $engine, transactional: $transactional);
+    }
+
+    #[DataProvider('mysqlFamily')]
+    public function testFlagsATableThatCannotRollBackAmongTransactionalOnes(Engine $engine): void
+    {
+        $findings = self::rule(FindingRule::NonTransactionalTable, [
+            self::stored('orders', 'InnoDB', true),
+            self::stored('legacy_log', 'MyISAM', false),
+        ], $engine);
+
+        self::assertCount(1, $findings);
+        self::assertSame(Severity::Info, $findings[0]->severity);
+        self::assertSame('legacy_log', $findings[0]->table);
+        self::assertSame('MyISAM', $findings[0]->detail);
+        self::assertNull($findings[0]->suggestion);
+    }
+
+    /**
+     * @return iterable<string, array{Engine}>
+     */
+    public static function mysqlFamily(): iterable
+    {
+        yield 'MySQL' => [Engine::MySql];
+        yield 'MariaDB' => [Engine::MariaDb];
+    }
+
+    public function testSaysNothingWhenEveryTableIsNonTransactionalOrTheStateIsUnknown(): void
+    {
+        $allMyIsam = [self::stored('a', 'MyISAM', false), self::stored('b', 'MyISAM', false)];
+        $unknown = [self::stored('orders', 'InnoDB', true), self::stored('mystery', 'Odd', null)];
+        $alone = [self::stored('only', 'MyISAM', false)];
+
+        self::assertSame([], self::rule(FindingRule::NonTransactionalTable, $allMyIsam));
+        self::assertSame([], self::rule(FindingRule::NonTransactionalTable, $unknown));
+        self::assertSame([], self::rule(FindingRule::NonTransactionalTable, $alone));
+    }
+
+    public function testNeverJudgesViewsNorOtherEngines(): void
+    {
+        $view = new TableDefinition('v_orders', TableKind::View, [self::column('id')], [], [], null, null, storageEngine: null, transactional: false);
+        $tables = [self::stored('orders', 'InnoDB', true), $view, self::stored('legacy_log', 'MyISAM', false)];
+
+        self::assertSame([], self::rule(FindingRule::NonTransactionalTable, [self::stored('orders', 'InnoDB', true), $view]));
+        self::assertSame([], self::rule(FindingRule::NonTransactionalTable, $tables, Engine::PostgreSql));
+    }
 }

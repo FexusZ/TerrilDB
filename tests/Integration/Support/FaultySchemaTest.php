@@ -49,6 +49,9 @@ final class FaultySchemaTest extends TestCase
             'redundant_index:prefix_idx:%prefix_idx_a',
             'text_primary_key:uuid_key:id',
         ];
+        if (Engine::PostgreSql !== TargetDatabase::engine($env)) {
+            $expected[] = 'non_transactional_table:myisam:';
+        }
         if (Engine::PostgreSql === TargetDatabase::engine($env)) {
             $expected[] = 'foreign_key_type_mismatch:mismatch:ref';
             $expected[] = 'foreign_key_without_index:fk_noindex:parent_id';
@@ -68,7 +71,7 @@ final class FaultySchemaTest extends TestCase
             $twinA = $introspector->describeTable($schema->table('twin_a'));
             $twinB = $introspector->describeTable($schema->table('twin_b'));
             $myIsam = Engine::PostgreSql === $schema->session->engine ? null : $introspector->describeTable($schema->table('myisam'));
-            $silent = array_filter($this->findings($schema->session, $schema), static fn (Finding $f): bool => preg_match('/_(child_abbrev|twin_a|twin_b|myisam|collate_a|collate_b|parent|child_ok)$/', $f->table) > 0);
+            $silent = array_filter($this->findings($schema->session, $schema), static fn (Finding $f): bool => preg_match('/_(child_abbrev|twin_a|twin_b|collate_a|collate_b|parent|child_ok)$/', $f->table) > 0);
         } finally {
             $schema->drop();
         }

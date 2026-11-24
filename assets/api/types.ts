@@ -731,7 +731,7 @@ export interface PlanResult {
 }
 
 /** Les règles de conception de l'audit (voir `designWording.ts`). */
-export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key' | 'collation_mismatch' | 'twin_table' | 'copy_without_indexes' | 'timestamp_deadline' | 'date_as_text'
+export type DesignRule = 'legacy_character_set' | 'implicit_foreign_key' | 'collation_mismatch' | 'twin_table' | 'copy_without_indexes' | 'timestamp_deadline' | 'date_as_text' | 'non_transactional_table'
 
 export interface LintFindingInfo {
   rule: string
