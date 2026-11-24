@@ -422,4 +422,20 @@ final class ErrorMapperTest extends TestCase
 
         self::assertSame('deadlock', $response?->code);
     }
+
+    public function testAnOverlapWithALocalNetworkIsOnlyToldInDetailedMode(): void
+    {
+        $error = TargetConnectionFailedException::create()->overlappingLocalNetwork();
+
+        $detailed = (new ErrorMapper(new DetailedErrors(true)))->map($error);
+        self::assertNotNull($detailed);
+        self::assertSame(502, $detailed->status);
+        self::assertSame('target_unreachable', $detailed->code);
+        self::assertSame(['reason' => 'overlaps_local_network'], $detailed->extra);
+
+        $plain = (new ErrorMapper())->map($error);
+        self::assertNotNull($plain);
+        self::assertSame('target_unreachable', $plain->code);
+        self::assertSame([], $plain->extra);
+    }
 }

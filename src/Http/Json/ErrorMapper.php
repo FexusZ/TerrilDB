@@ -137,7 +137,7 @@ final class ErrorMapper
             $error instanceof TotpNotEnabledException => new ErrorResponse(409, 'totp_not_enabled'),
             $error instanceof ConnectionNameAlreadyUsedException => new ErrorResponse(409, 'connection_name_used'),
             $error instanceof ConnectionNotFoundException, $error instanceof ScriptRunNotFoundException, $error instanceof TableNotFoundException, $error instanceof KeyNotFoundException, $error instanceof ApiTokenNotFoundException, $error instanceof InvitationNotFoundException, $error instanceof AccountNotFoundException => new ErrorResponse(404, 'not_found'),
-            $error instanceof TargetConnectionFailedException => null !== $error->fault ? self::fault($error->fault) : new ErrorResponse(502, 'target_unreachable'),
+            $error instanceof TargetConnectionFailedException => null !== $error->fault ? self::fault($error->fault) : new ErrorResponse(502, 'target_unreachable', $error->overlapsLocalNetwork ? ['reason' => 'overlaps_local_network'] : []),
             $error instanceof UnsupportedEngineException => new ErrorResponse(501, 'unsupported_engine'),
             $error instanceof QueryRefusedException => new ErrorResponse(403, 'query_refused', ['reason' => $error->reason->value]),
             $error instanceof QueryNeedsConfirmationException => new ErrorResponse(409, 'confirmation_required', ['reason' => $error->reason->value] + ([] === $error->streams ? [] : ['streams' => StreamPresenter::hits($error->streams)])),
@@ -235,7 +235,7 @@ final class ErrorMapper
     {
         return match (true) {
             $error instanceof EngineFaultException => new QueryFailedException($error->engineMessage, previous: $error->getPrevious()),
-            $error instanceof TargetConnectionFailedException && null !== $error->fault => TargetConnectionFailedException::create($error->getPrevious()),
+            $error instanceof TargetConnectionFailedException && (null !== $error->fault || $error->overlapsLocalNetwork) => TargetConnectionFailedException::create($error->getPrevious()),
             $error instanceof DataChangeFailedException && null !== $error->fault => new DataChangeFailedException($error->getMessage(), $error->applied, $error->failed, $error->getPrevious(), $error->lock),
             $error instanceof SchemaChangeFailedException && null !== $error->fault => new SchemaChangeFailedException($error->getMessage(), $error->applied, $error->failed, $error->getPrevious(), $error->lock, $error->holders),
             default => $error,
